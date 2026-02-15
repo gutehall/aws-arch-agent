@@ -1,15 +1,13 @@
 # AWS Arch Agent
 
-An **agentic AWS CDK architecture reviewer** that runs locally and can scale into a multi-agent workflow using LangGraph.
+An **agentic AWS CDK architecture reviewer** that runs locally (Apple Silicon friendly) and scales into a multi-agent workflow using LangGraph.
 
-It combines:
+- **Static CDK heuristics** — ripgrep-based rules across six Well-Architected pillars
+- **CloudFormation checks** — template-level rules after `cdk synth` (S3, RDS, Lambda, DynamoDB, Security Groups, CloudWatch, SQS, API Gateway, EKS, and more)
+- **LLM polish** — local Ollama by default; optional OpenAI or Anthropic
+- **V2 multi-agent** — LangGraph pipeline with per-pillar reviewers and optional RAG (keyword or embedding-based)
 
-- Static CDK code heuristics (ripgrep-based rules)
-- CloudFormation template analysis (via `cdk synth`)
-- LLM-based reasoning (local Ollama by default)
-- Multi-agent orchestration (all 6 AWS Well-Architected pillars: Operational Excellence, Security, Reliability, Performance Efficiency, Cost Optimization, Sustainability)
-
-Supports **TypeScript CDK** and **Python CDK**.
+Supports **TypeScript CDK** and **Python CDK**. MIT licensed.
 
 ---
 
@@ -51,30 +49,29 @@ If `cdk synth` fails, the system gracefully falls back to static-only analysis.
 
 ---
 
-# Architecture Overview
+# Architecture
 
-Core components:
-
-- `rules/` → Static CDK heuristics
-- `rules/cf_template.py` → CloudFormation-level validation
-- `tools/` → File system, ripgrep, LLM client, CDK synth
-- `agent/v1.py` → Simple pipeline
-- `agent/v2_graph.py` → LangGraph multi-agent workflow
-- `report/markdown.py` → Report renderer
+- **rules/** — Static CDK rules (security, reliability, cost, etc.) and [cf_template.py](src/aws_arch_agent/rules/cf_template.py) for CloudFormation checks
+- **tools/** — File scan, ripgrep, LLM client, CDK synth
+- **agent/v1.py** — V1 pipeline (rules + optional LLM polish)
+- **agent/v2_graph.py** — V2 LangGraph pipeline (collect → synth → 6 pillars → merge → report)
+- **report/** — Markdown and JSON output
+- **rag/** — Keyword and optional embedding RAG for V2 merge
 
 ---
 
 # Requirements
 
-- Python 3.11+
-- Node.js
-- ripgrep (`brew install ripgrep`)
-- CDK project must have dependencies installed (`npm i`, `pnpm i`, or `yarn`)
+- **Python 3.11+**
+- **Node.js** (for V2 `cdk synth`)
+- **ripgrep** (`brew install ripgrep`)
+- CDK project with deps installed (`npm i` / `pnpm i` / `yarn`)
 
 Optional:
 
-- Ollama (recommended for local inference)
-- OpenAI or Anthropic API key (cloud fallback)
+- **Ollama** — recommended for local LLM
+- **OpenAI / Anthropic** — `pip install -e ".[cloud]"` and set API keys
+- **sentence-transformers** — `pip install -e ".[rag]"` for embedding-based RAG
 
 ---
 
@@ -96,36 +93,51 @@ ollama serve
 export OLLAMA_MODEL=llama3:8b
 ```
 
-## 3. Analyze a CDK Project
+## 3. Analyze a CDK project
 
-### V1 (fast, static)
+CLI usage: `aws-arch-agent analyze [OPTIONS] REPO` (path to the repo is the last argument).
+
+### V1 (fast, static only)
 
 ```bash
-aws-arch-agent analyze /path/to/cdk-project
+aws-arch-agent analyze --no-llm /path/to/cdk-project
 ```
 
-### V2 (multi-agent + synth)
+### V2 (multi-agent + CDK synth)
 
 ```bash
-aws-arch-agent analyze /path/to/cdk-project --mode v2
+aws-arch-agent analyze --mode v2 /path/to/cdk-project
 ```
 
 Report is written to `report.md` by default.
 
 ### Options
 
-- `--format json` — output structured JSON (context + findings) for CI
-- `--fail-on high|medium|low` — exit with code 1 if any finding at or above that severity
-- `--no-llm` — skip LLM polish (faster, rules-only)
-- `--rag /path/to/doc.md` — add RAG context from a doc (e.g. Well-Architected); V2 only
-- `--suggestions path.json` — write findings (including suggested code) to a JSON file
-- `--config path` — use a config file (default: `.aws-arch-agent.json` in repo or cwd)
+| Option | Description |
+|--------|-------------|
+| `--out`, `-o` | Output path (default: `report.md`) |
+| `--mode` | `v1` or `v2` (default: `v1`) |
+| `--format`, `-f` | `markdown` or `json` (for CI) |
+| `--fail-on` | Exit 1 if any finding at or above `high`, `medium`, or `low` |
+| `--no-llm` | Skip LLM polish / agent reasoning (rules-only) |
+| `--rag` | Path to RAG doc (e.g. Well-Architected); V2 only |
+| `--suggestions` | Write findings JSON to this path |
+| `--config` | Config file path (default: `.aws-arch-agent.json` in repo or cwd) |
 
-Config file (JSON) can set: `format`, `fail_on`, `no_llm`, `out`, `rules.include`, `rules.exclude`, `severity_threshold`, `rag.path`, and optionally `rag.use_embeddings`, `rag.embedding_provider` (e.g. `sentence-transformers` or `openai`), `rag.embedding_model` for embedding-based RAG (see [docs/CONFIG.md](docs/CONFIG.md)).
+Config file can set all of the above plus `rules.include`, `rules.exclude`, `severity_threshold`, and for V2 RAG: `rag.use_embeddings`, `rag.embedding_provider`, `rag.embedding_model`. See [docs/CONFIG.md](docs/CONFIG.md).
 
 ---
 
-# LLM Configuration
+# RAG (V2)
+
+V2 can inject context from a markdown doc (e.g. Well-Architected snippets) into the merge step.
+
+- **Keyword (default)** — no extra deps; `rag.path` in config or `--rag path/to/doc.md`.
+- **Embeddings** — better relevance; set in config: `rag.use_embeddings: true`, `rag.embedding_provider: "sentence-transformers"` or `"openai"`. For local embeddings install with `pip install -e ".[rag]"` (sentence-transformers). For OpenAI, set `OPENAI_API_KEY` and use `embedding_provider: "openai"`.
+
+---
+
+# LLM configuration
 
 Default: **Ollama (local)**
 
@@ -152,53 +164,37 @@ export ANTHROPIC_API_KEY=...
 
 ---
 
-# Current Rule Coverage
+# Rule coverage
 
-Static (CDK-level), by pillar:
-- **Operational Excellence**: CloudTrail (OPS-001), VPC Flow Logs (OPS-002)
-- **Security**: IAM wildcards, open security groups, S3 encryption/public access, KMS key policy (SEC-001–SEC-007)
-- **Reliability**: RDS Multi-AZ/backups, Lambda DLQ
-- **Performance Efficiency**: Graviton/ARM, caching (PERF-001, PERF-002)
-- **Cost Optimization**: Log retention, autoscaling
-- **Sustainability**: Spot, right-sizing (SUST-001, SUST-002)
-- **Best Practices**: Missing tags (BP-001)
+**Static (CDK-level)** — Operational Excellence (OPS-001, OPS-002), Security (SEC-001–SEC-007), Reliability (RDS, Lambda DLQ), Performance (PERF-001, PERF-002), Cost (COST-001, COST-002), Sustainability (SUST-001, SUST-002), Best Practices (BP-001). See [docs/REFERENCE.md](docs/REFERENCE.md).
 
-Template-level (CloudFormation): S3, RDS, ALB, CloudTrail, KMS, VPC/FlowLog, Lambda (DLQ, X-Ray), DynamoDB (PITR, SSE), Security Groups, CloudWatch Logs, SQS, API Gateway, EKS. See [docs/CF_RULES.md](docs/CF_RULES.md).
+**Template (CloudFormation, V2)** — S3, RDS, ALB, CloudTrail, KMS, VPC/Flow Logs, Lambda, DynamoDB, Security Groups, CloudWatch Logs, SQS, API Gateway, EKS. Full list: [docs/CF_RULES.md](docs/CF_RULES.md).
 
 ---
 
 # Day-to-day use
 
-- **Quick check**: `aws-arch-agent analyze . --no-llm` (rules only, no LLM)
-- **Full review**: `aws-arch-agent analyze . --mode v2`
-- **CI**: `aws-arch-agent analyze . --format json --fail-on high --out report.json`
-- **With RAG**: `aws-arch-agent analyze . --mode v2 --rag ./docs/waf.md`
-- **Export suggestions**: `aws-arch-agent analyze . --suggestions suggestions.json`
+- **Quick check** (rules only): `aws-arch-agent analyze --no-llm .`
+- **Full review** (V2 + synth): `aws-arch-agent analyze --mode v2 .`
+- **CI**: `aws-arch-agent analyze --format json --fail-on high --out report.json .`
+- **With RAG**: `aws-arch-agent analyze --mode v2 --rag ./docs/waf.md .`
+- **Suggestions file**: `aws-arch-agent analyze --suggestions suggestions.json .`
 
 # CI
 
-A GitHub Actions workflow is included: [.github/workflows/aws-arch-agent.yml](.github/workflows/aws-arch-agent.yml). It runs tests, ruff, mypy, and the agent (rules-only). The analyze steps use `continue-on-error: true` by default so the build does not fail when findings exist. To **fail the build** when high-severity (or higher) findings are reported, set `continue-on-error: false` on the step that runs `--fail-on high` (the "Run AWS Arch Agent (JSON, fail on high)" step).
+[.github/workflows/aws-arch-agent.yml](.github/workflows/aws-arch-agent.yml) runs tests, ruff, mypy, and the agent (rules-only). Analyze steps use `continue-on-error: true` by default. To fail the build on high-severity findings, set `continue-on-error: false` on the step that runs `--fail-on high`.
 
 # Development
 
-For contributing, see [CONTRIBUTING.md](CONTRIBUTING.md). Quick setup: `pip install -e ".[dev]"`, then `pytest tests/ -v`, `ruff check src tests`, `mypy src`.
+See [CONTRIBUTING.md](CONTRIBUTING.md). Install: `pip install -e ".[dev]"`. Then: `pytest tests/ -v`, `ruff check src tests`, `mypy src`. Optional: `.[rag]` for embedding RAG, `.[cloud]` for OpenAI/Anthropic.
 
 # Reference
 
-Full CLI and config reference: [docs/REFERENCE.md](docs/REFERENCE.md). Example config: [docs/example-config.json](docs/example-config.json).
+- [docs/REFERENCE.md](docs/REFERENCE.md) — CLI and rule IDs
+- [docs/CONFIG.md](docs/CONFIG.md) — config file options
+- [docs/example-config.json](docs/example-config.json) — example config
 
-# Rule coverage (6 pillars)
-
-- **Operational Excellence**: CloudTrail (OPS-001), VPC Flow Logs (OPS-002); CF: CloudTrail log validation (CF-CT-001)
-- **Security**: IAM, S3, KMS (SEC-001–SEC-007); CF: S3, RDS, KMS (CF-S3-*, CF-RDS-*, CF-KMS-001)
-- **Reliability**: RDS Multi-AZ/backup, Lambda DLQ; CF: RDS, S3 versioning
-- **Performance Efficiency**: Graviton/ARM (PERF-001), caching hint (PERF-002)
-- **Cost Optimization**: Log retention, autoscaling (COST-001, COST-002)
-- **Sustainability**: Spot (SUST-001), right-sizing (SUST-002)
-
----
-
-# Design Philosophy
+# Design philosophy
 
 - Local-first
 - High signal findings
