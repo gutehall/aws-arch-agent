@@ -1,6 +1,13 @@
 # CloudFormation template-based rules (V2)
 
-When `cdk synth` succeeds, the agent analyzes templates in `cdk.out/*.template.json` and creates extra findings (higher signal than code heuristics alone).
+CloudFormation template rules run in V2 when the agent has access to template files. They produce findings with higher signal than code heuristics alone.
+
+**When CF rules run:**
+
+- After **`cdk synth`** — templates in `cdk.out/*.template.json` are analyzed.
+- With **`--templates`** — you provide a path to a directory or file; the agent discovers templates and skips synth. No Node.js or CDK required. Use this for raw CloudFormation repos.
+
+**Template formats:** JSON (including `*.template.json`) and YAML (`*.yaml`, `*.yml`). With `--templates`, the agent discovers all of these under the given path.
 
 ## Rules (by resource)
 
@@ -35,3 +42,8 @@ When `cdk synth` succeeds, the agent analyzes templates in `cdk.out/*.template.j
 | Sustainability | CF-SUST-001, CF-SUST-002, CF-SUST-003 |
 | Observability (reported under Operational Excellence) | CF-ALB-001, CF-LAM-002, CF-APIGW-001, CF-APIGW-002 |
 | Best Practices | CF-VPC-001 |
+
+## See also
+
+- [REFERENCE.md](REFERENCE.md) — CLI options and static (code) rule IDs (OPS-001, SEC-001, etc.).
+- [CONFIG.md](CONFIG.md) — `templates` and `no_synth` config keys for V2.

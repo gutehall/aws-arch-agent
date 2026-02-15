@@ -275,3 +275,140 @@ Resources:
     paths = [tmp_path / "stack.yaml"]
     findings = run_cf_rules_from_paths(paths)
     assert any(f.id == "CF-S3-001" for f in findings)
+
+
+def test_kms_wildcard_principal(tmp_path: Path) -> None:
+    """KMS key with wildcard in KeyPolicy should yield CF-KMS-001."""
+    template = {
+        "Resources": {
+            "MyKey": {
+                "Type": "AWS::KMS::Key",
+                "Properties": {
+                    "KeyPolicy": {
+                        "Version": "2012-10-17",
+                        "Statement": [
+                            {
+                                "Sid": "AllowRoot",
+                                "Effect": "Allow",
+                                "Principal": "*",
+                                "Action": "kms:*",
+                                "Resource": "*",
+                            }
+                        ],
+                    }
+                },
+            }
+        }
+    }
+    cdk_out = tmp_path / "cdk.out"
+    cdk_out.mkdir()
+    (cdk_out / "stack.template.json").write_text(json.dumps(template), encoding="utf-8")
+    findings = run_cf_rules(cdk_out)
+    assert any(f.id == "CF-KMS-001" for f in findings)
+
+
+def test_cloudtrail_log_file_validation(tmp_path: Path) -> None:
+    """CloudTrail without EnableLogFileValidation should yield CF-CT-001."""
+    template = {
+        "Resources": {
+            "MyTrail": {
+                "Type": "AWS::CloudTrail::Trail",
+                "Properties": {
+                    "IsLogging": True,
+                    "S3BucketName": "my-bucket",
+                },
+            }
+        }
+    }
+    cdk_out = tmp_path / "cdk.out"
+    cdk_out.mkdir()
+    (cdk_out / "stack.template.json").write_text(json.dumps(template), encoding="utf-8")
+    findings = run_cf_rules(cdk_out)
+    assert any(f.id == "CF-CT-001" for f in findings)
+
+
+def test_cloudtrail_multi_region(tmp_path: Path) -> None:
+    """CloudTrail without IsMultiRegionTrail should yield CF-CT-002."""
+    template = {
+        "Resources": {
+            "MyTrail": {
+                "Type": "AWS::CloudTrail::Trail",
+                "Properties": {
+                    "IsLogging": True,
+                    "S3BucketName": "my-bucket",
+                    "EnableLogFileValidation": True,
+                },
+            }
+        }
+    }
+    cdk_out = tmp_path / "cdk.out"
+    cdk_out.mkdir()
+    (cdk_out / "stack.template.json").write_text(json.dumps(template), encoding="utf-8")
+    findings = run_cf_rules(cdk_out)
+    assert any(f.id == "CF-CT-002" for f in findings)
+
+
+def test_cloudtrail_kms(tmp_path: Path) -> None:
+    """CloudTrail without KmsKeyId should yield CF-CT-003."""
+    template = {
+        "Resources": {
+            "MyTrail": {
+                "Type": "AWS::CloudTrail::Trail",
+                "Properties": {
+                    "IsLogging": True,
+                    "S3BucketName": "my-bucket",
+                    "EnableLogFileValidation": True,
+                    "IsMultiRegionTrail": True,
+                },
+            }
+        }
+    }
+    cdk_out = tmp_path / "cdk.out"
+    cdk_out.mkdir()
+    (cdk_out / "stack.template.json").write_text(json.dumps(template), encoding="utf-8")
+    findings = run_cf_rules(cdk_out)
+    assert any(f.id == "CF-CT-003" for f in findings)
+
+
+def test_alb_access_logs(tmp_path: Path) -> None:
+    """ALB without access_logs.s3.enabled should yield CF-ALB-001."""
+    template = {
+        "Resources": {
+            "MyALB": {
+                "Type": "AWS::ElasticLoadBalancingV2::LoadBalancer",
+                "Properties": {
+                    "Type": "application",
+                    "Scheme": "internet-facing",
+                },
+            }
+        }
+    }
+    cdk_out = tmp_path / "cdk.out"
+    cdk_out.mkdir()
+    (cdk_out / "stack.template.json").write_text(json.dumps(template), encoding="utf-8")
+    findings = run_cf_rules(cdk_out)
+    assert any(f.id == "CF-ALB-001" for f in findings)
+
+
+def test_eks_control_plane_logging(tmp_path: Path) -> None:
+    """EKS cluster without control plane logging should yield CF-EKS-001."""
+    template = {
+        "Resources": {
+            "MyCluster": {
+                "Type": "AWS::EKS::Cluster",
+                "Properties": {
+                    "Name": "my-cluster",
+                    "RoleArn": "arn:aws:iam::123456789012:role/eks-role",
+                    "Version": "1.28",
+                    "ResourcesVpcConfig": {
+                        "SubnetIds": ["subnet-123"],
+                    },
+                },
+            }
+        }
+    }
+    cdk_out = tmp_path / "cdk.out"
+    cdk_out.mkdir()
+    (cdk_out / "stack.template.json").write_text(json.dumps(template), encoding="utf-8")
+    findings = run_cf_rules(cdk_out)
+    assert any(f.id == "CF-EKS-001" for f in findings)
