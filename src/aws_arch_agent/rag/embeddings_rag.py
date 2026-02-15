@@ -51,11 +51,11 @@ class EmbeddingRAG:
             name = self.model_name or "all-MiniLM-L6-v2"
             self._model = SentenceTransformer(name)
         if self._embeddings is None:
-            self._embeddings = self._model.encode(self.chunks, convert_to_numpy=False)
-            if hasattr(self._embeddings, "tolist"):
-                self._embeddings = [row.tolist() for row in self._embeddings]
-            else:
-                self._embeddings = [list(row) for row in self._embeddings]
+            model = self._model
+            if model is None:
+                return []
+            encoded = model.encode(self.chunks, convert_to_numpy=False)
+            self._embeddings = [list(row) for row in encoded]
         return self._embeddings
 
     def _get_embeddings_openai(self, texts: List[str]) -> List[List[float]]:
@@ -99,13 +99,15 @@ class EmbeddingRAG:
             if not chunk_embs:
                 return self._fallback_keyword(query, k)
             try:
-                from sentence_transformers import SentenceTransformer  # type: ignore
+                from sentence_transformers import SentenceTransformer
             except ImportError:
                 return self._fallback_keyword(query, k)
-            if self._model is None:
+            model = self._model
+            if model is None:
                 name = self.model_name or "all-MiniLM-L6-v2"
-                self._model = SentenceTransformer(name)
-            q = self._model.encode(query, convert_to_numpy=False)
+                model = SentenceTransformer(name)
+                self._model = model
+            q = model.encode(query, convert_to_numpy=False)
             q_vec = q.tolist() if hasattr(q, "tolist") else list(q)
 
         sims = [_cosine_similarity(q_vec, ce) for ce in chunk_embs]

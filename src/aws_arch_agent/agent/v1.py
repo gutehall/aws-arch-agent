@@ -1,7 +1,10 @@
 """V1 pipeline: collect files, run rules, optional LLM polish, return report."""
 from __future__ import annotations
+
 import logging
 from pathlib import Path
+from typing import Literal
+
 from aws_arch_agent.models import RepoContext, Finding
 from aws_arch_agent.rules.registry import ALL_RULES
 from aws_arch_agent.report.markdown import render_markdown
@@ -11,7 +14,10 @@ from aws_arch_agent.tools.files import iter_files
 logger = logging.getLogger(__name__)
 
 
-def detect_language(repo_path: Path) -> str:
+RepoLanguage = Literal["typescript", "python", "unknown"]
+
+
+def detect_language(repo_path: Path) -> RepoLanguage:
     """Return 'typescript', 'python', or 'unknown' from repo contents."""
     if (repo_path / "package.json").exists() or any(repo_path.rglob("*.ts")):
         return "typescript"

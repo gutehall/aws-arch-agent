@@ -1,7 +1,7 @@
 """CDK synth runner and CloudFormation template listing/summary helpers."""
 from __future__ import annotations
 from pathlib import Path
-from typing import List
+from typing import Any, List, cast
 import subprocess
 import json
 import os
@@ -59,10 +59,10 @@ def list_cf_templates(cdk_out: Path) -> List[Path]:
     return sorted([p for p in cdk_out.rglob("*.template.json") if p.is_file()])
 
 
-def load_json(path: Path) -> dict:
+def load_json(path: Path) -> dict[Any, Any]:
     """Load JSON file; return empty dict on parse error or missing file."""
     try:
-        return json.loads(path.read_text(encoding="utf-8"))
+        return cast(dict[Any, Any], json.loads(path.read_text(encoding="utf-8")))
     except Exception:
         return {}
 

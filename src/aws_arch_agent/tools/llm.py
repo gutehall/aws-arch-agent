@@ -1,7 +1,10 @@
 """LLM client for Ollama, OpenAI, and Anthropic (polish/review prompts)."""
 from __future__ import annotations
+
 import logging
 import os
+from typing import cast
+
 import requests
 
 logger = logging.getLogger(__name__)
@@ -45,7 +48,7 @@ class LLMClient:
             r = requests.post(url, json=payload, timeout=120)
             r.raise_for_status()
             data = r.json()
-            return data.get("message", {}).get("content", prompt)
+            return cast(str, data.get("message", {}).get("content", prompt))
         except Exception as e:
             logger.warning("Ollama request failed: %s", e)
             return prompt

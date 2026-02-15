@@ -1,14 +1,16 @@
 """CLI entrypoint for aws-arch-agent (Typer app and analyze command)."""
 from __future__ import annotations
 
+from pathlib import Path
+from typing import cast
+
 import typer
 from rich.console import Console
 from rich.panel import Panel
-from pathlib import Path
 
 from aws_arch_agent.agent.v1 import analyze_v1
 from aws_arch_agent.agent.v2_graph import analyze_v2
-from aws_arch_agent.config import load_config
+from aws_arch_agent.config import OutputFormat, SeverityThreshold, load_config
 from aws_arch_agent.report.json_report import render_json
 
 app = typer.Typer(add_completion=False, help="AWS CDK architecture reviewer (agentic).")
@@ -52,8 +54,8 @@ def analyze(
     cfg = load_config(
         repo_path,
         Path(config) if config else None,
-        format=format if format in ("markdown", "json") else "markdown",
-        fail_on=fail_on.lower() if fail_on.lower() in ("high", "medium", "low", "none") else "none",
+        format=cast(OutputFormat, format if format in ("markdown", "json") else "markdown"),
+        fail_on=cast(SeverityThreshold, fail_on.lower() if fail_on.lower() in ("high", "medium", "low", "none") else "none"),
         no_llm=no_llm,
         out=out,
         rag_path=rag,

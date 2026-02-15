@@ -352,8 +352,8 @@ def analyze_v2(
     initial: State = {
         "repo_path": str(repo_path),
         "use_llm": use_llm,
-        "rules_include": rules_include,
-        "rules_exclude": rules_exclude,
+        "rules_include": rules_include or [],
+        "rules_exclude": rules_exclude or [],
         "severity_threshold": severity_threshold or "",
         "rag_path": rag_path or "",
         "rag_use_embeddings": rag_use_embeddings,
