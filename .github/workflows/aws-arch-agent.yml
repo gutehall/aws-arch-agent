@@ -1,0 +1,55 @@
+# Run AWS Arch Agent on the repo (and optionally fail on findings)
+name: AWS Arch Agent
+
+on:
+  push:
+    branches: [main, master]
+  pull_request:
+    branches: [main, master]
+
+jobs:
+  review:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install ripgrep
+        run: sudo apt-get update && sudo apt-get install -y ripgrep
+
+      - name: Install dependencies
+        run: |
+          python -m venv .venv
+          .venv/bin/pip install -U pip
+          .venv/bin/pip install -e ".[dev]"
+
+      - name: Run tests
+        run: .venv/bin/pytest tests/ -v
+
+      - name: Lint (ruff)
+        run: .venv/bin/ruff check src tests
+
+      - name: Type check (mypy)
+        run: .venv/bin/mypy src
+
+      - name: Run AWS Arch Agent (rules only, no LLM)
+        run: .venv/bin/aws-arch-agent analyze . --no-llm --out report.md
+        continue-on-error: true
+
+      - name: Run AWS Arch Agent (JSON, fail on high)
+        run: .venv/bin/aws-arch-agent analyze . --no-llm --format json --out report.json --fail-on high
+        continue-on-error: true
+
+      - name: Upload report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: aws-arch-agent-report
+          path: |
+            report.md
+            report.json
+          if-no-files-found: ignore

@@ -1,0 +1,1 @@
+{"format":"markdown","fail_on":"none","no_llm":false,"out":"report.md","severity_threshold":"Medium","rules":{"include":null,"exclude":["BP-001"]},"rag":{"path":"./docs/waf-snippets.md","use_embeddings":false,"embedding_provider":null,"embedding_model":null}}
