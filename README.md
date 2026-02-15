@@ -1,6 +1,6 @@
 # AWS Arch Agent
 
-An **agentic AWS CDK architecture reviewer** that runs locally (Apple Silicon friendly) and scales via LangGraph.
+An **agentic AWS CDK architecture reviewer** that runs locally and scales via LangGraph.
 
 - **Static CDK heuristics** — ripgrep rules across six Well-Architected pillars
 - **CloudFormation checks** — template rules after `cdk synth` or from `--templates` (JSON/YAML); S3, RDS, Lambda, DynamoDB, KMS, CloudTrail, ALB, EKS, etc. (see [docs/CF_RULES.md](docs/CF_RULES.md))
