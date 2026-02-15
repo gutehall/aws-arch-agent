@@ -169,7 +169,7 @@ export ANTHROPIC_API_KEY=...
 
 **Static (CDK-level)** — Operational Excellence (OPS-001, OPS-002), Security (SEC-001–SEC-007), Reliability (RDS, Lambda DLQ), Performance (PERF-001, PERF-002), Cost (COST-001, COST-002), Sustainability (SUST-001, SUST-002), Best Practices (BP-001). See [docs/REFERENCE.md](docs/REFERENCE.md).
 
-**Template (CloudFormation, V2)** — S3, RDS, ALB, CloudTrail, KMS, VPC/Flow Logs, Lambda, DynamoDB, Security Groups, CloudWatch Logs, SQS, API Gateway, EKS. Full list: [docs/CF_RULES.md](docs/CF_RULES.md).
+**Template (CloudFormation, V2)** — S3, RDS, ALB, CloudTrail, KMS, VPC/Flow Logs, Lambda, DynamoDB, Security Groups, CloudWatch Logs, SQS, API Gateway, EKS, and more. Performance Efficiency and Sustainability include template-based rules (CF-PERF-001, CF-SUST-001, CF-SUST-002) when `cdk synth` succeeds. Full list: [docs/CF_RULES.md](docs/CF_RULES.md).
 
 ---
 

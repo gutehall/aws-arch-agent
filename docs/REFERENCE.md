@@ -1,5 +1,7 @@
 # Reference
 
+The agent covers all six AWS Well-Architected pillars. Static and CloudFormation rules are grouped by pillar; in V2 mode each pillar has a dedicated reviewer node.
+
 ## CLI: `aws-arch-agent`
 
 | Option | Default | Description |
@@ -47,4 +49,4 @@ Keys: `format`, `fail_on`, `no_llm`, `out`, `severity_threshold`, `rules.include
 
 ## CF template rules (V2, when synth succeeds)
 
-CF-S3-001–004, CF-RDS-001–005, CF-ALB-001, CF-CT-001–003, CF-KMS-001, CF-VPC-001, CF-FL-001, CF-LAM-001–002, CF-DDB-001–002, CF-SG-001, CF-CW-001–002, CF-SQS-001–002, CF-APIGW-001–002, CF-EKS-001 — see [CF_RULES.md](CF_RULES.md).
+CF-S3-001–004, CF-RDS-001–005, CF-ALB-001, CF-CT-001–003, CF-KMS-001, CF-VPC-001, CF-FL-001, CF-LAM-001–002, CF-PERF-001, CF-DDB-001–002, CF-SG-001, CF-CW-001–002, CF-SQS-001–002, CF-APIGW-001–002, CF-SUST-001–002, CF-EKS-001 — see [CF_RULES.md](CF_RULES.md).

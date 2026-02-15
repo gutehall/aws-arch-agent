@@ -285,6 +285,20 @@ def run_cf_rules(cdk_out: Path) -> List[Finding]:
                         evidence=f"{logical_id} ({rtype})",
                         recommendation="Set TracingConfig.Mode to Active for X-Ray tracing.",
                     ))
+                archs = props.get("Architectures") or []
+                if isinstance(archs, str):
+                    archs = [archs]
+                if "arm64" not in [a.lower() for a in archs]:
+                    findings.append(Finding(
+                        id="CF-PERF-001",
+                        title="Lambda function does not use ARM64 (Graviton)",
+                        severity="Low",
+                        category="Performance Efficiency",
+                        file=str(t),
+                        line=None,
+                        evidence=f"{logical_id} ({rtype})",
+                        recommendation="Consider Architectures: [arm64] for better price-performance. In CDK: architecture: lambda.Architecture.ARM_64.",
+                    ))
 
             # --- DynamoDB ---
             if rtype == "AWS::DynamoDB::Table":
@@ -450,6 +464,57 @@ def run_cf_rules(cdk_out: Path) -> List[Finding]:
                         line=None,
                         evidence=f"{logical_id} ({rtype})",
                         recommendation="Set DefaultRouteSettings.DataTraceEnabled to true for X-Ray.",
+                    ))
+
+            # --- Auto Scaling Group: Spot / mixed instances (Sustainability) ---
+            if rtype == "AWS::AutoScaling::AutoScalingGroup":
+                mixed = props.get("MixedInstancesPolicy") or {}
+                inst_dist = mixed.get("InstancesDistribution") or {}
+                spot_max = inst_dist.get("SpotMaxPrice")
+                spot_strategy = inst_dist.get("SpotAllocationStrategy")
+                has_spot = spot_max is not None or spot_strategy is not None
+                if not has_spot:
+                    findings.append(Finding(
+                        id="CF-SUST-001",
+                        title="Auto Scaling Group does not use Spot or mixed instances",
+                        severity="Low",
+                        category="Sustainability",
+                        file=str(t),
+                        line=None,
+                        evidence=f"{logical_id} ({rtype})",
+                        recommendation=(
+                            "Consider MixedInstancesPolicy with Spot (InstancesDistribution.SpotMaxPrice or SpotAllocationStrategy) "
+                            "for fault-tolerant workloads to reduce cost and improve sustainability. In CDK: use mixedInstancesPolicy."
+                        ),
+                    ))
+
+            # --- ECS Service: Fargate Spot (Sustainability) ---
+            if rtype == "AWS::ECS::Service":
+                strat = props.get("CapacityProviderStrategy") or []
+                if isinstance(strat, dict):
+                    strat = [strat]
+                provider_names = [s.get("CapacityProvider") or s.get("capacityProvider") for s in strat if s]
+                has_fargate_spot = any(
+                    p and ("SPOT" in str(p).upper() or "FARGATE_SPOT" in str(p))
+                    for p in provider_names
+                )
+                launch_type = (props.get("LaunchType") or "").upper()
+                uses_fargate = launch_type == "FARGATE" or any(
+                    p and "FARGATE" in str(p).upper() for p in provider_names
+                )
+                if uses_fargate and not has_fargate_spot:
+                    findings.append(Finding(
+                        id="CF-SUST-002",
+                        title="ECS Fargate service does not use FARGATE_SPOT",
+                        severity="Low",
+                        category="Sustainability",
+                        file=str(t),
+                        line=None,
+                        evidence=f"{logical_id} ({rtype})",
+                        recommendation=(
+                            "Consider CapacityProviderStrategy including FARGATE_SPOT for interruptible tasks "
+                            "to reduce cost and improve sustainability. In CDK: capacityProviderStrategies with FARGATE_SPOT."
+                        ),
                     ))
 
             # --- EKS ---
