@@ -5,7 +5,7 @@ CloudFormation template rules run in V2 when the agent has access to template fi
 **When CF rules run:**
 
 - After **`cdk synth`** — templates in `cdk.out/*.template.json` are analyzed.
-- With **`--templates`** — you provide a path to a directory or file; the agent discovers templates and skips synth. No Node.js or CDK required. Use this for raw CloudFormation repos.
+- With **`--templates`** — you provide a path to a directory or file; the agent discovers templates and skips synth. No Node.js or CDK required. You can omit `--repo` when using `--templates` (the templates path is used as the repo root).
 
 **Template formats:** JSON (including `*.template.json`) and YAML (`*.yaml`, `*.yml`). With `--templates`, the agent discovers all of these under the given path.
 

@@ -33,7 +33,7 @@ def _should_fail(fail_on: str, findings: list) -> bool:
 
 @app.command()
 def analyze(
-    repo: str = typer.Option(..., "--repo", "-r", help="Path to CDK repository"),
+    repo: str | None = typer.Option(None, "--repo", "-r", help="Path to repo (required unless --templates is set; then defaults to templates path)"),
     out: str = typer.Option("report.md", "--out", "-o", help="Output report path"),
     mode: str = typer.Option("v1", "--mode", help="v1 (rules) or v2 (LangGraph multi-agent)"),
     max_files: int = typer.Option(400, "--max-files", help="Max files to scan"),
@@ -49,9 +49,14 @@ def analyze(
     suggestions: str | None = typer.Option(None, "--suggestions", help="Write findings with suggested code to this JSON file"),
 ):
     """Run architecture review on a CDK repo (V1 or V2 mode) and write report."""
-    repo_path = Path(repo).expanduser().resolve()
+    resolved_repo = repo if repo is not None else templates
+    if resolved_repo is None:
+        raise typer.BadParameter("Either --repo or --templates is required.")
+    repo_path = Path(resolved_repo).expanduser().resolve()
     if not repo_path.exists():
         raise typer.BadParameter(f"Repo path does not exist: {repo_path}")
+    if repo_path.is_file():
+        repo_path = repo_path.parent
 
     cfg = load_config(
         repo_path,

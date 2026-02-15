@@ -66,3 +66,26 @@ def test_analyze_nonexistent_repo() -> None:
     """analyze with nonexistent path raises BadParameter."""
     result = runner.invoke(app, ["--repo", "/nonexistent/path/xyz"])
     assert result.exit_code != 0
+
+
+def test_analyze_requires_repo_or_templates() -> None:
+    """analyze without --repo and without --templates fails."""
+    result = runner.invoke(app, ["--no-llm"])
+    assert result.exit_code != 0
+    assert "required" in (result.output or result.stderr).lower()
+
+
+def test_analyze_templates_only_no_repo(tmp_path: Path) -> None:
+    """analyze with --templates and no --repo uses templates path as repo (CF-only)."""
+    (tmp_path / "stack.yaml").write_text(
+        "Resources:\n  B:\n    Type: AWS::S3::Bucket\n    Properties: {}\n",
+        encoding="utf-8",
+    )
+    out_file = tmp_path / "report.md"
+    result = runner.invoke(
+        app,
+        ["--templates", str(tmp_path), "--no-synth", "--mode", "v2", "--no-llm", "--out", str(out_file)],
+    )
+    assert result.exit_code == 0, result.output or result.stderr
+    assert out_file.exists()
+    assert "CF-S3-001" in out_file.read_text() or "Architecture Review" in out_file.read_text()

@@ -6,7 +6,7 @@ The agent covers all six AWS Well-Architected pillars. Static and CloudFormation
 
 | Option | Default | Description |
 |--------|---------|-------------|
-| `--repo`, `-r` | (required) | Path to CDK repository |
+| `--repo`, `-r` | — | Path to repo (required unless `--templates` is set; then repo defaults to templates path) |
 | `--out`, `-o` | `report.md` | Output report path |
 | `--mode` | `v1` | `v1` (rules + LLM) or `v2` (multi-agent + synth) |
 | `--max-files` | `400` | Max files to scan |

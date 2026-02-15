@@ -34,7 +34,7 @@ Report → `report.md` by default.
 
 | Option | Description |
 |--------|-------------|
-| `--repo`, `-r` | CDK repo path (required) |
+| `--repo`, `-r` | Repo path (required unless `--templates` is set) |
 | `--out`, `-o` | Output path (default: `report.md`) |
 | `--mode` | `v1` or `v2` |
 | `--format`, `-f` | `markdown` or `json` |
@@ -55,10 +55,10 @@ Report → `report.md` by default.
 
 ## CloudFormation-only (no CDK)
 
-For repos that only have raw CloudFormation templates (JSON or YAML), use V2 with `--templates` and `--no-synth`. No Node.js or CDK required:
+For repos that only have raw CloudFormation templates (JSON or YAML), use V2 with `--templates` and `--no-synth`. No Node.js or CDK required. You can omit `--repo` when using `--templates` (the templates path is used as the repo root):
 
 ```bash
-aws-arch-agent --repo /path/to/cfn-repo --templates /path/to/cfn-repo --no-synth --mode v2
+aws-arch-agent --templates /path/to/cfn-repo --no-synth --mode v2
 ```
 
 Template files: `*.template.json`, `*.yaml`, `*.yml` (directory or single file).
