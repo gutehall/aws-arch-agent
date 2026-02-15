@@ -2,8 +2,6 @@
 from pathlib import Path
 import json
 
-import pytest
-
 from aws_arch_agent.rules.cf_template import run_cf_rules
 
 

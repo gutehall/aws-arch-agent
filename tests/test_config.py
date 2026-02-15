@@ -1,9 +1,7 @@
 """Tests for config loading and CLI overrides."""
 from pathlib import Path
 
-import pytest
-
-from aws_arch_agent.config import load_config, RunConfig
+from aws_arch_agent.config import load_config
 
 
 def test_load_config_no_file(tmp_path: Path) -> None:

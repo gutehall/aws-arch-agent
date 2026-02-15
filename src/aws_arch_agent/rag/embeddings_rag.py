@@ -5,10 +5,9 @@ import logging
 from pathlib import Path
 from typing import List
 
-logger = logging.getLogger(__name__)
-
-# Reuse chunking from simple RAG
 from aws_arch_agent.rag.simple import _chunk_by_headers
+
+logger = logging.getLogger(__name__)
 
 
 def _cosine_similarity(a: List[float], b: List[float]) -> float:

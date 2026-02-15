@@ -1,9 +1,7 @@
 """Unit tests for static rules (TS and Python)."""
 from pathlib import Path
 
-import pytest
-
-from aws_arch_agent.rules.security import S3PublicAccessNotBlocked, S3EncryptionMissing, IamWildcardAction
+from aws_arch_agent.rules.security import S3PublicAccessNotBlocked, IamWildcardAction
 from aws_arch_agent.rules.best_practices import MissingStandardTags
 
 

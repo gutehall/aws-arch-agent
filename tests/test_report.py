@@ -1,8 +1,5 @@
 """Tests for report rendering (markdown and JSON)."""
 import json
-from pathlib import Path
-
-import pytest
 
 from aws_arch_agent.models import Finding, RepoContext
 from aws_arch_agent.report.json_report import render_json

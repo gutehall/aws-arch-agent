@@ -8,7 +8,7 @@ from pathlib import Path
 
 from aws_arch_agent.agent.v1 import analyze_v1
 from aws_arch_agent.agent.v2_graph import analyze_v2
-from aws_arch_agent.config import load_config, RunConfig
+from aws_arch_agent.config import load_config
 from aws_arch_agent.report.json_report import render_json
 
 app = typer.Typer(add_completion=False, help="AWS CDK architecture reviewer (agentic).")

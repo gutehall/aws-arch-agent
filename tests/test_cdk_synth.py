@@ -2,8 +2,6 @@
 import json
 from pathlib import Path
 
-import pytest
-
 from aws_arch_agent.tools.cdk_synth import (
     list_cf_templates,
     load_json,

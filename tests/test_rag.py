@@ -1,8 +1,6 @@
 """Tests for SimpleRAG, EmbeddingRAG, and get_rag."""
 from pathlib import Path
 
-import pytest
-
 from aws_arch_agent.rag.simple import SimpleRAG, _chunk_by_headers
 from aws_arch_agent.rag import get_rag, EmbeddingRAG
 

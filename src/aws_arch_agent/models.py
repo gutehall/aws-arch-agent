@@ -1,7 +1,7 @@
 """Pydantic models for repo context and findings."""
 from __future__ import annotations
 from pydantic import BaseModel, Field
-from typing import Literal, Optional, List, Dict, Any
+from typing import Literal, List, Dict, Any
 
 
 Severity = Literal["High", "Medium", "Low"]

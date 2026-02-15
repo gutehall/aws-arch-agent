@@ -1,8 +1,6 @@
 """Security-rule-specific tests. Main rule coverage (S3 public access, IAM wildcard, etc.) is in test_rules.py."""
 from pathlib import Path
 
-import pytest
-
 from aws_arch_agent.rules.security import S3EncryptionMissing
 
 

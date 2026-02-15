@@ -1,8 +1,6 @@
 """Integration test for V2 graph (no LLM)."""
 from pathlib import Path
 
-import pytest
-
 from aws_arch_agent.agent.v2_graph import analyze_v2
 
 
