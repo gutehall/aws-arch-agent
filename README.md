@@ -95,18 +95,18 @@ export OLLAMA_MODEL=llama3:8b
 
 ## 3. Analyze a CDK project
 
-CLI usage: `aws-arch-agent analyze [OPTIONS] REPO` (path to the repo is the last argument).
+Use `--repo` / `-r` for the repo path:
 
 ### V1 (fast, static only)
 
 ```bash
-aws-arch-agent analyze --no-llm /path/to/cdk-project
+aws-arch-agent analyze --repo /path/to/cdk-project --no-llm
 ```
 
 ### V2 (multi-agent + CDK synth)
 
 ```bash
-aws-arch-agent analyze --mode v2 /path/to/cdk-project
+aws-arch-agent analyze --repo /path/to/cdk-project --mode v2
 ```
 
 Report is written to `report.md` by default.
@@ -115,6 +115,7 @@ Report is written to `report.md` by default.
 
 | Option | Description |
 |--------|-------------|
+| `--repo`, `-r` | Path to CDK repository (required) |
 | `--out`, `-o` | Output path (default: `report.md`) |
 | `--mode` | `v1` or `v2` (default: `v1`) |
 | `--format`, `-f` | `markdown` or `json` (for CI) |
@@ -174,11 +175,11 @@ export ANTHROPIC_API_KEY=...
 
 # Day-to-day use
 
-- **Quick check** (rules only): `aws-arch-agent analyze --no-llm .`
-- **Full review** (V2 + synth): `aws-arch-agent analyze --mode v2 .`
-- **CI**: `aws-arch-agent analyze --format json --fail-on high --out report.json .`
-- **With RAG**: `aws-arch-agent analyze --mode v2 --rag ./docs/waf.md .`
-- **Suggestions file**: `aws-arch-agent analyze --suggestions suggestions.json .`
+- **Quick check** (rules only): `aws-arch-agent analyze --repo . --no-llm`
+- **Full review** (V2 + synth): `aws-arch-agent analyze --repo . --mode v2`
+- **CI**: `aws-arch-agent analyze --repo . --format json --fail-on high --out report.json`
+- **With RAG**: `aws-arch-agent analyze --repo . --mode v2 --rag ./docs/waf.md`
+- **Suggestions file**: `aws-arch-agent analyze --repo . --suggestions suggestions.json`
 
 # CI
 

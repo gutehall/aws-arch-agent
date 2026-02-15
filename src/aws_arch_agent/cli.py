@@ -31,7 +31,7 @@ def _should_fail(fail_on: str, findings: list) -> bool:
 
 @app.command()
 def analyze(
-    repo: str = typer.Argument(..., help="Path to CDK repository"),
+    repo: str = typer.Option(..., "--repo", "-r", help="Path to CDK repository"),
     out: str = typer.Option("report.md", "--out", "-o", help="Output report path"),
     mode: str = typer.Option("v1", "--mode", help="v1 (rules) or v2 (LangGraph multi-agent)"),
     max_files: int = typer.Option(400, "--max-files", help="Max files to scan"),

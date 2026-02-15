@@ -4,7 +4,7 @@
 
 | Option | Default | Description |
 |--------|---------|-------------|
-| `repo` | (required) | Path to CDK repository |
+| `--repo`, `-r` | (required) | Path to CDK repository |
 | `--out`, `-o` | `report.md` | Output report path |
 | `--mode` | `v1` | `v1` (rules + LLM) or `v2` (multi-agent + synth) |
 | `--max-files` | `400` | Max files to scan |
