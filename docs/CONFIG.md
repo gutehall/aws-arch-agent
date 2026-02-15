@@ -11,6 +11,8 @@ Example:
   "no_llm": false,
   "out": "report.md",
   "severity_threshold": "Medium",
+  "templates": null,
+  "no_synth": false,
   "rules": {
     "include": null,
     "exclude": ["BP-001"]
@@ -29,6 +31,8 @@ Example:
 - **no_llm**: skip LLM polish (V1) or agent reasoning (V2)
 - **out**: output file path
 - **severity_threshold**: only report findings at or above this severity
+- **templates**: path to CloudFormation templates (dir or file); V2 only. When set, cdk synth is skipped and CF rules run on these templates (JSON or YAML).
+- **no_synth**: if `true`, do not run cdk synth (V2 only). Use with **templates** for raw CF, or alone for static analysis only.
 - **rules.include**: list of rule IDs to run (e.g. `["SEC-001", "SEC-002"]`); if set, only these run
 - **rules.exclude**: list of rule IDs to skip
 - **rag.path**: path to a markdown doc for RAG context (V2 only)

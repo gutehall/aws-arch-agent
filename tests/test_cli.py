@@ -48,7 +48,11 @@ def test_analyze_json_format(tmp_path: Path) -> None:
 
 def test_analyze_fail_on_high_exit_code(tmp_path: Path) -> None:
     """analyze --fail-on high exits 1 when high-severity finding exists."""
-    _make_repo(tmp_path)
+    # Use content that triggers SEC-001 (IAM wildcard action) so we get a High finding
+    _make_repo(
+        tmp_path,
+        'const policy = { Action: "*", Resource: "arn:aws:s3:::foo" };\nnew s3.Bucket(this, "B");',
+    )
     out_file = tmp_path / "r.md"
     with runner.isolated_filesystem():
         result = runner.invoke(

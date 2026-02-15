@@ -43,6 +43,8 @@ def analyze(
         "none", "--fail-on", help="Exit non-zero if any finding has this severity or higher (high|medium|low|none)"
     ),
     no_llm: bool = typer.Option(False, "--no-llm", help="Skip LLM polish / agent reasoning"),
+    templates: str | None = typer.Option(None, "--templates", help="Path to CloudFormation templates (dir or file); V2 only, skips cdk synth"),
+    no_synth: bool = typer.Option(False, "--no-synth", help="Do not run cdk synth; V2 only (static analysis or use with --templates)"),
     rag: str | None = typer.Option(None, "--rag", help="Path to RAG doc (e.g. Well-Architected markdown); V2 only"),
     suggestions: str | None = typer.Option(None, "--suggestions", help="Write findings with suggested code to this JSON file"),
 ):
@@ -58,6 +60,8 @@ def analyze(
         fail_on=cast(SeverityThreshold, fail_on.lower() if fail_on.lower() in ("high", "medium", "low", "none") else "none"),
         no_llm=no_llm,
         out=out,
+        templates=templates,
+        no_synth=no_synth,
         rag_path=rag,
     )
 
@@ -80,6 +84,8 @@ def analyze(
             rules_include=rules_include,
             rules_exclude=rules_exclude,
             severity_threshold=severity_threshold,
+            templates_path=cfg.templates,
+            skip_synth=cfg.no_synth,
             rag_path=cfg.rag_path,
             rag_use_embeddings=cfg.rag_use_embeddings,
             rag_embedding_provider=cfg.rag_embedding_provider,

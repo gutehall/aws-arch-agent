@@ -4,7 +4,7 @@ import json
 from pathlib import Path
 from typing import List, Dict, Any
 from aws_arch_agent.models import Finding
-from aws_arch_agent.tools.cdk_synth import list_cf_templates, load_json
+from aws_arch_agent.tools.cdk_synth import list_cf_templates, load_template
 
 # Sensitive ports for security group checks (SSH, RDP, Postgres, MySQL, Mongo)
 SENSITIVE_PORTS = {22, 3389, 3306, 5432, 27017}
@@ -45,41 +45,37 @@ def _port_in_sensitive(from_port: Any, to_port: Any) -> bool:
         return True
 
 
-def run_cf_rules(cdk_out: Path) -> List[Finding]:
-    """Run template-level checks on all *.template.json under cdk_out; return list of findings."""
+def _run_cf_rules_on_template(template_path: Path, doc: dict) -> List[Finding]:
+    """Run template-level checks on a single parsed CloudFormation template; return list of findings."""
     findings: List[Finding] = []
-    templates = list_cf_templates(cdk_out)
+    resources = _walk_resources(doc)
 
-    for t in templates:
-        doc = load_json(t)
-        resources = _walk_resources(doc)
+    vpc_count = sum(1 for r in resources.values() if r.get("Type") == "AWS::EC2::VPC")
+    vpce_count = sum(1 for r in resources.values() if r.get("Type") == "AWS::EC2::VPCEndpoint")
+    flow_log_count = sum(1 for r in resources.values() if r.get("Type") == "AWS::EC2::FlowLog")
+    nat_count = sum(1 for r in resources.values() if r.get("Type") == "AWS::EC2::NatGateway")
+    has_apigw = any(
+        r.get("Type") in ("AWS::ApiGateway::RestApi", "AWS::ApiGateway::Stage", "AWS::ApiGatewayV2::Api", "AWS::ApiGatewayV2::Stage")
+        for r in resources.values()
+    )
+    has_lambda = any(r.get("Type") == "AWS::Lambda::Function" for r in resources.values())
+    has_cloudfront = any(r.get("Type") == "AWS::CloudFront::Distribution" for r in resources.values())
+    has_elasticache = any(
+        r.get("Type") in ("AWS::ElastiCache::CacheCluster", "AWS::ElastiCache::ReplicationGroup")
+        for r in resources.values()
+    )
+    asg_count = sum(1 for r in resources.values() if r.get("Type") == "AWS::AutoScaling::AutoScalingGroup")
+    launch_templates_without_spot = 0
+    for r in resources.values():
+        if r.get("Type") != "AWS::EC2::LaunchTemplate":
+            continue
+        ltd = r.get("Properties", {}).get("LaunchTemplateData") or {}
+        if isinstance(ltd, dict):
+            inst_market = ltd.get("InstanceMarketOptions") or {}
+            if inst_market.get("MarketType") != "spot":
+                launch_templates_without_spot += 1
 
-        vpc_count = sum(1 for r in resources.values() if r.get("Type") == "AWS::EC2::VPC")
-        vpce_count = sum(1 for r in resources.values() if r.get("Type") == "AWS::EC2::VPCEndpoint")
-        flow_log_count = sum(1 for r in resources.values() if r.get("Type") == "AWS::EC2::FlowLog")
-        nat_count = sum(1 for r in resources.values() if r.get("Type") == "AWS::EC2::NatGateway")
-        has_apigw = any(
-            r.get("Type") in ("AWS::ApiGateway::RestApi", "AWS::ApiGateway::Stage", "AWS::ApiGatewayV2::Api", "AWS::ApiGatewayV2::Stage")
-            for r in resources.values()
-        )
-        has_lambda = any(r.get("Type") == "AWS::Lambda::Function" for r in resources.values())
-        has_cloudfront = any(r.get("Type") == "AWS::CloudFront::Distribution" for r in resources.values())
-        has_elasticache = any(
-            r.get("Type") in ("AWS::ElastiCache::CacheCluster", "AWS::ElastiCache::ReplicationGroup")
-            for r in resources.values()
-        )
-        asg_count = sum(1 for r in resources.values() if r.get("Type") == "AWS::AutoScaling::AutoScalingGroup")
-        launch_templates_without_spot = 0
-        for r in resources.values():
-            if r.get("Type") != "AWS::EC2::LaunchTemplate":
-                continue
-            ltd = r.get("Properties", {}).get("LaunchTemplateData") or {}
-            if isinstance(ltd, dict):
-                inst_market = ltd.get("InstanceMarketOptions") or {}
-                if inst_market.get("MarketType") != "spot":
-                    launch_templates_without_spot += 1
-
-        for logical_id, r in resources.items():
+    for logical_id, r in resources.items():
             rtype = r.get("Type", "Unknown")
             props = r.get("Properties", {}) or {}
 
@@ -94,7 +90,7 @@ def run_cf_rules(cdk_out: Path) -> List[Finding]:
                         title="S3 bucket may miss full PublicAccessBlock",
                         severity="High",
                         category="Security",
-                        file=str(t),
+                        file=str(template_path),
                         line=None,
                         evidence=f"{logical_id} ({rtype})",
                         recommendation=(
@@ -110,7 +106,7 @@ def run_cf_rules(cdk_out: Path) -> List[Finding]:
                         title="S3 bucket encryption not configured",
                         severity="Medium",
                         category="Security",
-                        file=str(t),
+                        file=str(template_path),
                         line=None,
                         evidence=f"{logical_id} ({rtype})",
                         recommendation="Enable S3 encryption (SSE-S3 or SSE-KMS) per requirements. In CDK: encryption: s3.BucketEncryption.S3_MANAGED/KMS.",
@@ -123,7 +119,7 @@ def run_cf_rules(cdk_out: Path) -> List[Finding]:
                         title="S3 bucket versioning not enabled",
                         severity="Low",
                         category="Reliability",
-                        file=str(t),
+                        file=str(template_path),
                         line=None,
                         evidence=f"{logical_id} ({rtype})",
                         recommendation="Consider enabling versioning for better recovery and protection against accidental deletion (especially for data buckets).",
@@ -136,7 +132,7 @@ def run_cf_rules(cdk_out: Path) -> List[Finding]:
                         title="S3 bucket server access logging not configured",
                         severity="Low",
                         category="Operational Excellence",
-                        file=str(t),
+                        file=str(template_path),
                         line=None,
                         evidence=f"{logical_id} ({rtype})",
                         recommendation=(
@@ -154,7 +150,7 @@ def run_cf_rules(cdk_out: Path) -> List[Finding]:
                         title="RDS storage encryption not enabled",
                         severity="High",
                         category="Security",
-                        file=str(t),
+                        file=str(template_path),
                         line=None,
                         evidence=f"{logical_id} ({rtype})",
                         recommendation="Enable StorageEncrypted (and KMS CMK if required) for databases.",
@@ -168,7 +164,7 @@ def run_cf_rules(cdk_out: Path) -> List[Finding]:
                         title="RDS backup retention not set",
                         severity="Medium",
                         category="Reliability",
-                        file=str(t),
+                        file=str(template_path),
                         line=None,
                         evidence=f"{logical_id} ({rtype})",
                         recommendation="Set BackupRetentionPeriod per RPO/RTO (e.g. 7–35 days).",
@@ -181,7 +177,7 @@ def run_cf_rules(cdk_out: Path) -> List[Finding]:
                         title="RDS Multi-AZ not enabled",
                         severity="Medium",
                         category="Reliability",
-                        file=str(t),
+                        file=str(template_path),
                         line=None,
                         evidence=f"{logical_id} ({rtype})",
                         recommendation="Enable MultiAZ for production workloads where high availability is required.",
@@ -193,7 +189,7 @@ def run_cf_rules(cdk_out: Path) -> List[Finding]:
                         title="RDS instance is publicly accessible",
                         severity="High",
                         category="Security",
-                        file=str(t),
+                        file=str(template_path),
                         line=None,
                         evidence=f"{logical_id} ({rtype})",
                         recommendation="Set PubliclyAccessible to false unless the database must be reachable from the internet.",
@@ -205,7 +201,7 @@ def run_cf_rules(cdk_out: Path) -> List[Finding]:
                         title="RDS deletion protection not enabled",
                         severity="Medium",
                         category="Reliability",
-                        file=str(t),
+                        file=str(template_path),
                         line=None,
                         evidence=f"{logical_id} ({rtype})",
                         recommendation="Enable DeletionProtection for production databases to prevent accidental deletion.",
@@ -217,7 +213,7 @@ def run_cf_rules(cdk_out: Path) -> List[Finding]:
                         title="RDS instance class is large — verify right-sizing",
                         severity="Low",
                         category="Performance Efficiency",
-                        file=str(t),
+                        file=str(template_path),
                         line=None,
                         evidence=f"{logical_id} ({rtype})",
                         recommendation="Review DBInstanceClass against actual workload; consider right-sizing to reduce cost and improve efficiency.",
@@ -231,7 +227,7 @@ def run_cf_rules(cdk_out: Path) -> List[Finding]:
                         title="EC2 instance type is large — verify right-sizing",
                         severity="Low",
                         category="Performance Efficiency",
-                        file=str(t),
+                        file=str(template_path),
                         line=None,
                         evidence=f"{logical_id} ({rtype})",
                         recommendation="Review InstanceType against actual workload; consider right-sizing or autoscaling to match load.",
@@ -252,7 +248,7 @@ def run_cf_rules(cdk_out: Path) -> List[Finding]:
                         title="ALB access logs not enabled (template-level)",
                         severity="Low",
                         category="Observability",
-                        file=str(t),
+                        file=str(template_path),
                         line=None,
                         evidence=f"{logical_id} ({rtype})",
                         recommendation="Consider enabling ALB access logs to S3 for audit and incident analysis (balance against cost).",
@@ -267,7 +263,7 @@ def run_cf_rules(cdk_out: Path) -> List[Finding]:
                         title="CloudTrail log file validation not enabled",
                         severity="Medium",
                         category="Operational Excellence",
-                        file=str(t),
+                        file=str(template_path),
                         line=None,
                         evidence=f"{logical_id} ({rtype})",
                         recommendation="Enable log file validation for CloudTrail to detect tampering.",
@@ -278,7 +274,7 @@ def run_cf_rules(cdk_out: Path) -> List[Finding]:
                         title="CloudTrail is not multi-region",
                         severity="Low",
                         category="Operational Excellence",
-                        file=str(t),
+                        file=str(template_path),
                         line=None,
                         evidence=f"{logical_id} ({rtype})",
                         recommendation="Consider enabling IsMultiRegionTrail for organization-wide audit coverage.",
@@ -289,7 +285,7 @@ def run_cf_rules(cdk_out: Path) -> List[Finding]:
                         title="CloudTrail log files not encrypted with KMS",
                         severity="Low",
                         category="Security",
-                        file=str(t),
+                        file=str(template_path),
                         line=None,
                         evidence=f"{logical_id} ({rtype})",
                         recommendation="Use KmsKeyId to encrypt CloudTrail log files for integrity and compliance.",
@@ -313,7 +309,7 @@ def run_cf_rules(cdk_out: Path) -> List[Finding]:
                         title="KMS key policy may allow wildcard principal",
                         severity="High",
                         category="Security",
-                        file=str(t),
+                        file=str(template_path),
                         line=None,
                         evidence=f"{logical_id} ({rtype})",
                         recommendation="Restrict KMS key policy to specific principals. Avoid Principal '*' or AWS:*.",
@@ -327,7 +323,7 @@ def run_cf_rules(cdk_out: Path) -> List[Finding]:
                         title="Lambda function has no dead-letter configuration",
                         severity="Medium",
                         category="Reliability",
-                        file=str(t),
+                        file=str(template_path),
                         line=None,
                         evidence=f"{logical_id} ({rtype})",
                         recommendation="Configure DeadLetterConfig (SQS or SNS) for async invocations to capture failed events.",
@@ -339,7 +335,7 @@ def run_cf_rules(cdk_out: Path) -> List[Finding]:
                         title="Lambda active tracing (X-Ray) not enabled",
                         severity="Low",
                         category="Observability",
-                        file=str(t),
+                        file=str(template_path),
                         line=None,
                         evidence=f"{logical_id} ({rtype})",
                         recommendation="Set TracingConfig.Mode to Active for X-Ray tracing.",
@@ -353,7 +349,7 @@ def run_cf_rules(cdk_out: Path) -> List[Finding]:
                         title="Lambda function does not use ARM64 (Graviton)",
                         severity="Low",
                         category="Performance Efficiency",
-                        file=str(t),
+                        file=str(template_path),
                         line=None,
                         evidence=f"{logical_id} ({rtype})",
                         recommendation="Consider Architectures: [arm64] for better price-performance. In CDK: architecture: lambda.Architecture.ARM_64.",
@@ -368,7 +364,7 @@ def run_cf_rules(cdk_out: Path) -> List[Finding]:
                         title="DynamoDB point-in-time recovery not enabled",
                         severity="Medium",
                         category="Reliability",
-                        file=str(t),
+                        file=str(template_path),
                         line=None,
                         evidence=f"{logical_id} ({rtype})",
                         recommendation="Enable PointInTimeRecoverySpecification.PointInTimeRecoveryEnabled for backup.",
@@ -380,7 +376,7 @@ def run_cf_rules(cdk_out: Path) -> List[Finding]:
                         title="DynamoDB server-side encryption not explicitly enabled",
                         severity="Medium",
                         category="Security",
-                        file=str(t),
+                        file=str(template_path),
                         line=None,
                         evidence=f"{logical_id} ({rtype})",
                         recommendation="Enable SSESpecification (SSEEnabled or SSEType: KMS) for encryption at rest.",
@@ -399,7 +395,7 @@ def run_cf_rules(cdk_out: Path) -> List[Finding]:
                                 title="Security group allows 0.0.0.0/0 or ::/0 on sensitive port",
                                 severity="High",
                                 category="Security",
-                                file=str(t),
+                                file=str(template_path),
                                 line=None,
                                 evidence=f"{logical_id} ({rtype})",
                                 recommendation="Restrict ingress to specific CIDRs; avoid 0.0.0.0/0 on SSH (22), RDP (3389), DB ports.",
@@ -415,7 +411,7 @@ def run_cf_rules(cdk_out: Path) -> List[Finding]:
                             title="Security group ingress allows 0.0.0.0/0 or ::/0 on sensitive port",
                             severity="High",
                             category="Security",
-                            file=str(t),
+                            file=str(template_path),
                             line=None,
                             evidence=f"{logical_id} ({rtype})",
                             recommendation="Restrict to specific CIDRs; avoid 0.0.0.0/0 on SSH, RDP, DB ports.",
@@ -429,7 +425,7 @@ def run_cf_rules(cdk_out: Path) -> List[Finding]:
                         title="Log group has no retention period (infinite retention)",
                         severity="Low",
                         category="Cost Optimization",
-                        file=str(t),
+                        file=str(template_path),
                         line=None,
                         evidence=f"{logical_id} ({rtype})",
                         recommendation="Set RetentionInDays to limit cost and meet compliance (e.g. 30–365 days).",
@@ -440,7 +436,7 @@ def run_cf_rules(cdk_out: Path) -> List[Finding]:
                         title="Log group not encrypted with KMS",
                         severity="Low",
                         category="Security",
-                        file=str(t),
+                        file=str(template_path),
                         line=None,
                         evidence=f"{logical_id} ({rtype})",
                         recommendation="Set KmsKeyId for encryption at rest where required by compliance.",
@@ -454,7 +450,7 @@ def run_cf_rules(cdk_out: Path) -> List[Finding]:
                         title="SQS queue server-side encryption not explicitly configured",
                         severity="Low",
                         category="Security",
-                        file=str(t),
+                        file=str(template_path),
                         line=None,
                         evidence=f"{logical_id} ({rtype})",
                         recommendation="Enable SqsManagedSseEnabled or set KmsMasterKeyId for encryption.",
@@ -466,7 +462,7 @@ def run_cf_rules(cdk_out: Path) -> List[Finding]:
                         title="SQS queue has no redrive policy (dead-letter queue)",
                         severity="Low",
                         category="Reliability",
-                        file=str(t),
+                        file=str(template_path),
                         line=None,
                         evidence=f"{logical_id} ({rtype})",
                         recommendation="Consider RedrivePolicy with deadLetterTargetArn for failed messages.",
@@ -480,7 +476,7 @@ def run_cf_rules(cdk_out: Path) -> List[Finding]:
                         title="API Gateway REST stage access logging not enabled",
                         severity="Low",
                         category="Observability",
-                        file=str(t),
+                        file=str(template_path),
                         line=None,
                         evidence=f"{logical_id} ({rtype})",
                         recommendation="Set AccessLogSetting with DestinationArn (e.g. CloudWatch Logs) for audit.",
@@ -496,7 +492,7 @@ def run_cf_rules(cdk_out: Path) -> List[Finding]:
                         title="API Gateway stage X-Ray tracing not enabled",
                         severity="Low",
                         category="Observability",
-                        file=str(t),
+                        file=str(template_path),
                         line=None,
                         evidence=f"{logical_id} ({rtype})",
                         recommendation="Enable DataTraceEnabled in MethodSettings for X-Ray tracing.",
@@ -508,7 +504,7 @@ def run_cf_rules(cdk_out: Path) -> List[Finding]:
                         title="API Gateway V2 stage access logging not enabled",
                         severity="Low",
                         category="Observability",
-                        file=str(t),
+                        file=str(template_path),
                         line=None,
                         evidence=f"{logical_id} ({rtype})",
                         recommendation="Set AccessLogSettings.DestinationArn for access logs.",
@@ -519,7 +515,7 @@ def run_cf_rules(cdk_out: Path) -> List[Finding]:
                         title="API Gateway V2 stage X-Ray tracing not enabled",
                         severity="Low",
                         category="Observability",
-                        file=str(t),
+                        file=str(template_path),
                         line=None,
                         evidence=f"{logical_id} ({rtype})",
                         recommendation="Set DefaultRouteSettings.DataTraceEnabled to true for X-Ray.",
@@ -538,7 +534,7 @@ def run_cf_rules(cdk_out: Path) -> List[Finding]:
                         title="Auto Scaling Group does not use Spot or mixed instances",
                         severity="Low",
                         category="Sustainability",
-                        file=str(t),
+                        file=str(template_path),
                         line=None,
                         evidence=f"{logical_id} ({rtype})",
                         recommendation=(
@@ -567,7 +563,7 @@ def run_cf_rules(cdk_out: Path) -> List[Finding]:
                         title="ECS Fargate service does not use FARGATE_SPOT",
                         severity="Low",
                         category="Sustainability",
-                        file=str(t),
+                        file=str(template_path),
                         line=None,
                         evidence=f"{logical_id} ({rtype})",
                         recommendation=(
@@ -587,86 +583,105 @@ def run_cf_rules(cdk_out: Path) -> List[Finding]:
                         title="EKS cluster control plane logging not enabled",
                         severity="Low",
                         category="Operational Excellence",
-                        file=str(t),
+                        file=str(template_path),
                         line=None,
                         evidence=f"{logical_id} ({rtype})",
                         recommendation="Enable Logging.ClusterLogging for api, audit, or authenticator log types.",
                     ))
 
-        # --- VPC endpoints (template-level: VPC present but no endpoints) ---
-        if vpc_count > 0 and vpce_count == 0:
-            findings.append(Finding(
-                id="CF-VPC-001",
-                title="VPC has no VPC endpoints in this template",
-                severity="Low",
-                category="Best Practices",
-                file=str(t),
-                line=None,
-                evidence=f"Template has {vpc_count} VPC(s) and 0 VPCEndpoint(s)",
-                recommendation=(
-                    "Consider adding VPC endpoints (gateway for S3/DynamoDB, or interface for AWS APIs) "
-                    "to keep traffic within the network and reduce NAT costs."
-                ),
-            ))
+    # --- VPC endpoints (template-level: VPC present but no endpoints) ---
+    if vpc_count > 0 and vpce_count == 0:
+        findings.append(Finding(
+            id="CF-VPC-001",
+            title="VPC has no VPC endpoints in this template",
+            severity="Low",
+            category="Best Practices",
+            file=str(template_path),
+            line=None,
+            evidence=f"Template has {vpc_count} VPC(s) and 0 VPCEndpoint(s)",
+            recommendation=(
+                "Consider adding VPC endpoints (gateway for S3/DynamoDB, or interface for AWS APIs) "
+                "to keep traffic within the network and reduce NAT costs."
+            ),
+        ))
 
-        # --- VPC Flow Logs (template-level: VPC present but no flow log) ---
-        if vpc_count > 0 and flow_log_count == 0:
-            findings.append(Finding(
-                id="CF-FL-001",
-                title="VPC has no flow logs in this template",
-                severity="Low",
-                category="Operational Excellence",
-                file=str(t),
-                line=None,
-                evidence=f"Template has {vpc_count} VPC(s) and 0 FlowLog(s)",
-                recommendation="Add AWS::EC2::FlowLog for network troubleshooting and security analysis.",
-            ))
+    # --- VPC Flow Logs (template-level: VPC present but no flow log) ---
+    if vpc_count > 0 and flow_log_count == 0:
+        findings.append(Finding(
+            id="CF-FL-001",
+            title="VPC has no flow logs in this template",
+            severity="Low",
+            category="Operational Excellence",
+            file=str(template_path),
+            line=None,
+            evidence=f"Template has {vpc_count} VPC(s) and 0 FlowLog(s)",
+            recommendation="Add AWS::EC2::FlowLog for network troubleshooting and security analysis.",
+        ))
 
-        # --- Caching (template-level: API/Lambda but no CloudFront/ElastiCache) ---
-        if (has_apigw or has_lambda) and not has_cloudfront and not has_elasticache:
-            findings.append(Finding(
-                id="CF-PERF-002",
-                title="Consider CloudFront or ElastiCache for caching",
-                severity="Low",
-                category="Performance Efficiency",
-                file=str(t),
-                line=None,
-                evidence="Template has API Gateway or Lambda but no CloudFront or ElastiCache",
-                recommendation="Consider CloudFront (for APIs/static content) or ElastiCache (for data) to improve latency and efficiency.",
-            ))
+    # --- Caching (template-level: API/Lambda but no CloudFront/ElastiCache) ---
+    if (has_apigw or has_lambda) and not has_cloudfront and not has_elasticache:
+        findings.append(Finding(
+            id="CF-PERF-002",
+            title="Consider CloudFront or ElastiCache for caching",
+            severity="Low",
+            category="Performance Efficiency",
+            file=str(template_path),
+            line=None,
+            evidence="Template has API Gateway or Lambda but no CloudFront or ElastiCache",
+            recommendation="Consider CloudFront (for APIs/static content) or ElastiCache (for data) to improve latency and efficiency.",
+        ))
 
-        # --- NAT Gateway cost (template-level) ---
-        if nat_count > 0:
-            findings.append(Finding(
-                id="CF-COST-002",
-                title="NAT Gateway incurs data processing cost",
-                severity="Low",
-                category="Cost Optimization",
-                file=str(t),
-                line=None,
-                evidence=f"Template has {nat_count} NAT Gateway(s)",
-                recommendation="Consider VPC endpoints (S3, DynamoDB, or interface endpoints) to reduce NAT data processing costs.",
-            ))
+    # --- NAT Gateway cost (template-level) ---
+    if nat_count > 0:
+        findings.append(Finding(
+            id="CF-COST-002",
+            title="NAT Gateway incurs data processing cost",
+            severity="Low",
+            category="Cost Optimization",
+            file=str(template_path),
+            line=None,
+            evidence=f"Template has {nat_count} NAT Gateway(s)",
+            recommendation="Consider VPC endpoints (S3, DynamoDB, or interface endpoints) to reduce NAT data processing costs.",
+        ))
 
-        # --- Launch template Spot (template-level: LTs without Spot when no ASG) ---
-        if launch_templates_without_spot > 0 and asg_count == 0:
-            findings.append(Finding(
-                id="CF-SUST-003",
-                title="Launch template(s) do not use Spot",
-                severity="Low",
-                category="Sustainability",
-                file=str(t),
-                line=None,
-                evidence=f"Template has {launch_templates_without_spot} LaunchTemplate(s) without Spot",
-                recommendation=(
-                    "Consider InstanceMarketOptions.MarketType: spot for interruptible workloads "
-                    "to reduce cost and improve sustainability."
-                ),
-            ))
+    # --- Launch template Spot (template-level: LTs without Spot when no ASG) ---
+    if launch_templates_without_spot > 0 and asg_count == 0:
+        findings.append(Finding(
+            id="CF-SUST-003",
+            title="Launch template(s) do not use Spot",
+            severity="Low",
+            category="Sustainability",
+            file=str(template_path),
+            line=None,
+            evidence=f"Template has {launch_templates_without_spot} LaunchTemplate(s) without Spot",
+            recommendation=(
+                "Consider InstanceMarketOptions.MarketType: spot for interruptible workloads "
+                "to reduce cost and improve sustainability."
+            ),
+        ))
 
-    # De-dup by (id, evidence, file)
+    # De-dup by (id, evidence, file) for this template
     dedup = {}
     for f in findings:
         key = (f.id, f.file, f.evidence)
         dedup[key] = f
     return list(dedup.values())
+
+
+def run_cf_rules_from_paths(template_paths: List[Path]) -> List[Finding]:
+    """Run template-level checks on a list of template paths (JSON or YAML); return list of findings."""
+    findings: List[Finding] = []
+    for p in template_paths:
+        doc = load_template(p)
+        findings.extend(_run_cf_rules_on_template(p, doc))
+    dedup = {}
+    for f in findings:
+        key = (f.id, f.file, f.evidence)
+        dedup[key] = f
+    return list(dedup.values())
+
+
+def run_cf_rules(cdk_out: Path) -> List[Finding]:
+    """Run template-level checks on all *.template.json under cdk_out; return list of findings."""
+    templates = list_cf_templates(cdk_out)
+    return run_cf_rules_from_paths(templates)

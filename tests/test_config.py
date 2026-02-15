@@ -13,6 +13,8 @@ def test_load_config_no_file(tmp_path: Path) -> None:
     assert cfg.out == "report.md"
     assert cfg.rules_include is None
     assert cfg.rules_exclude is None
+    assert cfg.templates is None
+    assert cfg.no_synth is False
     assert cfg.rag_path is None
     assert cfg.rag_use_embeddings is False
     assert cfg.rag_embedding_provider is None

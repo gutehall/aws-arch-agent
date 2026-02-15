@@ -14,6 +14,8 @@ The agent covers all six AWS Well-Architected pillars. Static and CloudFormation
 | `--format`, `-f` | `markdown` | `markdown` or `json` |
 | `--fail-on` | `none` | Exit 1 if any finding at or above: `high`, `medium`, `low`, `none` |
 | `--no-llm` | `false` | Skip LLM polish / agent reasoning |
+| `--templates` | — | Path to CloudFormation templates (dir or file); V2 only, skips cdk synth |
+| `--no-synth` | `false` | Do not run cdk synth; V2 only (static only or with `--templates`) |
 | `--rag` | — | Path to RAG doc (V2 only) |
 | `--suggestions` | — | Write findings JSON to this path |
 
@@ -21,7 +23,7 @@ The agent covers all six AWS Well-Architected pillars. Static and CloudFormation
 
 See [CONFIG.md](CONFIG.md) and [example-config.json](example-config.json).
 
-Keys: `format`, `fail_on`, `no_llm`, `out`, `severity_threshold`, `rules.include`, `rules.exclude`, `rag.path`.
+Keys: `format`, `fail_on`, `no_llm`, `out`, `severity_threshold`, `templates`, `no_synth`, `rules.include`, `rules.exclude`, `rag.path`.
 
 ## Rule IDs (static, 6 pillars)
 
@@ -48,6 +50,6 @@ Keys: `format`, `fail_on`, `no_llm`, `out`, `severity_threshold`, `rules.include
 | SUST-002 | Sustainability | Right-sizing recommended |
 | BP-001 | Best Practices | Standard tags missing |
 
-## CF template rules (V2, when synth succeeds)
+## CF template rules (V2, when synth succeeds or `--templates` used)
 
 CF-S3-001–004, CF-RDS-001–005, CF-ALB-001, CF-CT-001–003, CF-KMS-001, CF-VPC-001, CF-FL-001, CF-LAM-001–002, CF-PERF-001–004, CF-DDB-001–002, CF-SG-001, CF-CW-001–002, CF-COST-002, CF-SQS-001–002, CF-APIGW-001–002, CF-SUST-001–003, CF-EKS-001 — see [CF_RULES.md](CF_RULES.md).

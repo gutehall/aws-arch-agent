@@ -9,8 +9,13 @@ from aws_arch_agent.tools.files import iter_files
 from aws_arch_agent.tools.llm import LLMClient
 from aws_arch_agent.rules.registry import ALL_RULES
 from aws_arch_agent.report.markdown import render_markdown
-from aws_arch_agent.tools.cdk_synth import run_cdk_synth, summarize_templates
-from aws_arch_agent.rules.cf_template import run_cf_rules
+from aws_arch_agent.tools.cdk_synth import (
+    run_cdk_synth,
+    summarize_templates,
+    list_templates_from_path,
+    summarize_templates_from_paths,
+)
+from aws_arch_agent.rules.cf_template import run_cf_rules, run_cf_rules_from_paths
 
 from langgraph.graph import StateGraph, END
 
@@ -25,6 +30,8 @@ class State(TypedDict, total=False):
     rules_include: List[str]
     rules_exclude: List[str]
     severity_threshold: str
+    templates_path: str
+    skip_synth: bool
     rag_path: str
     rag_use_embeddings: bool
     rag_embedding_provider: str
@@ -123,6 +130,43 @@ def node_collect(state: State) -> State:
 def node_synth(state: State) -> State:
     repo_path = Path(state["repo_path"])
     ctx = state.get("ctx")
+    templates_path = state.get("templates_path") or ""
+    skip_synth = state.get("skip_synth") or False
+
+    if templates_path:
+        # Use provided templates path (no CDK synth); run CF rules on discovered templates
+        tpath = Path(templates_path).expanduser().resolve()
+        template_paths = list_templates_from_path(tpath)
+        if not template_paths:
+            synth_summary = "No template files found at the given path."
+            out_findings = list(state.get("raw_findings", []))
+        else:
+            synth_summary = summarize_templates_from_paths(template_paths)
+            out_findings = list(state.get("raw_findings", []))
+            try:
+                cf_findings = run_cf_rules_from_paths(template_paths)
+                out_findings.extend(cf_findings)
+            except Exception as e:
+                logger.warning("CF template rules failed: %s", e)
+        return {
+            "synth_ok": True,
+            "synth_stdout": "",
+            "synth_stderr": "",
+            "synth_summary": synth_summary,
+            "raw_findings": out_findings,
+        }
+
+    if skip_synth:
+        synth_summary = "Synth skipped (--no-synth). Static analysis only."
+        logger.info("Synth skipped; continuing with static analysis only")
+        return {
+            "synth_ok": False,
+            "synth_stdout": "",
+            "synth_stderr": "",
+            "synth_summary": synth_summary,
+        }
+
+    # Default: run cdk synth
     language = ctx.language if ctx else "typescript"
     try:
         rc, out, err = run_cdk_synth(repo_path, language=language)
@@ -134,15 +178,19 @@ def node_synth(state: State) -> State:
     if ok:
         cdk_out = repo_path / "cdk.out"
         synth_summary = summarize_templates(cdk_out)
-        # Add CloudFormation template-based findings (higher signal)
+        out_findings = list(state.get("raw_findings", []))
         try:
             cf_findings = run_cf_rules(cdk_out)
-            state_findings = state.get("raw_findings", [])
-            state_findings.extend(cf_findings)
-            # store back into state
-            state["raw_findings"] = state_findings
+            out_findings.extend(cf_findings)
         except Exception as e:
             logger.warning("CF template rules failed: %s", e)
+        return {
+            "synth_ok": True,
+            "synth_stdout": out[-4000:],
+            "synth_stderr": err[-4000:],
+            "synth_summary": synth_summary,
+            "raw_findings": out_findings,
+        }
     else:
         synth_summary = "CDK synth did not run successfully. (This is OK for MVP.)"
         logger.info("CDK synth failed or skipped; continuing with static analysis only")
@@ -280,11 +328,17 @@ def node_report(state: State) -> State:
     ctx = state["ctx"]
     findings = state.get("raw_findings", [])
     base_report = render_markdown(ctx, findings)
-    synth_block = state.get("synth_summary","")
-    synth_status = "✅ success" if state.get("synth_ok") else "⚠️ failed/skip"
+    synth_block = state.get("synth_summary", "")
+    if state.get("templates_path"):
+        synth_status = "Templates: provided (no synth)"
+    elif state.get("skip_synth"):
+        synth_status = "CDK synth: skipped"
+    else:
+        synth_status = "✅ success" if state.get("synth_ok") else "⚠️ failed/skip"
+        synth_status = f"CDK synth: {synth_status}"
     final = f"""# AWS Architecture Review Report (V2 Multi-Agent)
 
-**CDK synth:** {synth_status}
+**{synth_status}**
 
 {state.get("merged_notes","")}
 
@@ -342,6 +396,8 @@ def analyze_v2(
     rules_include: List[str] | None = None,
     rules_exclude: List[str] | None = None,
     severity_threshold: str | None = None,
+    templates_path: str | None = None,
+    skip_synth: bool = False,
     rag_path: str | None = None,
     rag_use_embeddings: bool = False,
     rag_embedding_provider: str | None = None,
@@ -355,6 +411,8 @@ def analyze_v2(
         "rules_include": rules_include or [],
         "rules_exclude": rules_exclude or [],
         "severity_threshold": severity_threshold or "",
+        "templates_path": templates_path or "",
+        "skip_synth": skip_synth,
         "rag_path": rag_path or "",
         "rag_use_embeddings": rag_use_embeddings,
         "rag_embedding_provider": rag_embedding_provider or "",

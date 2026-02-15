@@ -35,6 +35,8 @@ def load_config(
     fail_on: SeverityThreshold | None = None,
     no_llm: bool | None = None,
     out: str | None = None,
+    templates: str | None = None,
+    no_synth: bool | None = None,
     rag_path: str | None = None,
 ) -> "RunConfig":
     """Load config from file and override with CLI flags. CLI wins over file."""
@@ -56,6 +58,10 @@ def load_config(
             return no_llm
         if key == "out" and out is not None:
             return out
+        if key == "templates" and templates is not None:
+            return templates
+        if key == "no_synth" and no_synth is not None:
+            return no_synth
         if key == "rag_path" and rag_path is not None:
             return rag_path
         return val
@@ -76,6 +82,9 @@ def load_config(
     if rag_path is not None:
         resolved_rag = rag_path
 
+    resolved_templates = _get("templates", None)
+    resolved_no_synth = bool(_get("no_synth", False))
+
     file_rules = file_cfg.get("rules")
     if not isinstance(file_rules, dict):
         file_rules = {}
@@ -88,6 +97,8 @@ def load_config(
         rules_include=file_rules.get("include"),
         rules_exclude=file_rules.get("exclude"),
         severity_threshold=file_cfg.get("severity_threshold"),
+        templates=resolved_templates,
+        no_synth=resolved_no_synth,
         rag_path=resolved_rag,
         rag_use_embeddings=rag_use_embeddings,
         rag_embedding_provider=rag_embedding_provider,
@@ -106,6 +117,8 @@ class RunConfig:
         "rules_include",
         "rules_exclude",
         "severity_threshold",
+        "templates",
+        "no_synth",
         "rag_path",
         "rag_use_embeddings",
         "rag_embedding_provider",
@@ -122,6 +135,8 @@ class RunConfig:
         rules_include: list[str] | None = None,
         rules_exclude: list[str] | None = None,
         severity_threshold: str | None = None,
+        templates: str | None = None,
+        no_synth: bool = False,
         rag_path: str | None = None,
         rag_use_embeddings: bool = False,
         rag_embedding_provider: str | None = None,
@@ -134,6 +149,8 @@ class RunConfig:
         self.rules_include = rules_include
         self.rules_exclude = rules_exclude
         self.severity_threshold = severity_threshold
+        self.templates = templates
+        self.no_synth = no_synth
         self.rag_path = rag_path
         self.rag_use_embeddings = rag_use_embeddings
         self.rag_embedding_provider = rag_embedding_provider

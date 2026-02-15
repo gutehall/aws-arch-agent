@@ -1,8 +1,8 @@
 """Tests for CloudFormation template rules."""
-from pathlib import Path
 import json
+from pathlib import Path
 
-from aws_arch_agent.rules.cf_template import run_cf_rules
+from aws_arch_agent.rules.cf_template import run_cf_rules, run_cf_rules_from_paths
 
 
 def test_s3_missing_public_access_block(tmp_path: Path) -> None:
@@ -261,3 +261,17 @@ def test_rds_publicly_accessible(tmp_path: Path) -> None:
     (cdk_out / "mystack.template.json").write_text(json.dumps(template), encoding="utf-8")
     findings = run_cf_rules(cdk_out)
     assert any(f.id == "CF-RDS-004" for f in findings)
+
+
+def test_run_cf_rules_from_paths_yaml(tmp_path: Path) -> None:
+    """run_cf_rules_from_paths works with YAML template files."""
+    yaml_content = """
+Resources:
+  MyBucket:
+    Type: AWS::S3::Bucket
+    Properties: {}
+"""
+    (tmp_path / "stack.yaml").write_text(yaml_content.strip(), encoding="utf-8")
+    paths = [tmp_path / "stack.yaml"]
+    findings = run_cf_rules_from_paths(paths)
+    assert any(f.id == "CF-S3-001" for f in findings)

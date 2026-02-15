@@ -1,11 +1,14 @@
-"""Tests for CDK synth helpers (list_cf_templates, load_json, summarize_templates)."""
+"""Tests for CDK synth helpers (list_cf_templates, load_json, load_template, summarize_templates, list_templates_from_path)."""
 import json
 from pathlib import Path
 
 from aws_arch_agent.tools.cdk_synth import (
     list_cf_templates,
+    list_templates_from_path,
     load_json,
+    load_template,
     summarize_templates,
+    summarize_templates_from_paths,
 )
 
 
@@ -63,3 +66,60 @@ def test_summarize_templates_with_fixture(tmp_path: Path) -> None:
     assert "Synthesized CloudFormation" in out or "Summary" in out
     assert "MyStack" in out or "template" in out
     assert "S3" in out or "Resources" in out
+
+
+def test_list_templates_from_path_file_json(tmp_path: Path) -> None:
+    """list_templates_from_path with a file path returns that file if extension matches."""
+    (tmp_path / "stack.template.json").write_text("{}", encoding="utf-8")
+    paths = list_templates_from_path(tmp_path / "stack.template.json")
+    assert len(paths) == 1
+    assert paths[0].name == "stack.template.json"
+
+
+def test_list_templates_from_path_file_yaml(tmp_path: Path) -> None:
+    """list_templates_from_path with a .yaml file returns that file."""
+    (tmp_path / "stack.yaml").write_text("Resources: {}", encoding="utf-8")
+    paths = list_templates_from_path(tmp_path / "stack.yaml")
+    assert len(paths) == 1
+    assert paths[0].name == "stack.yaml"
+
+
+def test_list_templates_from_path_dir_mixed(tmp_path: Path) -> None:
+    """list_templates_from_path with a dir finds .template.json and .yaml."""
+    (tmp_path / "a.template.json").write_text("{}", encoding="utf-8")
+    (tmp_path / "b.yaml").write_text("Resources: {}", encoding="utf-8")
+    (tmp_path / "c.yml").write_text("Resources: {}", encoding="utf-8")
+    (tmp_path / "ignore.txt").write_text("x", encoding="utf-8")
+    paths = list_templates_from_path(tmp_path)
+    assert len(paths) == 3
+    names = {p.name for p in paths}
+    assert names == {"a.template.json", "b.yaml", "c.yml"}
+
+
+def test_load_template_json(tmp_path: Path) -> None:
+    """load_template loads JSON template."""
+    (tmp_path / "t.json").write_text('{"Resources": {"X": {"Type": "AWS::S3::Bucket"}}}', encoding="utf-8")
+    doc = load_template(tmp_path / "t.json")
+    assert doc["Resources"]["X"]["Type"] == "AWS::S3::Bucket"
+
+
+def test_load_template_yaml(tmp_path: Path) -> None:
+    """load_template loads YAML template."""
+    (tmp_path / "t.yaml").write_text(
+        "Resources:\n  MyBucket:\n    Type: AWS::S3::Bucket\n    Properties: {}\n",
+        encoding="utf-8",
+    )
+    doc = load_template(tmp_path / "t.yaml")
+    assert doc["Resources"]["MyBucket"]["Type"] == "AWS::S3::Bucket"
+
+
+def test_summarize_templates_from_paths(tmp_path: Path) -> None:
+    """summarize_templates_from_paths produces summary from list of paths."""
+    (tmp_path / "s1.template.json").write_text(
+        json.dumps({"Resources": {"B": {"Type": "AWS::S3::Bucket"}}}),
+        encoding="utf-8",
+    )
+    paths = [tmp_path / "s1.template.json"]
+    out = summarize_templates_from_paths(paths)
+    assert "CloudFormation" in out or "Summary" in out
+    assert "s1" in out or "template" in out

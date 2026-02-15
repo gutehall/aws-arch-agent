@@ -12,11 +12,11 @@ Supports **TypeScript** and **Python CDK**. MIT licensed.
 ## How It Works
 
 - **V1** — Scan repo → heuristic rules → LLM polish → Markdown report. Fast, no `cdk synth`.
-- **V2** — Repo context → `cdk synth` → parse CloudFormation → template rules → 6-pillar agents (Ops, Security, Reliability, Performance, Cost, Sustainability) → merge → report. Falls back to static-only if synth fails.
+- **V2** — Repo context → `cdk synth` (or `--templates` / `--no-synth`) → parse CloudFormation → template rules → 6-pillar agents (Ops, Security, Reliability, Performance, Cost, Sustainability) → merge → report. Falls back to static-only if synth fails. Use `--templates` for raw CloudFormation without Node.js.
 
 ## Requirements
 
-- Python 3.11+, Node.js (for V2), **ripgrep** (`brew install ripgrep`), CDK deps installed
+- Python 3.11+, **ripgrep** (`brew install ripgrep`). For V2 with synth: Node.js and CDK deps. For V2 with raw CloudFormation only: use `--templates` (no Node.js required).
 - Optional: Ollama (local LLM); `pip install -e ".[cloud]"` for OpenAI/Anthropic; `.[rag]` for embedding RAG
 
 ## Getting Started
@@ -40,6 +40,8 @@ Report → `report.md` by default.
 | `--format`, `-f` | `markdown` or `json` |
 | `--fail-on` | Exit 1 if finding ≥ `high` / `medium` / `low` |
 | `--no-llm` | Rules only |
+| `--templates` | Path to CloudFormation templates (dir or file); V2 only, skips synth |
+| `--no-synth` | Do not run cdk synth; V2 only (static only or with `--templates`) |
 | `--rag` | RAG doc path (V2) |
 | `--config` | Config file (see [docs/CONFIG.md](docs/CONFIG.md)) |
 
@@ -47,8 +49,19 @@ Report → `report.md` by default.
 
 - Rules only: `aws-arch-agent --repo . --no-llm`
 - Full V2: `aws-arch-agent --repo . --mode v2`
+- V2 without Node (static + templates): `aws-arch-agent --repo . --mode v2 --templates ./templates --no-synth`
 - CI: `aws-arch-agent --repo . --format json --fail-on high --out report.json`
 - With RAG: `aws-arch-agent --repo . --mode v2 --rag ./docs/waf.md`
+
+## CloudFormation-only (no CDK)
+
+For repos that only have raw CloudFormation templates (JSON or YAML), use V2 with `--templates` and `--no-synth`. No Node.js or CDK required:
+
+```bash
+aws-arch-agent --repo /path/to/cfn-repo --templates /path/to/cfn-repo --no-synth --mode v2
+```
+
+Template files: `*.template.json`, `*.yaml`, `*.yml` (directory or single file).
 
 ## LLM & RAG
 
