@@ -21,9 +21,10 @@ def test_analyze_creates_report(tmp_path: Path) -> None:
     _make_repo(tmp_path)
     out_file = tmp_path / "report.md"
     with runner.isolated_filesystem():
+        # Single-command Typer app: pass options only (no "analyze" subcommand name)
         result = runner.invoke(
             app,
-            ["analyze", "--repo", str(tmp_path), "--no-llm", "--out", str(out_file)],
+            ["--repo", str(tmp_path), "--no-llm", "--out", str(out_file)],
         )
     assert result.exit_code == 0, result.output or result.stderr
     assert out_file.exists()
@@ -37,7 +38,7 @@ def test_analyze_json_format(tmp_path: Path) -> None:
     with runner.isolated_filesystem():
         result = runner.invoke(
             app,
-            ["analyze", "--repo", str(tmp_path), "--no-llm", "--format", "json", "--out", str(out_file)],
+            ["--repo", str(tmp_path), "--no-llm", "--format", "json", "--out", str(out_file)],
         )
     assert result.exit_code == 0, result.output or result.stderr
     data = json.loads(out_file.read_text())
@@ -53,12 +54,12 @@ def test_analyze_fail_on_high_exit_code(tmp_path: Path) -> None:
     with runner.isolated_filesystem():
         result = runner.invoke(
             app,
-            ["analyze", "--repo", str(tmp_path), "--no-llm", "--fail-on", "high", "--out", str(out_file)],
+            ["--repo", str(tmp_path), "--no-llm", "--fail-on", "high", "--out", str(out_file)],
         )
     assert result.exit_code == 1, result.output or result.stderr
 
 
 def test_analyze_nonexistent_repo() -> None:
     """analyze with nonexistent path raises BadParameter."""
-    result = runner.invoke(app, ["analyze", "--repo", "/nonexistent/path/xyz"])
+    result = runner.invoke(app, ["--repo", "/nonexistent/path/xyz"])
     assert result.exit_code != 0

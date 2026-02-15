@@ -1,6 +1,6 @@
 # Reference
 
-## CLI: `aws-arch-agent analyze`
+## CLI: `aws-arch-agent`
 
 | Option | Default | Description |
 |--------|---------|-------------|

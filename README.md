@@ -100,13 +100,13 @@ Use `--repo` / `-r` for the repo path:
 ### V1 (fast, static only)
 
 ```bash
-aws-arch-agent analyze --repo /path/to/cdk-project --no-llm
+aws-arch-agent --repo /path/to/cdk-project --no-llm
 ```
 
 ### V2 (multi-agent + CDK synth)
 
 ```bash
-aws-arch-agent analyze --repo /path/to/cdk-project --mode v2
+aws-arch-agent --repo /path/to/cdk-project --mode v2
 ```
 
 Report is written to `report.md` by default.
@@ -175,11 +175,11 @@ export ANTHROPIC_API_KEY=...
 
 # Day-to-day use
 
-- **Quick check** (rules only): `aws-arch-agent analyze --repo . --no-llm`
-- **Full review** (V2 + synth): `aws-arch-agent analyze --repo . --mode v2`
-- **CI**: `aws-arch-agent analyze --repo . --format json --fail-on high --out report.json`
-- **With RAG**: `aws-arch-agent analyze --repo . --mode v2 --rag ./docs/waf.md`
-- **Suggestions file**: `aws-arch-agent analyze --repo . --suggestions suggestions.json`
+- **Quick check** (rules only): `aws-arch-agent --repo . --no-llm`
+- **Full review** (V2 + synth): `aws-arch-agent --repo . --mode v2`
+- **CI**: `aws-arch-agent --repo . --format json --fail-on high --out report.json`
+- **With RAG**: `aws-arch-agent --repo . --mode v2 --rag ./docs/waf.md`
+- **Suggestions file**: `aws-arch-agent --repo . --suggestions suggestions.json`
 
 # CI
 
