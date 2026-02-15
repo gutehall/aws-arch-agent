@@ -54,3 +54,40 @@ class VpcFlowLogsMissing(Rule):
                 recommendation="Consider VPC Flow Logs for network troubleshooting and security analysis.",
             )]
         return []
+
+
+class XRayTracingMissing(Rule):
+    id = "OPS-003"
+    title = "X-Ray / distributed tracing may be missing"
+    category = "Operational Excellence"
+    severity = "Low"
+
+    def run(self, repo_path: Path, language: str = "typescript") -> List[Finding]:
+        if language == "typescript":
+            api_pat = r"apigateway\.(RestApi|HttpApi)|new\s+apigateway\.|ApiGateway"
+            lambda_pat = r"lambda\.Function|new\s+lambda\.Function"
+            tracing_pat = r"TracingConfig|tracing\.ACTIVE|activeTracing|X-Ray|xray|DataTraceEnabled"
+        else:
+            api_pat = r"apigateway\.(RestApi|HttpApi)|aws_apigateway|ApiGateway"
+            lambda_pat = r"lambda_.*Function|aws_lambda"
+            tracing_pat = r"tracing|TracingConfig|xray|X-Ray|data_trace"
+        apis = rg(repo_path, api_pat, glob=code_glob(language))
+        lambdas = rg(repo_path, lambda_pat, glob=code_glob(language))
+        tracing_refs = rg(repo_path, tracing_pat, glob=code_glob(language))
+        if (apis or lambdas) and not tracing_refs:
+            evidence = None
+            if apis:
+                evidence = apis[0][2]
+            elif lambdas:
+                evidence = lambdas[0][2]
+            return [Finding(
+                id=self.id,
+                title=self.title,
+                severity="Low",
+                category=self.category,
+                file=None,
+                line=None,
+                evidence=evidence,
+                recommendation="Enable X-Ray or distributed tracing (Lambda TracingConfig, API Gateway DataTraceEnabled) for observability.",
+            )]
+        return []

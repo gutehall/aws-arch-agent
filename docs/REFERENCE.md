@@ -29,6 +29,7 @@ Keys: `format`, `fail_on`, `no_llm`, `out`, `severity_threshold`, `rules.include
 |----|--------|--------|
 | OPS-001 | Operational Excellence | CloudTrail may be missing |
 | OPS-002 | Operational Excellence | VPC Flow Logs may be missing |
+| OPS-003 | Operational Excellence | X-Ray / distributed tracing may be missing |
 | SEC-001 | Security | IAM wildcard actions |
 | SEC-002 | Security | IAM wildcard resources |
 | SEC-003 | Security | SSH open to 0.0.0.0/0 |
@@ -49,4 +50,4 @@ Keys: `format`, `fail_on`, `no_llm`, `out`, `severity_threshold`, `rules.include
 
 ## CF template rules (V2, when synth succeeds)
 
-CF-S3-001–004, CF-RDS-001–005, CF-ALB-001, CF-CT-001–003, CF-KMS-001, CF-VPC-001, CF-FL-001, CF-LAM-001–002, CF-PERF-001, CF-DDB-001–002, CF-SG-001, CF-CW-001–002, CF-SQS-001–002, CF-APIGW-001–002, CF-SUST-001–002, CF-EKS-001 — see [CF_RULES.md](CF_RULES.md).
+CF-S3-001–004, CF-RDS-001–005, CF-ALB-001, CF-CT-001–003, CF-KMS-001, CF-VPC-001, CF-FL-001, CF-LAM-001–002, CF-PERF-001–004, CF-DDB-001–002, CF-SG-001, CF-CW-001–002, CF-COST-002, CF-SQS-001–002, CF-APIGW-001–002, CF-SUST-001–003, CF-EKS-001 — see [CF_RULES.md](CF_RULES.md).

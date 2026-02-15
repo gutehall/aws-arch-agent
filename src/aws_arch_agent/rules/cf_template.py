@@ -10,6 +10,18 @@ from aws_arch_agent.tools.cdk_synth import list_cf_templates, load_json
 SENSITIVE_PORTS = {22, 3389, 3306, 5432, 27017}
 
 
+def _is_large_instance_class(instance_class: Any) -> bool:
+    """True if instance class suggests right-sizing review (xlarge, 2xlarge, etc.)."""
+    if not instance_class or not isinstance(instance_class, str):
+        return False
+    s = instance_class.lower()
+    return (
+        "2xlarge" in s or "4xlarge" in s or "8xlarge" in s
+        or "12xlarge" in s or "16xlarge" in s or "24xlarge" in s
+        or s.endswith("xlarge")
+    )
+
+
 def _walk_resources(template: dict) -> Dict[str, dict]:
     res = template.get("Resources", {}) or {}
     if isinstance(res, dict):
@@ -45,6 +57,27 @@ def run_cf_rules(cdk_out: Path) -> List[Finding]:
         vpc_count = sum(1 for r in resources.values() if r.get("Type") == "AWS::EC2::VPC")
         vpce_count = sum(1 for r in resources.values() if r.get("Type") == "AWS::EC2::VPCEndpoint")
         flow_log_count = sum(1 for r in resources.values() if r.get("Type") == "AWS::EC2::FlowLog")
+        nat_count = sum(1 for r in resources.values() if r.get("Type") == "AWS::EC2::NatGateway")
+        has_apigw = any(
+            r.get("Type") in ("AWS::ApiGateway::RestApi", "AWS::ApiGateway::Stage", "AWS::ApiGatewayV2::Api", "AWS::ApiGatewayV2::Stage")
+            for r in resources.values()
+        )
+        has_lambda = any(r.get("Type") == "AWS::Lambda::Function" for r in resources.values())
+        has_cloudfront = any(r.get("Type") == "AWS::CloudFront::Distribution" for r in resources.values())
+        has_elasticache = any(
+            r.get("Type") in ("AWS::ElastiCache::CacheCluster", "AWS::ElastiCache::ReplicationGroup")
+            for r in resources.values()
+        )
+        asg_count = sum(1 for r in resources.values() if r.get("Type") == "AWS::AutoScaling::AutoScalingGroup")
+        launch_templates_without_spot = 0
+        for r in resources.values():
+            if r.get("Type") != "AWS::EC2::LaunchTemplate":
+                continue
+            ltd = r.get("Properties", {}).get("LaunchTemplateData") or {}
+            if isinstance(ltd, dict):
+                inst_market = ltd.get("InstanceMarketOptions") or {}
+                if inst_market.get("MarketType") != "spot":
+                    launch_templates_without_spot += 1
 
         for logical_id, r in resources.items():
             rtype = r.get("Type", "Unknown")
@@ -176,6 +209,32 @@ def run_cf_rules(cdk_out: Path) -> List[Finding]:
                         line=None,
                         evidence=f"{logical_id} ({rtype})",
                         recommendation="Enable DeletionProtection for production databases to prevent accidental deletion.",
+                    ))
+
+                if rtype == "AWS::RDS::DBInstance" and _is_large_instance_class(props.get("DBInstanceClass")):
+                    findings.append(Finding(
+                        id="CF-PERF-003",
+                        title="RDS instance class is large — verify right-sizing",
+                        severity="Low",
+                        category="Performance Efficiency",
+                        file=str(t),
+                        line=None,
+                        evidence=f"{logical_id} ({rtype})",
+                        recommendation="Review DBInstanceClass against actual workload; consider right-sizing to reduce cost and improve efficiency.",
+                    ))
+
+            # --- EC2 Instance: large instance right-sizing (Performance Efficiency) ---
+            if rtype == "AWS::EC2::Instance":
+                if _is_large_instance_class(props.get("InstanceType")):
+                    findings.append(Finding(
+                        id="CF-PERF-004",
+                        title="EC2 instance type is large — verify right-sizing",
+                        severity="Low",
+                        category="Performance Efficiency",
+                        file=str(t),
+                        line=None,
+                        evidence=f"{logical_id} ({rtype})",
+                        recommendation="Review InstanceType against actual workload; consider right-sizing or autoscaling to match load.",
                     ))
 
             # --- ALB access logs (heuristic) ---
@@ -561,6 +620,48 @@ def run_cf_rules(cdk_out: Path) -> List[Finding]:
                 line=None,
                 evidence=f"Template has {vpc_count} VPC(s) and 0 FlowLog(s)",
                 recommendation="Add AWS::EC2::FlowLog for network troubleshooting and security analysis.",
+            ))
+
+        # --- Caching (template-level: API/Lambda but no CloudFront/ElastiCache) ---
+        if (has_apigw or has_lambda) and not has_cloudfront and not has_elasticache:
+            findings.append(Finding(
+                id="CF-PERF-002",
+                title="Consider CloudFront or ElastiCache for caching",
+                severity="Low",
+                category="Performance Efficiency",
+                file=str(t),
+                line=None,
+                evidence="Template has API Gateway or Lambda but no CloudFront or ElastiCache",
+                recommendation="Consider CloudFront (for APIs/static content) or ElastiCache (for data) to improve latency and efficiency.",
+            ))
+
+        # --- NAT Gateway cost (template-level) ---
+        if nat_count > 0:
+            findings.append(Finding(
+                id="CF-COST-002",
+                title="NAT Gateway incurs data processing cost",
+                severity="Low",
+                category="Cost Optimization",
+                file=str(t),
+                line=None,
+                evidence=f"Template has {nat_count} NAT Gateway(s)",
+                recommendation="Consider VPC endpoints (S3, DynamoDB, or interface endpoints) to reduce NAT data processing costs.",
+            ))
+
+        # --- Launch template Spot (template-level: LTs without Spot when no ASG) ---
+        if launch_templates_without_spot > 0 and asg_count == 0:
+            findings.append(Finding(
+                id="CF-SUST-003",
+                title="Launch template(s) do not use Spot",
+                severity="Low",
+                category="Sustainability",
+                file=str(t),
+                line=None,
+                evidence=f"Template has {launch_templates_without_spot} LaunchTemplate(s) without Spot",
+                recommendation=(
+                    "Consider InstanceMarketOptions.MarketType: spot for interruptible workloads "
+                    "to reduce cost and improve sustainability."
+                ),
             ))
 
     # De-dup by (id, evidence, file)

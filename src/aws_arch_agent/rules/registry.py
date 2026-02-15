@@ -7,7 +7,7 @@ from aws_arch_agent.rules.security import (
 from aws_arch_agent.rules.reliability import RdsMultiAzMissing, BackupRetentionMissing, LambdaDlqMissing
 from aws_arch_agent.rules.cost import LogRetentionNeverExpire, MissingAutoscalingHint
 from aws_arch_agent.rules.best_practices import MissingStandardTags
-from aws_arch_agent.rules.operational_excellence import CloudTrailMissing, VpcFlowLogsMissing
+from aws_arch_agent.rules.operational_excellence import CloudTrailMissing, VpcFlowLogsMissing, XRayTracingMissing
 from aws_arch_agent.rules.performance_efficiency import GravitonNotUsed, CachingHint
 from aws_arch_agent.rules.sustainability import SpotNotConsidered, RightSizingHint
 
@@ -27,6 +27,7 @@ ALL_RULES = [
     MissingStandardTags(),
     CloudTrailMissing(),
     VpcFlowLogsMissing(),
+    XRayTracingMissing(),
     GravitonNotUsed(),
     CachingHint(),
     SpotNotConsidered(),
