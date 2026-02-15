@@ -26,6 +26,7 @@ jobs:
           python -m venv .venv
           .venv/bin/pip install -U pip
           .venv/bin/pip install -e ".[dev]"
+          .venv/bin/pip install types-PyYAML
 
       - name: Run tests
         run: .venv/bin/pytest tests/ -v
