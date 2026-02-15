@@ -76,13 +76,17 @@ def load_config(
     if rag_path is not None:
         resolved_rag = rag_path
 
+    file_rules = file_cfg.get("rules")
+    if not isinstance(file_rules, dict):
+        file_rules = {}
+
     return RunConfig(
         format=_get("format", "markdown") or "markdown",
         fail_on=_get("fail_on", "none") or "none",
         no_llm=bool(_get("no_llm", False)),
         out=str(_get("out", "report.md") or "report.md"),
-        rules_include=file_cfg.get("rules", {}).get("include"),
-        rules_exclude=file_cfg.get("rules", {}).get("exclude"),
+        rules_include=file_rules.get("include"),
+        rules_exclude=file_rules.get("exclude"),
         severity_threshold=file_cfg.get("severity_threshold"),
         rag_path=resolved_rag,
         rag_use_embeddings=rag_use_embeddings,
