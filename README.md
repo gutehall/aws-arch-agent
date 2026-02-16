@@ -1,10 +1,12 @@
 # AWS Arch Agent
 
+**Note:** This solution is still in an early phase. There may be bugs, and not all rules have been added yet. More updates to come.
+
 > **Automated AWS CDK architecture review tool** that scans your infrastructure code and finds security, reliability, performance, and cost issues **in seconds**.
 
 Runs locally. No AWS credentials needed. Supports TypeScript and Python CDK.
 
-**Note:** This solution is still in an early phase. There may be bugs, and not all rules have been added yet. More updates to come.
+
 
 ```bash
 # Quick start - scan your CDK project
