@@ -19,10 +19,27 @@ RepoLanguage = Literal["typescript", "python", "unknown"]
 
 def detect_language(repo_path: Path) -> RepoLanguage:
     """Return 'typescript', 'python', or 'unknown' from repo contents."""
-    if (repo_path / "package.json").exists() or any(repo_path.rglob("*.ts")):
+    # Check for marker files first (fast path)
+    if (repo_path / "package.json").exists() or (repo_path / "cdk.json").exists():
         return "typescript"
-    if (repo_path / "requirements.txt").exists() or any(repo_path.rglob("*.py")):
+    if (repo_path / "requirements.txt").exists() or (repo_path / "setup.py").exists():
         return "python"
+    
+    # Quick check for files without walking entire tree (limit search)
+    # Only check top-level and common CDK directories
+    check_dirs = [repo_path, repo_path / "lib", repo_path / "bin", repo_path / "src"]
+    for check_dir in check_dirs:
+        if not check_dir.exists():
+            continue
+        try:
+            # Check just immediate children, not recursive
+            if any(check_dir.glob("*.ts")):
+                return "typescript"
+            if any(check_dir.glob("*.py")):
+                return "python"
+        except (PermissionError, OSError):
+            continue
+    
     return "unknown"
 
 

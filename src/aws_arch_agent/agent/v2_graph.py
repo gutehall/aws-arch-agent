@@ -334,7 +334,7 @@ def node_report(state: State) -> State:
     elif state.get("skip_synth"):
         synth_status = "CDK synth: skipped"
     else:
-        synth_status = "✅ success" if state.get("synth_ok") else "⚠️ failed/skip"
+        synth_status = "success" if state.get("synth_ok") else "failed/skip"
         synth_status = f"CDK synth: {synth_status}"
     final = f"""# AWS Architecture Review Report (V2 Multi-Agent)
 

@@ -80,3 +80,7 @@ Thumbs.db
 
 # Project-specific
 *.log
+
+# reports file
+report.md
+report.json
