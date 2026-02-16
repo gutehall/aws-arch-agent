@@ -575,3 +575,234 @@ class AcmCertificateValidation(Rule):
                 recommendation="Specify DNS validation for ACM certificates for automatic renewal. In CDK: validation: acm.CertificateValidation.fromDns()",
             ))
         return out
+
+
+class BlueGreenDeploymentMissing(Rule):
+    id = "REL-023"
+    title = "Blue-green deployment not configured for critical services"
+    category = "Reliability"
+    severity = "Low"
+
+    def run(self, repo_path: Path, language: str = "typescript") -> List[Finding]:
+        ecs_pat = r'new\s+ecs\.(FargateService|Ec2Service)\(' if language == "typescript" else r'ecs\.(FargateService|Ec2Service)\('
+        ecs = rg(repo_path, ecs_pat, glob=code_glob(language))
+        blue_green = rg(repo_path, r'blueGreenDeployment|blue_green|deploymentController.*CODE_DEPLOY', glob=code_glob(language))
+        out: List[Finding] = []
+        if ecs and not blue_green:
+            f, ln, txt = ecs[0]
+            out.append(Finding(
+                id=self.id,
+                title=self.title,
+                severity="Low",
+                category=self.category,
+                file=f,
+                line=ln,
+                evidence=txt,
+                recommendation="Consider blue-green deployment for zero-downtime releases. Use CodeDeploy deployment controller for ECS.",
+            ))
+        return out
+
+
+class SqsVisibilityTimeout(Rule):
+    id = "REL-024"
+    title = "SQS visibility timeout may need review"
+    category = "Reliability"
+    severity = "Low"
+
+    def run(self, repo_path: Path, language: str = "typescript") -> List[Finding]:
+        sqs_pat = r'new\s+sqs\.Queue\(' if language == "typescript" else r'sqs\.Queue\('
+        queues = rg(repo_path, sqs_pat, glob=code_glob(language))
+        visibility = rg(repo_path, r'visibilityTimeout|visibility_timeout', glob=code_glob(language))
+        out: List[Finding] = []
+        if queues and not visibility:
+            f, ln, txt = queues[0]
+            out.append(Finding(
+                id=self.id,
+                title=self.title,
+                severity="Low",
+                category=self.category,
+                file=f,
+                line=ln,
+                evidence=txt,
+                recommendation="Set visibility timeout to at least 6x your Lambda timeout (if using Lambda). Prevents duplicate processing.",
+            ))
+        return out
+
+
+class DynamoDbGlobalTables(Rule):
+    id = "REL-025"
+    title = "DynamoDB global tables not configured for multi-region"
+    category = "Reliability"
+    severity = "Low"
+
+    def run(self, repo_path: Path, language: str = "typescript") -> List[Finding]:
+        ddb_pat = r'new\s+(dynamodb\.Table|Table)\(' if language == "typescript" else r'(dynamodb.Table|aws_dynamodb.Table)\('
+        tables = rg(repo_path, ddb_pat, glob=code_glob(language))
+        global_tables = rg(repo_path, r'replicationRegions|globalTables|enableReplica', glob=code_glob(language))
+        out: List[Finding] = []
+        if tables and not global_tables:
+            return [Finding(
+                id=self.id,
+                title=self.title,
+                severity="Low",
+                category=self.category,
+                file=None,
+                line=None,
+                evidence=None,
+                recommendation="For multi-region workloads, consider DynamoDB global tables for active-active replication.",
+            )]
+        return out
+
+
+class S3ReplicationMissing(Rule):
+    id = "REL-026"
+    title = "S3 replication not configured for critical buckets"
+    category = "Reliability"
+    severity = "Low"
+
+    def run(self, repo_path: Path, language: str = "typescript") -> List[Finding]:
+        bucket_pat = r'new\s+s3\.Bucket\(' if language == "typescript" else r's3\.Bucket\('
+        buckets = rg(repo_path, bucket_pat, glob=code_glob(language))
+        replication = rg(repo_path, r'replicationRule|replicationConfiguration|enableReplication', glob=code_glob(language))
+        out: List[Finding] = []
+        if buckets and not replication:
+            return [Finding(
+                id=self.id,
+                title=self.title,
+                severity="Low",
+                category=self.category,
+                file=None,
+                line=None,
+                evidence=None,
+                recommendation="For critical data, configure S3 Cross-Region Replication (CRR) for disaster recovery.",
+            )]
+        return out
+
+
+class LambdaReservedConcurrency(Rule):
+    id = "REL-027"
+    title = "Lambda reserved concurrency not configured for critical functions"
+    category = "Reliability"
+    severity = "Low"
+
+    def run(self, repo_path: Path, language: str = "typescript") -> List[Finding]:
+        lambda_pat = r'new\s+(lambda\.Function|NodejsFunction|PythonFunction)\(' if language == "typescript" else r'(lambda_.Function|aws_lambda.Function)\('
+        lambdas = rg(repo_path, lambda_pat, glob=code_glob(language))
+        reserved = rg(repo_path, r'reservedConcurrentExecutions|reserved_concurrent_executions', glob=code_glob(language))
+        out: List[Finding] = []
+        if lambdas and not reserved:
+            return [Finding(
+                id=self.id,
+                title=self.title,
+                severity="Low",
+                category=self.category,
+                file=None,
+                line=None,
+                evidence=None,
+                recommendation="Consider reserved concurrency to prevent one function from consuming all account concurrency.",
+            )]
+        return out
+
+
+class ApiGatewayRequestValidator(Rule):
+    id = "REL-028"
+    title = "API Gateway request validation not configured"
+    category = "Reliability"
+    severity = "Low"
+
+    def run(self, repo_path: Path, language: str = "typescript") -> List[Finding]:
+        api_pat = r'new\s+(apigateway\.RestApi|RestApi)\(' if language == "typescript" else r'(apigateway.RestApi|RestApi)\('
+        apis = rg(repo_path, api_pat, glob=code_glob(language))
+        validator = rg(repo_path, r'requestValidator|RequestValidator|addRequestValidator', glob=code_glob(language))
+        out: List[Finding] = []
+        if apis and not validator:
+            f, ln, txt = apis[0]
+            out.append(Finding(
+                id=self.id,
+                title=self.title,
+                severity="Low",
+                category=self.category,
+                file=f,
+                line=ln,
+                evidence=txt,
+                recommendation="Add request validators to API Gateway to reject malformed requests early.",
+            ))
+        return out
+
+
+class EventBridgeRetryPolicy(Rule):
+    id = "REL-029"
+    title = "EventBridge rule retry policy not configured"
+    category = "Reliability"
+    severity = "Low"
+
+    def run(self, repo_path: Path, language: str = "typescript") -> List[Finding]:
+        rule_pat = r'new\s+events\.Rule\(' if language == "typescript" else r'events\.Rule\('
+        rules = rg(repo_path, rule_pat, glob=code_glob(language))
+        retry = rg(repo_path, r'retryPolicy|retry_policy', glob=code_glob(language))
+        out: List[Finding] = []
+        if rules and not retry:
+            f, ln, txt = rules[0]
+            out.append(Finding(
+                id=self.id,
+                title=self.title,
+                severity="Low",
+                category=self.category,
+                file=f,
+                line=ln,
+                evidence=txt,
+                recommendation="Configure retry policy for EventBridge rules. Use maximumEventAge and maximumRetryAttempts.",
+            ))
+        return out
+
+
+class RdsDeletionProtection(Rule):
+    id = "REL-030"
+    title = "RDS deletion protection not enabled"
+    category = "Reliability"
+    severity = "Medium"
+
+    def run(self, repo_path: Path, language: str = "typescript") -> List[Finding]:
+        rds_pat = r'new\s+rds\.(DatabaseInstance|DatabaseCluster)\(' if language == "typescript" else r'rds\.(DatabaseInstance|DatabaseCluster)\('
+        dbs = rg(repo_path, rds_pat, glob=code_glob(language))
+        protection = rg(repo_path, r'deletionProtection\s*:\s*true|deletion_protection\s*:\s*True', glob=code_glob(language))
+        out: List[Finding] = []
+        if dbs and not protection:
+            f, ln, txt = dbs[0]
+            out.append(Finding(
+                id=self.id,
+                title=self.title,
+                severity="Medium",
+                category=self.category,
+                file=f,
+                line=ln,
+                evidence=txt,
+                recommendation="Enable deletion protection for production RDS instances. In CDK: deletionProtection: true",
+            ))
+        return out
+
+
+class S3VersioningMissing(Rule):
+    id = "REL-031"
+    title = "S3 bucket versioning not enabled"
+    category = "Reliability"
+    severity = "Medium"
+
+    def run(self, repo_path: Path, language: str = "typescript") -> List[Finding]:
+        bucket_pat = r'new\s+s3\.Bucket\(' if language == "typescript" else r's3\.Bucket\('
+        buckets = rg(repo_path, bucket_pat, glob=code_glob(language))
+        versioning = rg(repo_path, r'versioned\s*:\s*true|versioning.*enabled|BucketVersioned', glob=code_glob(language))
+        out: List[Finding] = []
+        if buckets and not versioning:
+            f, ln, txt = buckets[0]
+            out.append(Finding(
+                id=self.id,
+                title=self.title,
+                severity="Medium",
+                category=self.category,
+                file=f,
+                line=ln,
+                evidence=txt,
+                recommendation="Enable S3 versioning for data protection and recovery. In CDK: versioned: true",
+            ))
+        return out

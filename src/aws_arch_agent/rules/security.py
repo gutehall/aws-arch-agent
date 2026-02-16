@@ -1459,3 +1459,238 @@ class StackTerminationProtection(Rule):
                 recommendation="Enable termination protection for production stacks. In CDK Stack props: terminationProtection: true",
             ))
         return out
+
+
+class LambdaFunctionUrlAuth(Rule):
+    id = "SEC-057"
+    title = "Lambda function URL without authentication"
+    category = "Security"
+    severity = "High"
+
+    def run(self, repo_path: Path, language: str = "typescript") -> List[Finding]:
+        func_url_pat = (
+            r'addFunctionUrl|FunctionUrl\(' if language == "typescript"
+            else r'add_function_url|FunctionUrl\('
+        )
+        func_urls = rg(repo_path, func_url_pat, glob=code_glob(language))
+        auth = rg(repo_path, r'authType.*AWS_IAM|auth_type.*AWS_IAM', glob=code_glob(language))
+        out: List[Finding] = []
+        if func_urls and not auth:
+            f, ln, txt = func_urls[0]
+            out.append(Finding(
+                id=self.id,
+                title=self.title,
+                severity="High",
+                category=self.category,
+                file=f,
+                line=ln,
+                evidence=txt,
+                recommendation="Configure authentication for Lambda function URLs. Use authType: lambda.FunctionUrlAuthType.AWS_IAM or integrate with API Gateway for more control.",
+            ))
+        return out
+
+
+class EcsTaskRunAsRoot(Rule):
+    id = "SEC-058"
+    title = "ECS task may run as root user"
+    category = "Security"
+    severity = "Medium"
+
+    def run(self, repo_path: Path, language: str = "typescript") -> List[Finding]:
+        task_pat = r'new\s+ecs\.(TaskDefinition|FargateTaskDefinition|Ec2TaskDefinition)\(' if language == "typescript" else r'ecs\.(TaskDefinition|FargateTaskDefinition|Ec2TaskDefinition)\('
+        tasks = rg(repo_path, task_pat, glob=code_glob(language))
+        run_as_non_root = rg(repo_path, r'runAsNonRoot|run_as_non_root\s*:\s*true', glob=code_glob(language))
+        out: List[Finding] = []
+        if tasks and not run_as_non_root:
+            f, ln, txt = tasks[0]
+            out.append(Finding(
+                id=self.id,
+                title=self.title,
+                severity="Medium",
+                category=self.category,
+                file=f,
+                line=ln,
+                evidence=txt,
+                recommendation="Run ECS containers as non-root user. Set runAsNonRoot: true and specify user in container definition.",
+            ))
+        return out
+
+
+class RedshiftEncryptionMissing(Rule):
+    id = "SEC-059"
+    title = "Redshift cluster encryption not enabled"
+    category = "Security"
+    severity = "High"
+
+    def run(self, repo_path: Path, language: str = "typescript") -> List[Finding]:
+        rs_pat = r'new\s+redshift\.(Cluster|CfnCluster)\(' if language == "typescript" else r'redshift\.(Cluster|CfnCluster)\('
+        clusters = rg(repo_path, rs_pat, glob=code_glob(language))
+        enc = rg(repo_path, r'encrypted\s*:\s*true|encryption.*KMS', glob=code_glob(language))
+        out: List[Finding] = []
+        if clusters and not enc:
+            f, ln, txt = clusters[0]
+            out.append(Finding(
+                id=self.id,
+                title=self.title,
+                severity="High",
+                category=self.category,
+                file=f,
+                line=ln,
+                evidence=txt,
+                recommendation="Enable encryption at rest for Redshift clusters. In CDK: encrypted: true with kmsKeyId for customer-managed keys.",
+            ))
+        return out
+
+
+class DocumentDbEncryptionMissing(Rule):
+    id = "SEC-060"
+    title = "DocumentDB cluster encryption not enabled"
+    category = "Security"
+    severity = "High"
+
+    def run(self, repo_path: Path, language: str = "typescript") -> List[Finding]:
+        docdb_pat = r'new\s+docdb\.(DatabaseCluster|CfnDBCluster)\(' if language == "typescript" else r'docdb\.(DatabaseCluster|CfnDBCluster)\('
+        clusters = rg(repo_path, docdb_pat, glob=code_glob(language))
+        enc = rg(repo_path, r'storageEncrypted\s*:\s*true|storage_encrypted\s*:\s*True', glob=code_glob(language))
+        out: List[Finding] = []
+        if clusters and not enc:
+            f, ln, txt = clusters[0]
+            out.append(Finding(
+                id=self.id,
+                title=self.title,
+                severity="High",
+                category=self.category,
+                file=f,
+                line=ln,
+                evidence=txt,
+                recommendation="Enable encryption at rest for DocumentDB clusters. In CDK: storageEncrypted: true",
+            ))
+        return out
+
+
+class NeptuneEncryptionMissing(Rule):
+    id = "SEC-061"
+    title = "Neptune database encryption not enabled"
+    category = "Security"
+    severity = "High"
+
+    def run(self, repo_path: Path, language: str = "typescript") -> List[Finding]:
+        neptune_pat = r'new\s+neptune\.(DatabaseCluster|CfnDBCluster)\(' if language == "typescript" else r'neptune\.(DatabaseCluster|CfnDBCluster)\('
+        clusters = rg(repo_path, neptune_pat, glob=code_glob(language))
+        enc = rg(repo_path, r'storageEncrypted\s*:\s*true|storage_encrypted\s*:\s*True', glob=code_glob(language))
+        out: List[Finding] = []
+        if clusters and not enc:
+            f, ln, txt = clusters[0]
+            out.append(Finding(
+                id=self.id,
+                title=self.title,
+                severity="High",
+                category=self.category,
+                file=f,
+                line=ln,
+                evidence=txt,
+                recommendation="Enable encryption at rest for Neptune databases. In CDK: storageEncrypted: true",
+            ))
+        return out
+
+
+class CloudWatchLogsKmsEncryption(Rule):
+    id = "SEC-062"
+    title = "CloudWatch Logs not encrypted with KMS"
+    category = "Security"
+    severity = "Medium"
+
+    def run(self, repo_path: Path, language: str = "typescript") -> List[Finding]:
+        log_pat = r'new\s+logs\.(LogGroup|LogGroupBase)\(' if language == "typescript" else r'logs\.(LogGroup|LogGroupBase)\('
+        log_groups = rg(repo_path, log_pat, glob=code_glob(language))
+        kms = rg(repo_path, r'encryptionKey|encryption_key|kmsKey', glob=code_glob(language))
+        out: List[Finding] = []
+        if log_groups and not kms:
+            f, ln, txt = log_groups[0]
+            out.append(Finding(
+                id=self.id,
+                title=self.title,
+                severity="Medium",
+                category=self.category,
+                file=f,
+                line=ln,
+                evidence=txt,
+                recommendation="Encrypt CloudWatch Logs with KMS for sensitive data. In CDK: encryptionKey: kms.Key",
+            ))
+        return out
+
+
+class BackupVaultEncryption(Rule):
+    id = "SEC-063"
+    title = "Backup vault encryption not configured"
+    category = "Security"
+    severity = "Medium"
+
+    def run(self, repo_path: Path, language: str = "typescript") -> List[Finding]:
+        vault_pat = r'new\s+backup\.(BackupVault|CfnBackupVault)\(' if language == "typescript" else r'backup\.(BackupVault|CfnBackupVault)\('
+        vaults = rg(repo_path, vault_pat, glob=code_glob(language))
+        enc = rg(repo_path, r'encryptionKeyArn|encryption_key_arn', glob=code_glob(language))
+        out: List[Finding] = []
+        if vaults and not enc:
+            f, ln, txt = vaults[0]
+            out.append(Finding(
+                id=self.id,
+                title=self.title,
+                severity="Medium",
+                category=self.category,
+                file=f,
+                line=ln,
+                evidence=txt,
+                recommendation="Configure KMS encryption for Backup vaults. In CDK: encryptionKeyArn property",
+            ))
+        return out
+
+
+class RdsPubliclyAccessible(Rule):
+    id = "SEC-064"
+    title = "RDS instance may be publicly accessible"
+    category = "Security"
+    severity = "High"
+
+    def run(self, repo_path: Path, language: str = "typescript") -> List[Finding]:
+        rds_pat = r'new\s+rds\.(DatabaseInstance|DatabaseCluster)\(' if language == "typescript" else r'rds\.(DatabaseInstance|DatabaseCluster)\('
+        dbs = rg(repo_path, rds_pat, glob=code_glob(language))
+        public_false = rg(repo_path, r'publiclyAccessible\s*:\s*false|publicly_accessible\s*:\s*False', glob=code_glob(language))
+        out: List[Finding] = []
+        if dbs and not public_false:
+            f, ln, txt = dbs[0]
+            out.append(Finding(
+                id=self.id,
+                title=self.title,
+                severity="High",
+                category=self.category,
+                file=f,
+                line=ln,
+                evidence=txt,
+                recommendation="Set publiclyAccessible: false for RDS instances. Databases should not be exposed to the internet.",
+            ))
+        return out
+
+
+class MacieNotEnabled(Rule):
+    id = "SEC-065"
+    title = "Amazon Macie not enabled for sensitive data discovery"
+    category = "Security"
+    severity = "Low"
+
+    def run(self, repo_path: Path, language: str = "typescript") -> List[Finding]:
+        s3_buckets = rg(repo_path, r'new\s+s3\.Bucket\(' if language == "typescript" else r's3\.Bucket\(', glob=code_glob(language))
+        macie = rg(repo_path, r'macie|Macie|CfnSession', glob=code_glob(language))
+        out: List[Finding] = []
+        if s3_buckets and not macie:
+            return [Finding(
+                id=self.id,
+                title=self.title,
+                severity="Low",
+                category=self.category,
+                file=None,
+                line=None,
+                evidence=None,
+                recommendation="Consider enabling Amazon Macie for automated discovery of sensitive data in S3 buckets.",
+            )]
+        return out
