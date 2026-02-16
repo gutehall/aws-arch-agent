@@ -14,16 +14,24 @@ def _fallback_search(
         regex = re.compile(pattern)
     except re.error:
         return []
+    
+    # Import iter_files to respect exclusions
+    from aws_arch_agent.tools.files import iter_files
+    
     hits: List[Tuple[str, int, str]] = []
+    
+    # Get files respecting exclusions (node_modules, .git, etc.)
+    all_files = iter_files(repo_path, max_files=1000)
+    
+    # Filter by extension based on glob
     if glob == "**/*.ts":
-        files = list(repo_path.rglob("*.ts"))
+        files = [f for f in all_files if f.suffix in {".ts", ".tsx"}]
     elif glob == "**/*.py":
-        files = list(repo_path.rglob("*.py"))
+        files = [f for f in all_files if f.suffix == ".py"]
     else:
-        files = list(repo_path.rglob("*.ts")) + list(repo_path.rglob("*.py"))
+        files = [f for f in all_files if f.suffix in {".ts", ".tsx", ".py"}]
+    
     for fp in sorted(files):
-        if fp.name.startswith(".") or ".git" in fp.parts:
-            continue
         try:
             text = fp.read_text(encoding="utf-8", errors="replace")
         except OSError:

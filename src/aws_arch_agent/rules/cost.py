@@ -54,3 +54,275 @@ class MissingAutoscalingHint(Rule):
                 recommendation="Consider autoscaling policies (CPU/Memory/Queue depth) to reduce cost and improve performance.",
             ))
         return out
+
+
+class DynamoDbAutoscalingMissing(Rule):
+    id = "COST-003"
+    title = "DynamoDB provisioned capacity may miss autoscaling"
+    category = "Cost"
+    severity = "Low"
+
+    def run(self, repo_path: Path, language: str = "typescript") -> List[Finding]:
+        # Check for provisioned capacity without autoscaling
+        provisioned = rg(repo_path, r'billingMode\s*:\s*(dynamodb\.BillingMode\.)?PROVISIONED|readCapacity|writeCapacity', glob=code_glob(language))
+        autoscaling = rg(repo_path, r'autoScaleReadCapacity|autoScaleWriteCapacity|auto_scale_read|auto_scale_write', glob=code_glob(language))
+        out: List[Finding] = []
+        if provisioned and not autoscaling:
+            hits = rg(repo_path, r'new\s+(dynamodb\.Table|Table)\(', glob=code_glob(language), max_hits=1)
+            if hits:
+                f, ln, txt = hits[0]
+                out.append(Finding(
+                    id=self.id,
+                    title=self.title,
+                    severity="Low",
+                    category=self.category,
+                    file=f,
+                    line=ln,
+                    evidence=txt,
+                    recommendation="Enable autoscaling for DynamoDB provisioned capacity to optimize costs during low-traffic periods. In CDK: table.autoScaleReadCapacity() / autoScaleWriteCapacity()",
+                ))
+        return out
+
+
+class LambdaProvisionedConcurrency(Rule):
+    id = "COST-004"
+    title = "Lambda provisioned concurrency may be overprovisioned"
+    category = "Cost"
+    severity = "Low"
+
+    def run(self, repo_path: Path, language: str = "typescript") -> List[Finding]:
+        provisioned = rg(repo_path, r'provisionedConcurrentExecutions|reservedConcurrentExecutions', glob=code_glob(language))
+        out: List[Finding] = []
+        for f, ln, txt in provisioned[:2]:
+            out.append(Finding(
+                id=self.id,
+                title=self.title,
+                severity="Low",
+                category=self.category,
+                file=f,
+                line=ln,
+                evidence=txt,
+                recommendation="Review Lambda provisioned concurrency settings. Use Application Auto Scaling to adjust based on utilization to reduce costs.",
+            ))
+        return out
+
+
+class RdsReservedInstances(Rule):
+    id = "COST-005"
+    title = "RDS not using Reserved Instances (savings opportunity)"
+    category = "Cost"
+    severity = "Low"
+
+    def run(self, repo_path: Path, language: str = "typescript") -> List[Finding]:
+        rds_pat = r'new\s+rds\.(DatabaseInstance|DatabaseCluster)\(' if language == "typescript" else r'rds\.(DatabaseInstance|DatabaseCluster)\('
+        dbs = rg(repo_path, rds_pat, glob=code_glob(language))
+        out: List[Finding] = []
+        if dbs:
+            return [Finding(
+                id=self.id,
+                title=self.title,
+                severity="Low",
+                category=self.category,
+                file=None,
+                line=None,
+                evidence=None,
+                recommendation="For production RDS instances with steady-state usage, consider Reserved Instances for up to 72% cost savings vs on-demand",
+            )]
+        return out
+
+
+class NatGatewayCosts(Rule):
+    id = "COST-006"
+    title = "NAT Gateway incurs data processing costs"
+    category = "Cost"
+    severity = "Low"
+
+    def run(self, repo_path: Path, language: str = "typescript") -> List[Finding]:
+        nat_pat = r'natGateways\s*:\s*[1-9]|NatProvider\.gateway' if language == "typescript" else r'nat_gateways\s*=\s*[1-9]'
+        nats = rg(repo_path, nat_pat, glob=code_glob(language))
+        endpoints = rg(repo_path, r'InterfaceVpcEndpoint|GatewayVpcEndpoint', glob=code_glob(language))
+        out: List[Finding] = []
+        if nats and not endpoints:
+            f, ln, txt = nats[0]
+            out.append(Finding(
+                id=self.id,
+                title=self.title,
+                severity="Low",
+                category=self.category,
+                file=f,
+                line=ln,
+                evidence=txt,
+                recommendation="NAT Gateways charge for data processing ($0.045/GB). Use VPC endpoints for S3, DynamoDB, and other AWS services to reduce costs.",
+            ))
+        return out
+
+
+class S3IntelligentTiering(Rule):
+    id = "COST-007"
+    title = "S3 Intelligent-Tiering not enabled"
+    category = "Cost"
+    severity = "Low"
+
+    def run(self, repo_path: Path, language: str = "typescript") -> List[Finding]:
+        s3_pat = r'new\s+s3\.(Bucket|CfnBucket)\(' if language == "typescript" else r's3\.(Bucket|CfnBucket)\('
+        buckets = rg(repo_path, s3_pat, glob=code_glob(language))
+        intelligent = rg(repo_path, r'INTELLIGENT_TIERING|IntelligentTiering', glob=code_glob(language))
+        out: List[Finding] = []
+        if buckets and not intelligent:
+            return [Finding(
+                id=self.id,
+                title=self.title,
+                severity="Low",
+                category=self.category,
+                file=None,
+                line=None,
+                evidence=None,
+                recommendation="Consider S3 Intelligent-Tiering for automatic cost optimization (moves objects between access tiers based on usage)",
+            )]
+        return out
+
+
+class EbsGp2ToGp3(Rule):
+    id = "COST-008"
+    title = "EBS volumes using gp2 instead of gp3"
+    category = "Cost"
+    severity = "Low"
+
+    def run(self, repo_path: Path, language: str = "typescript") -> List[Finding]:
+        gp2 = rg(repo_path, r'EbsDeviceVolumeType\.GP2|gp2', glob=code_glob(language))
+        out: List[Finding] = []
+        for f, ln, txt in gp2[:2]:
+            out.append(Finding(
+                id=self.id,
+                title=self.title,
+                severity="Low",
+                category=self.category,
+                file=f,
+                line=ln,
+                evidence=txt,
+                recommendation="Migrate EBS volumes from gp2 to gp3 for 20% cost savings and better performance. In CDK: EbsDeviceVolumeType.GP3",
+            ))
+        return out
+
+
+class ElastiCacheReservedNodes(Rule):
+    id = "COST-009"
+    title = "ElastiCache may benefit from reserved nodes"
+    category = "Cost"
+    severity = "Low"
+
+    def run(self, repo_path: Path, language: str = "typescript") -> List[Finding]:
+        elasticache = rg(repo_path, r'elasticache\.(CfnCacheCluster|CfnReplicationGroup)', glob=code_glob(language))
+        out: List[Finding] = []
+        if elasticache:
+            return [Finding(
+                id=self.id,
+                title=self.title,
+                severity="Low",
+                category=self.category,
+                file=None,
+                line=None,
+                evidence=None,
+                recommendation="For predictable ElastiCache workloads, consider reserved nodes for up to 55% cost savings vs on-demand",
+            )]
+        return out
+
+
+class RdsGraviton(Rule):
+    id = "COST-010"
+    title = "RDS not using Graviton instances"
+    category = "Cost"
+    severity = "Low"
+
+    def run(self, repo_path: Path, language: str = "typescript") -> List[Finding]:
+        rds_pat = r'new\s+rds\.(DatabaseInstance|DatabaseCluster)\(' if language == "typescript" else r'rds\.(DatabaseInstance|DatabaseCluster)\('
+        rdss = rg(repo_path, rds_pat, glob=code_glob(language))
+        graviton = rg(repo_path, r'\.r7g\.|\.m7g\.|\.t4g\.', glob=code_glob(language))
+        out: List[Finding] = []
+        if rdss and not graviton:
+            f, ln, txt = rdss[0]
+            out.append(Finding(
+                id=self.id,
+                title=self.title,
+                severity="Low",
+                category=self.category,
+                file=f,
+                line=ln,
+                evidence=txt,
+                recommendation="Consider Graviton-based RDS instances (r7g, m7g, t4g) for up to 35% better price-performance",
+            ))
+        return out
+
+
+class CloudFrontPriceClass(Rule):
+    id = "COST-011"
+    title = "CloudFront using all edge locations (Price Class All)"
+    category = "Cost"
+    severity = "Low"
+
+    def run(self, repo_path: Path, language: str = "typescript") -> List[Finding]:
+        cf_pat = r'new\s+cloudfront\.(Distribution|CloudFrontWebDistribution)\(' if language == "typescript" else r'cloudfront\.(Distribution|CloudFrontWebDistribution)\('
+        distros = rg(repo_path, cf_pat, glob=code_glob(language))
+        price_class = rg(repo_path, r'priceClass.*PRICE_CLASS_(100|200)', glob=code_glob(language))
+        out: List[Finding] = []
+        if distros and not price_class:
+            f, ln, txt = distros[0]
+            out.append(Finding(
+                id=self.id,
+                title=self.title,
+                severity="Low",
+                category=self.category,
+                file=f,
+                line=ln,
+                evidence=txt,
+                recommendation="Consider CloudFront Price Class 100 or 200 instead of All to reduce costs if global edge coverage is not required. In CDK: priceClass: cloudfront.PriceClass.PRICE_CLASS_100",
+            ))
+        return out
+
+
+class UnusedEips(Rule):
+    id = "COST-012"
+    title = "Elastic IP allocated but may not be used"
+    category = "Cost"
+    severity = "Low"
+
+    def run(self, repo_path: Path, language: str = "typescript") -> List[Finding]:
+        eip = rg(repo_path, r'new\s+ec2\.(CfnEIP|CfnEIPAssociation)\(', glob=code_glob(language))
+        out: List[Finding] = []
+        for f, ln, txt in eip[:2]:
+            out.append(Finding(
+                id=self.id,
+                title=self.title,
+                severity="Low",
+                category=self.category,
+                file=f,
+                line=ln,
+                evidence=txt,
+                recommendation="Unattached Elastic IPs incur charges. Ensure EIPs are associated with running resources or release them",
+            ))
+        return out
+
+
+class S3LifecycleMissing(Rule):
+    id = "COST-013"
+    title = "S3 lifecycle policy not configured for cost optimization"
+    category = "Cost"
+    severity = "Low"
+
+    def run(self, repo_path: Path, language: str = "typescript") -> List[Finding]:
+        s3_pat = r'new\s+s3\.(Bucket|CfnBucket)\(' if language == "typescript" else r's3\.(Bucket|CfnBucket)\('
+        buckets = rg(repo_path, s3_pat, glob=code_glob(language))
+        lifecycle = rg(repo_path, r'addLifecycleRule|lifecycleRules', glob=code_glob(language))
+        out: List[Finding] = []
+        if buckets and not lifecycle:
+            return [Finding(
+                id=self.id,
+                title=self.title,
+                severity="Low",
+                category=self.category,
+                file=None,
+                line=None,
+                evidence=None,
+                recommendation="Add S3 lifecycle policies to transition objects to cheaper storage classes (IA, Glacier) or delete old versions. In CDK: bucket.addLifecycleRule()",
+            )]
+        return out

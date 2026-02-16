@@ -16,16 +16,36 @@ DEFAULT_EXCLUDES = [
 def iter_files(repo_path: Path, max_files: int = 400) -> List[Path]:
     """Yield paths to relevant files (TS, JS, PY, JSON, YAML, MD) under repo_path, up to max_files."""
     files: List[Path] = []
-    for p in repo_path.rglob("*"):
+    
+    def should_skip_dir(dir_path: Path) -> bool:
+        """Check if directory should be skipped based on name."""
+        dir_name = dir_path.name
+        return dir_name in DEFAULT_EXCLUDES or dir_name.startswith(".")
+    
+    def walk_with_excludes(path: Path) -> None:
+        """Walk directory tree with exclusions."""
         if len(files) >= max_files:
-            break
-        if p.is_dir():
-            continue
-        if any(part in DEFAULT_EXCLUDES for part in p.parts):
-            continue
-        # keep only "likely relevant" files for MVP
-        if p.suffix.lower() in {".ts", ".js", ".py", ".json", ".yaml", ".yml", ".md"}:
-            files.append(p)
+            return
+        
+        try:
+            for p in path.iterdir():
+                if len(files) >= max_files:
+                    return
+                
+                # Skip excluded directories early
+                if p.is_dir():
+                    if not should_skip_dir(p):
+                        walk_with_excludes(p)
+                    continue
+                
+                # Check file extension
+                if p.suffix.lower() in {".ts", ".js", ".py", ".json", ".yaml", ".yml", ".md"}:
+                    files.append(p)
+        except (PermissionError, OSError):
+            # Skip directories we can't read
+            pass
+    
+    walk_with_excludes(repo_path)
     return files
 
 
