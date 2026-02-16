@@ -8,7 +8,6 @@ from aws_arch_agent.rules.security import (
     LambdaEnvSecrets, CloudFrontHttpsOnly, CloudFrontLegacyTls, EcsReadonlyRootFs,
     RdsSslConnection, VpcEndpointsMissing, KmsKeyRotation, WafMissing,
     ElastiCacheEncryption, SecurityHubNotEnabled, GuardDutyNotEnabled,
-    # New security rules
     EcrImageScanning, EcrImageImmutability, EcrLifecyclePolicy, Route53HealthChecks, Route53Dnssec,
     SsmParameterEncryption, CognitoMfaMissing, CognitoPasswordPolicy, CognitoAdvancedSecurity,
     EfsEncryptionMissing, KinesisEncryption, OpenSearchEncryption, OpenSearchFineGrainedAccess,
@@ -16,42 +15,57 @@ from aws_arch_agent.rules.security import (
     SagemakerNotebookVpc, SagemakerEncryption, AppSyncLogging, AppSyncWaf, FsxEncryption,
     TransferFamilyLogging, CodePipelineEncryption, CodeBuildPrivilegedMode, SecurityGroupEgressOpen,
     NaclMissing, StackTerminationProtection,
+    LambdaFunctionUrlAuth, EcsTaskRunAsRoot, RedshiftEncryptionMissing, DocumentDbEncryptionMissing,
+    NeptuneEncryptionMissing, CloudWatchLogsKmsEncryption, BackupVaultEncryption,
+    RdsPubliclyAccessible, MacieNotEnabled,
 )
 from aws_arch_agent.rules.reliability import (
     RdsMultiAzMissing, BackupRetentionMissing, LambdaDlqMissing,
     DynamoDbPitrMissing, DynamoDbBackupMissing, ApiGatewayThrottling, AlbHealthCheck,
     SqsDlqMissing, LambdaTimeout, LambdaVpcAccess, RdsReadReplicas, NatGatewaySingleAz,
     BackupVaultMissing, CrossRegionBackup, StepFunctionsRetry, ElastiCacheMultiAz,
-    # New reliability rules
     EfsBackupPolicy, EfsLifecyclePolicy, KinesisRetention, GlobalAcceleratorHealthChecks,
     CodePipelineApproval, AcmCertificateValidation,
+    BlueGreenDeploymentMissing, SqsVisibilityTimeout, DynamoDbGlobalTables, S3ReplicationMissing,
+    LambdaReservedConcurrency, ApiGatewayRequestValidator, EventBridgeRetryPolicy,
+    RdsDeletionProtection, S3VersioningMissing,
 )
 from aws_arch_agent.rules.cost import (
     LogRetentionNeverExpire, MissingAutoscalingHint, DynamoDbAutoscalingMissing,
     LambdaProvisionedConcurrency, RdsReservedInstances, NatGatewayCosts,
-    # New cost rules
     S3IntelligentTiering, EbsGp2ToGp3, ElastiCacheReservedNodes, RdsGraviton,
     CloudFrontPriceClass, UnusedEips, S3LifecycleMissing,
+    AwsBudgetsMissing, CostAllocationTags, SavingsPlansOpportunity,
+    LambdaPowerTuning, S3StorageLens,
 )
-from aws_arch_agent.rules.best_practices import MissingStandardTags, SecretsInEnvVars
+from aws_arch_agent.rules.best_practices import (
+    MissingStandardTags, SecretsInEnvVars,
+    ResourceNamingConvention, CdkAspectsMissing, CdkContextMissing,
+)
 from aws_arch_agent.rules.operational_excellence import (
     CloudTrailMissing, VpcFlowLogsMissing, XRayTracingMissing, DynamoDbStreamsMissing,
     ApiGatewayAccessLogs, AlbAccessLogs, CloudFrontAccessLogs, EcsContainerInsights,
     RdsEnhancedMonitoring, CloudWatchAlarmsMissing, SnsAlarmNotifications,
     StepFunctionsXRay, EventBridgeDlq, ConfigNotEnabled,
-    # New operational excellence rules
     GlueJobMetrics, TransitGatewayFlowLogs, CodePipelineNotifications, AppRunnerObservability,
     GlueJobBookmarks, CodeBuildLogging,
+    CloudWatchDashboardMissing, ResourceTaggingStrategy, SsmParameterAdvancedTier,
+    LambdaReservedConcurrencyHint, S3ReplicationMetrics,
 )
 from aws_arch_agent.rules.performance_efficiency import (
     GravitonNotUsed, CachingHint, DynamoDbProvisionedCapacity,
     ApiGatewayCaching, LambdaMemoryOptimization, CloudFrontCaching,
     EcsTaskSizing, RdsInstanceSizing,
-    # New performance efficiency rules
     KinesisEnhancedFanout, OpenSearchInstanceTypes, GlobalAcceleratorOptimization,
     EfsPerformanceMode, AppSyncCaching, S3TransferAcceleration,
+    LambdaSnapStart, AuroraIoOptimized, EbsIo2BlockExpress,
+    CloudWatchContributorInsights, RdsProxyMissing,
 )
-from aws_arch_agent.rules.sustainability import SpotNotConsidered, RightSizingHint
+from aws_arch_agent.rules.sustainability import (
+    SpotNotConsidered, RightSizingHint,
+    ScheduledScalingMissing, AsyncProcessingHint, ManagedServicesPreference,
+    CloudFrontCompression, LatestGenInstances,
+)
 
 ALL_RULES = [
     # Security (56 rules)
@@ -111,7 +125,16 @@ ALL_RULES = [
     SecurityGroupEgressOpen(),
     NaclMissing(),
     StackTerminationProtection(),
-    # Reliability (22 rules)
+    LambdaFunctionUrlAuth(),
+    EcsTaskRunAsRoot(),
+    RedshiftEncryptionMissing(),
+    DocumentDbEncryptionMissing(),
+    NeptuneEncryptionMissing(),
+    CloudWatchLogsKmsEncryption(),
+    BackupVaultEncryption(),
+    RdsPubliclyAccessible(),
+    MacieNotEnabled(),
+    # Reliability (31 rules)
     RdsMultiAzMissing(),
     BackupRetentionMissing(),
     LambdaDlqMissing(),
@@ -134,7 +157,15 @@ ALL_RULES = [
     GlobalAcceleratorHealthChecks(),
     CodePipelineApproval(),
     AcmCertificateValidation(),
-    # Cost Optimization (13 rules)
+    BlueGreenDeploymentMissing(),
+    SqsVisibilityTimeout(),
+    DynamoDbGlobalTables(),
+    S3ReplicationMissing(),
+    LambdaReservedConcurrency(),
+    ApiGatewayRequestValidator(),
+    EventBridgeRetryPolicy(),
+    RdsDeletionProtection(),
+    S3VersioningMissing(),
     LogRetentionNeverExpire(),
     MissingAutoscalingHint(),
     DynamoDbAutoscalingMissing(),
@@ -148,9 +179,17 @@ ALL_RULES = [
     CloudFrontPriceClass(),
     UnusedEips(),
     S3LifecycleMissing(),
-    # Best Practices (2 rules)
+    AwsBudgetsMissing(),
+    CostAllocationTags(),
+    SavingsPlansOpportunity(),
+    LambdaPowerTuning(),
+    S3StorageLens(),
+    # Best Practices (5 rules)
     MissingStandardTags(),
     SecretsInEnvVars(),
+    ResourceNamingConvention(),
+    CdkAspectsMissing(),
+    CdkContextMissing(),
     # Operational Excellence (20 rules)
     CloudTrailMissing(),
     VpcFlowLogsMissing(),
@@ -172,7 +211,12 @@ ALL_RULES = [
     AppRunnerObservability(),
     GlueJobBookmarks(),
     CodeBuildLogging(),
-    # Performance Efficiency (14 rules)
+    CloudWatchDashboardMissing(),
+    ResourceTaggingStrategy(),
+    SsmParameterAdvancedTier(),
+    LambdaReservedConcurrencyHint(),
+    S3ReplicationMetrics(),
+    # Performance Efficiency (19 rules)
     GravitonNotUsed(),
     CachingHint(),
     DynamoDbProvisionedCapacity(),
@@ -187,7 +231,17 @@ ALL_RULES = [
     EfsPerformanceMode(),
     AppSyncCaching(),
     S3TransferAcceleration(),
-    # Sustainability (2 rules)
+    LambdaSnapStart(),
+    AuroraIoOptimized(),
+    EbsIo2BlockExpress(),
+    CloudWatchContributorInsights(),
+    RdsProxyMissing(),
+    # Sustainability (7 rules)
     SpotNotConsidered(),
     RightSizingHint(),
+    ScheduledScalingMissing(),
+    AsyncProcessingHint(),
+    ManagedServicesPreference(),
+    CloudFrontCompression(),
+    LatestGenInstances(),
 ]

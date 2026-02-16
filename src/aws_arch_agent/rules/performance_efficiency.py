@@ -363,3 +363,123 @@ class S3TransferAcceleration(Rule):
                 recommendation="Consider S3 Transfer Acceleration for faster uploads from geographically dispersed users (50-500% faster)",
             )]
         return out
+
+
+class LambdaSnapStart(Rule):
+    id = "PERF-015"
+    title = "Lambda SnapStart not enabled for Java functions"
+    category = "Performance Efficiency"
+    severity = "Low"
+
+    def run(self, repo_path: Path, language: str = "typescript") -> List[Finding]:
+        java_lambda = rg(repo_path, r'Runtime\.JAVA|runtime.*java|JAVA_\d+', glob=code_glob(language))
+        snapstart = rg(repo_path, r'snapStart|snap_start', glob=code_glob(language))
+        out: List[Finding] = []
+        if java_lambda and not snapstart:
+            return [Finding(
+                id=self.id,
+                title=self.title,
+                severity="Low",
+                category=self.category,
+                file=None,
+                line=None,
+                evidence=None,
+                recommendation="Enable Lambda SnapStart for Java functions to reduce cold start latency by up to 10x.",
+            )]
+        return out
+
+
+class AuroraIoOptimized(Rule):
+    id = "PERF-016"
+    title = "Aurora not using I/O-Optimized for high I/O workloads"
+    category = "Performance Efficiency"
+    severity = "Low"
+
+    def run(self, repo_path: Path, language: str = "typescript") -> List[Finding]:
+        aurora = rg(repo_path, r'DatabaseInstance|DatabaseCluster|rds\.', glob=code_glob(language))
+        io_optimized = rg(repo_path, r'ioOptimized|storageType.*aurora-io', glob=code_glob(language))
+        out: List[Finding] = []
+        if aurora and not io_optimized:
+            return [Finding(
+                id=self.id,
+                title=self.title,
+                severity="Low",
+                category=self.category,
+                file=None,
+                line=None,
+                evidence=None,
+                recommendation="Consider Aurora I/O-Optimized for workloads with high I/O requirements.",
+            )]
+        return out
+
+
+class EbsIo2BlockExpress(Rule):
+    id = "PERF-017"
+    title = "EBS io2 Block Express not used for high IOPS"
+    category = "Performance Efficiency"
+    severity = "Low"
+
+    def run(self, repo_path: Path, language: str = "typescript") -> List[Finding]:
+        ebs = rg(repo_path, r'EbsDeviceVolumeType|volume_type|gp3|io1', glob=code_glob(language))
+        io2 = rg(repo_path, r'io2|IO2', glob=code_glob(language))
+        out: List[Finding] = []
+        if ebs and not io2:
+            return [Finding(
+                id=self.id,
+                title=self.title,
+                severity="Low",
+                category=self.category,
+                file=None,
+                line=None,
+                evidence=None,
+                recommendation="For workloads requiring >64K IOPS, consider io2 Block Express volumes.",
+            )]
+        return out
+
+
+class CloudWatchContributorInsights(Rule):
+    id = "PERF-018"
+    title = "CloudWatch Contributor Insights not enabled"
+    category = "Performance Efficiency"
+    severity = "Low"
+
+    def run(self, repo_path: Path, language: str = "typescript") -> List[Finding]:
+        dynamodb = rg(repo_path, r'dynamodb\.Table|DynamoDB', glob=code_glob(language))
+        contributor = rg(repo_path, r'ContributorInsights|contributorInsights', glob=code_glob(language))
+        out: List[Finding] = []
+        if dynamodb and not contributor:
+            return [Finding(
+                id=self.id,
+                title=self.title,
+                severity="Low",
+                category=self.category,
+                file=None,
+                line=None,
+                evidence=None,
+                recommendation="Enable Contributor Insights for DynamoDB to identify top contributors to consumed capacity.",
+            )]
+        return out
+
+
+class RdsProxyMissing(Rule):
+    id = "PERF-019"
+    title = "RDS Proxy not used for connection pooling"
+    category = "Performance Efficiency"
+    severity = "Low"
+
+    def run(self, repo_path: Path, language: str = "typescript") -> List[Finding]:
+        rds = rg(repo_path, r'rds\.(DatabaseInstance|DatabaseCluster)\(' if language == "typescript" else r'rds\.(DatabaseInstance|DatabaseCluster)\(', glob=code_glob(language))
+        proxy = rg(repo_path, r'DatabaseProxy|DatabaseProxyBase', glob=code_glob(language))
+        out: List[Finding] = []
+        if rds and not proxy:
+            return [Finding(
+                id=self.id,
+                title=self.title,
+                severity="Low",
+                category=self.category,
+                file=None,
+                line=None,
+                evidence=None,
+                recommendation="Consider RDS Proxy for database connection pooling when using serverless (Lambda).",
+            )]
+        return out

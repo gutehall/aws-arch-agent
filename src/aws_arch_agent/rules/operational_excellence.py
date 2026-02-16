@@ -526,3 +526,126 @@ class CodeBuildLogging(Rule):
                 recommendation="Configure logging for CodeBuild projects (CloudWatch Logs or S3). In CDK: logging property",
             ))
         return out
+
+
+class CloudWatchDashboardMissing(Rule):
+    id = "OPS-021"
+    title = "CloudWatch dashboards not configured"
+    category = "Operational Excellence"
+    severity = "Low"
+
+    def run(self, repo_path: Path, language: str = "typescript") -> List[Finding]:
+        resources = rg(repo_path, r'DatabaseInstance|ApplicationLoadBalancer|lambda\.Function|FargateService', glob=code_glob(language))
+        dashboards = rg(repo_path, r'new\s+cloudwatch\.Dashboard\(|Dashboard\(', glob=code_glob(language))
+        out: List[Finding] = []
+        if resources and not dashboards:
+            return [Finding(
+                id=self.id,
+                title=self.title,
+                severity="Low",
+                category=self.category,
+                file=None,
+                line=None,
+                evidence=None,
+                recommendation="Create CloudWatch dashboards for key metrics to improve operational visibility.",
+            )]
+        return out
+
+
+class ResourceTaggingStrategy(Rule):
+    id = "OPS-022"
+    title = "Resource tagging strategy may be incomplete"
+    category = "Operational Excellence"
+    severity = "Low"
+
+    def run(self, repo_path: Path, language: str = "typescript") -> List[Finding]:
+        tags = rg(repo_path, r'tags\s*:\s*\{|tags\s*=\s*\{', glob=code_glob(language))
+        cost_center = rg(repo_path, r'CostCenter|cost_center|CostCenter', glob=code_glob(language))
+        project = rg(repo_path, r'Project|project', glob=code_glob(language))
+        out: List[Finding] = []
+        if tags and not (cost_center or project):
+            return [Finding(
+                id=self.id,
+                title=self.title,
+                severity="Low",
+                category=self.category,
+                file=None,
+                line=None,
+                evidence=None,
+                recommendation="Consider adding CostCenter and Project tags for cost allocation and resource management.",
+            )]
+        return out
+
+
+class SsmParameterAdvancedTier(Rule):
+    id = "OPS-023"
+    title = "SSM Parameter Store not using advanced tier for high throughput"
+    category = "Operational Excellence"
+    severity = "Low"
+
+    def run(self, repo_path: Path, language: str = "typescript") -> List[Finding]:
+        param_pat = r'new\s+ssm\.(StringParameter|CfnParameter)\(' if language == "typescript" else r'ssm\.(StringParameter|CfnParameter)\('
+        params = rg(repo_path, param_pat, glob=code_glob(language))
+        advanced = rg(repo_path, r'parameterTier.*ADVANCED|advanced|tier.*Advanced', glob=code_glob(language))
+        out: List[Finding] = []
+        if params and not advanced:
+            return [Finding(
+                id=self.id,
+                title=self.title,
+                severity="Low",
+                category=self.category,
+                file=None,
+                line=None,
+                evidence=None,
+                recommendation="For high-throughput (>10 TPS) parameter access, consider Parameter Store advanced tier.",
+            )]
+        return out
+
+
+class LambdaReservedConcurrencyHint(Rule):
+    id = "OPS-024"
+    title = "Lambda function may benefit from reserved concurrency"
+    category = "Operational Excellence"
+    severity = "Low"
+
+    def run(self, repo_path: Path, language: str = "typescript") -> List[Finding]:
+        lambda_pat = r'new\s+(lambda\.Function|NodejsFunction|PythonFunction)\(' if language == "typescript" else r'(lambda_.Function|aws_lambda.Function)\('
+        lambdas = rg(repo_path, lambda_pat, glob=code_glob(language))
+        reserved = rg(repo_path, r'reservedConcurrentExecutions|reserved_concurrent_executions', glob=code_glob(language))
+        out: List[Finding] = []
+        if lambdas and not reserved:
+            return [Finding(
+                id=self.id,
+                title=self.title,
+                severity="Low",
+                category=self.category,
+                file=None,
+                line=None,
+                evidence=None,
+                recommendation="Consider reserved concurrency for critical latency-sensitive functions.",
+            )]
+        return out
+
+
+class S3ReplicationMetrics(Rule):
+    id = "OPS-025"
+    title = "S3 replication metrics not enabled"
+    category = "Operational Excellence"
+    severity = "Low"
+
+    def run(self, repo_path: Path, language: str = "typescript") -> List[Finding]:
+        replication = rg(repo_path, r'replicationRule|replicationConfiguration|ReplicationRule', glob=code_glob(language))
+        metrics = rg(repo_path, r'ReplicationTime|replicationMetrics|metrics', glob=code_glob(language))
+        out: List[Finding] = []
+        if replication and not metrics:
+            return [Finding(
+                id=self.id,
+                title=self.title,
+                severity="Low",
+                category=self.category,
+                file=None,
+                line=None,
+                evidence=None,
+                recommendation="Enable S3 replication metrics for monitoring replication status.",
+            )]
+        return out

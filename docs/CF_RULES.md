@@ -4,13 +4,13 @@ This document provides a comprehensive list of all rules checked by AWS Arch Age
 
 ## Overview
 
-AWS Arch Agent checks **129 static analysis rules** plus additional CloudFormation template rules across all 6 AWS Well-Architected Framework pillars.
+AWS Arch Agent checks **170 static analysis rules** plus additional CloudFormation template rules across all 6 AWS Well-Architected Framework pillars.
 
 ## Static Analysis Rules (V1 & V2 Modes)
 
 These rules run on your CDK TypeScript/Python code and execute in both V1 and V2 modes.
 
-### Security (56 rules)
+### Security (65 rules)
 
 **Encryption & Data Protection:**
 - SEC-006: S3 bucket encryption missing
@@ -88,7 +88,18 @@ These rules run on your CDK TypeScript/Python code and execute in both V1 and V2
 - SEC-022: VPC endpoints missing (S3/DynamoDB traffic via internet)
 - SEC-056: Stack termination protection not enabled
 
-### Reliability (22 rules)
+**Additional Security (SEC-057 to SEC-065):**
+- SEC-057: Lambda function URL without authentication
+- SEC-058: ECS task may run as root user
+- SEC-059: Redshift cluster encryption not enabled
+- SEC-060: DocumentDB cluster encryption not enabled
+- SEC-061: Neptune database encryption not enabled
+- SEC-062: CloudWatch Logs not encrypted with KMS
+- SEC-063: Backup vault encryption not configured
+- SEC-064: RDS instance may be publicly accessible
+- SEC-065: Amazon Macie not enabled for sensitive data discovery
+
+### Reliability (31 rules)
 
 **High Availability:**
 - REL-001: RDS instance missing multi-AZ
@@ -123,7 +134,18 @@ These rules run on your CDK TypeScript/Python code and execute in both V1 and V2
 - REL-021: CodePipeline missing manual approval for production
 - REL-022: ACM certificate validation method not specified
 
-### Operational Excellence (20 rules)
+**Additional Reliability (REL-023 to REL-031):**
+- REL-023: Blue-green deployment not configured for critical services
+- REL-024: SQS visibility timeout may need review
+- REL-025: DynamoDB global tables not configured for multi-region
+- REL-026: S3 replication not configured for critical buckets
+- REL-027: Lambda reserved concurrency not configured for critical functions
+- REL-028: API Gateway request validation not configured
+- REL-029: EventBridge rule retry policy not configured
+- REL-030: RDS deletion protection not enabled
+- REL-031: S3 bucket versioning not enabled
+
+### Operational Excellence (25 rules)
 
 **Logging:**
 - OPS-001: CloudTrail not enabled
@@ -153,7 +175,14 @@ These rules run on your CDK TypeScript/Python code and execute in both V1 and V2
 - OPS-017: CodePipeline notifications not configured
 - OPS-019: Glue job bookmarks not enabled
 
-### Performance Efficiency (14 rules)
+**Additional OpsEx (OPS-021 to OPS-025):**
+- OPS-021: CloudWatch dashboards not configured
+- OPS-022: Resource tagging strategy may be incomplete
+- OPS-023: SSM Parameter Store not using advanced tier
+- OPS-024: Lambda function may benefit from reserved concurrency
+- OPS-025: S3 replication metrics not enabled
+
+### Performance Efficiency (19 rules)
 
 **Compute Optimization:**
 - PERF-001: Compute may not use Graviton/ARM
@@ -177,7 +206,14 @@ These rules run on your CDK TypeScript/Python code and execute in both V1 and V2
 - PERF-011: Global Accelerator not used for global traffic
 - PERF-014: S3 Transfer Acceleration not enabled for global uploads
 
-### Cost Optimization (13 rules)
+**Additional Performance (PERF-015 to PERF-019):**
+- PERF-015: Lambda SnapStart not enabled for Java functions
+- PERF-016: Aurora not using I/O-Optimized for high I/O workloads
+- PERF-017: EBS io2 Block Express not used for high IOPS
+- PERF-018: CloudWatch Contributor Insights not enabled
+- PERF-019: RDS Proxy not used for connection pooling
+
+### Cost Optimization (18 rules)
 
 **Resource Right-Sizing:**
 - COST-002: Compute resources may miss autoscaling
@@ -200,15 +236,30 @@ These rules run on your CDK TypeScript/Python code and execute in both V1 and V2
 - COST-005: RDS not using Reserved Instances (savings opportunity)
 - COST-009: ElastiCache may benefit from reserved nodes
 
-### Best Practices (2 rules)
+**Additional Cost (COST-014 to COST-018):**
+- COST-014: AWS Budgets not configured
+- COST-015: Cost allocation tags may not be configured
+- COST-016: Savings Plans opportunity for compute workloads
+- COST-017: Lambda memory/CPU may not be optimized
+- COST-018: S3 Storage Lens not enabled
+
+### Best Practices (5 rules)
 
 - BP-001: Standard tags missing (Environment, Owner, etc.)
 - BP-002: Using environment variables instead of Secrets Manager
+- BP-003: Resource naming convention may not be followed
+- BP-004: CDK Aspects not used for policy enforcement
+- BP-005: CDK context not used for environment-specific config
 
-### Sustainability (2 rules)
+### Sustainability (7 rules)
 
 - SUST-001: Spot instances not considered for batch/non-critical workloads
 - SUST-002: Resource right-sizing opportunities detected
+- SUST-003: Scheduled scaling not configured for predictable patterns
+- SUST-004: Consider async processing for batch workloads
+- SUST-005: Consider managed services over self-managed
+- SUST-006: CloudFront compression not enabled
+- SUST-007: Latest generation instance types not used
 
 ---
 

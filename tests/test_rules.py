@@ -1,12 +1,19 @@
 """Unit tests for static rules (TS and Python)."""
 from pathlib import Path
 
-from aws_arch_agent.rules.security import S3PublicAccessNotBlocked, IamWildcardAction
+from aws_arch_agent.rules.security import (
+    S3PublicAccessNotBlocked,
+    IamWildcardAction,
+    LambdaFunctionUrlAuth,
+    RdsPubliclyAccessible,
+)
 from aws_arch_agent.rules.best_practices import MissingStandardTags
 from aws_arch_agent.rules.reliability import (
     RdsMultiAzMissing,
     BackupRetentionMissing,
     LambdaDlqMissing,
+    RdsDeletionProtection,
+    S3VersioningMissing,
 )
 from aws_arch_agent.rules.cost import LogRetentionNeverExpire, MissingAutoscalingHint
 from aws_arch_agent.rules.operational_excellence import (
@@ -229,3 +236,68 @@ def test_right_sizing_hint_ts(tmp_path: Path) -> None:
     findings = rule.run(tmp_path, "typescript")
     assert len(findings) >= 1
     assert findings[0].id == "SUST-002"
+
+
+# --- New Security rules (SEC-057, SEC-064) ---
+
+
+def test_lambda_function_url_auth_ts(tmp_path: Path) -> None:
+    (tmp_path / "lib").mkdir()
+    (tmp_path / "lib" / "stack.ts").write_text(
+        'fn.addFunctionUrl({ authType: lambda.FunctionUrlAuthType.NONE });',
+        encoding="utf-8",
+    )
+    rule = LambdaFunctionUrlAuth()
+    findings = rule.run(tmp_path, "typescript")
+    assert len(findings) >= 1
+    assert findings[0].id == "SEC-057"
+
+
+def test_lambda_function_url_auth_iam_no_finding(tmp_path: Path) -> None:
+    (tmp_path / "lib").mkdir()
+    (tmp_path / "lib" / "stack.ts").write_text(
+        'fn.addFunctionUrl({ authType: lambda.FunctionUrlAuthType.AWS_IAM });',
+        encoding="utf-8",
+    )
+    rule = LambdaFunctionUrlAuth()
+    findings = rule.run(tmp_path, "typescript")
+    assert len(findings) == 0
+
+
+def test_rds_publicly_accessible_ts(tmp_path: Path) -> None:
+    (tmp_path / "lib").mkdir()
+    (tmp_path / "lib" / "stack.ts").write_text(
+        'new rds.DatabaseInstance(this, "DB", { engine: rds.DatabaseInstanceEngine.postgres({ version: rds.PostgresEngineVersion.VER_15 }), vpc });',
+        encoding="utf-8",
+    )
+    rule = RdsPubliclyAccessible()
+    findings = rule.run(tmp_path, "typescript")
+    assert len(findings) >= 1
+    assert findings[0].id == "SEC-064"
+
+
+# --- New Reliability rules (REL-030, REL-031) ---
+
+
+def test_rds_deletion_protection_ts(tmp_path: Path) -> None:
+    (tmp_path / "lib").mkdir()
+    (tmp_path / "lib" / "stack.ts").write_text(
+        'new rds.DatabaseInstance(this, "DB", { engine: rds.DatabaseInstanceEngine.postgres({ version: rds.PostgresEngineVersion.VER_15 }), vpc });',
+        encoding="utf-8",
+    )
+    rule = RdsDeletionProtection()
+    findings = rule.run(tmp_path, "typescript")
+    assert len(findings) >= 1
+    assert findings[0].id == "REL-030"
+
+
+def test_s3_versioning_missing_ts(tmp_path: Path) -> None:
+    (tmp_path / "lib").mkdir()
+    (tmp_path / "lib" / "stack.ts").write_text(
+        'new s3.Bucket(this, "B");',
+        encoding="utf-8",
+    )
+    rule = S3VersioningMissing()
+    findings = rule.run(tmp_path, "typescript")
+    assert len(findings) >= 1
+    assert findings[0].id == "REL-031"

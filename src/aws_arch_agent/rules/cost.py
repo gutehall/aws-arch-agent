@@ -326,3 +326,120 @@ class S3LifecycleMissing(Rule):
                 recommendation="Add S3 lifecycle policies to transition objects to cheaper storage classes (IA, Glacier) or delete old versions. In CDK: bucket.addLifecycleRule()",
             )]
         return out
+
+
+class AwsBudgetsMissing(Rule):
+    id = "COST-014"
+    title = "AWS Budgets not configured"
+    category = "Cost"
+    severity = "Low"
+
+    def run(self, repo_path: Path, language: str = "typescript") -> List[Finding]:
+        budgets = rg(repo_path, r'budgets\.CfnBudget|CfnBudget', glob=code_glob(language))
+        if not budgets:
+            return [Finding(
+                id=self.id,
+                title=self.title,
+                severity="Low",
+                category=self.category,
+                file=None,
+                line=None,
+                evidence=None,
+                recommendation="Configure AWS Budgets for cost monitoring and alerts. Consider budget alerts at 80% and 100%.",
+            )]
+        return []
+
+
+class CostAllocationTags(Rule):
+    id = "COST-015"
+    title = "Cost allocation tags may not be configured"
+    category = "Cost"
+    severity = "Low"
+
+    def run(self, repo_path: Path, language: str = "typescript") -> List[Finding]:
+        tags = rg(repo_path, r'tags\s*:|tags\s*=', glob=code_glob(language))
+        cost_tags = rg(repo_path, r'CostCenter|cost-center|Project|Environment', glob=code_glob(language))
+        out: List[Finding] = []
+        if tags and not cost_tags:
+            return [Finding(
+                id=self.id,
+                title=self.title,
+                severity="Low",
+                category=self.category,
+                file=None,
+                line=None,
+                evidence=None,
+                recommendation="Add cost allocation tags (CostCenter, Project, Environment) for AWS Cost Explorer and billing reports.",
+            )]
+        return out
+
+
+class SavingsPlansOpportunity(Rule):
+    id = "COST-016"
+    title = "Savings Plans opportunity for compute workloads"
+    category = "Cost"
+    severity = "Low"
+
+    def run(self, repo_path: Path, language: str = "typescript") -> List[Finding]:
+        compute = rg(repo_path, r'FargateService|Ec2Service|ec2\.Instance|lambda\.Function', glob=code_glob(language))
+        if compute:
+            return [Finding(
+                id=self.id,
+                title=self.title,
+                severity="Low",
+                category=self.category,
+                file=None,
+                line=None,
+                evidence=None,
+                recommendation="For steady-state compute, consider Compute or EC2 Instance Savings Plans for up to 66% savings.",
+            )]
+        return []
+
+
+class LambdaPowerTuning(Rule):
+    id = "COST-017"
+    title = "Lambda memory/CPU may not be optimized"
+    category = "Cost"
+    severity = "Low"
+
+    def run(self, repo_path: Path, language: str = "typescript") -> List[Finding]:
+        lambda_pat = r'new\s+(lambda\.Function|NodejsFunction|PythonFunction)\(' if language == "typescript" else r'(lambda_.Function|aws_lambda.Function)\('
+        lambdas = rg(repo_path, lambda_pat, glob=code_glob(language))
+        memory = rg(repo_path, r'memorySize\s*:\s*\d+', glob=code_glob(language))
+        out: List[Finding] = []
+        if lambdas and not memory:
+            return [Finding(
+                id=self.id,
+                title=self.title,
+                severity="Low",
+                category=self.category,
+                file=None,
+                line=None,
+                evidence=None,
+                recommendation="Use AWS Lambda Power Tuning to find optimal memory/CPU configuration for cost and performance.",
+            )]
+        return out
+
+
+class S3StorageLens(Rule):
+    id = "COST-018"
+    title = "S3 Storage Lens not enabled"
+    category = "Cost"
+    severity = "Low"
+
+    def run(self, repo_path: Path, language: str = "typescript") -> List[Finding]:
+        buckets = rg(repo_path, r'new\s+s3\.Bucket\(' if language == "typescript" else r's3\.Bucket\(', glob=code_glob(language))
+        storage_lens = rg(repo_path, r'StorageLens|CfnStorageLens', glob=code_glob(language))
+        out: List[Finding] = []
+        if buckets and not storage_lens:
+            return [Finding(
+                id=self.id,
+                title=self.title,
+                severity="Low",
+                category=self.category,
+                file=None,
+                line=None,
+                evidence=None,
+                recommendation="Enable S3 Storage Lens for storage optimization insights and cost analysis.",
+            )]
+        return out

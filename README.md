@@ -4,6 +4,8 @@
 
 Runs locally. No AWS credentials needed. Supports TypeScript and Python CDK.
 
+**Note:** This solution is still in an early phase. There may be bugs, and not all rules have been added yet. More updates to come.
+
 ```bash
 # Quick start - scan your CDK project
 pip install -e .
@@ -12,17 +14,18 @@ aws-arch-agent --repo ./my-cdk-project --no-llm
 
 ## What It Does
 
-AWS Arch Agent reviews your CDK code against **129 rules** across all 6 AWS Well-Architected Framework pillars:
+AWS Arch Agent reviews your CDK code against **170 rules** across all 6 AWS Well-Architected Framework pillars:
 
 | Pillar | Rules | Examples |
 |--------|-------|----------|
-| **Security** | 56 | Encryption missing, public access, hardcoded secrets, MFA not enabled |
-| **Reliability** | 22 | Missing DLQs, no backups, single-AZ deployments, no health checks |
-| **Operational Excellence** | 20 | No logging, missing alarms, no monitoring, no observability |
-| **Performance** | 14 | No caching, wrong instance sizes, ARM not used, no CDN |
-| **Cost Optimization** | 13 | No autoscaling, oversized resources, NAT costs, no lifecycle policies |
-| **Sustainability** | 2 | Spot instances not used, right-sizing opportunities |
+| **Security** | 65 | Encryption missing, public access, hardcoded secrets, MFA not enabled |
+| **Reliability** | 31 | Missing DLQs, no backups, single-AZ deployments, no health checks |
+| **Operational Excellence** | 25 | No logging, missing alarms, no monitoring, no observability |
+| **Performance** | 19 | No caching, wrong instance sizes, ARM not used, no CDN |
+| **Cost Optimization** | 18 | No autoscaling, oversized resources, NAT costs, no lifecycle policies |
+| **Sustainability** | 7 | Spot instances not used, right-sizing opportunities |
 
+**See complete rule list:** [docs/CF_RULES.md](docs/CF_RULES.md)
 
 ## Quick Start (3 steps)
 
@@ -157,23 +160,6 @@ export OLLAMA_MODEL=llama3:8b
 aws-arch-agent --repo . --mode v2
 ```
 
-## What Gets Checked
-
-**129 static analysis rules** across all 6 Well-Architected pillars covering **33 AWS services**:
-
-| Pillar | Rules | Key Areas |
-|--------|-------|-----------|
-| **Security** | 56 | Encryption, IAM, network security, secrets management, compliance |
-| **Reliability** | 22 | High availability, backups, error handling, data retention |
-| **Operational Excellence** | 20 | Logging, monitoring, configuration tracking, observability |
-| **Performance Efficiency** | 14 | Caching, compute optimization, global performance |
-| **Cost Optimization** | 13 | Autoscaling, right-sizing, storage optimization, reserved capacity |
-| **Best Practices** | 2 | Tagging, secrets management |
-| **Sustainability** | 2 | Spot instances, resource optimization |
-
-**AWS Services covered:** IAM, S3, RDS, Lambda, DynamoDB, KMS, Security Groups, ALB/NLB, CloudTrail, VPC, API Gateway, SQS, SNS, Secrets Manager, CloudFront, ECS/Fargate, ElastiCache, Step Functions, EventBridge, AWS Backup, Security Hub, GuardDuty, AWS Config, WAF, ECR, Route 53, SSM, Cognito, EFS, Kinesis, OpenSearch, Athena, Glue, MSK, SageMaker, AppSync, FSx, Transfer Family, CodePipeline, CodeBuild, Global Accelerator, App Runner, Transit Gateway, ACM, and more.
-
-📋 **See complete rule list:** [docs/CF_RULES.md](docs/CF_RULES.md)
 
 ## Advanced Features
 
@@ -235,7 +221,7 @@ aws-arch-agent --repo . --config aws-arch-agent.yaml
 
 ## Documentation
 
-- **[docs/CF_RULES.md](docs/CF_RULES.md)** - Complete list of all 129 static rules + CloudFormation rules
+- **[docs/CF_RULES.md](docs/CF_RULES.md)** - Complete list of all static rules + CloudFormation rules
 - **[docs/REFERENCE.md](docs/REFERENCE.md)** - Complete CLI reference
 - **[docs/CONFIG.md](docs/CONFIG.md)** - Configuration file options
 - **[CONTRIBUTING.md](CONTRIBUTING.md)** - Development setup and contributing guide
@@ -256,9 +242,6 @@ mypy .          # Type check
 
 MIT License - see [LICENSE](LICENSE) file for details.
 
-## Support
 
-- **Issues:** [GitHub Issues](https://github.com/YOUR_USERNAME/aws-arch-agent/issues)
-- **Discussions:** [GitHub Discussions](https://github.com/YOUR_USERNAME/aws-arch-agent/discussions)
 
 
