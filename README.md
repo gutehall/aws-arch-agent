@@ -2,7 +2,7 @@
 
 **Note:** This solution is still in an early phase. There may be bugs, and not all rules have been added yet. More updates to come.
 
-> **Automated AWS CDK architecture review tool** that scans your infrastructure code and finds security, reliability, performance, and cost issues **in seconds**.
+> **Automated AWS CDK architecture review tool** that scans your infrastructure code and finds security, reliability, performance, and cost issues.
 
 Runs locally. No AWS credentials needed. Supports TypeScript and Python CDK.
 
@@ -63,7 +63,7 @@ aws-arch-agent --repo /path/to/your/cdk-project --no-llm
 aws-arch-agent --repo . --no-llm
 ```
 
-This creates a `report.md` file with all findings in ~5 seconds.
+This creates a `report.md` file with all findings.
 
 ### 3. Review the Report
 
