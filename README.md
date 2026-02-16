@@ -29,7 +29,7 @@ AWS Arch Agent reviews your CDK code against **170 rules** across all 6 AWS Well
 
 **See complete rule list:** [docs/CF_RULES.md](docs/CF_RULES.md)
 
-## Quick Start (3 steps)
+## Quick Start
 
 ### 1. Install
 
