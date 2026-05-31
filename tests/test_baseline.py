@@ -33,3 +33,18 @@ def test_merge_into_baseline() -> None:
     f = Finding(id="SEC-001", title="t", severity="High", recommendation="r")
     merged = merge_into_baseline(set(), [f])
     assert finding_fingerprint(f) in merged
+
+
+def test_baseline_matches_ripgrep_path_prefix() -> None:
+    """Ripgrep reports ./file.ts; baseline stores file.ts — both must match."""
+    baseline = {("SEC-001", "src/a.ts", 15)}
+    finding = Finding(
+        id="SEC-001",
+        title="t",
+        severity="High",
+        recommendation="r",
+        file="./src/a.ts",
+        line=15,
+    )
+    assert filter_new_findings([finding], baseline) == []
+

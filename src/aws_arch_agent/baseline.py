@@ -5,13 +5,14 @@ import json
 from pathlib import Path
 
 from aws_arch_agent.models import Finding
+from aws_arch_agent.tools.paths import normalize_rel_path
 
 DEFAULT_BASELINE_NAME = ".aws-arch-agent-baseline.json"
 
 
 def finding_fingerprint(f: Finding) -> tuple[str, str | None, int | None]:
     """Stable key for baseline matching."""
-    return (f.id, f.file, f.line)
+    return (f.id, normalize_rel_path(f.file), f.line)
 
 
 def load_baseline(path: Path) -> set[tuple[str, str | None, int | None]]:
@@ -26,7 +27,10 @@ def load_baseline(path: Path) -> set[tuple[str, str | None, int | None]]:
     result: set[tuple[str, str | None, int | None]] = set()
     for item in entries:
         if isinstance(item, dict):
-            result.add((item.get("id", ""), item.get("file"), item.get("line")))
+            file_path = item.get("file")
+            if isinstance(file_path, str):
+                file_path = normalize_rel_path(file_path)
+            result.add((item.get("id", ""), file_path, item.get("line")))
         elif isinstance(item, list) and len(item) >= 1:
             result.add((item[0], item[1] if len(item) > 1 else None, item[2] if len(item) > 2 else None))
     return result

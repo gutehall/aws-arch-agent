@@ -6,11 +6,12 @@ from pathlib import Path, PurePosixPath
 from typing import List, Tuple
 
 from aws_arch_agent.rules.base import DEFAULT_EXCLUDE_GLOBS
+from aws_arch_agent.tools.paths import normalize_rel_path
 
 
 def _path_excluded(rel: str, exclude_globs: tuple[str, ...] | list[str]) -> bool:
     """Return True if rel path matches any exclude glob."""
-    path = PurePosixPath(rel.replace("\\", "/"))
+    path = PurePosixPath(normalize_rel_path(rel) or rel)
     return any(path.match(pattern) for pattern in exclude_globs)
 
 
@@ -52,7 +53,7 @@ def _fallback_search(
             rel = fp.relative_to(repo_path)
         except ValueError:
             continue
-        rel_str = str(rel).replace("\\", "/")
+        rel_str = normalize_rel_path(str(rel).replace("\\", "/")) or ""
         if _path_excluded(rel_str, exclude_globs):
             continue
         for i, line in enumerate(text.splitlines(), start=1):
@@ -88,11 +89,14 @@ def rg(
         if len(parts) != 3:
             continue
         f, ln, txt = parts
+        rel = normalize_rel_path(f) or f
+        if _path_excluded(rel, effective_excludes):
+            continue
         try:
             lni = int(ln)
         except ValueError:
             continue
-        hits.append((f, lni, txt.strip()))
+        hits.append((rel, lni, txt.strip()))
         if len(hits) >= max_hits:
             break
     if not hits:
