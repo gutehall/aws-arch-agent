@@ -64,15 +64,19 @@ class LLMClient:
         if not api_key:
             logger.warning("OPENAI_API_KEY not set; skipping LLM polish")
             return prompt
-        client = OpenAI(api_key=api_key)
-        resp = client.chat.completions.create(
-            model=self.openai_model,
-            messages=[
-                {"role": "system", "content": system},
-                {"role": "user", "content": prompt},
-            ],
-        )
-        return resp.choices[0].message.content or prompt
+        try:
+            client = OpenAI(api_key=api_key)
+            resp = client.chat.completions.create(
+                model=self.openai_model,
+                messages=[
+                    {"role": "system", "content": system},
+                    {"role": "user", "content": prompt},
+                ],
+            )
+            return resp.choices[0].message.content or prompt
+        except Exception as e:
+            logger.warning("OpenAI request failed: %s", e)
+            return prompt
 
     def _anthropic(self, prompt: str, system: str) -> str:
         try:
@@ -84,16 +88,15 @@ class LLMClient:
         if not api_key:
             logger.warning("ANTHROPIC_API_KEY not set; skipping LLM polish")
             return prompt
-        client = anthropic.Anthropic(api_key=api_key)
-        msg = client.messages.create(
-            model=self.anthropic_model,
-            system=system,
-            max_tokens=1200,
-            messages=[{"role": "user", "content": prompt}],
-        )
-        # anthropic returns content blocks
         try:
+            client = anthropic.Anthropic(api_key=api_key)
+            msg = client.messages.create(
+                model=self.anthropic_model,
+                system=system,
+                max_tokens=1200,
+                messages=[{"role": "user", "content": prompt}],
+            )
             return "".join([b.text for b in msg.content if hasattr(b, "text")]) or prompt
         except Exception as e:
-            logger.warning("Anthropic response parse failed: %s", e)
+            logger.warning("Anthropic request failed: %s", e)
             return prompt

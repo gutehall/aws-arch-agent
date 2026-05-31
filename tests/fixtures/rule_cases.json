@@ -1,0 +1,678 @@
+{
+  "BP-001": {
+    "negative_ts": "tags: { Environment: 'prod' }",
+    "positive_ts": "export class Stack {};"
+  },
+  "BP-002": {
+    "negative_ts": "// clean compliant stack",
+    "positive_ts": "new lambda.Function(this, 'Fn', { environment: { PASSWORD: 'secret123456789' } });"
+  },
+  "BP-003": {
+    "negative_ts": "MyAppDatabase",
+    "positive_ts": "new s3.Bucket(this, \"A\");\nnew s3.Bucket(this, \"B\");\nnew s3.Bucket(this, \"C\");\nnew s3.Bucket(this, \"D\");"
+  },
+  "BP-004": {
+    "negative_ts": "Aspects.of",
+    "positive_ts": "class MyStack extends Stack { constructor(scope, id) { super(scope, id); } }"
+  },
+  "BP-005": {
+    "negative_ts": "context:",
+    "positive_ts": "class MyStack extends Stack { constructor(scope, id) { super(scope, id); } }"
+  },
+  "COST-001": {
+    "negative_ts": "retention: logs.RetentionDays.ONE_MONTH",
+    "positive_ts": "new logs.LogGroup(this, 'LG', { retention: logs.RetentionDays.INFINITE });"
+  },
+  "COST-002": {
+    "negative_ts": "autoScalingGroup",
+    "positive_ts": "new ecs.FargateService(this, \"Svc\", { cluster, taskDefinition });"
+  },
+  "COST-003": {
+    "negative_ts": "autoScaleReadCapacity",
+    "positive_ts": "new dynamodb.Table(this, 'T', { partitionKey: { name: 'id', type: dynamodb.AttributeType.STRING }, billingMode: dynamodb.BillingMode.PROVISIONED, readCapacity: 5, writeCapacity: 5 });"
+  },
+  "COST-004": {
+    "negative_ts": "// clean",
+    "positive_ts": "new lambda.Function(this, 'Fn', { provisionedConcurrentExecutions: 5, runtime: lambda.Runtime.NODEJS_18_X, handler: 'h', code: lambda.Code.fromInline('x') });"
+  },
+  "COST-005": {
+    "negative_ts": "// clean",
+    "positive_ts": "new rds.DatabaseInstance(this, 'DB', { vpc, engine: rds.DatabaseInstanceEngine.postgres({ version: rds.PostgresEngineVersion.VER_15 }) });"
+  },
+  "COST-006": {
+    "negative_ts": "InterfaceVpcEndpoint",
+    "positive_ts": "new ec2.Vpc(this, 'Vpc', { natGateways: 1 });"
+  },
+  "COST-007": {
+    "negative_ts": "INTELLIGENT_TIERING",
+    "positive_ts": "new s3.Bucket(this, \"B\");"
+  },
+  "COST-008": {
+    "negative_ts": "GP3",
+    "positive_ts": "new ec2.Volume(this, 'V', { availabilityZone: 'az', size: Size.gibibytes(100), volumeType: ec2.EbsDeviceVolumeType.GP2 });"
+  },
+  "COST-009": {
+    "negative_ts": "// clean compliant stack",
+    "positive_ts": "new elasticache.CfnReplicationGroup(this, 'C', {});"
+  },
+  "COST-010": {
+    "negative_ts": ".r7g.",
+    "positive_ts": "new rds.DatabaseInstance(this, 'DB', { vpc, instanceType: ec2.InstanceType.of(ec2.InstanceClass.T3, ec2.InstanceSize.MEDIUM), engine: rds.DatabaseInstanceEngine.postgres({ version: rds.PostgresEngineVersion.VER_15 }) });"
+  },
+  "COST-011": {
+    "negative_ts": "// clean compliant stack",
+    "positive_ts": "new cloudfront.Distribution(this, 'Cf', { defaultBehavior: { origin } });"
+  },
+  "COST-012": {
+    "negative_ts": "// clean",
+    "positive_ts": "new ec2.CfnEIP(this, 'Eip', {});"
+  },
+  "COST-013": {
+    "negative_ts": "lifecycleRules:",
+    "positive_ts": "new s3.Bucket(this, \"B\");"
+  },
+  "COST-014": {
+    "positive_py": "# empty"
+  },
+  "COST-015": {
+    "negative_ts": "CostCenter:",
+    "positive_ts": "new s3.Bucket(this, 'B', { tags: { Name: 'app' } });"
+  },
+  "COST-016": {
+    "negative_ts": "// clean compliant stack",
+    "positive_ts": "new lambda.Function(this, 'Fn', { runtime: lambda.Runtime.NODEJS_18_X, handler: 'h', code: lambda.Code.fromInline('x') });"
+  },
+  "COST-017": {
+    "negative_ts": "// clean compliant stack",
+    "positive_ts": "new lambda.Function(this, 'Fn', { environment: { PASSWORD: 'secret123456789' } });"
+  },
+  "COST-018": {
+    "negative_ts": "// clean compliant stack",
+    "positive_ts": "new s3.Bucket(this, \"B\");"
+  },
+  "OPS-001": {
+    "negative_ts": "new cloudtrail.Trail(this, 'Trail')",
+    "positive_ts": "new s3.Bucket(this, \"B\");"
+  },
+  "OPS-002": {
+    "negative_ts": "new ec2.FlowLog(this, 'FL')",
+    "positive_ts": "new ec2.Vpc(this, \"Vpc\", { maxAzs: 2 });"
+  },
+  "OPS-003": {
+    "negative_ts": "tracingEnabled: true",
+    "positive_ts": "new apigateway.RestApi(this, \"Api\");"
+  },
+  "OPS-004": {
+    "negative_ts": "// clean compliant stack",
+    "positive_ts": "new dynamodb.Table(this, 'T', { partitionKey: { name: 'id', type: dynamodb.AttributeType.STRING } });"
+  },
+  "OPS-005": {
+    "negative_ts": "accessLogDestination",
+    "positive_ts": "new apigateway.RestApi(this, 'Api');"
+  },
+  "OPS-006": {
+    "negative_ts": "accessLogging",
+    "positive_ts": "new elbv2.ApplicationLoadBalancer(this, 'Alb', { vpc });"
+  },
+  "OPS-007": {
+    "negative_ts": "// clean compliant stack",
+    "positive_ts": "new cloudfront.Distribution(this, 'Cf', { defaultBehavior: { origin } });"
+  },
+  "OPS-008": {
+    "negative_ts": "containerInsights: true",
+    "positive_ts": "new ecs.Cluster(this, 'C', { containerInsights: false });"
+  },
+  "OPS-009": {
+    "negative_ts": "monitoringInterval:",
+    "positive_ts": "new rds.DatabaseInstance(this, 'DB', { vpc, engine: rds.DatabaseInstanceEngine.postgres({ version: rds.PostgresEngineVersion.VER_15 }) });"
+  },
+  "OPS-010": {
+    "negative_ts": "// clean compliant stack",
+    "positive_ts": "new lambda.Function(this, 'Fn', { runtime: lambda.Runtime.NODEJS_18_X, handler: 'h', code: lambda.Code.fromInline('x') });"
+  },
+  "OPS-011": {
+    "negative_ts": "// clean compliant stack",
+    "positive_ts": "new cloudwatch.Alarm(this, 'A', { metric: metric, threshold: 1, evaluationPeriods: 1 });"
+  },
+  "OPS-012": {
+    "negative_ts": "tracingEnabled: true",
+    "positive_ts": "new sfn.StateMachine(this, 'SM', { definitionBody: DefinitionBody.fromChainable(new sfn.Pass(this, 'Pass')) });"
+  },
+  "OPS-013": {
+    "negative_ts": "// clean compliant stack",
+    "positive_ts": "new events.Rule(this, 'R', { eventPattern: { source: ['aws.ec2'] } });"
+  },
+  "OPS-014": {
+    "positive_py": "# empty"
+  },
+  "OPS-015": {
+    "negative_ts": "// clean compliant stack",
+    "positive_ts": "new glue.CfnJob(this, 'J', { command: { name: 'glueetl' }, role: role.roleArn });"
+  },
+  "OPS-016": {
+    "negative_ts": "FlowLog.*TransitGateway",
+    "positive_ts": "new ec2.CfnTransitGateway(this, 'Tgw', {});"
+  },
+  "OPS-017": {
+    "negative_ts": "// clean compliant stack",
+    "positive_ts": "new codepipeline.Pipeline(this, 'P');"
+  },
+  "OPS-018": {
+    "negative_ts": "observabilityConfiguration",
+    "positive_ts": "new apprunner.Service(this, 'S', { source: apprunner.Source.fromEcr({ repository }) });"
+  },
+  "OPS-019": {
+    "negative_ts": "// clean compliant stack",
+    "positive_ts": "new glue.CfnJob(this, 'J', { command: { name: 'glueetl' }, role: role.roleArn });"
+  },
+  "OPS-020": {
+    "negative_ts": "// clean compliant stack",
+    "positive_ts": "new codebuild.Project(this, 'P', { environment: { privileged: true } });"
+  },
+  "OPS-021": {
+    "negative_ts": "// clean compliant stack",
+    "positive_ts": "new lambda.Function(this, 'Fn', { runtime: lambda.Runtime.NODEJS_18_X, handler: 'h', code: lambda.Code.fromInline('x') });"
+  },
+  "OPS-022": {
+    "negative_ts": "CostCenter:",
+    "positive_ts": "new s3.Bucket(this, 'B', { tags: { Name: 'app' } });"
+  },
+  "OPS-023": {
+    "negative_ts": "// clean compliant stack",
+    "positive_ts": "new ssm.StringParameter(this, 'P', { parameterName: '/x', stringValue: 'v' });"
+  },
+  "OPS-024": {
+    "negative_ts": "// clean compliant stack",
+    "positive_ts": "new lambda.Function(this, 'Fn', { environment: { PASSWORD: 'secret123456789' } });"
+  },
+  "OPS-025": {
+    "negative_ts": "replicationMetrics",
+    "positive_ts": "new s3.Bucket(this, 'B', { replicationRule: {} });"
+  },
+  "PERF-001": {
+    "negative_ts": "architecture: lambda.Architecture.ARM_64",
+    "positive_ts": "new lambda.Function(this, \"Fn\", { runtime: lambda.Runtime.NODEJS_18_X, handler: \"index.handler\", code: lambda.Code.fromInline(\"x\") });"
+  },
+  "PERF-002": {
+    "negative_ts": "new cloudfront.Distribution(this, 'Cf')",
+    "positive_ts": "new s3.Bucket(this, \"B\");"
+  },
+  "PERF-003": {
+    "negative_ts": "// clean compliant stack",
+    "positive_ts": "new dynamodb.Table(this, 'T', { partitionKey: { name: 'id', type: dynamodb.AttributeType.STRING } });"
+  },
+  "PERF-004": {
+    "negative_ts": "caching:",
+    "positive_ts": "new apigateway.RestApi(this, 'Api');"
+  },
+  "PERF-005": {
+    "negative_ts": "// clean compliant stack",
+    "positive_ts": "new lambda.Function(this, 'Fn', { environment: { PASSWORD: 'secret123456789' } });"
+  },
+  "PERF-006": {
+    "negative_ts": "// clean compliant stack",
+    "positive_ts": "new cloudfront.Distribution(this, 'Cf', { defaultBehavior: { origin } });"
+  },
+  "PERF-007": {
+    "negative_ts": "cpu: 256",
+    "positive_ts": "new ecs.FargateTaskDefinition(this, 'Td');"
+  },
+  "PERF-008": {
+    "negative_ts": "instanceType: 'db.t3.micro'",
+    "positive_ts": "instanceType: 'db.r5.xlarge'"
+  },
+  "PERF-009": {
+    "negative_ts": "// clean compliant stack",
+    "positive_ts": "new kinesis.Stream(this, 'S');"
+  },
+  "PERF-010": {
+    "negative_ts": "// clean compliant stack",
+    "positive_ts": "new opensearch.Domain(this, 'D', { version: opensearch.EngineVersion.OPENSEARCH_2_3 });"
+  },
+  "PERF-011": {
+    "negative_ts": "globalaccelerator",
+    "positive_ts": "new elbv2.ApplicationLoadBalancer(this, 'Alb', { vpc });"
+  },
+  "PERF-012": {
+    "negative_ts": "// clean compliant stack",
+    "positive_ts": "new efs.FileSystem(this, 'Fs', { vpc });"
+  },
+  "PERF-013": {
+    "negative_ts": "// clean compliant stack",
+    "positive_ts": "new appsync.GraphqlApi(this, 'A', { name: 'api', schema: schema });"
+  },
+  "PERF-014": {
+    "negative_ts": "transferAcceleration: true",
+    "positive_ts": "new s3.Bucket(this, \"B\");"
+  },
+  "PERF-015": {
+    "negative_ts": "snapStart",
+    "positive_ts": "new lambda.Function(this, 'Fn', { runtime: lambda.Runtime.JAVA_11, handler: 'h', code: lambda.Code.fromInline('x') });"
+  },
+  "PERF-016": {
+    "negative_ts": "// clean compliant stack",
+    "positive_ts": "new rds.DatabaseInstance(this, 'DB', { engine: rds.DatabaseInstanceEngine.postgres({ version: rds.PostgresEngineVersion.VER_15 }), vpc });"
+  },
+  "PERF-017": {
+    "negative_ts": "io2",
+    "positive_ts": "volumeType: ec2.EbsDeviceVolumeType.GP3"
+  },
+  "PERF-018": {
+    "negative_ts": "// clean compliant stack",
+    "positive_ts": "new dynamodb.Table(this, 'T', { partitionKey: { name: 'id', type: dynamodb.AttributeType.STRING } });"
+  },
+  "PERF-019": {
+    "negative_ts": "// clean compliant stack",
+    "positive_ts": "new rds.DatabaseInstance(this, 'DB', { engine: rds.DatabaseInstanceEngine.postgres({ version: rds.PostgresEngineVersion.VER_15 }), vpc });"
+  },
+  "REL-001": {
+    "negative_ts": "multiAz: true",
+    "positive_ts": "new rds.DatabaseInstance(this, \"DB\", { instanceIdentifier: \"db\", engine: rds.DatabaseInstanceEngine.mysql({ version: rds.MysqlEngineVersion.VER_8_0 }) });"
+  },
+  "REL-002": {
+    "negative_ts": "backupRetention: Duration.days(7)",
+    "positive_ts": "new rds.DatabaseInstance(this, \"DB\", { engine: rds.DatabaseInstanceEngine.mysql({ version: rds.MysqlEngineVersion.VER_8_0 }) });"
+  },
+  "REL-003": {
+    "negative_ts": "deadLetterQueue: dlq",
+    "positive_ts": "new lambda.Function(this, \"Fn\", { runtime: lambda.Runtime.NODEJS_18_X, handler: \"index.handler\", code: lambda.Code.fromInline(\"x\") });"
+  },
+  "REL-004": {
+    "negative_ts": "pointInTimeRecovery: true",
+    "positive_ts": "new dynamodb.Table(this, 'T', { partitionKey: { name: 'id', type: dynamodb.AttributeType.STRING } });"
+  },
+  "REL-005": {
+    "negative_ts": "// clean compliant stack",
+    "positive_ts": "new dynamodb.Table(this, 'T', { partitionKey: { name: 'id', type: dynamodb.AttributeType.STRING } });"
+  },
+  "REL-006": {
+    "negative_ts": "throttle:",
+    "positive_ts": "new apigateway.RestApi(this, 'Api');"
+  },
+  "REL-007": {
+    "negative_ts": "healthCheck:",
+    "positive_ts": "new elbv2.ApplicationTargetGroup(this, 'Tg', { vpc, port: 80 });"
+  },
+  "REL-008": {
+    "negative_ts": "deadLetterQueue:",
+    "positive_ts": "new sqs.Queue(this, 'Q');"
+  },
+  "REL-009": {
+    "negative_ts": "// clean compliant stack",
+    "positive_ts": "new lambda.Function(this, 'Fn', { environment: { PASSWORD: 'secret123456789' } });"
+  },
+  "REL-010": {
+    "negative_ts": "vpcSubnets:",
+    "positive_ts": "new rds.DatabaseInstance(this, 'DB', { vpc, engine: rds.DatabaseInstanceEngine.postgres({ version: rds.PostgresEngineVersion.VER_15 }) });\nnew lambda.Function(this, 'Fn', { runtime: lambda.Runtime.NODEJS_18_X, handler: 'h', code: lambda.Code.fromInline('x') });"
+  },
+  "REL-011": {
+    "negative_ts": "addReadReplica",
+    "positive_ts": "new rds.DatabaseInstance(this, 'DB', { vpc, engine: rds.DatabaseInstanceEngine.postgres({ version: rds.PostgresEngineVersion.VER_15 }) });"
+  },
+  "REL-012": {
+    "negative_ts": "natGateways: 2",
+    "positive_ts": "new ec2.Vpc(this, 'Vpc', { maxAzs: 1, natGateways: 1 });"
+  },
+  "REL-013": {
+    "negative_ts": "// clean compliant stack",
+    "positive_ts": "new rds.DatabaseInstance(this, 'DB', { engine: rds.DatabaseInstanceEngine.postgres({ version: rds.PostgresEngineVersion.VER_15 }), vpc });"
+  },
+  "REL-014": {
+    "negative_ts": "// clean compliant stack",
+    "positive_ts": "new backup.BackupVault(this, 'V');"
+  },
+  "REL-015": {
+    "negative_ts": "addRetry",
+    "positive_ts": "new sfn.StateMachine(this, 'SM', { definitionBody: DefinitionBody.fromChainable(new sfn.Pass(this, 'Pass')) });"
+  },
+  "REL-016": {
+    "negative_ts": "// clean compliant stack",
+    "positive_ts": "new elasticache.CfnReplicationGroup(this, 'C', {});"
+  },
+  "REL-017": {
+    "negative_ts": "// clean compliant stack",
+    "positive_ts": "new efs.FileSystem(this, 'Fs', { vpc });"
+  },
+  "REL-018": {
+    "negative_ts": "// clean compliant stack",
+    "positive_ts": "new efs.FileSystem(this, 'Fs', { vpc });"
+  },
+  "REL-019": {
+    "negative_ts": "// clean compliant stack",
+    "positive_ts": "new kinesis.Stream(this, 'S');"
+  },
+  "REL-020": {
+    "negative_ts": "// clean compliant stack",
+    "positive_ts": "new globalaccelerator.Accelerator(this, 'A');"
+  },
+  "REL-021": {
+    "negative_ts": "ManualApprovalAction",
+    "positive_ts": "// prod deployment\nnew codepipeline.Pipeline(this, 'ProdPipeline');"
+  },
+  "REL-022": {
+    "negative_ts": "new acm.Certificate(this, 'C', { domainName: 'example.com', validation: acm.CertificateValidation.fromDns() });",
+    "positive_ts": "new acm.Certificate(this, 'C', { domainName: 'example.com' });"
+  },
+  "REL-023": {
+    "negative_ts": "blueGreenDeployment",
+    "positive_ts": "new ecs.FargateService(this, 'Svc', { cluster, taskDefinition });"
+  },
+  "REL-024": {
+    "negative_ts": "visibilityTimeout:",
+    "positive_ts": "new sqs.Queue(this, 'Q');"
+  },
+  "REL-025": {
+    "negative_ts": "// clean compliant stack",
+    "positive_ts": "new dynamodb.Table(this, 'T', { partitionKey: { name: 'id', type: dynamodb.AttributeType.STRING } });"
+  },
+  "REL-026": {
+    "negative_ts": "replicationRule:",
+    "positive_ts": "new s3.Bucket(this, \"B\");"
+  },
+  "REL-027": {
+    "negative_ts": "// clean compliant stack",
+    "positive_ts": "new lambda.Function(this, 'Fn', { environment: { PASSWORD: 'secret123456789' } });"
+  },
+  "REL-028": {
+    "negative_ts": "requestValidator",
+    "positive_ts": "new apigateway.RestApi(this, 'Api');"
+  },
+  "REL-029": {
+    "negative_ts": "// clean compliant stack",
+    "positive_ts": "new events.Rule(this, 'R', { eventPattern: { source: ['aws.ec2'] } });"
+  },
+  "REL-030": {
+    "negative_ts": "deletionProtection: true",
+    "positive_ts": "new rds.DatabaseInstance(this, 'DB', { engine: rds.DatabaseInstanceEngine.postgres({ version: rds.PostgresEngineVersion.VER_15 }), vpc });"
+  },
+  "REL-031": {
+    "negative_ts": "versioned: true",
+    "positive_ts": "new s3.Bucket(this, \"B\");"
+  },
+  "SEC-001": {
+    "negative_ts": "const policy = { actions: [\"s3:GetObject\"], resources: [\"arn:aws:s3:::bucket/*\"] }",
+    "positive_ts": "Action: \"*\" "
+  },
+  "SEC-002": {
+    "negative_ts": "resources: [\"arn:aws:s3:::bucket/*\"]",
+    "positive_ts": "Resource: \"*\""
+  },
+  "SEC-003": {
+    "negative_ts": "// clean",
+    "positive_ts": "connections.allowFrom(ec2.Peer.anyIpv4(), ec2.Port.tcp(22));"
+  },
+  "SEC-004": {
+    "negative_ts": "// clean",
+    "positive_ts": "sg.addIngressRule(ec2.Peer.anyIpv4(), ec2.Port.tcp(3306));"
+  },
+  "SEC-005": {
+    "negative_ts": "blockPublicAccess: s3.BlockPublicAccess.BLOCK_ALL",
+    "positive_ts": "new s3.Bucket(this, \"B\");"
+  },
+  "SEC-006": {
+    "negative_ts": "encryption: s3.BucketEncryption.S3_MANAGED",
+    "positive_ts": "new s3.Bucket(this, \"B\");"
+  },
+  "SEC-007": {
+    "negative_ts": "const key = new kms.Key(this, 'Key');\nkey.addToResourcePolicy(new iam.PolicyStatement({ Principal: { AWS: 'arn:aws:iam::123:root' }, Action: 'kms:*' }));",
+    "positive_ts": "const key = new kms.Key(this, 'Key');\nkey.addToResourcePolicy(new iam.PolicyStatement({ Principal: '*', Action: 'kms:*' }));"
+  },
+  "SEC-008": {
+    "negative_ts": "encryption: dynamodb.TableEncryption.AWS_MANAGED",
+    "positive_ts": "new dynamodb.Table(this, 'T', { partitionKey: { name: 'id', type: dynamodb.AttributeType.STRING } });"
+  },
+  "SEC-009": {
+    "negative_ts": "authorizer: cognitoAuthorizer",
+    "positive_ts": "new apigateway.RestApi(this, 'Api');"
+  },
+  "SEC-010": {
+    "negative_ts": "securityPolicy: apigateway.SecurityPolicy.TLS_1_2",
+    "positive_ts": "new apigateway.RestApi(this, 'Api');"
+  },
+  "SEC-011": {
+    "negative_ts": "redirect: true",
+    "positive_ts": "new elbv2.ApplicationLoadBalancer(this, 'Alb', { vpc });"
+  },
+  "SEC-012": {
+    "negative_ts": "sslPolicy: elbv2.SslPolicy.RECOMMENDED_TLS",
+    "positive_ts": "new elbv2.ApplicationLoadBalancer(this, 'Alb', { vpc });"
+  },
+  "SEC-013": {
+    "negative_ts": "encryption: sqs.QueueEncryption.KMS_MANAGED",
+    "positive_ts": "new sqs.Queue(this, 'Q');"
+  },
+  "SEC-014": {
+    "negative_ts": "masterKey: kmsKey",
+    "positive_ts": "new sns.Topic(this, 'T');"
+  },
+  "SEC-015": {
+    "negative_ts": "// clean compliant stack",
+    "positive_ts": "new secretsmanager.Secret(this, 'S');"
+  },
+  "SEC-016": {
+    "negative_ts": "// clean",
+    "positive_ts": "const access_key = \"AKIAIOSFODNN7EXAMPLE\";"
+  },
+  "SEC-017": {
+    "negative_ts": "// clean compliant stack",
+    "positive_ts": "new lambda.Function(this, 'Fn', { environment: { PASSWORD: 'secret123456789' } });"
+  },
+  "SEC-018": {
+    "negative_ts": "// clean compliant stack",
+    "positive_ts": "new cloudfront.Distribution(this, 'Cf', { defaultBehavior: { origin } });"
+  },
+  "SEC-019": {
+    "negative_ts": "// clean compliant stack",
+    "positive_ts": "new cloudfront.Distribution(this, 'Cf', { defaultBehavior: { origin } });"
+  },
+  "SEC-020": {
+    "negative_ts": "// clean compliant stack",
+    "positive_ts": "new ecs.TaskDefinition(this, 'Td', { compatibility: ecs.Compatibility.FARGATE });"
+  },
+  "SEC-021": {
+    "negative_ts": "// clean compliant stack",
+    "positive_ts": "new rds.DatabaseInstance(this, 'DB', { engine: rds.DatabaseInstanceEngine.postgres({ version: rds.PostgresEngineVersion.VER_15 }), vpc });"
+  },
+  "SEC-022": {
+    "negative_ts": "// clean compliant stack",
+    "positive_ts": "new ec2.Vpc(this, 'Vpc');"
+  },
+  "SEC-023": {
+    "negative_ts": "// clean compliant stack",
+    "positive_ts": "new kms.Key(this, 'Key');"
+  },
+  "SEC-024": {
+    "negative_ts": "// clean compliant stack",
+    "positive_ts": "new apigateway.RestApi(this, 'Api');"
+  },
+  "SEC-025": {
+    "negative_ts": "// clean compliant stack",
+    "positive_ts": "new elasticache.CfnReplicationGroup(this, 'C', {});"
+  },
+  "SEC-026": {
+    "positive_py": "# empty"
+  },
+  "SEC-027": {
+    "positive_py": "# empty"
+  },
+  "SEC-028": {
+    "negative_ts": "// clean compliant stack",
+    "positive_ts": "new ecr.Repository(this, 'R');"
+  },
+  "SEC-029": {
+    "negative_ts": "// clean compliant stack",
+    "positive_ts": "new ecr.Repository(this, 'R');"
+  },
+  "SEC-030": {
+    "negative_ts": "// clean compliant stack",
+    "positive_ts": "new ecr.Repository(this, 'R');"
+  },
+  "SEC-031": {
+    "negative_ts": "HealthCheck",
+    "positive_ts": "new route53.HostedZone(this, 'Z', { zoneName: 'example.com' });"
+  },
+  "SEC-032": {
+    "negative_ts": "enableDnssec: true",
+    "positive_ts": "new route53.PublicHostedZone(this, 'Z', { zoneName: 'example.com' });"
+  },
+  "SEC-033": {
+    "negative_ts": "// clean compliant stack",
+    "positive_ts": "new ssm.StringParameter(this, 'P', { parameterName: '/x', stringValue: 'v' });"
+  },
+  "SEC-034": {
+    "negative_ts": "// clean compliant stack",
+    "positive_ts": "new cognito.UserPool(this, 'Pool');"
+  },
+  "SEC-035": {
+    "negative_ts": "// clean compliant stack",
+    "positive_ts": "new cognito.UserPool(this, 'Pool');"
+  },
+  "SEC-036": {
+    "negative_ts": "// clean compliant stack",
+    "positive_ts": "new cognito.UserPool(this, 'Pool');"
+  },
+  "SEC-037": {
+    "negative_ts": "// clean compliant stack",
+    "positive_ts": "new efs.FileSystem(this, 'Fs', { vpc });"
+  },
+  "SEC-038": {
+    "negative_ts": "// clean compliant stack",
+    "positive_ts": "new kinesis.Stream(this, 'S');"
+  },
+  "SEC-039": {
+    "negative_ts": "// clean compliant stack",
+    "positive_ts": "new opensearch.Domain(this, 'D', { version: opensearch.EngineVersion.OPENSEARCH_2_3 });"
+  },
+  "SEC-040": {
+    "negative_ts": "// clean compliant stack",
+    "positive_ts": "new opensearch.Domain(this, 'D', { version: opensearch.EngineVersion.OPENSEARCH_2_3 });"
+  },
+  "SEC-041": {
+    "negative_ts": "// clean compliant stack",
+    "positive_ts": "new opensearch.Domain(this, 'D', { version: opensearch.EngineVersion.OPENSEARCH_2_3 });"
+  },
+  "SEC-042": {
+    "negative_ts": "// clean compliant stack",
+    "positive_ts": "new athena.CfnWorkGroup(this, 'W', { name: 'wg', workGroupConfiguration: {} });"
+  },
+  "SEC-043": {
+    "negative_ts": "// clean compliant stack",
+    "positive_ts": "new glue.CfnJob(this, 'J', { command: { name: 'glueetl' }, role: role.roleArn });"
+  },
+  "SEC-044": {
+    "negative_ts": "// clean compliant stack",
+    "positive_ts": "new msk.CfnCluster(this, 'M', { clusterName: 'c', kafkaVersion: '2.8.1', numberOfBrokerNodes: 2, brokerNodeGroupInfo: {} });"
+  },
+  "SEC-045": {
+    "negative_ts": "// clean compliant stack",
+    "positive_ts": "new msk.CfnCluster(this, 'M', { clusterName: 'c', kafkaVersion: '2.8.1', numberOfBrokerNodes: 2, brokerNodeGroupInfo: {} });"
+  },
+  "SEC-046": {
+    "negative_ts": "// clean compliant stack",
+    "positive_ts": "new sagemaker.CfnNotebookInstance(this, 'N', { roleArn: role.roleArn, instanceType: 'ml.t3.medium' });"
+  },
+  "SEC-047": {
+    "negative_ts": "// clean compliant stack",
+    "positive_ts": "new sagemaker.CfnNotebookInstance(this, 'N', { roleArn: role.roleArn, instanceType: 'ml.t3.medium' });"
+  },
+  "SEC-048": {
+    "negative_ts": "// clean compliant stack",
+    "positive_ts": "new appsync.GraphqlApi(this, 'A', { name: 'api', schema: schema });"
+  },
+  "SEC-049": {
+    "negative_ts": "// clean compliant stack",
+    "positive_ts": "new appsync.GraphqlApi(this, 'A', { name: 'api', schema: schema });"
+  },
+  "SEC-050": {
+    "negative_ts": "kmsKey:",
+    "positive_ts": "new fsx.LustreFileSystem(this, 'F', { vpc, storageCapacityGiB: 1200 });"
+  },
+  "SEC-051": {
+    "negative_ts": "// clean compliant stack",
+    "positive_ts": "new transfer.CfnServer(this, 'T', { identityProviderType: 'SERVICE_MANAGED' });"
+  },
+  "SEC-052": {
+    "negative_ts": "// clean compliant stack",
+    "positive_ts": "new codepipeline.Pipeline(this, 'P');"
+  },
+  "SEC-053": {
+    "negative_ts": "// clean compliant stack",
+    "positive_ts": "new codebuild.Project(this, 'P', { environment: { privileged: true } });"
+  },
+  "SEC-054": {
+    "negative_ts": "allowAllOutbound: false",
+    "positive_ts": "new ec2.SecurityGroup(this, 'SG', { vpc, allowAllOutbound: true });"
+  },
+  "SEC-055": {
+    "negative_ts": "// clean compliant stack",
+    "positive_ts": "new ec2.Vpc(this, 'Vpc');"
+  },
+  "SEC-056": {
+    "negative_ts": "terminationProtection: true",
+    "positive_ts": "class MyStack extends Stack { constructor(scope, id) { super(scope, id); } }"
+  },
+  "SEC-057": {
+    "negative_ts": "authType: lambda.FunctionUrlAuthType.AWS_IAM",
+    "positive_ts": "fn.addFunctionUrl({ authType: lambda.FunctionUrlAuthType.NONE });"
+  },
+  "SEC-058": {
+    "negative_ts": "// clean compliant stack",
+    "positive_ts": "new ecs.TaskDefinition(this, 'Td', { compatibility: ecs.Compatibility.FARGATE });"
+  },
+  "SEC-059": {
+    "negative_ts": "// clean compliant stack",
+    "positive_ts": "new redshift.CfnCluster(this, 'C', { clusterType: 'single-node', dbName: 'd', masterUsername: 'u', nodeType: 'dc2.large' });"
+  },
+  "SEC-060": {
+    "negative_ts": "// clean compliant stack",
+    "positive_ts": "new docdb.CfnDBCluster(this, 'C', {});"
+  },
+  "SEC-061": {
+    "negative_ts": "// clean compliant stack",
+    "positive_ts": "new neptune.CfnDBCluster(this, 'C', {});"
+  },
+  "SEC-062": {
+    "negative_ts": "encryptionKey:",
+    "positive_ts": "new logs.LogGroup(this, 'LG');"
+  },
+  "SEC-063": {
+    "negative_ts": "// clean compliant stack",
+    "positive_ts": "new backup.BackupVault(this, 'V');"
+  },
+  "SEC-064": {
+    "negative_ts": "publiclyAccessible: false",
+    "positive_ts": "new rds.DatabaseInstance(this, 'DB', { engine: rds.DatabaseInstanceEngine.postgres({ version: rds.PostgresEngineVersion.VER_15 }), vpc });"
+  },
+  "SEC-065": {
+    "negative_ts": "// clean compliant stack",
+    "positive_ts": "new s3.Bucket(this, \"B\");"
+  },
+  "SUST-001": {
+    "negative_ts": "capacityProviderStrategy",
+    "positive_ts": "new ecs.FargateService(this, \"Svc\", { cluster, taskDefinition });"
+  },
+  "SUST-002": {
+    "negative_ts": "// right-sized",
+    "positive_ts": "new ec2.Instance(this, 'Inst', { instanceType: ec2.InstanceType.of(ec2.InstanceClass.T3, ec2.InstanceSize.MEDIUM), vpc, machineImage: ec2.MachineImage.latestAmazonLinux() });"
+  },
+  "SUST-003": {
+    "negative_ts": "// clean compliant stack",
+    "positive_ts": "new autoscaling.AutoScalingGroup(this, 'Asg', { vpc, instanceType: ec2.InstanceType.of(ec2.InstanceClass.T3, ec2.InstanceSize.MEDIUM), machineImage: ec2.MachineImage.latestAmazonLinux() });"
+  },
+  "SUST-004": {
+    "negative_ts": "// clean compliant stack",
+    "positive_ts": "new lambda.Function(this, 'Fn', { environment: { PASSWORD: 'secret123456789' } });"
+  },
+  "SUST-005": {
+    "negative_ts": "lambda.Function",
+    "positive_ts": "new ec2.Instance(this, 'Inst', { instanceType: ec2.InstanceType.of(ec2.InstanceClass.T3, ec2.InstanceSize.MEDIUM), vpc, machineImage: ec2.MachineImage.latestAmazonLinux() });"
+  },
+  "SUST-006": {
+    "negative_ts": "// clean compliant stack",
+    "positive_ts": "new cloudfront.Distribution(this, 'Cf', { defaultBehavior: { origin } });"
+  },
+  "SUST-007": {
+    "negative_ts": "instanceType: 't3.medium'",
+    "positive_ts": "instanceType: 't2.medium'"
+  }
+}

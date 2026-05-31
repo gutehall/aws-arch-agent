@@ -19,12 +19,10 @@ def test_analyze_creates_report(tmp_path: Path) -> None:
     """analyze writes report to default or --out path."""
     _make_repo(tmp_path)
     out_file = tmp_path / "report.md"
-    with runner.isolated_filesystem():
-        # Single-command Typer app: pass options only (no "analyze" subcommand name)
-        result = runner.invoke(
-            app,
-            ["--repo", str(tmp_path), "--no-llm", "--out", str(out_file)],
-        )
+    result = runner.invoke(
+        app,
+        ["--repo", str(tmp_path), "--no-llm", "--out", str(out_file)],
+    )
     assert result.exit_code == 0, result.output or result.stderr
     assert out_file.exists()
     assert "AWS Architecture Review Report" in out_file.read_text()
@@ -34,11 +32,10 @@ def test_analyze_json_format(tmp_path: Path) -> None:
     """analyze --format json produces valid JSON with context and findings."""
     _make_repo(tmp_path, "export class Stack {};")
     out_file = tmp_path / "report.json"
-    with runner.isolated_filesystem():
-        result = runner.invoke(
-            app,
-            ["--repo", str(tmp_path), "--no-llm", "--format", "json", "--out", str(out_file)],
-        )
+    result = runner.invoke(
+        app,
+        ["--repo", str(tmp_path), "--no-llm", "--format", "json", "--out", str(out_file)],
+    )
     assert result.exit_code == 0, result.output or result.stderr
     data = json.loads(out_file.read_text())
     assert "context" in data
@@ -54,11 +51,10 @@ def test_analyze_fail_on_high_exit_code(tmp_path: Path) -> None:
         'const policy = { Action: "*", Resource: "arn:aws:s3:::foo" };\nnew s3.Bucket(this, "B");',
     )
     out_file = tmp_path / "r.md"
-    with runner.isolated_filesystem():
-        result = runner.invoke(
-            app,
-            ["--repo", str(tmp_path), "--no-llm", "--fail-on", "high", "--out", str(out_file)],
-        )
+    result = runner.invoke(
+        app,
+        ["--repo", str(tmp_path), "--no-llm", "--fail-on", "high", "--out", str(out_file)],
+    )
     assert result.exit_code == 1, result.output or result.stderr
 
 

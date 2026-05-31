@@ -28,11 +28,26 @@ Thanks for your interest in contributing. This document covers local setup, runn
 
 ## Running tests and linting
 
-- **Tests:** `pytest tests/ -v`
+- **Tests:** `pytest tests/ -v` (includes coverage gate at 70%)
 - **Lint (ruff):** `ruff check src tests`
 - **Type check (mypy):** `mypy src`
 
-CI runs all of these on push/PR to `main` or `master`.
+CI runs all of these on push/PR to `main` or `master`, plus V1/V2 dogfood scans.
+
+### Optional pre-commit hook
+
+A [`.pre-commit-config.yaml`](.pre-commit-config.yaml) is included. Install and enable:
+
+```bash
+pip install pre-commit
+pre-commit install
+```
+
+Or run manually:
+
+```bash
+aws-arch-agent --repo . --no-llm --fail-on high --enforce-baseline
+```
 
 ## Pull requests
 

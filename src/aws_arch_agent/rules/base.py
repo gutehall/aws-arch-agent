@@ -2,8 +2,21 @@
 from __future__ import annotations
 from abc import ABC, abstractmethod
 from pathlib import Path
-from typing import List
+from typing import ClassVar, List
 from aws_arch_agent.models import Finding
+
+# Paths commonly excluded from static analysis (tests, build output, deps).
+DEFAULT_EXCLUDE_GLOBS: tuple[str, ...] = (
+    "**/*.test.ts",
+    "**/*.spec.ts",
+    "**/test/**",
+    "**/tests/**",
+    "**/__tests__/**",
+    "**/cdk.out/**",
+    "**/node_modules/**",
+    "**/dist/**",
+    "**/build/**",
+)
 
 
 def code_glob(language: str) -> str:
@@ -20,6 +33,7 @@ class Rule(ABC):
     title: str
     category: str
     severity: str
+    exclude_globs: ClassVar[tuple[str, ...]] = DEFAULT_EXCLUDE_GLOBS
 
     @abstractmethod
     def run(self, repo_path: Path, language: str = "typescript") -> List[Finding]:

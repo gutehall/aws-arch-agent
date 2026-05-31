@@ -10,7 +10,7 @@ def test_v2_returns_report_and_findings(tmp_path: Path) -> None:
     (tmp_path / "package.json").write_text("{}", encoding="utf-8")
     (tmp_path / "lib").mkdir()
     (tmp_path / "lib" / "stack.ts").write_text('new s3.Bucket(this, "B");', encoding="utf-8")
-    report, ctx, findings = analyze_v2(tmp_path, use_llm=False)
+    report, ctx, findings, warnings = analyze_v2(tmp_path, use_llm=False)
     assert "AWS Architecture Review Report" in report or "Architecture Review" in report
     assert ctx.repo_path == str(tmp_path)
     assert ctx.language in ("typescript", "python", "unknown")
@@ -33,7 +33,7 @@ def test_v2_with_templates_path_runs_cf_rules(tmp_path: Path) -> None:
     (tmp_path / "templates" / "stack.template.json").write_text(
         json.dumps(template), encoding="utf-8"
     )
-    report, ctx, findings = analyze_v2(
+    report, ctx, findings, warnings = analyze_v2(
         tmp_path,
         use_llm=False,
         templates_path=str(tmp_path / "templates"),
@@ -48,6 +48,6 @@ def test_v2_with_no_synth_static_only(tmp_path: Path) -> None:
     (tmp_path / "package.json").write_text("{}", encoding="utf-8")
     (tmp_path / "lib").mkdir()
     (tmp_path / "lib" / "stack.ts").write_text('new s3.Bucket(this, "B");', encoding="utf-8")
-    report, ctx, findings = analyze_v2(tmp_path, use_llm=False, skip_synth=True)
+    report, ctx, findings, warnings = analyze_v2(tmp_path, use_llm=False, skip_synth=True)
     assert "CDK synth: skipped" in report or "Synth skipped" in report
     assert isinstance(findings, list)

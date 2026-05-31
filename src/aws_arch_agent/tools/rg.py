@@ -5,6 +5,8 @@ import subprocess
 from pathlib import Path
 from typing import List, Tuple
 
+from aws_arch_agent.rules.base import DEFAULT_EXCLUDE_GLOBS
+
 
 def _fallback_search(
     repo_path: Path, pattern: str, glob: str | None, max_hits: int
@@ -49,11 +51,20 @@ def _fallback_search(
     return hits
 
 
-def rg(repo_path: Path, pattern: str, glob: str | None = None, max_hits: int = 50) -> List[Tuple[str, int, str]]:
+def rg(
+    repo_path: Path,
+    pattern: str,
+    glob: str | None = None,
+    max_hits: int = 50,
+    exclude_globs: tuple[str, ...] | list[str] | None = None,
+) -> List[Tuple[str, int, str]]:
     """Run ripgrep in repo_path; return list of (file, line_number, line_text) up to max_hits."""
+    effective_excludes = DEFAULT_EXCLUDE_GLOBS if exclude_globs is None else exclude_globs
     cmd = ["rg", "--line-number", "--no-heading", "--hidden", "--glob", "!.git/*"]
     if glob:
         cmd += ["--glob", glob]
+    for ex in effective_excludes:
+        cmd += ["--glob", f"!{ex}"]
     cmd += [pattern, "."]
     try:
         p = subprocess.run(cmd, capture_output=True, text=True, check=False, cwd=str(repo_path))

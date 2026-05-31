@@ -1,0 +1,9 @@
+repos:
+  - repo: local
+    hooks:
+      - id: aws-arch-agent
+        name: aws-arch-agent
+        entry: aws-arch-agent --repo . --no-llm --fail-on high --enforce-baseline
+        language: system
+        pass_filenames: false
+        stages: [pre-commit]
