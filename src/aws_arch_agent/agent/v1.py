@@ -7,6 +7,7 @@ from typing import Literal
 
 from aws_arch_agent.models import RepoContext, Finding
 from aws_arch_agent.rules.registry import ALL_RULES
+from aws_arch_agent.rules.runner import filter_by_severity, run_all_rules
 from aws_arch_agent.report.markdown import render_markdown
 from aws_arch_agent.tools.llm import LLMClient
 from aws_arch_agent.tools.files import iter_files
@@ -63,15 +64,13 @@ def _filter_rules(
     return out
 
 
-def analyze_v1(
+def _collect_findings(
     repo_path: Path,
-    max_files: int = 400,
-    use_llm: bool = True,
-    rules_include: list[str] | None = None,
-    rules_exclude: list[str] | None = None,
-    severity_threshold: str | None = None,
-) -> tuple[str, RepoContext, list[Finding]]:
-    """Run V1 pipeline: scan repo, run rules, optionally polish with LLM; return (report_md, ctx, findings)."""
+    max_files: int,
+    rules_include: list[str] | None,
+    rules_exclude: list[str] | None,
+    severity_threshold: str | None,
+) -> tuple[RepoContext, list[Finding], list[str]]:
     files = iter_files(repo_path, max_files=max_files)
     language = detect_language(repo_path)
     ctx = RepoContext(
@@ -80,32 +79,31 @@ def analyze_v1(
         files_scanned=len(files),
         key_files=[p.name for p in files if p.name in {"cdk.json", "package.json", "requirements.txt"}],
     )
-
     rules = _filter_rules(ALL_RULES, rules_include, rules_exclude)
-    findings: list[Finding] = []
-    for lang in _languages_to_scan(language):
-        for rule in rules:
-            try:
-                findings.extend(rule.run(repo_path, lang))
-            except Exception as e:
-                logger.debug("Rule %s failed for %s: %s", rule.id, lang, e)
-                continue
+    findings, warnings = run_all_rules(repo_path, rules, _languages_to_scan(language))
+    findings = filter_by_severity(findings, severity_threshold)
+    return ctx, findings, warnings
 
-    if severity_threshold:
-        sev_order = ("Low", "Medium", "High")
-        try:
-            idx = sev_order.index(severity_threshold.capitalize())
-            allowed = set(sev_order[idx:])
-            findings = [f for f in findings if f.severity in allowed]
-        except ValueError:
-            pass
 
-    draft = render_markdown(ctx, findings)
+def analyze_v1(
+    repo_path: Path,
+    max_files: int = 400,
+    use_llm: bool = True,
+    rules_include: list[str] | None = None,
+    rules_exclude: list[str] | None = None,
+    severity_threshold: str | None = None,
+) -> tuple[str, RepoContext, list[Finding], list[str]]:
+    """Run V1 pipeline: scan repo, run rules, optionally polish with LLM; return (report_md, ctx, findings, warnings)."""
+    ctx, findings, warnings = _collect_findings(
+        repo_path, max_files, rules_include, rules_exclude, severity_threshold
+    )
+
+    draft = render_markdown(ctx, findings, warnings=warnings)
     if not use_llm:
-        return draft, ctx, findings
+        return draft, ctx, findings, warnings
     llm = LLMClient()
     polished = llm.polish(draft)
-    return polished, ctx, findings
+    return polished, ctx, findings, warnings
 
 
 def collect_ctx_findings(
@@ -114,30 +112,8 @@ def collect_ctx_findings(
     rules_include: list[str] | None = None,
     rules_exclude: list[str] | None = None,
     severity_threshold: str | None = None,
-) -> tuple[RepoContext, list[Finding]]:
-    """Run rules only and return context and findings (for JSON export or custom rendering)."""
-    files = iter_files(repo_path, max_files=max_files)
-    language = detect_language(repo_path)
-    ctx = RepoContext(
-        repo_path=str(repo_path),
-        language=language,
-        files_scanned=len(files),
-        key_files=[p.name for p in files if p.name in {"cdk.json", "package.json", "requirements.txt"}],
+) -> tuple[RepoContext, list[Finding], list[str]]:
+    """Run rules only and return context, findings, and warnings."""
+    return _collect_findings(
+        repo_path, max_files, rules_include, rules_exclude, severity_threshold
     )
-    rules = _filter_rules(ALL_RULES, rules_include, rules_exclude)
-    findings: list[Finding] = []
-    for lang in _languages_to_scan(language):
-        for rule in rules:
-            try:
-                findings.extend(rule.run(repo_path, lang))
-            except Exception as e:
-                logger.debug("Rule %s failed for %s: %s", rule.id, lang, e)
-                continue
-    if severity_threshold:
-        sev_order = ("Low", "Medium", "High")
-        try:
-            idx = sev_order.index(severity_threshold.capitalize())
-            findings = [f for f in findings if f.severity in set(sev_order[idx:])]
-        except ValueError:
-            pass
-    return ctx, findings

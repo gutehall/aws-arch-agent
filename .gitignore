@@ -33,7 +33,7 @@ pip-log.txt
 pip-delete-this-directory.txt
 
 # Unit test / coverage
-.htmlcov
+htmlcov/
 .tox
 .nox
 .coverage
@@ -81,6 +81,12 @@ Thumbs.db
 # Project-specific
 *.log
 
-# reports file
+# CDK / Node
+node_modules/
+cdk.out/
+
+# Report outputs
 report.md
 report.json
+report.sarif
+*.sarif

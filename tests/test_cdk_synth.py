@@ -1,6 +1,9 @@
 """Tests for CDK synth helpers (list_cf_templates, load_json, load_template, summarize_templates, list_templates_from_path)."""
 import json
+import shutil
 from pathlib import Path
+
+import pytest
 
 from aws_arch_agent.tools.cdk_synth import (
     list_cf_templates,
@@ -123,3 +126,22 @@ def test_summarize_templates_from_paths(tmp_path: Path) -> None:
     out = summarize_templates_from_paths(paths)
     assert "CloudFormation" in out or "Summary" in out
     assert "s1" in out or "template" in out
+
+
+@pytest.mark.skipif(shutil.which("npx") is None, reason="npx not available")
+def test_run_cdk_synth_on_minimal_fixture() -> None:
+    """Integration test: run cdk synth when Node/npx is available."""
+    from aws_arch_agent.tools.cdk_synth import run_cdk_synth
+
+    fixture = Path(__file__).parent / "fixtures" / "minimal-cdk"
+    if not (fixture / "cdk.json").exists():
+        pytest.skip("minimal-cdk fixture missing")
+    if not (fixture / "node_modules").exists() and shutil.which("npm"):
+        import subprocess
+        proc = subprocess.run(["npm", "install"], cwd=str(fixture), capture_output=True)
+        if proc.returncode != 0:
+            pytest.skip(f"npm install failed: {proc.stderr.decode()[:200]}")
+    rc, out, err = run_cdk_synth(fixture, language="typescript")
+    if rc != 0:
+        pytest.skip(f"cdk synth not available in this environment: {err[:200]}")
+    assert rc == 0

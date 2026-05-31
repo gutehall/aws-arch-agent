@@ -1,0 +1,279 @@
+{
+  "accepted": [
+    {
+      "id": "BP-001",
+      "file": null,
+      "line": null
+    },
+    {
+      "id": "BP-003",
+      "file": null,
+      "line": null
+    },
+    {
+      "id": "COST-001",
+      "file": "src/aws_arch_agent/rules/cf_template.py",
+      "line": 425
+    },
+    {
+      "id": "COST-001",
+      "file": "src/aws_arch_agent/rules/cost.py",
+      "line": 11
+    },
+    {
+      "id": "COST-001",
+      "file": "src/aws_arch_agent/rules/cost.py",
+      "line": 16
+    },
+    {
+      "id": "COST-001",
+      "file": "tests/test_rules.py",
+      "line": 127
+    },
+    {
+      "id": "COST-004",
+      "file": "src/aws_arch_agent/rules/cost.py",
+      "line": 94
+    },
+    {
+      "id": "COST-004",
+      "file": "src/aws_arch_agent/rules/operational_excellence.py",
+      "line": 614
+    },
+    {
+      "id": "COST-005",
+      "file": null,
+      "line": null
+    },
+    {
+      "id": "COST-007",
+      "file": null,
+      "line": null
+    },
+    {
+      "id": "COST-008",
+      "file": "src/aws_arch_agent/rules/cost.py",
+      "line": 187
+    },
+    {
+      "id": "COST-008",
+      "file": "src/aws_arch_agent/rules/cost.py",
+      "line": 192
+    },
+    {
+      "id": "COST-010",
+      "file": "tests/fixtures/rules/rds_no_multiaz.ts",
+      "line": 1
+    },
+    {
+      "id": "COST-010",
+      "file": "tests/test_rules.py",
+      "line": 88
+    },
+    {
+      "id": "COST-013",
+      "file": null,
+      "line": null
+    },
+    {
+      "id": "COST-014",
+      "file": null,
+      "line": null
+    },
+    {
+      "id": "COST-016",
+      "file": null,
+      "line": null
+    },
+    {
+      "id": "COST-018",
+      "file": null,
+      "line": null
+    },
+    {
+      "id": "OPS-001",
+      "file": null,
+      "line": null
+    },
+    {
+      "id": "OPS-009",
+      "file": "tests/fixtures/rules/rds_no_multiaz.ts",
+      "line": 1
+    },
+    {
+      "id": "OPS-010",
+      "file": null,
+      "line": null
+    },
+    {
+      "id": "OPS-014",
+      "file": null,
+      "line": null
+    },
+    {
+      "id": "OPS-021",
+      "file": null,
+      "line": null
+    },
+    {
+      "id": "PERF-002",
+      "file": null,
+      "line": null
+    },
+    {
+      "id": "PERF-014",
+      "file": null,
+      "line": null
+    },
+    {
+      "id": "PERF-016",
+      "file": null,
+      "line": null
+    },
+    {
+      "id": "PERF-019",
+      "file": null,
+      "line": null
+    },
+    {
+      "id": "REL-001",
+      "file": "tests/fixtures/rules/rds_no_multiaz.ts",
+      "line": 1
+    },
+    {
+      "id": "REL-001",
+      "file": "tests/test_rules.py",
+      "line": 88
+    },
+    {
+      "id": "REL-002",
+      "file": "tests/fixtures/rules/rds_no_multiaz.ts",
+      "line": 1
+    },
+    {
+      "id": "REL-011",
+      "file": "tests/fixtures/rules/rds_no_multiaz.ts",
+      "line": 1
+    },
+    {
+      "id": "REL-013",
+      "file": null,
+      "line": null
+    },
+    {
+      "id": "REL-026",
+      "file": null,
+      "line": null
+    },
+    {
+      "id": "REL-030",
+      "file": "tests/fixtures/rules/rds_no_multiaz.ts",
+      "line": 1
+    },
+    {
+      "id": "REL-031",
+      "file": "tests/fixtures/rules/s3_no_encryption.ts",
+      "line": 1
+    },
+    {
+      "id": "SEC-001",
+      "file": "src/aws_arch_agent/rules/security_iam.py",
+      "line": 15
+    },
+    {
+      "id": "SEC-001",
+      "file": "tests/fixtures/rules/iam_wildcard.ts",
+      "line": 1
+    },
+    {
+      "id": "SEC-002",
+      "file": "tests/fixtures/rules/iam_wildcard.ts",
+      "line": 1
+    },
+    {
+      "id": "SEC-002",
+      "file": "tests/test_cf_template.py",
+      "line": 295
+    },
+    {
+      "id": "SEC-003",
+      "file": "src/aws_arch_agent/rules/cf_template.py",
+      "line": 401
+    },
+    {
+      "id": "SEC-003",
+      "file": "src/aws_arch_agent/rules/security_network.py",
+      "line": 15
+    },
+    {
+      "id": "SEC-003",
+      "file": "tests/fixtures/rules/open_ssh.ts",
+      "line": 5
+    },
+    {
+      "id": "SEC-003",
+      "file": "tests/test_cf_template.py",
+      "line": 195
+    },
+    {
+      "id": "SEC-003",
+      "file": "tests/test_cf_template.py",
+      "line": 203
+    },
+    {
+      "id": "SEC-003",
+      "file": "tests/test_rules_security.py",
+      "line": 41
+    },
+    {
+      "id": "SEC-004",
+      "file": "tests/test_rules_security.py",
+      "line": 53
+    },
+    {
+      "id": "SEC-005",
+      "file": "tests/fixtures/rules/s3_no_encryption.ts",
+      "line": 1
+    },
+    {
+      "id": "SEC-006",
+      "file": "tests/fixtures/rules/s3_no_encryption.ts",
+      "line": 1
+    },
+    {
+      "id": "SEC-007",
+      "file": "src/aws_arch_agent/rules/security_iam.py",
+      "line": 67
+    },
+    {
+      "id": "SEC-021",
+      "file": "tests/fixtures/rules/rds_no_multiaz.ts",
+      "line": 1
+    },
+    {
+      "id": "SEC-026",
+      "file": null,
+      "line": null
+    },
+    {
+      "id": "SEC-027",
+      "file": null,
+      "line": null
+    },
+    {
+      "id": "SEC-054",
+      "file": "tests/fixtures/rules/open_ssh.ts",
+      "line": 2
+    },
+    {
+      "id": "SEC-064",
+      "file": "tests/fixtures/rules/rds_no_multiaz.ts",
+      "line": 1
+    },
+    {
+      "id": "SEC-065",
+      "file": null,
+      "line": null
+    }
+  ]
+}

@@ -1,13 +1,18 @@
 """V2 LangGraph multi-agent pipeline: collect, synth, six pillars, merge, report."""
 from __future__ import annotations
+
+import hashlib
+import json
 import logging
 from pathlib import Path
-from typing import TypedDict, List
+from typing import Literal, TypedDict, List
+
 from aws_arch_agent.models import Finding, RepoContext
 from aws_arch_agent.agent.v1 import detect_language, _languages_to_scan, _filter_rules
 from aws_arch_agent.tools.files import iter_files
 from aws_arch_agent.tools.llm import LLMClient
 from aws_arch_agent.rules.registry import ALL_RULES
+from aws_arch_agent.rules.runner import filter_by_severity, run_all_rules
 from aws_arch_agent.report.markdown import render_markdown
 from aws_arch_agent.tools.cdk_synth import (
     run_cdk_synth,
@@ -21,14 +26,20 @@ from langgraph.graph import StateGraph, END
 
 logger = logging.getLogger(__name__)
 
+LLMMode = Literal["full", "compact"]
+_pillar_cache: dict[str, str] = {}
+
 
 class State(TypedDict, total=False):
     repo_path: str
+    max_files: int
     ctx: RepoContext
     raw_findings: List[Finding]
+    rule_warnings: List[str]
     use_llm: bool
-    rules_include: List[str]
-    rules_exclude: List[str]
+    llm_mode: str
+    rules_include: List[str] | None
+    rules_exclude: List[str] | None
     severity_threshold: str
     templates_path: str
     skip_synth: bool
@@ -56,20 +67,57 @@ PILLAR_CATEGORIES: dict[str, list[str]] = {
     "Cost": ["Cost", "Cost Optimization"],
 }
 
+
+def _findings_hash(findings: List[Finding], synth_summary: str, role: str) -> str:
+    payload = {
+        "role": role,
+        "synth": synth_summary[:2000],
+        "findings": [(f.id, f.file, f.line, f.evidence) for f in findings[:50]],
+    }
+    return hashlib.sha256(json.dumps(payload, sort_keys=True).encode()).hexdigest()
+
+
+def _load_rag_block(state: State, query: str | None = None) -> str:
+    rag_path = state.get("rag_path")
+    if not rag_path:
+        return ""
+    try:
+        from aws_arch_agent.rag import get_rag
+
+        use_emb = state.get("rag_use_embeddings", False)
+        provider = state.get("rag_embedding_provider") or None
+        model = state.get("rag_embedding_model") or None
+        rag = get_rag(
+            Path(rag_path),
+            use_embeddings=use_emb,
+            embedding_provider=provider,
+            embedding_model=model,
+        )
+        q = query or "operational excellence security reliability performance cost sustainability"
+        return "\n\n## Reference (RAG)\n" + rag.retrieve(q, k=3)
+    except Exception as e:
+        logger.warning("RAG load or retrieve failed for %s: %s", rag_path, e)
+        return ""
+
+
 def _summarize_role(
     role: str,
     findings: List[Finding],
     synth_summary: str,
     llm: LLMClient,
     use_llm: bool = True,
+    rag_block: str = "",
 ) -> str:
     categories = PILLAR_CATEGORIES.get(role, [role])
     rel = [f for f in findings if f.category.lower() in [c.lower() for c in categories]]
     if not rel:
-        rel = findings
+        return f"## {role}\n\nNo findings in this pillar.\n"
     snippet = "\n".join([f"- [{x.id}] {x.title}: {x.recommendation}" for x in rel[:12]])
     if not use_llm:
         return f"## {role}\n(skipped LLM)\n\n{snippet}\n\nSynth summary: {synth_summary[:500]}"
+    cache_key = _findings_hash(rel, synth_summary, role)
+    if cache_key in _pillar_cache:
+        return _pillar_cache[cache_key]
     prompt = f"""Role: {role} reviewer
 
 You have:
@@ -86,13 +134,17 @@ Static findings:
 
 CloudFormation synth summary:
 {synth_summary}
+{rag_block}
 """
-    return llm.polish(prompt, system=f"You are a senior AWS {role} reviewer. Return concise Markdown only.")
+    result = llm.polish(prompt, system=f"You are a senior AWS {role} reviewer. Return concise Markdown only.")
+    _pillar_cache[cache_key] = result
+    return result
 
 
 def node_collect(state: State) -> State:
     repo_path = Path(state["repo_path"])
-    files = iter_files(repo_path, max_files=400)
+    max_files = state.get("max_files") or 400
+    files = iter_files(repo_path, max_files=max_files)
     ctx = RepoContext(
         repo_path=str(repo_path),
         language=detect_language(repo_path),
@@ -106,25 +158,11 @@ def node_collect(state: State) -> State:
         state.get("rules_include"),
         state.get("rules_exclude"),
     )
-    findings: List[Finding] = []
     language = ctx.language
-    for lang in _languages_to_scan(language):
-        for rule in rules:
-            try:
-                findings.extend(rule.run(repo_path, lang))
-            except Exception as e:
-                logger.debug("Rule %s failed for %s: %s", rule.id, lang, e)
-                continue
-    sev_threshold = state.get("severity_threshold")
-    if sev_threshold:
-        sev_order = ("Low", "Medium", "High")
-        try:
-            idx = sev_order.index(sev_threshold.capitalize())
-            findings = [f for f in findings if f.severity in set(sev_order[idx:])]
-        except ValueError:
-            pass
+    findings, warnings = run_all_rules(repo_path, rules, _languages_to_scan(language))
+    findings = filter_by_severity(findings, state.get("severity_threshold"))
 
-    return {"ctx": ctx, "raw_findings": findings}
+    return {"ctx": ctx, "raw_findings": findings, "rule_warnings": warnings}
 
 
 def node_synth(state: State) -> State:
@@ -203,99 +241,66 @@ def node_synth(state: State) -> State:
     }
 
 
-def node_security(state: State) -> State:
-    use_llm = state.get("use_llm", True)
-    llm = LLMClient()
-    notes = _summarize_role(
-        "Security", state.get("raw_findings", []), state.get("synth_summary", ""), llm, use_llm=use_llm
-    )
-    return {"security_notes": notes}
+def _pillar_node(role: str, state_key: str):
+    def _node(state: State) -> State:
+        use_llm = state.get("use_llm", True)
+        llm_mode = state.get("llm_mode", "full")
+        findings = state.get("raw_findings", [])
+        synth_summary = state.get("synth_summary", "")
+        rag_block = _load_rag_block(state, query=f"{role} AWS Well-Architected best practices")
+        if llm_mode == "compact":
+            categories = PILLAR_CATEGORIES.get(role, [role])
+            rel = [f for f in findings if f.category.lower() in [c.lower() for c in categories]]
+            snippet = "\n".join([f"- [{x.id}] {x.title}" for x in rel[:8]]) or "No findings."
+            notes = f"## {role}\n\n{snippet}\n{rag_block}\n"
+        else:
+            llm = LLMClient()
+            notes = _summarize_role(
+                role, findings, synth_summary, llm, use_llm=use_llm, rag_block=rag_block
+            )
+        out: State = {}
+        out[state_key] = notes  # type: ignore[literal-required]
+        return out
+
+    return _node
 
 
-def node_cost(state: State) -> State:
-    use_llm = state.get("use_llm", True)
-    llm = LLMClient()
-    notes = _summarize_role(
-        "Cost", state.get("raw_findings", []), state.get("synth_summary", ""), llm, use_llm=use_llm
-    )
-    return {"cost_notes": notes}
-
-
-def node_reliability(state: State) -> State:
-    use_llm = state.get("use_llm", True)
-    llm = LLMClient()
-    notes = _summarize_role(
-        "Reliability", state.get("raw_findings", []), state.get("synth_summary", ""), llm, use_llm=use_llm
-    )
-    return {"reliability_notes": notes}
-
-
-def node_observability(state: State) -> State:
-    use_llm = state.get("use_llm", True)
-    llm = LLMClient()
-    notes = _summarize_role(
-        "Observability",
-        state.get("raw_findings", []),
-        state.get("synth_summary", ""),
-        llm,
-        use_llm=use_llm,
-    )
-    return {"observability_notes": notes}
-
-
-def node_performance_efficiency(state: State) -> State:
-    use_llm = state.get("use_llm", True)
-    llm = LLMClient()
-    notes = _summarize_role(
-        "Performance Efficiency",
-        state.get("raw_findings", []),
-        state.get("synth_summary", ""),
-        llm,
-        use_llm=use_llm,
-    )
-    return {"performance_efficiency_notes": notes}
-
-
-def node_sustainability(state: State) -> State:
-    use_llm = state.get("use_llm", True)
-    llm = LLMClient()
-    notes = _summarize_role(
-        "Sustainability",
-        state.get("raw_findings", []),
-        state.get("synth_summary", ""),
-        llm,
-        use_llm=use_llm,
-    )
-    return {"sustainability_notes": notes}
+node_security = _pillar_node("Security", "security_notes")
+node_cost = _pillar_node("Cost", "cost_notes")
+node_reliability = _pillar_node("Reliability", "reliability_notes")
+node_observability = _pillar_node("Observability", "observability_notes")
+node_performance_efficiency = _pillar_node("Performance Efficiency", "performance_efficiency_notes")
+node_sustainability = _pillar_node("Sustainability", "sustainability_notes")
 
 
 def node_merge(state: State) -> State:
     use_llm = state.get("use_llm", True)
-    rag_block = ""
-    rag_path = state.get("rag_path")
-    if rag_path:
-        try:
-            from pathlib import Path
-            from aws_arch_agent.rag import get_rag
-            use_emb = state.get("rag_use_embeddings", False)
-            provider = state.get("rag_embedding_provider") or None
-            model = state.get("rag_embedding_model") or None
-            rag = get_rag(
-                Path(rag_path),
-                use_embeddings=use_emb,
-                embedding_provider=provider,
-                embedding_model=model,
-            )
-            rag_block = "\n\n## Reference (RAG)\n" + rag.retrieve(
-                "operational excellence security reliability performance cost sustainability", k=3
-            )
-        except Exception as e:
-            logger.warning("RAG load or retrieve failed for %s: %s", rag_path, e)
+    llm_mode = state.get("llm_mode", "full")
+    rag_block = _load_rag_block(state)
+    findings = state.get("raw_findings", [])
+    synth_summary = state.get("synth_summary", "")
+
+    if llm_mode == "compact" and use_llm:
+        snippet = "\n".join([f"- [{f.id}] {f.title} ({f.severity})" for f in findings[:30]])
+        prompt = f"""Produce a single architecture review with headings for all 6 AWS Well-Architected pillars.
+Be specific, avoid repetition, and keep it to ~350-550 words.
+
+CloudFormation synthesis:
+{synth_summary}
+
+Findings:
+{snippet}
+{rag_block}
+"""
+        llm = LLMClient()
+        merged = llm.polish(prompt, system="You are the lead reviewer. Return Markdown only.")
+        return {"merged_notes": merged}
+
     prompt = f"""Merge these into a single coherent review section with headings (AWS Well-Architected 6 pillars).
 Be specific, avoid repetition, and keep it to ~350-550 words.
 
 ## CloudFormation synthesis
-{state.get("synth_summary","")}
+{synth_summary}
 
 ## 1. Operational Excellence (Observability)
 {state.get("observability_notes","")}
@@ -327,7 +332,8 @@ Be specific, avoid repetition, and keep it to ~350-550 words.
 def node_report(state: State) -> State:
     ctx = state["ctx"]
     findings = state.get("raw_findings", [])
-    base_report = render_markdown(ctx, findings)
+    warnings = state.get("rule_warnings") or []
+    base_report = render_markdown(ctx, findings, warnings=warnings)
     synth_block = state.get("synth_summary", "")
     if state.get("templates_path"):
         synth_status = "Templates: provided (no synth)"
@@ -402,14 +408,17 @@ def analyze_v2(
     rag_use_embeddings: bool = False,
     rag_embedding_provider: str | None = None,
     rag_embedding_model: str | None = None,
-) -> tuple[str, RepoContext, List[Finding]]:
-    """Run V2 graph; return (final_report_md, ctx, findings)."""
+    llm_mode: LLMMode = "full",
+) -> tuple[str, RepoContext, List[Finding], List[str]]:
+    """Run V2 graph; return (final_report_md, ctx, findings, warnings)."""
     graph = build_graph()
     initial: State = {
         "repo_path": str(repo_path),
+        "max_files": max_files,
         "use_llm": use_llm,
-        "rules_include": rules_include or [],
-        "rules_exclude": rules_exclude or [],
+        "llm_mode": llm_mode,
+        "rules_include": rules_include if rules_include else None,
+        "rules_exclude": rules_exclude if rules_exclude else None,
         "severity_threshold": severity_threshold or "",
         "templates_path": templates_path or "",
         "skip_synth": skip_synth,
@@ -422,7 +431,7 @@ def analyze_v2(
     report = out.get("final_report") or "No report produced."
     ctx = out.get("ctx")
     findings = out.get("raw_findings") or []
+    warnings = out.get("rule_warnings") or []
     if ctx is None:
-        from aws_arch_agent.models import RepoContext
         ctx = RepoContext(repo_path=str(repo_path), language="unknown")
-    return report, ctx, findings
+    return report, ctx, findings, warnings

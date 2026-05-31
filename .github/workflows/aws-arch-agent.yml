@@ -28,8 +28,8 @@ jobs:
           .venv/bin/pip install -e ".[dev]"
           .venv/bin/pip install types-PyYAML
 
-      - name: Run tests
-        run: .venv/bin/pytest tests/ -v
+      - name: Run tests with coverage
+        run: .venv/bin/pytest tests/ -v --cov=aws_arch_agent --cov-fail-under=70
 
       - name: Lint (ruff)
         run: .venv/bin/ruff check src tests
@@ -39,11 +39,12 @@ jobs:
 
       - name: Run AWS Arch Agent (rules only, no LLM)
         run: .venv/bin/aws-arch-agent --repo . --no-llm --out report.md
-        continue-on-error: true
 
       - name: Run AWS Arch Agent (JSON, fail on high)
-        run: .venv/bin/aws-arch-agent --repo . --no-llm --format json --out report.json --fail-on high
-        continue-on-error: true
+        run: .venv/bin/aws-arch-agent --repo . --no-llm --format json --out report.json --fail-on high --enforce-baseline --baseline .aws-arch-agent-baseline.json
+
+      - name: Run AWS Arch Agent V2 smoke
+        run: .venv/bin/aws-arch-agent --repo . --mode v2 --no-llm --no-synth --out report-v2.md
 
       - name: Upload report
         if: always()
@@ -53,4 +54,36 @@ jobs:
           path: |
             report.md
             report.json
+            report-v2.md
           if-no-files-found: ignore
+
+  cdk-synth:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+
+      - name: Install ripgrep
+        run: sudo apt-get update && sudo apt-get install -y ripgrep
+
+      - name: Install Python dependencies
+        run: |
+          python -m venv .venv
+          .venv/bin/pip install -U pip
+          .venv/bin/pip install -e ".[dev]"
+
+      - name: Install Node dependencies for CDK fixture
+        working-directory: tests/fixtures/minimal-cdk
+        run: npm install
+
+      - name: Run CDK synth integration test
+        run: .venv/bin/pytest tests/test_cdk_synth.py::test_run_cdk_synth_on_minimal_fixture -v

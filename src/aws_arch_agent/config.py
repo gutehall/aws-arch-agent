@@ -4,20 +4,40 @@ from __future__ import annotations
 import json
 import logging
 from pathlib import Path
-from typing import Literal
+from typing import Any, Literal
+
+import yaml
 
 logger = logging.getLogger(__name__)
 
 SeverityThreshold = Literal["high", "medium", "low", "none"]
-OutputFormat = Literal["markdown", "json"]
+OutputFormat = Literal["markdown", "json", "sarif"]
+LLMMode = Literal["full", "compact"]
+
+
+def _load_config_file(path: Path) -> dict[str, Any]:
+    """Load config from JSON or YAML file."""
+    text = path.read_text(encoding="utf-8")
+    suffix = path.suffix.lower()
+    if suffix in (".yaml", ".yml"):
+        data = yaml.safe_load(text)
+        return dict(data) if isinstance(data, dict) else {}
+    return dict(json.loads(text))
 
 
 def _find_config(repo_path: Path, config_path: Path | None) -> Path | None:
-    """Locate config file: explicit path, then repo .aws-arch-agent.json, then cwd."""
+    """Locate config file: explicit path, then repo defaults, then cwd."""
     if config_path is not None:
         p = Path(config_path).expanduser().resolve()
         return p if p.exists() else None
-    for name in (".aws-arch-agent.json", "aws-arch-agent.json"):
+    for name in (
+        ".aws-arch-agent.json",
+        "aws-arch-agent.json",
+        ".aws-arch-agent.yaml",
+        "aws-arch-agent.yaml",
+        ".aws-arch-agent.yml",
+        "aws-arch-agent.yml",
+    ):
         in_repo = repo_path / name
         if in_repo.exists():
             return in_repo
@@ -38,13 +58,14 @@ def load_config(
     templates: str | None = None,
     no_synth: bool | None = None,
     rag_path: str | None = None,
+    llm_mode: LLMMode | None = None,
 ) -> "RunConfig":
     """Load config from file and override with CLI flags. CLI wins over file."""
     cfg_path = _find_config(repo_path, config_path)
-    file_cfg: dict = {}
+    file_cfg: dict[str, Any] = {}
     if cfg_path:
         try:
-            file_cfg = json.loads(cfg_path.read_text(encoding="utf-8"))
+            file_cfg = _load_config_file(cfg_path)
         except Exception as e:
             logger.warning("Failed to load config from %s: %s", cfg_path, e)
 
@@ -64,6 +85,8 @@ def load_config(
             return no_synth
         if key == "rag_path" and rag_path is not None:
             return rag_path
+        if key == "llm_mode" and llm_mode is not None:
+            return llm_mode
         return val
 
     file_rag = file_cfg.get("rag")
@@ -84,6 +107,7 @@ def load_config(
 
     resolved_templates = _get("templates", None)
     resolved_no_synth = bool(_get("no_synth", False))
+    resolved_llm_mode = str(_get("llm_mode", "full") or "full")
 
     file_rules = file_cfg.get("rules")
     if not isinstance(file_rules, dict):
@@ -103,6 +127,7 @@ def load_config(
         rag_use_embeddings=rag_use_embeddings,
         rag_embedding_provider=rag_embedding_provider,
         rag_embedding_model=rag_embedding_model,
+        llm_mode=resolved_llm_mode if resolved_llm_mode in ("full", "compact") else "full",
     )
 
 
@@ -123,6 +148,7 @@ class RunConfig:
         "rag_use_embeddings",
         "rag_embedding_provider",
         "rag_embedding_model",
+        "llm_mode",
     )
 
     def __init__(
@@ -141,6 +167,7 @@ class RunConfig:
         rag_use_embeddings: bool = False,
         rag_embedding_provider: str | None = None,
         rag_embedding_model: str | None = None,
+        llm_mode: str = "full",
     ):
         self.format = format
         self.fail_on = fail_on
@@ -155,3 +182,4 @@ class RunConfig:
         self.rag_use_embeddings = rag_use_embeddings
         self.rag_embedding_provider = rag_embedding_provider
         self.rag_embedding_model = rag_embedding_model
+        self.llm_mode = llm_mode

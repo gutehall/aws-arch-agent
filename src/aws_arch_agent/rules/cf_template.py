@@ -500,7 +500,7 @@ def _run_cf_rules_on_template(template_path: Path, doc: dict) -> List[Finding]:
             if rtype == "AWS::ApiGatewayV2::Stage":
                 if not props.get("AccessLogSettings", {}).get("DestinationArn"):
                     findings.append(Finding(
-                        id="CF-APIGW-001",
+                        id="CF-APIGW-V2-001",
                         title="API Gateway V2 stage access logging not enabled",
                         severity="Low",
                         category="Observability",
@@ -511,7 +511,7 @@ def _run_cf_rules_on_template(template_path: Path, doc: dict) -> List[Finding]:
                     ))
                 if props.get("DefaultRouteSettings", {}).get("DataTraceEnabled") is not True:
                     findings.append(Finding(
-                        id="CF-APIGW-002",
+                        id="CF-APIGW-V2-002",
                         title="API Gateway V2 stage X-Ray tracing not enabled",
                         severity="Low",
                         category="Observability",

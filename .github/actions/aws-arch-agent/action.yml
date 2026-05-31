@@ -1,0 +1,97 @@
+name: AWS Arch Agent
+description: Run aws-arch-agent architecture review on a CDK repository
+inputs:
+  repo:
+    description: Path to the repository to scan
+    required: false
+    default: .
+  mode:
+    description: Analysis mode (v1 or v2)
+    required: false
+    default: v1
+  format:
+    description: Output format (markdown, json, or sarif)
+    required: false
+    default: markdown
+  out:
+    description: Output report path
+    required: false
+    default: report.md
+  fail-on:
+    description: Exit non-zero if findings at or above severity (high|medium|low|none)
+    required: false
+    default: none
+  no-llm:
+    description: Skip LLM (true/false)
+    required: false
+    default: "true"
+  no-synth:
+    description: Skip CDK synth in V2 (true/false)
+    required: false
+    default: "false"
+  llm-mode:
+    description: V2 LLM mode (full or compact)
+    required: false
+    default: full
+  baseline:
+    description: Path to baseline file
+    required: false
+    default: ""
+  enforce-baseline:
+    description: Only fail on findings not in baseline (true/false)
+    required: false
+    default: "false"
+  upload-artifact:
+    description: Upload report as workflow artifact (true/false)
+    required: false
+    default: "true"
+runs:
+  using: composite
+  steps:
+    - name: Set up Python
+      uses: actions/setup-python@v5
+      with:
+        python-version: "3.11"
+
+    - name: Install ripgrep
+      shell: bash
+      run: sudo apt-get update && sudo apt-get install -y ripgrep
+
+    - name: Install aws-arch-agent
+      shell: bash
+      run: |
+        python -m pip install -U pip
+        pip install -e ".[dev]"
+
+    - name: Run AWS Arch Agent
+      shell: bash
+      run: |
+        ARGS=(
+          --repo "${{ inputs.repo }}"
+          --mode "${{ inputs.mode }}"
+          --format "${{ inputs.format }}"
+          --out "${{ inputs.out }}"
+          --fail-on "${{ inputs.fail-on }}"
+          --llm-mode "${{ inputs.llm-mode }}"
+        )
+        if [ "${{ inputs.no-llm }}" = "true" ]; then
+          ARGS+=(--no-llm)
+        fi
+        if [ "${{ inputs.no-synth }}" = "true" ]; then
+          ARGS+=(--no-synth)
+        fi
+        if [ -n "${{ inputs.baseline }}" ]; then
+          ARGS+=(--baseline "${{ inputs.baseline }}")
+        fi
+        if [ "${{ inputs.enforce-baseline }}" = "true" ]; then
+          ARGS+=(--enforce-baseline)
+        fi
+        aws-arch-agent "${ARGS[@]}"
+
+    - name: Upload report artifact
+      if: inputs.upload-artifact == 'true'
+      uses: actions/upload-artifact@v4
+      with:
+        name: aws-arch-agent-report
+        path: ${{ inputs.out }}
+        if-no-files-found: ignore

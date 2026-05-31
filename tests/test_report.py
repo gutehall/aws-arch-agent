@@ -26,6 +26,13 @@ def test_render_markdown_shape() -> None:
     assert "High" in out
 
 
+def test_render_markdown_warnings_section() -> None:
+    ctx = RepoContext(repo_path="/repo", language="typescript")
+    out = render_markdown(ctx, [], warnings=["Rule SEC-001 failed"])
+    assert "Analysis Warnings" in out
+    assert "SEC-001 failed" in out
+
+
 def test_render_markdown_no_findings() -> None:
     """Markdown with no findings still has structure."""
     ctx = RepoContext(repo_path="/repo", language="python")
@@ -47,3 +54,10 @@ def test_render_json_shape() -> None:
     assert data["context"]["repo_path"] == "/repo"
     assert len(data["findings"]) == 1
     assert data["findings"][0]["id"] == "OPS-001"
+
+
+def test_render_json_with_warnings() -> None:
+    ctx = RepoContext(repo_path="/repo", language="typescript")
+    out = render_json(ctx, [], warnings=["Rule SEC-001 failed"])
+    data = json.loads(out)
+    assert data["warnings"] == ["Rule SEC-001 failed"]

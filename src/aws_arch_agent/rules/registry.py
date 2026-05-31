@@ -68,7 +68,7 @@ from aws_arch_agent.rules.sustainability import (
 )
 
 ALL_RULES = [
-    # Security (56 rules)
+    # Security (65 rules)
     IamWildcardAction(),
     IamWildcardResource(),
     OpenSshToWorld(),

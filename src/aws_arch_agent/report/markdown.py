@@ -15,7 +15,7 @@ def _group(findings: List[Finding]) -> Dict[str, List[Finding]]:
     return groups
 
 
-def render_markdown(ctx: RepoContext, findings: List[Finding]) -> str:
+def render_markdown(ctx: RepoContext, findings: List[Finding], warnings: List[str] | None = None) -> str:
     """Build a full Markdown report (title, repo info, findings by severity, next actions)."""
     groups = _group(findings)
     now = datetime.now().strftime("%Y-%m-%d %H:%M")
@@ -31,6 +31,14 @@ def render_markdown(ctx: RepoContext, findings: List[Finding]) -> str:
     lines.append("## Executive Summary")
     lines.append("This is an automated first-pass review. Always validate findings manually.")
     lines.append("")
+
+    if warnings:
+        lines.append("## Analysis Warnings")
+        lines.append("Some rules failed during analysis; results may be incomplete.")
+        lines.append("")
+        for w in warnings:
+            lines.append(f"- {w}")
+        lines.append("")
 
     order = ["High", "Medium", "Low"]
     for sev in order:
