@@ -2,14 +2,24 @@
 from __future__ import annotations
 import re
 import subprocess
-from pathlib import Path
+from pathlib import Path, PurePosixPath
 from typing import List, Tuple
 
 from aws_arch_agent.rules.base import DEFAULT_EXCLUDE_GLOBS
 
 
+def _path_excluded(rel: str, exclude_globs: tuple[str, ...] | list[str]) -> bool:
+    """Return True if rel path matches any exclude glob."""
+    path = PurePosixPath(rel.replace("\\", "/"))
+    return any(path.match(pattern) for pattern in exclude_globs)
+
+
 def _fallback_search(
-    repo_path: Path, pattern: str, glob: str | None, max_hits: int
+    repo_path: Path,
+    pattern: str,
+    glob: str | None,
+    max_hits: int,
+    exclude_globs: tuple[str, ...] | list[str],
 ) -> List[Tuple[str, int, str]]:
     """Pure-Python fallback when ripgrep is missing or returns no match (e.g. regex dialect)."""
     try:
@@ -43,6 +53,8 @@ def _fallback_search(
         except ValueError:
             continue
         rel_str = str(rel).replace("\\", "/")
+        if _path_excluded(rel_str, exclude_globs):
+            continue
         for i, line in enumerate(text.splitlines(), start=1):
             if regex.search(line):
                 hits.append((rel_str, i, line.strip()))
@@ -69,7 +81,7 @@ def rg(
     try:
         p = subprocess.run(cmd, capture_output=True, text=True, check=False, cwd=str(repo_path))
     except FileNotFoundError:
-        return _fallback_search(repo_path, pattern, glob, max_hits)
+        return _fallback_search(repo_path, pattern, glob, max_hits, effective_excludes)
     hits: List[Tuple[str, int, str]] = []
     for line in p.stdout.splitlines():
         parts = line.split(":", 2)
@@ -84,5 +96,5 @@ def rg(
         if len(hits) >= max_hits:
             break
     if not hits:
-        return _fallback_search(repo_path, pattern, glob, max_hits)
+        return _fallback_search(repo_path, pattern, glob, max_hits, effective_excludes)
     return hits
