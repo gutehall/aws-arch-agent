@@ -12,6 +12,8 @@ DEFAULT_EXCLUDE_GLOBS: tuple[str, ...] = (
     "**/test/**",
     "**/tests/**",
     "**/__tests__/**",
+    "**/build_rule_cases.py",
+    "**/calibrate_rule_cases.py",
     "**/cdk.out/**",
     "**/node_modules/**",
     "**/dist/**",
