@@ -94,3 +94,78 @@ def test_save_baseline_replace_failure_keeps_original(tmp_path: Path, monkeypatc
     assert path.read_text(encoding="utf-8") == original
     assert list(tmp_path.glob("*.tmp")) == []
 
+
+def _cf_finding(evidence: str, file: str = "cdk.out/stack.template.json") -> Finding:
+    return Finding(
+        id="CF-S3-001",
+        title="t",
+        severity="High",
+        recommendation="r",
+        file=file,
+        line=None,
+        evidence=evidence,
+    )
+
+
+def test_cf_fingerprint_includes_evidence_and_roundtrips(tmp_path: Path) -> None:
+    bucket_a = _cf_finding("BucketA (AWS::S3::Bucket)")
+    bucket_b = _cf_finding("BucketB (AWS::S3::Bucket)")
+    fp_a = finding_fingerprint(bucket_a)
+    fp_b = finding_fingerprint(bucket_b)
+    assert fp_a != fp_b
+    assert fp_a[3] == "BucketA (AWS::S3::Bucket)"
+
+    path = tmp_path / "baseline.json"
+    save_baseline(path, {fp_a, fp_b})
+    assert load_baseline(path) == {fp_a, fp_b}
+    saved = json.loads(path.read_text(encoding="utf-8"))
+    assert {item["logical_id"] for item in saved["accepted"]} == {
+        "BucketA (AWS::S3::Bucket)",
+        "BucketB (AWS::S3::Bucket)",
+    }
+
+
+def test_relative_paths_do_not_match_by_suffix() -> None:
+    finding = Finding(
+        id="SEC-001",
+        title="t",
+        severity="High",
+        recommendation="r",
+        file="lib/app.py",
+        line=10,
+    )
+    baseline = {("SEC-001", "app.py", 10)}
+    assert filter_new_findings([finding], baseline) == [finding]
+    nested = _cf_finding("BucketA (AWS::S3::Bucket)", file="cdk.out/mystack.template.json")
+    short = {
+        (
+            "CF-S3-001",
+            "mystack.template.json",
+            None,
+            "BucketA (AWS::S3::Bucket)",
+        )
+    }
+    assert filter_new_findings([nested], short) == [nested]
+
+
+def test_absolute_baseline_path_matches_relative_finding() -> None:
+    finding = _cf_finding("BucketA (AWS::S3::Bucket)")
+    baseline = {
+        (
+            "CF-S3-001",
+            "/Users/other/checkout/cdk.out/stack.template.json",
+            None,
+            "BucketA (AWS::S3::Bucket)",
+        )
+    }
+    assert filter_new_findings([finding], baseline) == []
+    other = _cf_finding("BucketB (AWS::S3::Bucket)")
+    assert filter_new_findings([other], baseline) == [other]
+
+
+def test_baseline_without_logical_id_does_not_suppress_every_bucket() -> None:
+    bucket_a = _cf_finding("BucketA (AWS::S3::Bucket)")
+    bucket_b = _cf_finding("BucketB (AWS::S3::Bucket)")
+    baseline = {("CF-S3-001", "cdk.out/stack.template.json", None)}
+    assert filter_new_findings([bucket_a, bucket_b], baseline) == [bucket_a, bucket_b]
+
