@@ -293,3 +293,158 @@ def test_update_and_enforce_does_not_suppress_new_findings(tmp_path: Path) -> No
     marked = json.loads(second.read_text(encoding="utf-8"))
     assert marked["findings"]
     assert all(item["baselined"] is True for item in marked["findings"])
+
+
+def test_cf_baseline_roundtrip_ignores_cwd(tmp_path: Path, monkeypatch) -> None:
+    (tmp_path / "stack.yaml").write_text(
+        "Resources:\n"
+        "  BucketA:\n"
+        "    Type: AWS::S3::Bucket\n"
+        "    Properties: {}\n"
+        "  BucketB:\n"
+        "    Type: AWS::S3::Bucket\n"
+        "    Properties: {}\n",
+        encoding="utf-8",
+    )
+    baseline = tmp_path / "baseline.json"
+    out_file = tmp_path / "report.md"
+    elsewhere = tmp_path / "elsewhere"
+    elsewhere.mkdir()
+    monkeypatch.chdir(elsewhere)
+    result = runner.invoke(
+        app,
+        [
+            "--templates",
+            str(tmp_path),
+            "--no-synth",
+            "--mode",
+            "v2",
+            "--no-llm",
+            "--update-baseline",
+            "--baseline",
+            str(baseline),
+            "--out",
+            str(out_file),
+        ],
+    )
+    assert result.exit_code == 0, result.output or result.stderr
+    saved = json.loads(baseline.read_text(encoding="utf-8"))
+    buckets = [item for item in saved["accepted"] if item["id"] == "CF-S3-001"]
+    assert {item["logical_id"] for item in buckets} == {
+        "BucketA (AWS::S3::Bucket)",
+        "BucketB (AWS::S3::Bucket)",
+    }
+    assert all(item["file"] == "stack.yaml" for item in buckets)
+    assert str(tmp_path) not in baseline.read_text(encoding="utf-8")
+
+    other = tmp_path / "other"
+    other.mkdir()
+    monkeypatch.chdir(other)
+    enforced = tmp_path / "enforced.md"
+    again = runner.invoke(
+        app,
+        [
+            "--templates",
+            str(tmp_path),
+            "--no-synth",
+            "--mode",
+            "v2",
+            "--no-llm",
+            "--fail-on",
+            "high",
+            "--enforce-baseline",
+            "--baseline",
+            str(baseline),
+            "--out",
+            str(enforced),
+        ],
+    )
+    assert again.exit_code == 0, again.output or again.stderr
+
+
+def test_synth_failure_is_json_warning_and_exit_2(tmp_path: Path, monkeypatch) -> None:
+    _make_repo(tmp_path)
+    monkeypatch.setattr(
+        "aws_arch_agent.agent.v2_graph.run_cdk_synth",
+        lambda *args, **kwargs: (1, "", "synth blew up"),
+    )
+    out_file = tmp_path / "report.json"
+    result = runner.invoke(
+        app,
+        [
+            "--repo",
+            str(tmp_path),
+            "--mode",
+            "v2",
+            "--no-llm",
+            "--format",
+            "json",
+            "--fail-on",
+            "none",
+            "--out",
+            str(out_file),
+        ],
+    )
+    assert result.exit_code == 2, result.output or result.stderr
+    data = json.loads(out_file.read_text(encoding="utf-8"))
+    assert any("CDK synth exited 1" in warning for warning in data["warnings"])
+
+
+def test_missing_templates_directory_exits_2(tmp_path: Path) -> None:
+    _make_repo(tmp_path)
+    out_file = tmp_path / "report.sarif"
+    missing = tmp_path / "no-templates"
+    result = runner.invoke(
+        app,
+        [
+            "--repo",
+            str(tmp_path),
+            "--templates",
+            str(missing),
+            "--mode",
+            "v2",
+            "--no-llm",
+            "--format",
+            "sarif",
+            "--fail-on",
+            "none",
+            "--out",
+            str(out_file),
+        ],
+    )
+    assert result.exit_code == 2, result.output or result.stderr
+    text = out_file.read_text(encoding="utf-8")
+    assert "Template path does not exist" in text
+
+
+def test_raising_rule_keeps_other_findings_and_exits_2(tmp_path: Path, monkeypatch) -> None:
+    _high_finding_repo(tmp_path)
+
+    def boom(repo_path: Path, language: str = "typescript") -> list:
+        raise RuntimeError("rule exploded")
+
+    monkeypatch.setattr(
+        "aws_arch_agent.rules.best_practices.CdkContextMissing.run",
+        boom,
+    )
+    out_file = tmp_path / "report.json"
+    result = runner.invoke(
+        app,
+        [
+            "--repo",
+            str(tmp_path),
+            "--mode",
+            "v1",
+            "--no-llm",
+            "--format",
+            "json",
+            "--fail-on",
+            "none",
+            "--out",
+            str(out_file),
+        ],
+    )
+    assert result.exit_code == 2, result.output or result.stderr
+    data = json.loads(out_file.read_text(encoding="utf-8"))
+    assert any(item["id"] == "SEC-001" for item in data["findings"])
+    assert any("failed" in warning for warning in data["warnings"])
