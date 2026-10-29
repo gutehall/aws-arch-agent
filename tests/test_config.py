@@ -1,7 +1,9 @@
 """Tests for config loading and CLI overrides."""
 from pathlib import Path
 
-from aws_arch_agent.config import load_config
+import pytest
+
+from aws_arch_agent.config import ConfigError, load_config
 
 
 def test_load_config_no_file(tmp_path: Path) -> None:
@@ -81,3 +83,59 @@ def test_load_config_rag_embeddings(tmp_path: Path) -> None:
     assert cfg.rag_use_embeddings is True
     assert cfg.rag_embedding_provider == "sentence-transformers"
     assert cfg.rag_embedding_model == "all-MiniLM-L6-v2"
+
+
+def test_yaml_string_false_stays_false(tmp_path: Path) -> None:
+    """A quoted YAML false must not become True via bool("false")."""
+    cfg_file = tmp_path / "aws-arch-agent.yaml"
+    cfg_file.write_text('no_llm: "false"\nno_synth: "false"\n', encoding="utf-8")
+    cfg = load_config(tmp_path, cfg_file)
+    assert cfg.no_llm is False
+    assert cfg.no_synth is False
+
+
+def test_rules_exclude_must_be_list_of_strings(tmp_path: Path) -> None:
+    cfg_file = tmp_path / ".aws-arch-agent.json"
+    cfg_file.write_text('{"rules": {"exclude": "BP-001"}}', encoding="utf-8")
+    with pytest.raises(ConfigError):
+        load_config(tmp_path)
+
+    cfg_file.write_text('{"rules": {"exclude": 1}}', encoding="utf-8")
+    with pytest.raises(ConfigError):
+        load_config(tmp_path)
+
+
+def test_unknown_severity_threshold_fails(tmp_path: Path) -> None:
+    cfg_file = tmp_path / ".aws-arch-agent.json"
+    cfg_file.write_text('{"severity_threshold": "critical"}', encoding="utf-8")
+    with pytest.raises(ConfigError):
+        load_config(tmp_path)
+
+
+def test_missing_explicit_config_fails(tmp_path: Path) -> None:
+    missing = tmp_path / "missing.json"
+    with pytest.raises(ConfigError):
+        load_config(tmp_path, config_path=missing)
+
+
+def test_invalid_config_file_fails(tmp_path: Path) -> None:
+    cfg_file = tmp_path / ".aws-arch-agent.json"
+    cfg_file.write_text('{"fail_on":', encoding="utf-8")
+    with pytest.raises(ConfigError):
+        load_config(tmp_path)
+
+
+def test_cwd_config_is_not_used(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    repo = tmp_path / "repo"
+    repo.mkdir()
+    cwd = tmp_path / "cwd"
+    cwd.mkdir()
+    (cwd / ".aws-arch-agent.json").write_text(
+        '{"fail_on": "high", "no_llm": true, "rules": {"exclude": ["BP-001"]}}',
+        encoding="utf-8",
+    )
+    monkeypatch.chdir(cwd)
+    cfg = load_config(repo)
+    assert cfg.fail_on == "none"
+    assert cfg.no_llm is False
+    assert cfg.rules_exclude is None

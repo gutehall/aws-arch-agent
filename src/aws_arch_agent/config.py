@@ -2,49 +2,145 @@
 from __future__ import annotations
 
 import json
-import logging
 from pathlib import Path
-from typing import Any, Literal
+from typing import Any, Literal, cast
 
 import yaml
-
-logger = logging.getLogger(__name__)
 
 SeverityThreshold = Literal["high", "medium", "low", "none"]
 OutputFormat = Literal["markdown", "json", "sarif"]
 LLMMode = Literal["full", "compact"]
 
+_FORMATS = ("markdown", "json", "sarif")
+_FAIL_ON = ("high", "medium", "low", "none")
+_LLM_MODES = ("full", "compact")
+_SEVERITY = {"high": "High", "medium": "Medium", "low": "Low"}
+_TRUE = {"1", "true", "yes", "on"}
+_FALSE = {"0", "false", "no", "off"}
+_CONFIG_NAMES = (
+    ".aws-arch-agent.json",
+    "aws-arch-agent.json",
+    ".aws-arch-agent.yaml",
+    "aws-arch-agent.yaml",
+    ".aws-arch-agent.yml",
+    "aws-arch-agent.yml",
+)
+
+
+class ConfigError(ValueError):
+    """Config file is missing, unreadable, or invalid."""
+
+
+def _as_bool(value: Any, key: str) -> bool:
+    """Parse a config boolean. Quoted YAML "false" stays false."""
+    if isinstance(value, bool):
+        return value
+    if isinstance(value, int) and value in (0, 1):
+        return bool(value)
+    if isinstance(value, str):
+        token = value.strip().lower()
+        if token in _TRUE:
+            return True
+        if token in _FALSE:
+            return False
+    raise ConfigError(f"{key} must be a boolean, got {value!r}")
+
+
+def _as_string_list(value: Any, key: str) -> list[str] | None:
+    """Require a list of strings. None means the key is unset."""
+    if value is None:
+        return None
+    if isinstance(value, list) and all(isinstance(item, str) for item in value):
+        return list(value)
+    raise ConfigError(f"{key} must be a list of strings, got {value!r}")
+
+
+def _choice(value: Any, allowed: tuple[str, ...], key: str) -> str:
+    if isinstance(value, str):
+        token = value.strip().lower()
+        if token in allowed:
+            return token
+    allowed_text = ", ".join(allowed)
+    raise ConfigError(f"{key} must be one of {allowed_text}, got {value!r}")
+
+
+def _severity_threshold(value: Any) -> str | None:
+    if value is None or value == "":
+        return None
+    if isinstance(value, str):
+        mapped = _SEVERITY.get(value.strip().lower())
+        if mapped is not None:
+            return mapped
+    raise ConfigError(f"severity_threshold must be high, medium, or low, got {value!r}")
+
+
+def _optional_str(value: Any, key: str) -> str | None:
+    if value is None:
+        return None
+    if isinstance(value, str):
+        return value
+    raise ConfigError(f"{key} must be a string, got {value!r}")
+
 
 def _load_config_file(path: Path) -> dict[str, Any]:
     """Load config from JSON or YAML file."""
-    text = path.read_text(encoding="utf-8")
+    try:
+        text = path.read_text(encoding="utf-8")
+    except OSError as exc:
+        raise ConfigError(f"Failed to read config {path}: {exc}") from exc
     suffix = path.suffix.lower()
-    if suffix in (".yaml", ".yml"):
-        data = yaml.safe_load(text)
-        return dict(data) if isinstance(data, dict) else {}
-    return dict(json.loads(text))
+    try:
+        if suffix in (".yaml", ".yml"):
+            data = yaml.safe_load(text)
+        else:
+            data = json.loads(text)
+    except (json.JSONDecodeError, yaml.YAMLError) as exc:
+        raise ConfigError(f"Invalid config {path}: {exc}") from exc
+    if data is None:
+        return {}
+    if not isinstance(data, dict):
+        raise ConfigError(f"Config {path} must be a mapping")
+    return dict(data)
 
 
 def _find_config(repo_path: Path, config_path: Path | None) -> Path | None:
-    """Locate config file: explicit path, then repo defaults, then cwd."""
+    """Locate config file: explicit path, otherwise a file in the repo root.
+
+    An explicit path that is missing raises ConfigError. A same-named file in
+    the current working directory is not used.
+    """
     if config_path is not None:
-        p = Path(config_path).expanduser().resolve()
-        return p if p.exists() else None
-    for name in (
-        ".aws-arch-agent.json",
-        "aws-arch-agent.json",
-        ".aws-arch-agent.yaml",
-        "aws-arch-agent.yaml",
-        ".aws-arch-agent.yml",
-        "aws-arch-agent.yml",
-    ):
+        path = Path(config_path).expanduser().resolve()
+        if not path.is_file():
+            raise ConfigError(f"Config file not found: {path}")
+        return path
+    for name in _CONFIG_NAMES:
         in_repo = repo_path / name
-        if in_repo.exists():
+        if in_repo.is_file():
             return in_repo
-        in_cwd = Path.cwd() / name
-        if in_cwd.exists():
-            return in_cwd
     return None
+
+
+def _pick_choice(
+    file_cfg: dict[str, Any],
+    key: str,
+    override: str | None,
+    default: str,
+    allowed: tuple[str, ...],
+) -> str:
+    if override is not None:
+        return _choice(override, allowed, key)
+    if key in file_cfg:
+        return _choice(file_cfg[key], allowed, key)
+    return default
+
+
+def _pick_bool(file_cfg: dict[str, Any], key: str, override: bool | None, default: bool) -> bool:
+    if override is not None:
+        return override
+    if key in file_cfg:
+        return _as_bool(file_cfg[key], key)
+    return default
 
 
 def load_config(
@@ -60,74 +156,80 @@ def load_config(
     rag_path: str | None = None,
     llm_mode: LLMMode | None = None,
 ) -> "RunConfig":
-    """Load config from file and override with CLI flags. CLI wins over file."""
+    """Load config from file and override with CLI flags that were passed.
+
+    A None argument means the flag was not passed, so the file value applies.
+    """
     cfg_path = _find_config(repo_path, config_path)
     file_cfg: dict[str, Any] = {}
     if cfg_path:
-        try:
-            file_cfg = _load_config_file(cfg_path)
-        except Exception as e:
-            logger.warning("Failed to load config from %s: %s", cfg_path, e)
-
-    def _get(key: str, default: str | bool | None):
-        val = file_cfg.get(key, default)
-        if key == "format" and format is not None:
-            return format
-        if key == "fail_on" and fail_on is not None:
-            return fail_on
-        if key == "no_llm" and no_llm is not None:
-            return no_llm
-        if key == "out" and out is not None:
-            return out
-        if key == "templates" and templates is not None:
-            return templates
-        if key == "no_synth" and no_synth is not None:
-            return no_synth
-        if key == "rag_path" and rag_path is not None:
-            return rag_path
-        if key == "llm_mode" and llm_mode is not None:
-            return llm_mode
-        return val
+        file_cfg = _load_config_file(cfg_path)
 
     file_rag = file_cfg.get("rag")
     if isinstance(file_rag, dict):
-        resolved_rag = file_rag.get("path")
-        rag_use_embeddings = bool(file_rag.get("use_embeddings", False))
+        resolved_rag = _optional_str(file_rag.get("path"), "rag.path")
+        rag_use_embeddings = _as_bool(file_rag.get("use_embeddings", False), "rag.use_embeddings")
         rag_embedding_provider = file_rag.get("embedding_provider") or None
         if rag_embedding_provider is not None:
-            rag_embedding_provider = str(rag_embedding_provider).strip().lower() or None
+            if not isinstance(rag_embedding_provider, str):
+                raise ConfigError(
+                    f"rag.embedding_provider must be a string, got {rag_embedding_provider!r}"
+                )
+            rag_embedding_provider = rag_embedding_provider.strip().lower() or None
         rag_embedding_model = file_rag.get("embedding_model") or None
-    else:
+        if rag_embedding_model is not None and not isinstance(rag_embedding_model, str):
+            raise ConfigError(f"rag.embedding_model must be a string, got {rag_embedding_model!r}")
+    elif file_rag is None:
         resolved_rag = None
         rag_use_embeddings = False
         rag_embedding_provider = None
         rag_embedding_model = None
+    else:
+        raise ConfigError(f"rag must be a mapping, got {file_rag!r}")
     if rag_path is not None:
         resolved_rag = rag_path
 
-    resolved_templates = _get("templates", None)
-    resolved_no_synth = bool(_get("no_synth", False))
-    resolved_llm_mode = str(_get("llm_mode", "full") or "full")
-
-    file_rules = file_cfg.get("rules")
-    if not isinstance(file_rules, dict):
+    file_rules = file_cfg.get("rules", {})
+    if file_rules is None:
         file_rules = {}
+    if not isinstance(file_rules, dict):
+        raise ConfigError(f"rules must be a mapping, got {file_rules!r}")
+    rules_include = (
+        _as_string_list(file_rules["include"], "rules.include") if "include" in file_rules else None
+    )
+    rules_exclude = (
+        _as_string_list(file_rules["exclude"], "rules.exclude") if "exclude" in file_rules else None
+    )
+
+    if "severity_threshold" in file_cfg:
+        severity_threshold = _severity_threshold(file_cfg["severity_threshold"])
+    else:
+        severity_threshold = None
+
+    resolved_out = out if out is not None else file_cfg.get("out", "report.md")
+    if resolved_out is None:
+        resolved_out = "report.md"
+    if not isinstance(resolved_out, str) or not resolved_out:
+        raise ConfigError(f"out must be a string, got {resolved_out!r}")
 
     return RunConfig(
-        format=_get("format", "markdown") or "markdown",
-        fail_on=_get("fail_on", "none") or "none",
-        no_llm=bool(_get("no_llm", False)),
-        out=str(_get("out", "report.md") or "report.md"),
-        rules_include=file_rules.get("include"),
-        rules_exclude=file_rules.get("exclude"),
-        severity_threshold=file_cfg.get("severity_threshold"),
-        templates=resolved_templates,
-        no_synth=resolved_no_synth,
+        format=cast(OutputFormat, _pick_choice(file_cfg, "format", format, "markdown", _FORMATS)),
+        fail_on=cast(SeverityThreshold, _pick_choice(file_cfg, "fail_on", fail_on, "none", _FAIL_ON)),
+        no_llm=_pick_bool(file_cfg, "no_llm", no_llm, False),
+        out=resolved_out,
+        rules_include=rules_include,
+        rules_exclude=rules_exclude,
+        severity_threshold=severity_threshold,
+        templates=_optional_str(
+            templates if templates is not None else file_cfg.get("templates"),
+            "templates",
+        ),
+        no_synth=_pick_bool(file_cfg, "no_synth", no_synth, False),
         rag_path=resolved_rag,
         rag_use_embeddings=rag_use_embeddings,
         rag_embedding_provider=rag_embedding_provider,
         rag_embedding_model=rag_embedding_model,
-        llm_mode=resolved_llm_mode if resolved_llm_mode in ("full", "compact") else "full",
+        llm_mode=_pick_choice(file_cfg, "llm_mode", llm_mode, "full", _LLM_MODES),
     )
 
 
