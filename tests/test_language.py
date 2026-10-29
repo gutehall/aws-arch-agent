@@ -55,6 +55,17 @@ def test_mixed_repo_scans_both_languages(tmp_path: Path) -> None:
     assert "app.ts" in names
 
 
+def test_aws_cdk_cli_package_does_not_force_typescript(tmp_path: Path) -> None:
+    """The aws-cdk npm package is the CLI, not a TypeScript app."""
+    (tmp_path / "cdk.json").write_text(json.dumps({"app": "python3 app.py"}), encoding="utf-8")
+    (tmp_path / "app.py").write_text('s3.Bucket(self, "B")\n', encoding="utf-8")
+    (tmp_path / "package.json").write_text(
+        json.dumps({"devDependencies": {"aws-cdk": "2.170.0"}}),
+        encoding="utf-8",
+    )
+    assert detect_language(tmp_path) == "python"
+
+
 def test_requirements_without_typescript_app_is_python(tmp_path: Path) -> None:
     (tmp_path / "cdk.json").write_text("{}\n", encoding="utf-8")
     (tmp_path / "requirements.txt").write_text("aws-cdk-lib\n", encoding="utf-8")

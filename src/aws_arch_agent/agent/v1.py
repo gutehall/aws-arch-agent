@@ -67,7 +67,7 @@ def _package_has_cdk(repo_path: Path) -> bool:
         if not isinstance(deps, dict):
             continue
         for name in deps:
-            if name in {"aws-cdk", "aws-cdk-lib"} or name.startswith("@aws-cdk/"):
+            if name == "aws-cdk-lib" or name.startswith("@aws-cdk/"):
                 return True
     return False
 
