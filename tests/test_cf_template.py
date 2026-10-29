@@ -412,3 +412,65 @@ def test_eks_control_plane_logging(tmp_path: Path) -> None:
     (cdk_out / "stack.template.json").write_text(json.dumps(template), encoding="utf-8")
     findings = run_cf_rules(cdk_out)
     assert any(f.id == "CF-EKS-001" for f in findings)
+
+
+def test_two_buckets_keep_distinct_relative_fingerprints(tmp_path: Path) -> None:
+    template = {
+        "Resources": {
+            "BucketA": {"Type": "AWS::S3::Bucket", "Properties": {}},
+            "BucketB": {"Type": "AWS::S3::Bucket", "Properties": {}},
+        }
+    }
+    cdk_out = tmp_path / "cdk.out"
+    cdk_out.mkdir()
+    (cdk_out / "mystack.template.json").write_text(json.dumps(template), encoding="utf-8")
+    findings = [f for f in run_cf_rules(cdk_out) if f.id == "CF-S3-001"]
+    assert len(findings) == 2
+    assert {f.evidence for f in findings} == {
+        "BucketA (AWS::S3::Bucket)",
+        "BucketB (AWS::S3::Bucket)",
+    }
+    assert {f.file for f in findings} == {"cdk.out/mystack.template.json"}
+
+
+def test_string_redrive_policy_keeps_sibling_findings(tmp_path: Path) -> None:
+    template = {
+        "Resources": {
+            "BucketA": {"Type": "AWS::S3::Bucket", "Properties": {}},
+            "BrokenQueue": {
+                "Type": "AWS::SQS::Queue",
+                "Properties": {"RedrivePolicy": "not-a-map"},
+            },
+            "BucketB": {"Type": "AWS::S3::Bucket", "Properties": {}},
+        }
+    }
+    cdk_out = tmp_path / "cdk.out"
+    cdk_out.mkdir()
+    (cdk_out / "mystack.template.json").write_text(json.dumps(template), encoding="utf-8")
+    other = tmp_path / "cdk.out" / "other.template.json"
+    other.write_text(
+        json.dumps({"Resources": {"Trail": {"Type": "AWS::CloudTrail::Trail", "Properties": {}}}}),
+        encoding="utf-8",
+    )
+    warnings: list[str] = []
+    findings = run_cf_rules(cdk_out, warnings=warnings)
+    ids = {f.id for f in findings}
+    assert "CF-S3-001" in ids
+    assert "CF-CT-001" in ids
+    assert any("BrokenQueue" in warning for warning in warnings)
+
+
+def test_string_launch_template_properties_keep_sibling_findings(tmp_path: Path) -> None:
+    template = {
+        "Resources": {
+            "BadLt": {"Type": "AWS::EC2::LaunchTemplate", "Properties": "nope"},
+            "BucketA": {"Type": "AWS::S3::Bucket", "Properties": {}},
+        }
+    }
+    cdk_out = tmp_path / "cdk.out"
+    cdk_out.mkdir()
+    (cdk_out / "mystack.template.json").write_text(json.dumps(template), encoding="utf-8")
+    warnings: list[str] = []
+    findings = run_cf_rules(cdk_out, warnings=warnings)
+    assert any(f.id == "CF-S3-001" for f in findings)
+    assert any("BadLt" in warning for warning in warnings)
