@@ -1,6 +1,6 @@
 # Config file
 
-Optional config file in the repo root or current directory:
+Optional config file in the repo root. A same-named file in the current directory is not used. A missing `--config` path, or a config file that is not valid JSON or YAML, fails the run.
 
 - `.aws-arch-agent.json` / `aws-arch-agent.json`
 - `.aws-arch-agent.yaml` / `aws-arch-agent.yaml` (YAML also supported)
@@ -72,4 +72,6 @@ aws-arch-agent --repo . --no-llm --update-baseline
 aws-arch-agent --repo . --no-llm --fail-on high --enforce-baseline
 ```
 
-CLI flags override config file values.
+CLI flags override config file values only when that flag is passed. A quoted YAML boolean such as `"false"` is false.
+
+A corrupt baseline with `--enforce-baseline` or `--update-baseline` fails the run and does not change the file. Using both flags still fails on findings that were not accepted before the run. The report lists every finding and marks which ones are accepted.
