@@ -1,8 +1,9 @@
 """Integration test for V2 graph (no LLM)."""
 import json
+import subprocess
 from pathlib import Path
 
-from aws_arch_agent.agent.v2_graph import analyze_v2
+from aws_arch_agent.agent.v2_graph import analyze_v2, node_synth
 
 
 def test_v2_returns_report_and_findings(tmp_path: Path) -> None:
@@ -51,3 +52,14 @@ def test_v2_with_no_synth_static_only(tmp_path: Path) -> None:
     report, ctx, findings, warnings = analyze_v2(tmp_path, use_llm=False, skip_synth=True)
     assert "CDK synth: skipped" in report or "Synth skipped" in report
     assert isinstance(findings, list)
+
+
+def test_synth_timeout_is_a_warning(tmp_path: Path, monkeypatch) -> None:
+    def timed_out(*args, **kwargs):
+        raise subprocess.TimeoutExpired(cmd=["npx", "cdk", "synth"], timeout=180)
+
+    monkeypatch.setattr("aws_arch_agent.agent.v2_graph.run_cdk_synth", timed_out)
+    out = node_synth({"repo_path": str(tmp_path), "rule_warnings": ["kept"]})
+    assert out["synth_ok"] is False
+    assert "kept" in out["rule_warnings"]
+    assert any("timed out" in warning for warning in out["rule_warnings"])

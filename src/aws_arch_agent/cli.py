@@ -14,8 +14,9 @@ from aws_arch_agent.agent.v2_graph import analyze_v2
 from aws_arch_agent.baseline import (
     DEFAULT_BASELINE_NAME,
     BaselineError,
+    Fingerprint,
     filter_new_findings,
-    finding_fingerprint,
+    is_baselined,
     load_baseline,
     merge_into_baseline,
     save_baseline,
@@ -86,20 +87,20 @@ def _mark_baselined(
     content: str,
     fmt: str,
     findings: list[Finding],
-    accepted: set[tuple[str, str | None, int | None]],
+    accepted: set[Fingerprint],
 ) -> str:
     """Keep every finding and label which ones were already accepted."""
     if fmt == "json":
         data = json.loads(content)
         for item, finding in zip(data.get("findings", []), findings):
-            item["baselined"] = finding_fingerprint(finding) in accepted
+            item["baselined"] = is_baselined(finding, accepted)
         return json.dumps(data, indent=2)
     if fmt == "sarif":
         data = json.loads(content)
         results = data["runs"][0]["results"]
         for result, finding in zip(results, findings):
             props = result.setdefault("properties", {})
-            props["baselined"] = finding_fingerprint(finding) in accepted
+            props["baselined"] = is_baselined(finding, accepted)
         return json.dumps(data, indent=2)
 
     lines = [
@@ -112,7 +113,7 @@ def _mark_baselined(
     if not findings:
         lines.append("- No findings.")
     for finding in findings:
-        state = "accepted" if finding_fingerprint(finding) in accepted else "new"
+        state = "accepted" if is_baselined(finding, accepted) else "new"
         lines.append(f"- [{finding.id}]{_finding_location(finding)} — {state}")
     return content.rstrip() + "\n" + "\n".join(lines) + "\n"
 
@@ -180,7 +181,7 @@ def analyze(
 
     out_path = Path(cfg.out).expanduser().resolve()
     baseline_path = _resolve_baseline_path(repo_path, baseline)
-    accepted_before: set[tuple[str, str | None, int | None]] | None = None
+    accepted_before: set[Fingerprint] | None = None
     if enforce_baseline or update_baseline:
         try:
             accepted_before = load_baseline(baseline_path)
@@ -254,11 +255,15 @@ def analyze(
         console.print(f"Wrote suggestions to: [bold]{suggestions_path}[/bold]")
 
     if warnings:
-        console.print(f"[yellow]{len(warnings)} rule(s) failed during analysis (see report warnings)[/yellow]")
+        console.print(f"[yellow]{len(warnings)} check(s) failed during analysis (see report warnings)[/yellow]")
 
-    if _should_fail(cfg.fail_on, findings_for_fail):
+    severity_hit = _should_fail(cfg.fail_on, findings_for_fail)
+    if severity_hit:
         console.print(f"[red]fail-on={cfg.fail_on}: findings at or above threshold[/red]")
-        raise typer.Exit(1)
+    if warnings:
+        raise typer.Exit(code=2)
+    if severity_hit:
+        raise typer.Exit(code=1)
 
 
 if __name__ == "__main__":

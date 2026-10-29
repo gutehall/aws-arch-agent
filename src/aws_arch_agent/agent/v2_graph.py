@@ -4,6 +4,7 @@ from __future__ import annotations
 import hashlib
 import json
 import logging
+import subprocess
 from pathlib import Path
 from typing import Literal, TypedDict, List
 
@@ -15,9 +16,10 @@ from aws_arch_agent.rules.registry import ALL_RULES
 from aws_arch_agent.rules.runner import filter_by_severity, run_all_rules
 from aws_arch_agent.report.markdown import render_markdown
 from aws_arch_agent.tools.cdk_synth import (
+    list_cf_templates,
+    list_templates_from_path,
     run_cdk_synth,
     summarize_templates,
-    list_templates_from_path,
     summarize_templates_from_paths,
 )
 from aws_arch_agent.rules.cf_template import run_cf_rules, run_cf_rules_from_paths
@@ -165,33 +167,63 @@ def node_collect(state: State) -> State:
     return {"ctx": ctx, "raw_findings": findings, "rule_warnings": warnings}
 
 
+def _note(warnings: list[str], message: str) -> None:
+    warnings.append(message)
+    logger.warning(message)
+
+
 def node_synth(state: State) -> State:
     repo_path = Path(state["repo_path"])
     ctx = state.get("ctx")
     templates_path = state.get("templates_path") or ""
     skip_synth = state.get("skip_synth") or False
+    warnings = list(state.get("rule_warnings") or [])
 
     if templates_path:
-        # Use provided templates path (no CDK synth); run CF rules on discovered templates
         tpath = Path(templates_path).expanduser().resolve()
+        out_findings = list(state.get("raw_findings", []))
+        if not tpath.exists():
+            message = f"Template path does not exist: {tpath}"
+            _note(warnings, message)
+            return {
+                "synth_ok": False,
+                "synth_stdout": "",
+                "synth_stderr": message,
+                "synth_summary": message,
+                "raw_findings": out_findings,
+                "rule_warnings": warnings,
+            }
         template_paths = list_templates_from_path(tpath)
         if not template_paths:
-            synth_summary = "No template files found at the given path."
-            out_findings = list(state.get("raw_findings", []))
-        else:
-            synth_summary = summarize_templates_from_paths(template_paths)
-            out_findings = list(state.get("raw_findings", []))
-            try:
-                cf_findings = run_cf_rules_from_paths(template_paths)
-                out_findings.extend(cf_findings)
-            except Exception as e:
-                logger.warning("CF template rules failed: %s", e)
+            message = f"No template files found at {tpath}."
+            _note(warnings, message)
+            return {
+                "synth_ok": False,
+                "synth_stdout": "",
+                "synth_stderr": message,
+                "synth_summary": message,
+                "raw_findings": out_findings,
+                "rule_warnings": warnings,
+            }
+        synth_summary = summarize_templates_from_paths(template_paths)
+        cf_warnings: list[str] = []
+        cf_failed = False
+        try:
+            cf_findings = run_cf_rules_from_paths(
+                template_paths, repo_path=repo_path, warnings=cf_warnings
+            )
+            out_findings.extend(cf_findings)
+        except Exception as exc:
+            cf_failed = True
+            _note(warnings, f"CF template rules failed: {exc}")
+        warnings.extend(cf_warnings)
         return {
-            "synth_ok": True,
+            "synth_ok": not cf_failed,
             "synth_stdout": "",
             "synth_stderr": "",
             "synth_summary": synth_summary,
             "raw_findings": out_findings,
+            "rule_warnings": warnings,
         }
 
     if skip_synth:
@@ -204,40 +236,75 @@ def node_synth(state: State) -> State:
             "synth_summary": synth_summary,
         }
 
-    # Default: run cdk synth
     language = ctx.language if ctx else "typescript"
     try:
         rc, out, err = run_cdk_synth(repo_path, language=language)
-        ok = (rc == 0)
-    except Exception as e:
-        logger.warning("CDK synth failed: %s", e)
-        ok, out, err = False, "", f"{e}"
-
-    if ok:
-        cdk_out = repo_path / "cdk.out"
-        synth_summary = summarize_templates(cdk_out)
-        out_findings = list(state.get("raw_findings", []))
-        try:
-            cf_findings = run_cf_rules(cdk_out)
-            out_findings.extend(cf_findings)
-        except Exception as e:
-            logger.warning("CF template rules failed: %s", e)
+    except subprocess.TimeoutExpired as exc:
+        message = f"CDK synth timed out after {exc.timeout}s"
+        _note(warnings, message)
         return {
-            "synth_ok": True,
+            "synth_ok": False,
+            "synth_stdout": "",
+            "synth_stderr": message,
+            "synth_summary": message,
+            "rule_warnings": warnings,
+        }
+    except Exception as exc:
+        message = f"CDK synth failed: {exc}"
+        _note(warnings, message)
+        return {
+            "synth_ok": False,
+            "synth_stdout": "",
+            "synth_stderr": message,
+            "synth_summary": message,
+            "rule_warnings": warnings,
+        }
+
+    if rc != 0:
+        detail = (err or out or "").strip()
+        message = f"CDK synth exited {rc}"
+        if detail:
+            message = f"{message}: {detail[-500:]}"
+        _note(warnings, message)
+        return {
+            "synth_ok": False,
+            "synth_stdout": (out or "")[-4000:],
+            "synth_stderr": (err or "")[-4000:],
+            "synth_summary": message,
+            "rule_warnings": warnings,
+        }
+
+    cdk_out = repo_path / "cdk.out"
+    out_findings = list(state.get("raw_findings", []))
+    if not list_cf_templates(cdk_out):
+        message = "CDK synth produced no template files."
+        _note(warnings, message)
+        return {
+            "synth_ok": False,
             "synth_stdout": out[-4000:],
             "synth_stderr": err[-4000:],
-            "synth_summary": synth_summary,
+            "synth_summary": message,
             "raw_findings": out_findings,
+            "rule_warnings": warnings,
         }
-    else:
-        synth_summary = "CDK synth did not run successfully. (This is OK for MVP.)"
-        logger.info("CDK synth failed or skipped; continuing with static analysis only")
 
+    synth_summary = summarize_templates(cdk_out)
+    cf_warnings = []
+    cf_failed = False
+    try:
+        cf_findings = run_cf_rules(cdk_out, repo_path=repo_path, warnings=cf_warnings)
+        out_findings.extend(cf_findings)
+    except Exception as exc:
+        cf_failed = True
+        _note(warnings, f"CF template rules failed: {exc}")
+    warnings.extend(cf_warnings)
     return {
-        "synth_ok": ok,
+        "synth_ok": not cf_failed,
         "synth_stdout": out[-4000:],
         "synth_stderr": err[-4000:],
         "synth_summary": synth_summary,
+        "raw_findings": out_findings,
+        "rule_warnings": warnings,
     }
 
 

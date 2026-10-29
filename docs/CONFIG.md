@@ -75,3 +75,7 @@ aws-arch-agent --repo . --no-llm --fail-on high --enforce-baseline
 CLI flags override config file values only when that flag is passed. A quoted YAML boolean such as `"false"` is false.
 
 A corrupt baseline with `--enforce-baseline` or `--update-baseline` fails the run and does not change the file. Using both flags still fails on findings that were not accepted before the run. The report lists every finding and marks which ones are accepted.
+
+CloudFormation findings have no source line. Their baseline key is the rule id, the template path relative to the repo, and `logical_id` (the finding evidence, such as `BucketA (AWS::S3::Bucket)`). Two resources of the same rule in one template stay distinct. A baseline written before `logical_id` was stored does not suppress those findings; regenerate it with `--update-baseline`. An older entry that already has `logical_id` and an absolute path still matches when that path ends with the repo-relative path.
+
+A rule exception, a CloudFormation resource that cannot be checked, a missing or empty template path, or a failed or timed-out `cdk synth` is listed in the JSON and SARIF report warnings. The process exits 2. That exit is separate from `--fail-on`.
