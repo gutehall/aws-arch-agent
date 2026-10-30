@@ -311,6 +311,23 @@ def test_rds_deletion_protection_ts(tmp_path: Path) -> None:
     assert findings[0].id == "REL-030"
 
 
+def test_cdk_bool_prop_accepts_camel_and_snake() -> None:
+    import re
+
+    from aws_arch_agent.rules.base import cdk_bool_prop
+
+    pattern = cdk_bool_prop("enableKeyRotation")
+    for snippet in (
+        "enableKeyRotation: true",
+        "enableKeyRotation: True",
+        "enable_key_rotation=True",
+        "enable_key_rotation = true",
+    ):
+        assert re.search(pattern, snippet), snippet
+    assert re.search(pattern, "enableKeyRotation: false") is None
+    assert re.search(pattern, "enable_key_rotation=False") is None
+
+
 def test_s3_versioning_missing_ts(tmp_path: Path) -> None:
     (tmp_path / "lib").mkdir()
     (tmp_path / "lib" / "stack.ts").write_text(

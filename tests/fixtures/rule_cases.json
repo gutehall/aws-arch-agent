@@ -120,7 +120,9 @@
   },
   "OPS-008": {
     "negative_ts": "containerInsights: true",
-    "positive_ts": "new ecs.Cluster(this, 'C', { containerInsights: false });"
+    "negative_py": "ecs.Cluster(self, 'C', container_insights=True)",
+    "positive_ts": "new ecs.Cluster(this, 'C', { containerInsights: false });",
+    "positive_py": "ecs.Cluster(self, 'C')"
   },
   "OPS-009": {
     "negative_ts": "monitoringInterval:",
@@ -136,7 +138,9 @@
   },
   "OPS-012": {
     "negative_ts": "tracingEnabled: true",
-    "positive_ts": "new sfn.StateMachine(this, 'SM', { definitionBody: DefinitionBody.fromChainable(new sfn.Pass(this, 'Pass')) });"
+    "negative_py": "sfn.StateMachine(self, 'SM', tracing_enabled=True)",
+    "positive_ts": "new sfn.StateMachine(this, 'SM', { definitionBody: DefinitionBody.fromChainable(new sfn.Pass(this, 'Pass')) });",
+    "positive_py": "sfn.StateMachine(self, 'SM')"
   },
   "OPS-013": {
     "negative_ts": "// clean compliant stack",
@@ -281,7 +285,9 @@
   },
   "REL-004": {
     "negative_ts": "pointInTimeRecovery: true",
-    "positive_ts": "new dynamodb.Table(this, 'T', { partitionKey: { name: 'id', type: dynamodb.AttributeType.STRING } });"
+    "negative_py": "dynamodb.Table(self, 'T', point_in_time_recovery=True)",
+    "positive_ts": "new dynamodb.Table(this, 'T', { partitionKey: { name: 'id', type: dynamodb.AttributeType.STRING } });",
+    "positive_py": "dynamodb.Table(self, 'T')"
   },
   "REL-005": {
     "negative_ts": "// clean compliant stack",
@@ -389,11 +395,15 @@
   },
   "REL-030": {
     "negative_ts": "deletionProtection: true",
-    "positive_ts": "new rds.DatabaseInstance(this, 'DB', { engine: rds.DatabaseInstanceEngine.postgres({ version: rds.PostgresEngineVersion.VER_15 }), vpc });"
+    "negative_py": "rds.DatabaseInstance(self, 'DB', deletion_protection=True)",
+    "positive_ts": "new rds.DatabaseInstance(this, 'DB', { engine: rds.DatabaseInstanceEngine.postgres({ version: rds.PostgresEngineVersion.VER_15 }), vpc });",
+    "positive_py": "rds.DatabaseInstance(self, 'DB')"
   },
   "REL-031": {
     "negative_ts": "versioned: true",
-    "positive_ts": "new s3.Bucket(this, \"B\");"
+    "negative_py": "s3.Bucket(self, 'B', versioned=True)",
+    "positive_ts": "new s3.Bucket(this, \"B\");",
+    "positive_py": "s3.Bucket(self, 'B')"
   },
   "SEC-001": {
     "negative_ts": "const policy = { actions: [\"s3:GetObject\"], resources: [\"arn:aws:s3:::bucket/*\"] }",
@@ -511,7 +521,9 @@
   },
   "SEC-028": {
     "negative_ts": "// clean compliant stack",
-    "positive_ts": "new ecr.Repository(this, 'R');"
+    "negative_py": "ecr.Repository(self, 'R', image_scan_on_push=True)",
+    "positive_ts": "new ecr.Repository(this, 'R');",
+    "positive_py": "ecr.Repository(self, 'R')"
   },
   "SEC-029": {
     "negative_ts": "// clean compliant stack",
@@ -625,7 +637,9 @@
   },
   "SEC-056": {
     "negative_ts": "terminationProtection: true",
-    "positive_ts": "class MyStack extends Stack { constructor(scope, id) { super(scope, id); } }"
+    "negative_py": "class MyStack(Stack):\n    def __init__(self, scope, id):\n        Stack(scope, id, termination_protection=True)",
+    "positive_ts": "class MyStack extends Stack { constructor(scope, id) { super(scope, id); } }",
+    "positive_py": "class MyStack(Stack):\n    def __init__(self, scope, id):\n        Stack(scope, id)"
   },
   "SEC-057": {
     "negative_ts": "authType: lambda.FunctionUrlAuthType.AWS_IAM",
@@ -633,7 +647,9 @@
   },
   "SEC-058": {
     "negative_ts": "// clean compliant stack",
-    "positive_ts": "new ecs.TaskDefinition(this, 'Td', { compatibility: ecs.Compatibility.FARGATE });"
+    "negative_py": "ecs.TaskDefinition(self, 'Td', run_as_non_root=True)",
+    "positive_ts": "new ecs.TaskDefinition(this, 'Td', { compatibility: ecs.Compatibility.FARGATE });",
+    "positive_py": "ecs.TaskDefinition(self, 'Td')"
   },
   "SEC-059": {
     "negative_ts": "// clean compliant stack",
