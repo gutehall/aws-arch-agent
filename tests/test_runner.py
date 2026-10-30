@@ -34,6 +34,58 @@ def test_every_rule_runs_without_error(tmp_path: Path, rule_id: str) -> None:
     assert warnings == [], warnings
 
 
+def test_cloudtrail_missing_once_across_languages(tmp_path: Path) -> None:
+    from aws_arch_agent.rules.operational_excellence import CloudTrailMissing
+
+    findings, warnings = run_all_rules(tmp_path, [CloudTrailMissing()], ["typescript", "python"])
+    assert warnings == []
+    assert [finding.id for finding in findings] == ["OPS-001"]
+
+
+def test_same_id_different_file_is_kept() -> None:
+    from aws_arch_agent.rules.base import Rule
+
+    class Twice(Rule):
+        id = "DUP"
+        title = "dup"
+        category = "test"
+        severity = "Low"
+
+        def run(self, repo_path: Path, language: str = "typescript") -> list[Finding]:
+            return [
+                Finding(
+                    id="DUP",
+                    title="dup",
+                    severity="Low",
+                    recommendation="keep",
+                    file="a.ts",
+                    line=1,
+                    evidence="a",
+                ),
+                Finding(
+                    id="DUP",
+                    title="dup",
+                    severity="Low",
+                    recommendation="keep",
+                    file="b.ts",
+                    line=2,
+                    evidence="b",
+                ),
+                Finding(
+                    id="DUP",
+                    title="dup",
+                    severity="Low",
+                    recommendation="keep",
+                    file="a.ts",
+                    line=1,
+                    evidence="a",
+                ),
+            ]
+
+    findings, _warnings = run_all_rules(Path("."), [Twice()], ["typescript", "python"])
+    assert [(finding.file, finding.line) for finding in findings] == [("a.ts", 1), ("b.ts", 2)]
+
+
 def test_account_finding_emitted_once(tmp_path: Path) -> None:
     from aws_arch_agent.rules.operational_excellence import CloudTrailMissing
     from aws_arch_agent.rules.security_iam import SecurityHubNotEnabled
