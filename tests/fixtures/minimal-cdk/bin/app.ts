@@ -1,9 +1,9 @@
 #!/usr/bin/env node
-const cdk = require('aws-cdk-lib');
-const { Stack, App } = require('aws-cdk-lib');
+import { App, Stack } from "aws-cdk-lib";
+import { Construct } from "constructs";
 
 class MinimalStack extends Stack {
-  constructor(scope, id) {
+  constructor(scope: Construct, id: string) {
     super(scope, id);
   }
 }
