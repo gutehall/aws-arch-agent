@@ -3,7 +3,7 @@ from __future__ import annotations
 from pathlib import Path
 from typing import List
 from aws_arch_agent.models import Finding
-from aws_arch_agent.rules.base import Rule, code_glob
+from aws_arch_agent.rules.base import Rule, cdk_bool_prop, code_glob
 from aws_arch_agent.tools.rg import rg
 
 
@@ -206,7 +206,7 @@ class EcsContainerInsights(Rule):
     def run(self, repo_path: Path, language: str = "typescript") -> List[Finding]:
         cluster_pat = r'new\s+ecs\.Cluster\(' if language == "typescript" else r'ecs\.Cluster\('
         clusters = rg(repo_path, cluster_pat, glob=code_glob(language))
-        insights = rg(repo_path, r'containerInsights\s*:\s*true', glob=code_glob(language))
+        insights = rg(repo_path, cdk_bool_prop("containerInsights"), glob=code_glob(language))
         out: List[Finding] = []
         if clusters and not insights:
             f, ln, txt = clusters[0]
@@ -307,7 +307,7 @@ class StepFunctionsXRay(Rule):
     def run(self, repo_path: Path, language: str = "typescript") -> List[Finding]:
         sfn_pat = r'new\s+sfn\.StateMachine\(' if language == "typescript" else r'sfn\.StateMachine\('
         sfns = rg(repo_path, sfn_pat, glob=code_glob(language))
-        xray = rg(repo_path, r'tracingEnabled\s*:\s*true', glob=code_glob(language))
+        xray = rg(repo_path, cdk_bool_prop("tracingEnabled"), glob=code_glob(language))
         out: List[Finding] = []
         if sfns and not xray:
             f, ln, txt = sfns[0]

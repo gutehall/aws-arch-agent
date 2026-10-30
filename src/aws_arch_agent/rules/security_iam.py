@@ -2,7 +2,7 @@ from __future__ import annotations
 from pathlib import Path
 from typing import List
 from aws_arch_agent.models import Finding
-from aws_arch_agent.rules.base import Rule, code_glob
+from aws_arch_agent.rules.base import Rule, cdk_bool_prop, code_glob
 from aws_arch_agent.rules.scope import findings_for_unmatched, findings_when_same_file
 from aws_arch_agent.tools.rg import rg
 
@@ -180,7 +180,7 @@ class KmsKeyRotation(Rule):
         keys = rg(repo_path, kms_pat, glob=code_glob(language))
         rotation = rg(
             repo_path,
-            r"enableKeyRotation\s*:\s*true|enable_key_rotation\s*=\s*True",
+            cdk_bool_prop("enableKeyRotation"),
             glob=code_glob(language),
         )
         return findings_for_unmatched(
@@ -347,7 +347,7 @@ class StackTerminationProtection(Rule):
     def run(self, repo_path: Path, language: str = "typescript") -> List[Finding]:
         stack_pat = r'class\s+\w+\s+extends\s+Stack|super\(scope.*Stack' if language == "typescript" else r'class.*Stack\)|Stack\(scope'
         stacks = rg(repo_path, stack_pat, glob=code_glob(language))
-        protection = rg(repo_path, r'terminationProtection\s*:\s*true', glob=code_glob(language))
+        protection = rg(repo_path, cdk_bool_prop("terminationProtection"), glob=code_glob(language))
         out: List[Finding] = []
         if stacks and not protection:
             f, ln, txt = stacks[0]
