@@ -47,7 +47,8 @@ def _command_languages(app: str) -> set[str]:
     langs: set[str] = set()
     if _PYTHON_CMD.search(app) or re.search(r"\.py\b", app, re.IGNORECASE):
         langs.add("python")
-    if "ts-node" in app.lower() or re.search(r"\.ts\b", app, re.IGNORECASE):
+    lowered = app.lower()
+    if "npx" in lowered or "ts-node" in lowered or re.search(r"\.ts\b", app, re.IGNORECASE):
         langs.add("typescript")
     return langs
 
@@ -95,6 +96,9 @@ def detect_language(repo_path: Path) -> RepoLanguage:
     py_project = (repo_path / "requirements.txt").is_file() or (repo_path / "pyproject.toml").is_file()
     if py_project and not typescript:
         python = True
+    # package.json alone is a TypeScript CDK app. It does not override a Python app.
+    if (repo_path / "package.json").is_file() and not python:
+        typescript = True
 
     if python and typescript:
         return "unknown"
