@@ -433,15 +433,18 @@ def test_two_buckets_keep_distinct_relative_fingerprints(tmp_path: Path) -> None
     assert {f.file for f in findings} == {"cdk.out/mystack.template.json"}
 
 
-def test_string_redrive_policy_keeps_sibling_findings(tmp_path: Path) -> None:
+def test_string_redrive_policy_with_target_is_clean(tmp_path: Path) -> None:
     template = {
         "Resources": {
             "BucketA": {"Type": "AWS::S3::Bucket", "Properties": {}},
-            "BrokenQueue": {
+            "Queue": {
                 "Type": "AWS::SQS::Queue",
-                "Properties": {"RedrivePolicy": "not-a-map"},
+                "Properties": {
+                    "RedrivePolicy": json.dumps(
+                        {"deadLetterTargetArn": "arn:aws:sqs:us-east-1:123:dlq"}
+                    )
+                },
             },
-            "BucketB": {"Type": "AWS::S3::Bucket", "Properties": {}},
         }
     }
     cdk_out = tmp_path / "cdk.out"
@@ -457,7 +460,97 @@ def test_string_redrive_policy_keeps_sibling_findings(tmp_path: Path) -> None:
     ids = {f.id for f in findings}
     assert "CF-S3-001" in ids
     assert "CF-CT-001" in ids
-    assert any("BrokenQueue" in warning for warning in warnings)
+    assert "CF-SQS-002" not in ids
+    assert warnings == []
+
+
+def test_unresolved_redrive_intrinsic_is_not_a_missing_dlq(tmp_path: Path) -> None:
+    template = {
+        "Resources": {
+            "Queue": {
+                "Type": "AWS::SQS::Queue",
+                "Properties": {"RedrivePolicy": {"Ref": "RedriveParam"}},
+            }
+        }
+    }
+    cdk_out = tmp_path / "cdk.out"
+    cdk_out.mkdir()
+    (cdk_out / "mystack.template.json").write_text(json.dumps(template), encoding="utf-8")
+    findings = run_cf_rules(cdk_out)
+    assert not any(f.id == "CF-SQS-002" for f in findings)
+
+
+def test_aurora_member_skips_cluster_level_rds_findings(tmp_path: Path) -> None:
+    template = {
+        "Resources": {
+            "Cluster": {
+                "Type": "AWS::RDS::DBCluster",
+                "Properties": {
+                    "Engine": "aurora-mysql",
+                    "StorageEncrypted": True,
+                    "BackupRetentionPeriod": 7,
+                    "DeletionProtection": True,
+                },
+            },
+            "Instance": {
+                "Type": "AWS::RDS::DBInstance",
+                "Properties": {
+                    "DBClusterIdentifier": {"Ref": "Cluster"},
+                    "DBInstanceClass": "db.t3.medium",
+                    "Engine": "aurora-mysql",
+                },
+            },
+        }
+    }
+    cdk_out = tmp_path / "cdk.out"
+    cdk_out.mkdir()
+    (cdk_out / "mystack.template.json").write_text(json.dumps(template), encoding="utf-8")
+    findings = run_cf_rules(cdk_out)
+    standalone = {"CF-RDS-001", "CF-RDS-002", "CF-RDS-003", "CF-RDS-005"}
+    assert not any(f.id in standalone for f in findings)
+
+
+def test_backup_retention_zero_is_a_finding(tmp_path: Path) -> None:
+    template = {
+        "Resources": {
+            "MyDB": {
+                "Type": "AWS::RDS::DBInstance",
+                "Properties": {
+                    "DBInstanceClass": "db.t3.micro",
+                    "StorageEncrypted": True,
+                    "BackupRetentionPeriod": 0,
+                    "MultiAZ": True,
+                    "DeletionProtection": True,
+                },
+            }
+        }
+    }
+    cdk_out = tmp_path / "cdk.out"
+    cdk_out.mkdir()
+    (cdk_out / "mystack.template.json").write_text(json.dumps(template), encoding="utf-8")
+    findings = run_cf_rules(cdk_out)
+    assert any(f.id == "CF-RDS-002" and "MyDB" in (f.evidence or "") for f in findings)
+
+
+def test_rest_api_tracing_enabled_is_not_data_trace(tmp_path: Path) -> None:
+    template = {
+        "Resources": {
+            "Stage": {
+                "Type": "AWS::ApiGateway::Stage",
+                "Properties": {
+                    "RestApiId": "api",
+                    "StageName": "prod",
+                    "TracingEnabled": True,
+                    "AccessLogSetting": {"DestinationArn": "arn:aws:logs:us-east-1:1:log-group:api"},
+                },
+            }
+        }
+    }
+    cdk_out = tmp_path / "cdk.out"
+    cdk_out.mkdir()
+    (cdk_out / "mystack.template.json").write_text(json.dumps(template), encoding="utf-8")
+    findings = run_cf_rules(cdk_out)
+    assert not any(f.id == "CF-APIGW-002" for f in findings)
 
 
 def test_string_launch_template_properties_keep_sibling_findings(tmp_path: Path) -> None:

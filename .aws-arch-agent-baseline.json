@@ -13,7 +13,7 @@
     {
       "id": "COST-001",
       "file": "src/aws_arch_agent/rules/cf_template.py",
-      "line": 464
+      "line": 503
     },
     {
       "id": "COST-001",
@@ -198,7 +198,7 @@
     {
       "id": "SEC-003",
       "file": "src/aws_arch_agent/rules/cf_template.py",
-      "line": 440
+      "line": 479
     },
     {
       "id": "SEC-003",

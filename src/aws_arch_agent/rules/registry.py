@@ -50,7 +50,7 @@ from aws_arch_agent.rules.operational_excellence import (
     GlueJobMetrics, TransitGatewayFlowLogs, CodePipelineNotifications, AppRunnerObservability,
     GlueJobBookmarks, CodeBuildLogging,
     CloudWatchDashboardMissing, ResourceTaggingStrategy, SsmParameterAdvancedTier,
-    LambdaReservedConcurrencyHint, S3ReplicationMetrics,
+    S3ReplicationMetrics,
 )
 from aws_arch_agent.rules.performance_efficiency import (
     GravitonNotUsed, CachingHint, DynamoDbProvisionedCapacity,
@@ -214,7 +214,6 @@ ALL_RULES = [
     CloudWatchDashboardMissing(),
     ResourceTaggingStrategy(),
     SsmParameterAdvancedTier(),
-    LambdaReservedConcurrencyHint(),
     S3ReplicationMetrics(),
     # Performance Efficiency (19 rules)
     GravitonNotUsed(),
