@@ -86,4 +86,5 @@ jobs:
         run: npm install
 
       - name: Run CDK synth integration test
-        run: .venv/bin/pytest tests/test_cdk_synth.py::test_run_cdk_synth_on_minimal_fixture -v
+        # The 70% gate is for the full suite. This job runs one test.
+        run: .venv/bin/pytest tests/test_cdk_synth.py::test_run_cdk_synth_on_minimal_fixture -v --no-cov
