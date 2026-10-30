@@ -12,7 +12,7 @@ from aws_arch_agent.models import Finding
 def test_run_all_rules_on_empty_repo(tmp_path: Path) -> None:
     findings, warnings = run_all_rules(tmp_path, ALL_RULES[:3], ["typescript"])
     assert isinstance(findings, list)
-    assert isinstance(warnings, list)
+    assert warnings == []
 
 
 def test_filter_by_severity() -> None:
@@ -31,7 +31,7 @@ def test_every_rule_runs_without_error(tmp_path: Path, rule_id: str) -> None:
     rule = next(r for r in ALL_RULES if r.id == rule_id)
     findings, warnings = run_all_rules(tmp_path, [rule], ["typescript", "python"])
     assert isinstance(findings, list)
-    assert isinstance(warnings, list)
+    assert warnings == [], warnings
 
 
 def test_account_finding_emitted_once(tmp_path: Path) -> None:
@@ -52,6 +52,40 @@ def test_reserved_concurrency_is_only_rel_027(tmp_path: Path) -> None:
     findings, _warnings = run_all_rules(tmp_path, ALL_RULES, ["typescript", "python"])
     ids = [f.id for f in findings if f.id in {"REL-027", "OPS-024"}]
     assert ids == ["REL-027"]
+
+
+def test_raising_rule_warns_and_keeps_other_findings(tmp_path: Path) -> None:
+    from aws_arch_agent.rules.base import Rule
+
+    class Boom(Rule):
+        id = "BOOM"
+        title = "boom"
+        category = "test"
+        severity = "Low"
+
+        def run(self, repo_path: Path, language: str = "typescript") -> list[Finding]:
+            raise RuntimeError("boom")
+
+    class Quiet(Rule):
+        id = "QUIET"
+        title = "quiet"
+        category = "test"
+        severity = "Low"
+
+        def run(self, repo_path: Path, language: str = "typescript") -> list[Finding]:
+            return [
+                Finding(
+                    id="QUIET",
+                    title="quiet",
+                    severity="Low",
+                    recommendation="keep",
+                    file="app.ts",
+                )
+            ]
+
+    findings, warnings = run_all_rules(tmp_path, [Boom(), Quiet()], ["typescript"])
+    assert [finding.id for finding in findings] == ["QUIET"]
+    assert warnings == ["Rule BOOM failed for typescript: boom"]
 
 
 def test_ripgrep_timeout_is_a_warning(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:

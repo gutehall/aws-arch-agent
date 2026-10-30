@@ -8,3 +8,4 @@ def test_smoke(tmp_path: Path):
     (tmp_path / "lib" / "stack.ts").write_text('new s3.Bucket(this, "B");', encoding="utf-8")
     report, ctx, findings, warnings = analyze_v1(tmp_path, use_llm=False)
     assert "AWS Architecture Review Report" in report
+    assert warnings == []
