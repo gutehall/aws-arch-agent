@@ -104,6 +104,50 @@ def test_ripgrep_timeout_is_a_warning(tmp_path: Path, monkeypatch: pytest.Monkey
     assert any("timed out after 30s" in warning for warning in warnings)
 
 
+def test_rg_zero_hits_does_not_walk_the_tree(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    from aws_arch_agent.tools import rg as rg_mod
+
+    class Result:
+        returncode = 1
+        stdout = ""
+        stderr = ""
+
+    monkeypatch.setattr(subprocess, "run", lambda *_args, **_kwargs: Result())
+
+    def walked(*_args: object, **_kwargs: object) -> list[tuple[str, int, str]]:
+        raise AssertionError("fallback walked the tree")
+
+    monkeypatch.setattr(rg_mod, "_fallback_search", walked)
+    (tmp_path / "app.ts").write_text("nothing to see\n", encoding="utf-8")
+    assert rg_mod.rg(tmp_path, "Action") == []
+
+
+def test_rg_missing_binary_uses_fallback(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    from aws_arch_agent.tools.rg import rg
+
+    def missing(*_args: object, **_kwargs: object) -> None:
+        raise FileNotFoundError("rg")
+
+    monkeypatch.setattr(subprocess, "run", missing)
+    (tmp_path / "app.ts").write_text('Action: "*"\n', encoding="utf-8")
+    hits = rg(tmp_path, r'Action:\s*"\*"', glob="**/*.ts")
+    assert [hit[0] for hit in hits] == ["app.ts"]
+
+
+def test_rg_tool_failure_uses_fallback(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    from aws_arch_agent.tools.rg import rg
+
+    class Result:
+        returncode = 2
+        stdout = ""
+        stderr = "regex parse error"
+
+    monkeypatch.setattr(subprocess, "run", lambda *_args, **_kwargs: Result())
+    (tmp_path / "app.ts").write_text('Action: "*"\n', encoding="utf-8")
+    hits = rg(tmp_path, r'Action:\s*"\*"', glob="**/*.ts")
+    assert [hit[0] for hit in hits] == ["app.ts"]
+
+
 def test_rg_hits_are_stable(tmp_path: Path) -> None:
     from aws_arch_agent.tools.rg import rg
 

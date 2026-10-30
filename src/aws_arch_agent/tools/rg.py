@@ -108,7 +108,11 @@ def rg(
     max_hits: int = 50,
     exclude_globs: tuple[str, ...] | list[str] | None = None,
 ) -> List[Tuple[str, int, str]]:
-    """Run ripgrep in repo_path; return list of (file, line_number, line_text) up to max_hits."""
+    """Run ripgrep in repo_path; return list of (file, line_number, line_text) up to max_hits.
+
+    Exit 1 is a clean miss and returns no hits. The Python walk runs only when
+    ripgrep is missing or exits with a real failure.
+    """
     effective_excludes = DEFAULT_EXCLUDE_GLOBS if exclude_globs is None else exclude_globs
     cmd = ["rg", "--line-number", "--no-heading", "--hidden", "--glob", "!.git/*"]
     if glob:
@@ -129,6 +133,8 @@ def rg(
         return _fallback_search(repo_path, pattern, glob, max_hits, effective_excludes)
     except subprocess.TimeoutExpired as exc:
         raise RipgrepTimeout(f"ripgrep timed out after {RG_TIMEOUT_S}s") from exc
+    if p.returncode not in (0, 1):
+        return _fallback_search(repo_path, pattern, glob, max_hits, effective_excludes)
     hits: List[Tuple[str, int, str]] = []
     for line in p.stdout.splitlines():
         parts = line.split(":", 2)
@@ -143,6 +149,4 @@ def rg(
         except ValueError:
             continue
         hits.append((rel, lni, txt.strip()))
-    if not hits:
-        return _fallback_search(repo_path, pattern, glob, max_hits, effective_excludes)
     return _stable_hits(hits, max_hits)
