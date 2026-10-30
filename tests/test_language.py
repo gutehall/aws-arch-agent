@@ -66,6 +66,27 @@ def test_aws_cdk_cli_package_does_not_force_typescript(tmp_path: Path) -> None:
     assert detect_language(tmp_path) == "python"
 
 
+def test_package_json_alone_is_typescript(tmp_path: Path) -> None:
+    (tmp_path / "package.json").write_text("{}\n", encoding="utf-8")
+    assert detect_language(tmp_path) == "typescript"
+
+
+def test_npx_app_command_is_typescript(tmp_path: Path) -> None:
+    (tmp_path / "cdk.json").write_text(json.dumps({"app": "npx cdk"}), encoding="utf-8")
+    assert detect_language(tmp_path) == "typescript"
+
+
+def test_requirements_and_package_json_without_ts_entrypoint_is_python(tmp_path: Path) -> None:
+    (tmp_path / "package.json").write_text("{}\n", encoding="utf-8")
+    (tmp_path / "requirements.txt").write_text("aws-cdk-lib\n", encoding="utf-8")
+    assert detect_language(tmp_path) == "python"
+
+
+def test_minimal_cdk_fixture_is_typescript() -> None:
+    fixture = Path(__file__).parent / "fixtures" / "minimal-cdk"
+    assert detect_language(fixture) == "typescript"
+
+
 def test_requirements_without_typescript_app_is_python(tmp_path: Path) -> None:
     (tmp_path / "cdk.json").write_text("{}\n", encoding="utf-8")
     (tmp_path / "requirements.txt").write_text("aws-cdk-lib\n", encoding="utf-8")
