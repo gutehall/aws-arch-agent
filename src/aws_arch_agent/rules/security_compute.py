@@ -3,6 +3,7 @@ from pathlib import Path
 from typing import List
 from aws_arch_agent.models import Finding
 from aws_arch_agent.rules.base import Rule, code_glob
+from aws_arch_agent.rules.scope import findings_for_unmatched
 from aws_arch_agent.tools.rg import rg
 
 class EcsReadonlyRootFs(Rule):
@@ -12,23 +13,23 @@ class EcsReadonlyRootFs(Rule):
     severity = "Low"
 
     def run(self, repo_path: Path, language: str = "typescript") -> List[Finding]:
-        task_pat = r'new\s+ecs\.TaskDefinition\(' if language == "typescript" else r'ecs\.TaskDefinition\('
+        task_pat = (
+            r"new\s+ecs\.(?:FargateTaskDefinition|TaskDefinition)\("
+            if language == "typescript"
+            else r"ecs\.(?:FargateTaskDefinition|TaskDefinition)\("
+        )
         tasks = rg(repo_path, task_pat, glob=code_glob(language))
-        readonly = rg(repo_path, r'readonlyRootFilesystem\s*:\s*true', glob=code_glob(language))
-        out: List[Finding] = []
-        if tasks and not readonly:
-            f, ln, txt = tasks[0]
-            out.append(Finding(
-                id=self.id,
-                title=self.title,
-                severity="Low",
-                category=self.category,
-                file=f,
-                line=ln,
-                evidence=txt,
-                recommendation="Use read-only root filesystem for ECS containers when possible. In CDK: readonlyRootFilesystem: true",
-            ))
-        return out
+        readonly = rg(
+            repo_path,
+            r"readonlyRootFilesystem\s*:\s*true|readonly_root_filesystem\s*=\s*True",
+            glob=code_glob(language),
+        )
+        return findings_for_unmatched(
+            self,
+            tasks,
+            readonly,
+            "Use read-only root filesystem for ECS containers when possible. In CDK: readonlyRootFilesystem: true",
+        )
 
 
 
