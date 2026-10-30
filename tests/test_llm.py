@@ -12,6 +12,28 @@ def test_ollama_fallback_on_failure() -> None:
     assert result == "original markdown"
 
 
+def test_openai_client_receives_timeout() -> None:
+    client = LLMClient()
+    mock_openai = MagicMock()
+    choice = MagicMock()
+    choice.message.content = "polished"
+    mock_openai.return_value.chat.completions.create.return_value.choices = [choice]
+    with patch.dict("os.environ", {"OPENAI_API_KEY": "sk-test"}):
+        with patch.dict("sys.modules", {"openai": MagicMock(OpenAI=mock_openai)}):
+            assert client._openai("prompt", "system") == "polished"
+    assert mock_openai.call_args.kwargs["timeout"] == 120
+
+
+def test_anthropic_client_receives_timeout() -> None:
+    client = LLMClient()
+    mock_mod = MagicMock()
+    mock_mod.Anthropic.return_value.messages.create.return_value.content = []
+    with patch.dict("os.environ", {"ANTHROPIC_API_KEY": "sk-ant"}):
+        with patch.dict("sys.modules", {"anthropic": mock_mod}):
+            client._anthropic("prompt", "system")
+    assert mock_mod.Anthropic.call_args.kwargs["timeout"] == 120
+
+
 def test_openai_fallback_on_api_error() -> None:
     client = LLMClient()
     client.provider = "openai"

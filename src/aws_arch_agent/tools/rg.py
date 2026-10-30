@@ -8,6 +8,13 @@ from typing import List, Tuple
 from aws_arch_agent.rules.base import DEFAULT_EXCLUDE_GLOBS
 from aws_arch_agent.tools.paths import normalize_rel_path
 
+RG_TIMEOUT_S = 30
+Hit = tuple[str, int, str]
+
+
+class RipgrepTimeout(RuntimeError):
+    """Ripgrep did not finish. Callers record this as a rule warning."""
+
 
 def _glob_match(path: str, pattern: str) -> bool:
     """Match a repo-relative path. `**` may cross directories. `*` does not."""
@@ -85,8 +92,13 @@ def _fallback_search(
             if regex.search(line):
                 hits.append((rel_str, i, line.strip()))
                 if len(hits) >= max_hits:
-                    return hits
-    return hits
+                    return _stable_hits(hits, max_hits)
+    return _stable_hits(hits, max_hits)
+
+
+def _stable_hits(hits: list[Hit], max_hits: int) -> list[Hit]:
+    """Same tree, same first hit. Order is path, then line."""
+    return sorted(hits, key=lambda hit: (hit[0], hit[1]))[:max_hits]
 
 
 def rg(
@@ -105,9 +117,18 @@ def rg(
         cmd += ["--glob", f"!{ex}"]
     cmd += [pattern, "."]
     try:
-        p = subprocess.run(cmd, capture_output=True, text=True, check=False, cwd=str(repo_path))
+        p = subprocess.run(
+            cmd,
+            capture_output=True,
+            text=True,
+            check=False,
+            cwd=str(repo_path),
+            timeout=RG_TIMEOUT_S,
+        )
     except FileNotFoundError:
         return _fallback_search(repo_path, pattern, glob, max_hits, effective_excludes)
+    except subprocess.TimeoutExpired as exc:
+        raise RipgrepTimeout(f"ripgrep timed out after {RG_TIMEOUT_S}s") from exc
     hits: List[Tuple[str, int, str]] = []
     for line in p.stdout.splitlines():
         parts = line.split(":", 2)
@@ -122,8 +143,6 @@ def rg(
         except ValueError:
             continue
         hits.append((rel, lni, txt.strip()))
-        if len(hits) >= max_hits:
-            break
     if not hits:
         return _fallback_search(repo_path, pattern, glob, max_hits, effective_excludes)
-    return hits
+    return _stable_hits(hits, max_hits)
