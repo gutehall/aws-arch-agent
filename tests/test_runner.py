@@ -1,4 +1,5 @@
 """Tests for shared rule runner."""
+import subprocess
 from pathlib import Path
 
 import pytest
@@ -51,6 +52,33 @@ def test_reserved_concurrency_is_only_rel_027(tmp_path: Path) -> None:
     findings, _warnings = run_all_rules(tmp_path, ALL_RULES, ["typescript", "python"])
     ids = [f.id for f in findings if f.id in {"REL-027", "OPS-024"}]
     assert ids == ["REL-027"]
+
+
+def test_ripgrep_timeout_is_a_warning(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    from aws_arch_agent.rules.security_iam import IamWildcardAction
+
+    lib = tmp_path / "lib"
+    lib.mkdir()
+    (lib / "stack.ts").write_text('Action: "*"\n', encoding="utf-8")
+
+    def hung(*_args: object, **_kwargs: object) -> None:
+        raise subprocess.TimeoutExpired(cmd=["rg"], timeout=30)
+
+    monkeypatch.setattr(subprocess, "run", hung)
+    findings, warnings = run_all_rules(tmp_path, [IamWildcardAction()], ["typescript"])
+    assert findings == []
+    assert any("timed out after 30s" in warning for warning in warnings)
+
+
+def test_rg_hits_are_stable(tmp_path: Path) -> None:
+    from aws_arch_agent.tools.rg import rg
+
+    (tmp_path / "b.ts").write_text('Action: "*"\n', encoding="utf-8")
+    (tmp_path / "a.ts").write_text('Action: "*"\n', encoding="utf-8")
+    first = rg(tmp_path, r'Action:\s*"\*"', glob="**/*.ts")
+    second = rg(tmp_path, r'Action:\s*"\*"', glob="**/*.ts")
+    assert [hit[0] for hit in first] == ["a.ts", "b.ts"]
+    assert first[0] == second[0]
 
 
 def test_fallback_search_skips_tests_directory(tmp_path: Path) -> None:

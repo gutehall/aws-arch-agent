@@ -9,6 +9,9 @@ import requests
 
 logger = logging.getLogger(__name__)
 
+# Same bound as the Ollama request. A stalled cloud call must not use the SDK default.
+LLM_TIMEOUT_S = 120
+
 DEFAULT_SYSTEM = """You are an AWS Solutions Architect reviewer.
 You will receive findings from static analysis of a CDK repo.
 Rewrite them into crisp, actionable recommendations.
@@ -45,7 +48,7 @@ class LLMClient:
             "stream": False,
         }
         try:
-            r = requests.post(url, json=payload, timeout=120)
+            r = requests.post(url, json=payload, timeout=LLM_TIMEOUT_S)
             r.raise_for_status()
             data = r.json()
             return cast(str, data.get("message", {}).get("content", prompt))
@@ -65,7 +68,7 @@ class LLMClient:
             logger.warning("OPENAI_API_KEY not set; skipping LLM polish")
             return prompt
         try:
-            client = OpenAI(api_key=api_key)
+            client = OpenAI(api_key=api_key, timeout=LLM_TIMEOUT_S)
             resp = client.chat.completions.create(
                 model=self.openai_model,
                 messages=[
@@ -89,7 +92,7 @@ class LLMClient:
             logger.warning("ANTHROPIC_API_KEY not set; skipping LLM polish")
             return prompt
         try:
-            client = anthropic.Anthropic(api_key=api_key)
+            client = anthropic.Anthropic(api_key=api_key, timeout=LLM_TIMEOUT_S)
             msg = client.messages.create(
                 model=self.anthropic_model,
                 system=system,
