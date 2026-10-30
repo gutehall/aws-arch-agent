@@ -133,16 +133,26 @@ def _languages_to_scan(language: str) -> list[str]:
     return [language]
 
 
+# Account controls an app stack does not own. Off unless rules.org or rules.include.
+ORG_RULE_IDS = frozenset({"SEC-026", "SEC-027", "OPS-001", "OPS-014", "COST-014"})
+
+
 def _filter_rules(
     rules: list,
     include_ids: list[str] | None = None,
     exclude_ids: list[str] | None = None,
+    *,
+    org: bool = False,
 ) -> list:
     out = list(rules)
     if include_ids is not None:
-        out = [r for r in out if r.id in include_ids]
+        allowed = set(include_ids)
+        out = [r for r in out if r.id in allowed]
+    elif not org:
+        out = [r for r in out if r.id not in ORG_RULE_IDS]
     if exclude_ids is not None:
-        out = [r for r in out if r.id not in exclude_ids]
+        blocked = set(exclude_ids)
+        out = [r for r in out if r.id not in blocked]
     return out
 
 
@@ -152,6 +162,7 @@ def _collect_findings(
     rules_include: list[str] | None,
     rules_exclude: list[str] | None,
     severity_threshold: str | None,
+    rules_org: bool = False,
 ) -> tuple[RepoContext, list[Finding], list[str]]:
     files = iter_files(repo_path, max_files=max_files)
     language = detect_language(repo_path)
@@ -161,7 +172,7 @@ def _collect_findings(
         files_scanned=len(files),
         key_files=[p.name for p in files if p.name in {"cdk.json", "package.json", "requirements.txt"}],
     )
-    rules = _filter_rules(ALL_RULES, rules_include, rules_exclude)
+    rules = _filter_rules(ALL_RULES, rules_include, rules_exclude, org=rules_org)
     findings, warnings = run_all_rules(repo_path, rules, _languages_to_scan(language))
     findings = filter_by_severity(findings, severity_threshold)
     return ctx, findings, warnings
@@ -174,10 +185,11 @@ def analyze_v1(
     rules_include: list[str] | None = None,
     rules_exclude: list[str] | None = None,
     severity_threshold: str | None = None,
+    rules_org: bool = False,
 ) -> tuple[str, RepoContext, list[Finding], list[str]]:
     """Run V1 pipeline: scan repo, run rules, optionally polish with LLM; return (report_md, ctx, findings, warnings)."""
     ctx, findings, warnings = _collect_findings(
-        repo_path, max_files, rules_include, rules_exclude, severity_threshold
+        repo_path, max_files, rules_include, rules_exclude, severity_threshold, rules_org
     )
 
     draft = render_markdown(ctx, findings, warnings=warnings)
@@ -194,8 +206,9 @@ def collect_ctx_findings(
     rules_include: list[str] | None = None,
     rules_exclude: list[str] | None = None,
     severity_threshold: str | None = None,
+    rules_org: bool = False,
 ) -> tuple[RepoContext, list[Finding], list[str]]:
     """Run rules only and return context, findings, and warnings."""
     return _collect_findings(
-        repo_path, max_files, rules_include, rules_exclude, severity_threshold
+        repo_path, max_files, rules_include, rules_exclude, severity_threshold, rules_org
     )
