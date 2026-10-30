@@ -61,29 +61,40 @@ runs:
       shell: bash
       run: |
         python -m pip install -U pip
-        pip install -e ".[dev]"
+        pip install .
 
     - name: Run AWS Arch Agent
       shell: bash
+      env:
+        REPO: ${{ inputs.repo }}
+        MODE: ${{ inputs.mode }}
+        FORMAT: ${{ inputs.format }}
+        OUT: ${{ inputs.out }}
+        FAIL_ON: ${{ inputs.fail-on }}
+        NO_LLM: ${{ inputs.no-llm }}
+        NO_SYNTH: ${{ inputs.no-synth }}
+        LLM_MODE: ${{ inputs.llm-mode }}
+        BASELINE: ${{ inputs.baseline }}
+        ENFORCE_BASELINE: ${{ inputs.enforce-baseline }}
       run: |
         ARGS=(
-          --repo "${{ inputs.repo }}"
-          --mode "${{ inputs.mode }}"
-          --format "${{ inputs.format }}"
-          --out "${{ inputs.out }}"
-          --fail-on "${{ inputs.fail-on }}"
-          --llm-mode "${{ inputs.llm-mode }}"
+          --repo "$REPO"
+          --mode "$MODE"
+          --format "$FORMAT"
+          --out "$OUT"
+          --fail-on "$FAIL_ON"
+          --llm-mode "$LLM_MODE"
         )
-        if [ "${{ inputs.no-llm }}" = "true" ]; then
+        if [ "$NO_LLM" = "true" ]; then
           ARGS+=(--no-llm)
         fi
-        if [ "${{ inputs.no-synth }}" = "true" ]; then
+        if [ "$NO_SYNTH" = "true" ]; then
           ARGS+=(--no-synth)
         fi
-        if [ -n "${{ inputs.baseline }}" ]; then
-          ARGS+=(--baseline "${{ inputs.baseline }}")
+        if [ -n "$BASELINE" ]; then
+          ARGS+=(--baseline "$BASELINE")
         fi
-        if [ "${{ inputs.enforce-baseline }}" = "true" ]; then
+        if [ "$ENFORCE_BASELINE" = "true" ]; then
           ARGS+=(--enforce-baseline)
         fi
         aws-arch-agent "${ARGS[@]}"
