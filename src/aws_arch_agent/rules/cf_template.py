@@ -38,6 +38,43 @@ def _get_prop(obj: dict, key: str) -> Any:
     return props.get(key)
 
 
+def _is_intrinsic(value: dict) -> bool:
+    """True when every key is Ref or Fn::*, so the value is not a literal map."""
+    if not value:
+        return False
+    return all(isinstance(key, str) and (key == "Ref" or key.startswith("Fn::")) for key in value)
+
+
+def _redrive_has_dlq(redrive: Any) -> bool | None:
+    """True when a dead-letter target is set, False when absent, None when unresolved."""
+    if isinstance(redrive, str):
+        try:
+            parsed = json.loads(redrive)
+        except json.JSONDecodeError:
+            return None
+        return _redrive_has_dlq(parsed)
+    if not isinstance(redrive, dict):
+        return None
+    if "deadLetterTargetArn" in redrive or "DeadLetterTargetArn" in redrive:
+        return True
+    if _is_intrinsic(redrive):
+        return None
+    return False
+
+
+def _backup_retention_missing(value: Any) -> bool:
+    """Zero days disables backups. An unresolved intrinsic is not treated as zero."""
+    if value is None:
+        return True
+    if isinstance(value, bool):
+        return False
+    if isinstance(value, (int, float)):
+        return value == 0
+    if isinstance(value, str):
+        return value.strip() == "0"
+    return False
+
+
 def _port_in_sensitive(from_port: Any, to_port: Any) -> bool:
     """True if the port range overlaps any sensitive port."""
     if from_port is None or to_port is None:
@@ -182,45 +219,59 @@ def _run_cf_rules_on_template(
 
                 # --- RDS checks ---
                 if rtype in ("AWS::RDS::DBInstance", "AWS::RDS::DBCluster"):
-                    storage_enc = props.get("StorageEncrypted")
-                    if storage_enc is not True:
-                        findings.append(Finding(
-                            id="CF-RDS-001",
-                            title="RDS storage encryption not enabled",
-                            severity="High",
-                            category="Security",
-                            file=str(template_path),
-                            line=None,
-                            evidence=f"{logical_id} ({rtype})",
-                            recommendation="Enable StorageEncrypted (and KMS CMK if required) for databases.",
-                        ))
+                    cluster_member = (
+                        rtype == "AWS::RDS::DBInstance" and "DBClusterIdentifier" in props
+                    )
+                    if not cluster_member:
+                        storage_enc = props.get("StorageEncrypted")
+                        if storage_enc is not True:
+                            findings.append(Finding(
+                                id="CF-RDS-001",
+                                title="RDS storage encryption not enabled",
+                                severity="High",
+                                category="Security",
+                                file=str(template_path),
+                                line=None,
+                                evidence=f"{logical_id} ({rtype})",
+                                recommendation="Enable StorageEncrypted (and KMS CMK if required) for databases.",
+                            ))
 
-                    br = props.get("BackupRetentionPeriod")
-                    # For clusters this is int days; for instances might exist
-                    if br is None:
-                        findings.append(Finding(
-                            id="CF-RDS-002",
-                            title="RDS backup retention not set",
-                            severity="Medium",
-                            category="Reliability",
-                            file=str(template_path),
-                            line=None,
-                            evidence=f"{logical_id} ({rtype})",
-                            recommendation="Set BackupRetentionPeriod per RPO/RTO (e.g. 7–35 days).",
-                        ))
+                        if _backup_retention_missing(props.get("BackupRetentionPeriod")):
+                            findings.append(Finding(
+                                id="CF-RDS-002",
+                                title="RDS backup retention not set",
+                                severity="Medium",
+                                category="Reliability",
+                                file=str(template_path),
+                                line=None,
+                                evidence=f"{logical_id} ({rtype})",
+                                recommendation="Set BackupRetentionPeriod per RPO/RTO (e.g. 7–35 days).",
+                            ))
 
-                    maz = props.get("MultiAZ")
-                    if rtype == "AWS::RDS::DBInstance" and maz is not True:
-                        findings.append(Finding(
-                            id="CF-RDS-003",
-                            title="RDS Multi-AZ not enabled",
-                            severity="Medium",
-                            category="Reliability",
-                            file=str(template_path),
-                            line=None,
-                            evidence=f"{logical_id} ({rtype})",
-                            recommendation="Enable MultiAZ for production workloads where high availability is required.",
-                        ))
+                        maz = props.get("MultiAZ")
+                        if rtype == "AWS::RDS::DBInstance" and maz is not True:
+                            findings.append(Finding(
+                                id="CF-RDS-003",
+                                title="RDS Multi-AZ not enabled",
+                                severity="Medium",
+                                category="Reliability",
+                                file=str(template_path),
+                                line=None,
+                                evidence=f"{logical_id} ({rtype})",
+                                recommendation="Enable MultiAZ for production workloads where high availability is required.",
+                            ))
+
+                        if props.get("DeletionProtection") is not True:
+                            findings.append(Finding(
+                                id="CF-RDS-005",
+                                title="RDS deletion protection not enabled",
+                                severity="Medium",
+                                category="Reliability",
+                                file=str(template_path),
+                                line=None,
+                                evidence=f"{logical_id} ({rtype})",
+                                recommendation="Enable DeletionProtection for production databases to prevent accidental deletion.",
+                            ))
 
                     if props.get("PubliclyAccessible") is True:
                         findings.append(Finding(
@@ -232,18 +283,6 @@ def _run_cf_rules_on_template(
                             line=None,
                             evidence=f"{logical_id} ({rtype})",
                             recommendation="Set PubliclyAccessible to false unless the database must be reachable from the internet.",
-                        ))
-
-                    if props.get("DeletionProtection") is not True:
-                        findings.append(Finding(
-                            id="CF-RDS-005",
-                            title="RDS deletion protection not enabled",
-                            severity="Medium",
-                            category="Reliability",
-                            file=str(template_path),
-                            line=None,
-                            evidence=f"{logical_id} ({rtype})",
-                            recommendation="Enable DeletionProtection for production databases to prevent accidental deletion.",
                         ))
 
                     if rtype == "AWS::RDS::DBInstance" and _is_large_instance_class(props.get("DBInstanceClass")):
@@ -494,8 +533,9 @@ def _run_cf_rules_on_template(
                             evidence=f"{logical_id} ({rtype})",
                             recommendation="Enable SqsManagedSseEnabled or set KmsMasterKeyId for encryption.",
                         ))
-                    redrive = props.get("RedrivePolicy") or {}
-                    if not redrive.get("deadLetterTargetArn") and not redrive.get("DeadLetterTargetArn"):
+                    redrive = props.get("RedrivePolicy")
+                    has_dlq = False if redrive is None else _redrive_has_dlq(redrive)
+                    if has_dlq is False:
                         findings.append(Finding(
                             id="CF-SQS-002",
                             title="SQS queue has no redrive policy (dead-letter queue)",
@@ -520,12 +560,7 @@ def _run_cf_rules_on_template(
                             evidence=f"{logical_id} ({rtype})",
                             recommendation="Set AccessLogSetting with DestinationArn (e.g. CloudWatch Logs) for audit.",
                         ))
-                    method_settings = props.get("MethodSettings") or []
-                    tracing = any(
-                        m.get("DataTraceEnabled") is True
-                        for m in (method_settings if isinstance(method_settings, list) else [method_settings])
-                    )
-                    if not tracing:
+                    if props.get("TracingEnabled") is not True:
                         findings.append(Finding(
                             id="CF-APIGW-002",
                             title="API Gateway stage X-Ray tracing not enabled",
@@ -534,7 +569,7 @@ def _run_cf_rules_on_template(
                             file=str(template_path),
                             line=None,
                             evidence=f"{logical_id} ({rtype})",
-                            recommendation="Enable DataTraceEnabled in MethodSettings for X-Ray tracing.",
+                            recommendation="Set TracingEnabled to true for X-Ray. DataTraceEnabled logs full bodies and is not tracing.",
                         ))
                 if rtype == "AWS::ApiGatewayV2::Stage":
                     if not props.get("AccessLogSettings", {}).get("DestinationArn"):
@@ -548,7 +583,7 @@ def _run_cf_rules_on_template(
                             evidence=f"{logical_id} ({rtype})",
                             recommendation="Set AccessLogSettings.DestinationArn for access logs.",
                         ))
-                    if props.get("DefaultRouteSettings", {}).get("DataTraceEnabled") is not True:
+                    if props.get("TracingEnabled") is not True:
                         findings.append(Finding(
                             id="CF-APIGW-V2-002",
                             title="API Gateway V2 stage X-Ray tracing not enabled",
@@ -557,7 +592,7 @@ def _run_cf_rules_on_template(
                             file=str(template_path),
                             line=None,
                             evidence=f"{logical_id} ({rtype})",
-                            recommendation="Set DefaultRouteSettings.DataTraceEnabled to true for X-Ray.",
+                            recommendation="Set TracingEnabled to true for X-Ray. DataTraceEnabled logs full bodies and is not tracing.",
                         ))
 
                 # --- Auto Scaling Group: Spot / mixed instances (Sustainability) ---
