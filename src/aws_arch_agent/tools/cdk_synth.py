@@ -33,7 +33,11 @@ def run_cdk_synth(
     language: str = "typescript",
     timeout_s: int = 180,
 ) -> tuple[int, str, str]:
-    """Run cdk synth in the repo. For Python CDK, uses --app 'python app.py' when needed."""
+    """Run cdk synth in the repo. For Python CDK, uses --app 'python app.py' when needed.
+
+    A timeout or a missing ``npx`` is a failed synth: non-zero code, empty stdout,
+    and the reason in stderr. Callers must not treat those cases as an exception.
+    """
     env = os.environ.copy()
     cmd: List[str] = ["npx", "cdk", "synth", "--quiet"]
     if app:
@@ -42,15 +46,20 @@ def run_cdk_synth(
         python_app = _detect_python_app(repo_path)
         if python_app:
             cmd += ["--app", python_app]
-    p = subprocess.run(
-        cmd,
-        cwd=str(repo_path),
-        capture_output=True,
-        text=True,
-        timeout=timeout_s,
-        check=False,
-        env=env,
-    )
+    try:
+        p = subprocess.run(
+            cmd,
+            cwd=str(repo_path),
+            capture_output=True,
+            text=True,
+            timeout=timeout_s,
+            check=False,
+            env=env,
+        )
+    except subprocess.TimeoutExpired as exc:
+        return 124, "", f"CDK synth timed out after {exc.timeout}s"
+    except FileNotFoundError as exc:
+        return 127, "", f"npx not found: {exc}"
     return p.returncode, p.stdout, p.stderr
 
 

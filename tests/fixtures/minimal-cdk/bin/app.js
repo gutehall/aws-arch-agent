@@ -1,6 +1,5 @@
 #!/usr/bin/env node
-const cdk = require('aws-cdk-lib');
-const { Stack, App } = require('aws-cdk-lib');
+const { Stack, App } = require("aws-cdk-lib");
 
 class MinimalStack extends Stack {
   constructor(scope, id) {
@@ -9,5 +8,5 @@ class MinimalStack extends Stack {
 }
 
 const app = new App();
-new MinimalStack(app, 'MinimalStack');
+new MinimalStack(app, "MinimalStack");
 app.synth();
