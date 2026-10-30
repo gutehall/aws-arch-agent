@@ -184,6 +184,26 @@ def test_xray_tracing_missing_ts(tmp_path: Path) -> None:
     assert findings[0].id == "OPS-003"
 
 
+def test_data_trace_enabled_is_not_xray(tmp_path: Path) -> None:
+    (tmp_path / "lib").mkdir()
+    (tmp_path / "lib" / "stack.ts").write_text(
+        'new apigateway.RestApi(this, "Api");\nDataTraceEnabled: false,\n',
+        encoding="utf-8",
+    )
+    findings = XRayTracingMissing().run(tmp_path, "typescript")
+    assert any(f.id == "OPS-003" for f in findings)
+
+
+def test_tracing_enabled_counts_as_xray(tmp_path: Path) -> None:
+    (tmp_path / "lib").mkdir()
+    (tmp_path / "lib" / "stack.ts").write_text(
+        'new apigateway.RestApi(this, "Api");\nTracingEnabled: true,\n',
+        encoding="utf-8",
+    )
+    findings = XRayTracingMissing().run(tmp_path, "typescript")
+    assert not any(f.id == "OPS-003" for f in findings)
+
+
 # --- Performance Efficiency (PERF-001, PERF-002) ---
 
 

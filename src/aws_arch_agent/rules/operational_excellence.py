@@ -66,11 +66,11 @@ class XRayTracingMissing(Rule):
         if language == "typescript":
             api_pat = r"apigateway\.(RestApi|HttpApi)|new\s+apigateway\.|ApiGateway"
             lambda_pat = r"lambda\.Function|new\s+lambda\.Function"
-            tracing_pat = r"TracingConfig|tracing\.ACTIVE|activeTracing|X-Ray|xray|DataTraceEnabled"
+            tracing_pat = r"TracingConfig|tracing\.ACTIVE|activeTracing|X-Ray|xray|TracingEnabled"
         else:
             api_pat = r"apigateway\.(RestApi|HttpApi)|aws_apigateway|ApiGateway"
             lambda_pat = r"lambda_.*Function|aws_lambda"
-            tracing_pat = r"tracing|TracingConfig|xray|X-Ray|data_trace"
+            tracing_pat = r"tracing|TracingConfig|xray|X-Ray|tracing_enabled"
         apis = rg(repo_path, api_pat, glob=code_glob(language))
         lambdas = rg(repo_path, lambda_pat, glob=code_glob(language))
         tracing_refs = rg(repo_path, tracing_pat, glob=code_glob(language))
@@ -88,7 +88,7 @@ class XRayTracingMissing(Rule):
                 file=None,
                 line=None,
                 evidence=evidence,
-                recommendation="Enable X-Ray or distributed tracing (Lambda TracingConfig, API Gateway DataTraceEnabled) for observability.",
+                recommendation="Enable X-Ray or distributed tracing (Lambda TracingConfig, API Gateway TracingEnabled) for observability.",
             )]
         return []
 
