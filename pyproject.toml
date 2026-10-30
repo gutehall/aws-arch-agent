@@ -67,7 +67,7 @@ select = ["E4", "E7", "E9", "F"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
-addopts = "--cov=aws_arch_agent --cov-report=term-missing"
+addopts = "--cov=aws_arch_agent --cov-report=term-missing --cov-fail-under=70"
 
 [tool.mypy]
 python_version = "3.11"
