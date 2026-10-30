@@ -15,6 +15,7 @@ def test_load_config_no_file(tmp_path: Path) -> None:
     assert cfg.out == "report.md"
     assert cfg.rules_include is None
     assert cfg.rules_exclude is None
+    assert cfg.rules_org is False
     assert cfg.templates is None
     assert cfg.no_synth is False
     assert cfg.rag_path is None
@@ -57,6 +58,13 @@ def test_load_config_from_file(tmp_path: Path) -> None:
     assert cfg.no_llm is True
     assert cfg.rules_exclude == ["BP-001"]
     assert cfg.rag_path == "./docs/waf.md"
+
+
+def test_load_config_rules_org(tmp_path: Path) -> None:
+    config_file = tmp_path / ".aws-arch-agent.json"
+    config_file.write_text('{"rules": {"org": true}}', encoding="utf-8")
+    cfg = load_config(tmp_path)
+    assert cfg.rules_org is True
 
 
 def test_load_config_explicit_path(tmp_path: Path) -> None:
