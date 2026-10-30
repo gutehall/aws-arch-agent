@@ -398,11 +398,11 @@
     "positive_ts": "Resource: \"*\""
   },
   "SEC-003": {
-    "negative_ts": "// clean",
+    "negative_ts": "connections.allowFrom(ec2.Peer.ipv4('10.0.0.0/16'), ec2.Port.tcp(22));",
     "positive_ts": "connections.allowFrom(ec2.Peer.anyIpv4(), ec2.Port.tcp(22));"
   },
   "SEC-004": {
-    "negative_ts": "// clean",
+    "negative_ts": "sg.addIngressRule(ec2.Peer.ipv4('10.0.0.0/16'), ec2.Port.tcp(3306));",
     "positive_ts": "sg.addIngressRule(ec2.Peer.anyIpv4(), ec2.Port.tcp(3306));"
   },
   "SEC-005": {
@@ -430,12 +430,12 @@
     "positive_ts": "new apigateway.RestApi(this, 'Api');"
   },
   "SEC-011": {
-    "negative_ts": "redirect: true",
-    "positive_ts": "new elbv2.ApplicationLoadBalancer(this, 'Alb', { vpc });"
+    "negative_ts": "new elbv2.ApplicationLoadBalancer(this, 'Alb', { vpc });\nlistener.addRedirect({ protocol: 'HTTPS' });",
+    "positive_ts": "new elbv2.ApplicationLoadBalancer(this, 'Alb', { vpc });\nlistener.addTargets('App', { protocol: elbv2.ApplicationProtocol.HTTPS });"
   },
   "SEC-012": {
-    "negative_ts": "sslPolicy: elbv2.SslPolicy.RECOMMENDED_TLS",
-    "positive_ts": "new elbv2.ApplicationLoadBalancer(this, 'Alb', { vpc });"
+    "negative_ts": "new elbv2.ApplicationLoadBalancer(this, 'Alb', { vpc });\nsslPolicy: elbv2.SslPolicy.RECOMMENDED_TLS",
+    "positive_ts": "new elbv2.ApplicationLoadBalancer(this, 'Alb', { vpc, sslPolicy: 'ELBSecurityPolicy-2016-08' });"
   },
   "SEC-013": {
     "negative_ts": "encryption: sqs.QueueEncryption.KMS_MANAGED",
@@ -458,7 +458,7 @@
     "positive_ts": "new lambda.Function(this, 'Fn', { environment: { PASSWORD: 'secret123456789' } });"
   },
   "SEC-018": {
-    "negative_ts": "// clean compliant stack",
+    "negative_ts": "new cloudfront.Distribution(this, 'Cf', { defaultBehavior: { origin, viewerProtocolPolicy: cloudfront.ViewerProtocolPolicy.HTTPS_ONLY } });",
     "positive_ts": "new cloudfront.Distribution(this, 'Cf', { defaultBehavior: { origin } });"
   },
   "SEC-019": {
@@ -640,8 +640,9 @@
     "positive_ts": "new backup.BackupVault(this, 'V');"
   },
   "SEC-064": {
-    "negative_ts": "publiclyAccessible: false",
-    "positive_ts": "new rds.DatabaseInstance(this, 'DB', { engine: rds.DatabaseInstanceEngine.postgres({ version: rds.PostgresEngineVersion.VER_15 }), vpc });"
+    "negative_ts": "new rds.DatabaseInstance(this, 'DB', { publiclyAccessible: false, engine: rds.DatabaseInstanceEngine.postgres({ version: rds.PostgresEngineVersion.VER_15 }), vpc });",
+    "negative_py": "rds.DatabaseInstance(self, 'DB', publicly_accessible=False, engine=rds.DatabaseInstanceEngine.postgres(version=rds.PostgresEngineVersion.VER_15), vpc=vpc)",
+    "positive_ts": "new rds.DatabaseInstance(this, 'DB', { publiclyAccessible: true, engine: rds.DatabaseInstanceEngine.postgres({ version: rds.PostgresEngineVersion.VER_15 }), vpc });"
   },
   "SEC-065": {
     "negative_ts": "// clean compliant stack",

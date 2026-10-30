@@ -3,7 +3,15 @@ from pathlib import Path
 from typing import List
 from aws_arch_agent.models import Finding
 from aws_arch_agent.rules.base import Rule, code_glob
+from aws_arch_agent.rules.scope import findings_for_unmatched, findings_when_same_file
 from aws_arch_agent.tools.rg import rg
+
+# First action value is "*" or a service wildcard such as "s3:*".
+_WILDCARD_ACTION = (
+    r"""(?i)(?:\bactions?\b|["']Action["'])\s*[:=]\s*\[?\s*["'](?:\*|[A-Za-z0-9-]+:\*)["']"""
+)
+_WILDCARD_RESOURCE = r"""(?i)(?:\bresources?\b|["']Resources?["'])\s*[:=]\s*\[?\s*["']\*["']"""
+
 
 class IamWildcardAction(Rule):
     id = "SEC-001"
@@ -12,9 +20,7 @@ class IamWildcardAction(Rule):
     severity = "High"
 
     def run(self, repo_path: Path, language: str = "typescript") -> List[Finding]:
-        # TS: Action: "*" or ['*']; Python: "Action": "*" in policy dicts or add_to_principal_policy
-        pattern = r'Action\s*:\s*\[?\s*["\']\*["\']' if language == "typescript" else r'["\']Action["\']\s*:\s*["\']\*["\']'
-        hits = rg(repo_path, pattern, glob=code_glob(language))
+        hits = rg(repo_path, _WILDCARD_ACTION, glob=code_glob(language))
         out: List[Finding] = []
         for f, ln, txt in hits:
             out.append(Finding(
@@ -38,8 +44,7 @@ class IamWildcardResource(Rule):
     severity = "High"
 
     def run(self, repo_path: Path, language: str = "typescript") -> List[Finding]:
-        pattern = r'Resources?\s*:\s*\[?\s*["\']\*["\']' if language == "typescript" else r'["\']Resource["\']\s*:\s*["\']\*["\']'
-        hits = rg(repo_path, pattern, glob=code_glob(language))
+        hits = rg(repo_path, _WILDCARD_RESOURCE, glob=code_glob(language))
         out: List[Finding] = []
         for f, ln, txt in hits:
             out.append(Finding(
@@ -64,22 +69,17 @@ class KmsKeyPolicyWildcard(Rule):
 
     def run(self, repo_path: Path, language: str = "typescript") -> List[Finding]:
         kms = rg(repo_path, r"kms\.(Key|Alias)|aws_kms\.(Key|Alias)|KMS", glob=code_glob(language))
-        # Principal: * or Principal: "*" in policy
-        wildcard = rg(repo_path, r'Principal\s*:\s*["\']?\*["\']?|Principal\s*:\s*\{[^}]*\*', glob=code_glob(language))
-        out: List[Finding] = []
-        if kms and wildcard:
-            f, ln, txt = wildcard[0]
-            out.append(Finding(
-                id=self.id,
-                title=self.title,
-                severity="High",
-                category=self.category,
-                file=f,
-                line=ln,
-                evidence=txt,
-                recommendation="Restrict KMS key policy to specific principals (IAM roles/users). Avoid Principal '*'.",
-            ))
-        return out
+        wildcard = rg(
+            repo_path,
+            r'Principal\s*[:=]\s*["\']?\*["\']?|Principal\s*:\s*\{[^}]*\*',
+            glob=code_glob(language),
+        )
+        return findings_when_same_file(
+            self,
+            kms,
+            wildcard,
+            "Restrict KMS key policy to specific principals (IAM roles/users). Avoid Principal '*'.",
+        )
 
 
 
@@ -306,20 +306,12 @@ class CognitoPasswordPolicy(Rule):
         cognito_pat = r'new\s+cognito\.UserPool\(' if language == "typescript" else r'cognito\.UserPool\('
         pools = rg(repo_path, cognito_pat, glob=code_glob(language))
         policy = rg(repo_path, r'passwordPolicy\s*:|minLength.*12|requireUppercase.*true', glob=code_glob(language))
-        out: List[Finding] = []
-        if pools and not policy:
-            f, ln, txt = pools[0]
-            out.append(Finding(
-                id=self.id,
-                title=self.title,
-                severity="Medium",
-                category=self.category,
-                file=f,
-                line=ln,
-                evidence=txt,
-                recommendation="Configure strong password policy for Cognito (min 12 chars, require uppercase, lowercase, numbers, symbols). In CDK: passwordPolicy property",
-            ))
-        return out
+        return findings_for_unmatched(
+            self,
+            pools,
+            policy,
+            "Configure strong password policy for Cognito (min 12 chars, require uppercase, lowercase, numbers, symbols). In CDK: passwordPolicy property",
+        )
 
 
 

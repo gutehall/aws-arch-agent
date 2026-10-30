@@ -3,6 +3,7 @@ from pathlib import Path
 from typing import List
 from aws_arch_agent.models import Finding
 from aws_arch_agent.rules.base import Rule, code_glob
+from aws_arch_agent.rules.scope import findings_for_unmatched, findings_when_same_file
 from aws_arch_agent.tools.rg import rg
 
 class S3PublicAccessNotBlocked(Rule):
@@ -16,26 +17,18 @@ class S3PublicAccessNotBlocked(Rule):
         bucket_pat = r'new\s+s3\.Bucket\(' if language == "typescript" else r's3\.Bucket\('
         buckets = rg(repo_path, bucket_pat, glob=code_glob(language))
         bpa = rg(repo_path, r'block_public_access|blockPublicAccess\s*:\s*s3\.BlockPublicAccess', glob=code_glob(language))
-        out: List[Finding] = []
-        if buckets and not bpa:
-            f, ln, txt = buckets[0]
-            suggested = (
-                'new s3.Bucket(this, "B", {\n  blockPublicAccess: s3.BlockPublicAccess.BLOCK_ALL,\n});'
-                if language == "typescript"
-                else 's3.Bucket(self, "B", block_public_access=s3.BlockPublicAccess.BLOCK_ALL)'
-            )
-            out.append(Finding(
-                id=self.id,
-                title=self.title,
-                severity="High",
-                category=self.category,
-                file=f,
-                line=ln,
-                evidence=txt,
-                recommendation="Set 'blockPublicAccess: s3.BlockPublicAccess.BLOCK_ALL' for buckets that should not be public.",
-                suggested_code=suggested,
-            ))
-        return out
+        suggested = (
+            'new s3.Bucket(this, "B", {\n  blockPublicAccess: s3.BlockPublicAccess.BLOCK_ALL,\n});'
+            if language == "typescript"
+            else 's3.Bucket(self, "B", block_public_access=s3.BlockPublicAccess.BLOCK_ALL)'
+        )
+        return findings_for_unmatched(
+            self,
+            buckets,
+            bpa,
+            "Set 'blockPublicAccess: s3.BlockPublicAccess.BLOCK_ALL' for buckets that should not be public.",
+            suggested_code=suggested,
+        )
 
 
 
@@ -81,22 +74,13 @@ class DynamoDbEncryptionMissing(Rule):
     def run(self, repo_path: Path, language: str = "typescript") -> List[Finding]:
         ddb_pat = r'new\s+(dynamodb\.Table|Table)\(' if language == "typescript" else r'(dynamodb.Table|aws_dynamodb.Table)\('
         tables = rg(repo_path, ddb_pat, glob=code_glob(language))
-        # Check for encryption configuration (AWS_MANAGED, CUSTOMER_MANAGED, etc.)
         enc = rg(repo_path, r'encryption\s*:\s*(TableEncryption\.|dynamodb\.TableEncryption\.)|(AWS_MANAGED|CUSTOMER_MANAGED)', glob=code_glob(language))
-        out: List[Finding] = []
-        if tables and not enc:
-            f, ln, txt = tables[0]
-            out.append(Finding(
-                id=self.id,
-                title=self.title,
-                severity="Medium",
-                category=self.category,
-                file=f,
-                line=ln,
-                evidence=txt,
-                recommendation="Enable encryption for DynamoDB tables. Use AWS_MANAGED (default) or CUSTOMER_MANAGED (KMS) per requirements. In CDK: encryption: dynamodb.TableEncryption.AWS_MANAGED",
-            ))
-        return out
+        return findings_for_unmatched(
+            self,
+            tables,
+            enc,
+            "Enable encryption for DynamoDB tables. Use AWS_MANAGED (default) or CUSTOMER_MANAGED (KMS) per requirements. In CDK: encryption: dynamodb.TableEncryption.AWS_MANAGED",
+        )
 
 
 
@@ -540,21 +524,18 @@ class RdsPubliclyAccessible(Rule):
 
     def run(self, repo_path: Path, language: str = "typescript") -> List[Finding]:
         rds_pat = r'new\s+rds\.(DatabaseInstance|DatabaseCluster)\(' if language == "typescript" else r'rds\.(DatabaseInstance|DatabaseCluster)\('
-        dbs = rg(repo_path, rds_pat, glob=code_glob(language))
-        public_false = rg(repo_path, r'publiclyAccessible\s*:\s*false|publicly_accessible\s*:\s*False', glob=code_glob(language))
-        out: List[Finding] = []
-        if dbs and not public_false:
-            f, ln, txt = dbs[0]
-            out.append(Finding(
-                id=self.id,
-                title=self.title,
-                severity="High",
-                category=self.category,
-                file=f,
-                line=ln,
-                evidence=txt,
-                recommendation="Set publiclyAccessible: false for RDS instances. Databases should not be exposed to the internet.",
-            ))
-        return out
+        glob = code_glob(language)
+        dbs = rg(repo_path, rds_pat, glob=glob)
+        public_true = rg(
+            repo_path,
+            r"publiclyAccessible\s*:\s*true|publicly_accessible\s*[:=]\s*True",
+            glob=glob,
+        )
+        return findings_when_same_file(
+            self,
+            dbs,
+            public_true,
+            "Set publiclyAccessible to false. Omitted uses the CloudFormation default, which is not public.",
+        )
 
 

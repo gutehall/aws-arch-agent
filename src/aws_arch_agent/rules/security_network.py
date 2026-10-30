@@ -3,7 +3,13 @@ from pathlib import Path
 from typing import List
 from aws_arch_agent.models import Finding
 from aws_arch_agent.rules.base import Rule, code_glob
+from aws_arch_agent.rules.scope import findings_when_same_file
 from aws_arch_agent.tools.rg import rg
+
+# World-open peers. A private CIDR such as 10.0.0.0/16 is not a match.
+_WORLD_OPEN = r"0\.0\.0\.0/0|::/0|Peer\.anyIpv4\(|Peer\.anyIpv6\(|Peer\.any_ipv4\(|Peer\.any_ipv6\("
+_SSH_PORT = r"(?i)\b(?:from_?)?port\s*[:=]?\s*22\b|\.tcp\(\s*22\s*\)|Port\.SSH\b"
+_DB_PORT = r"(?i)\b(?:from_?)?port\s*[:=]?\s*(?:3306|5432|27017)\b|\.tcp\(\s*(?:3306|5432|27017)\s*\)"
 
 class OpenSshToWorld(Rule):
     id = "SEC-003"
@@ -12,21 +18,13 @@ class OpenSshToWorld(Rule):
     severity = "High"
 
     def run(self, repo_path: Path, language: str = "typescript") -> List[Finding]:
-        # TS: port: 22 or 0.0.0.0/0; Python: same in ec2.Port or CidrIp
-        hits = rg(repo_path, r'0\.0\.0\.0/0.*(22|ssh)|port\s*:\s*22|\.tcp\(22\)', glob=code_glob(language))
-        out: List[Finding] = []
-        for f, ln, txt in hits:
-            out.append(Finding(
-                id=self.id,
-                title=self.title,
-                severity="High",
-                category=self.category,
-                file=f,
-                line=ln,
-                evidence=txt,
-                recommendation="Restrict SSH to bastion/VPN or specific IP ranges. Avoid 0.0.0.0/0.",
-            ))
-        return out
+        glob = code_glob(language)
+        return findings_when_same_file(
+            self,
+            rg(repo_path, _WORLD_OPEN, glob=glob),
+            rg(repo_path, _SSH_PORT, glob=glob),
+            "Restrict SSH to bastion/VPN or specific IP ranges. Avoid 0.0.0.0/0.",
+        )
 
 
 
@@ -37,20 +35,13 @@ class OpenDbPortsToWorld(Rule):
     severity = "High"
 
     def run(self, repo_path: Path, language: str = "typescript") -> List[Finding]:
-        hits = rg(repo_path, r'0\.0\.0\.0/0.*(3306|5432)|port\s*:\s*(3306|5432)|\.tcp\((3306|5432)\)', glob=code_glob(language))
-        out: List[Finding] = []
-        for f, ln, txt in hits:
-            out.append(Finding(
-                id=self.id,
-                title=self.title,
-                severity="High",
-                category=self.category,
-                file=f,
-                line=ln,
-                evidence=txt,
-                recommendation="Databases should not be exposed publicly. Restrict ingress to app-tier security groups or private subnets.",
-            ))
-        return out
+        glob = code_glob(language)
+        return findings_when_same_file(
+            self,
+            rg(repo_path, _WORLD_OPEN, glob=glob),
+            rg(repo_path, _DB_PORT, glob=glob),
+            "Databases should not be exposed publicly. Restrict ingress to app-tier security groups or private subnets.",
+        )
 
 
 
