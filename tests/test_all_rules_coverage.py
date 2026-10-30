@@ -34,6 +34,15 @@ def _lang_from_key(key: str) -> str:
 CASES = _load_cases()
 RULE_IDS = [r.id for r in ALL_RULES]
 
+# Rules changed in the same-file, IAM/TLS, Python-kwargs, and tracing work.
+# CloudFormation Aurora and tracing negatives live in tests/test_cf_template.py.
+PROJECT_TOUCHED = frozenset({
+    "SEC-005", "SEC-008", "SEC-035", "REL-006", "REL-009", "REL-010",
+    "SEC-001", "SEC-002", "SEC-003", "SEC-004", "SEC-007", "SEC-011", "SEC-012", "SEC-018", "SEC-064",
+    "REL-001", "REL-008", "SEC-013", "SEC-014", "SEC-020", "SEC-023", "SEC-054",
+    "OPS-003",
+})
+
 
 def _snippet_keys(case: dict[str, str | None], kind: str) -> list[str]:
     return [key for key in (f"{kind}_ts", f"{kind}_py") if case.get(key)]
@@ -58,12 +67,24 @@ def test_rule_positive_case(tmp_path: Path, rule_id: str) -> None:
         )
 
 
+def test_project_rules_have_negative_fixtures() -> None:
+    """A rule touched in this project cannot land without a negative snippet."""
+    missing = sorted(
+        rule_id
+        for rule_id in PROJECT_TOUCHED
+        if not _snippet_keys(CASES.get(rule_id, {}), "negative")
+    )
+    assert not missing, f"missing negative fixture: {missing}"
+
+
 @pytest.mark.parametrize("rule_id", RULE_IDS)
 def test_rule_negative_case(tmp_path: Path, rule_id: str) -> None:
     """Rule should not fire on each negative snippet (when provided)."""
     case = CASES.get(rule_id, {})
     keys = _snippet_keys(case, "negative")
     if not keys:
+        if rule_id in PROJECT_TOUCHED:
+            pytest.fail(f"{rule_id} is missing a negative fixture")
         pytest.skip(f"No negative case for {rule_id}")
     rule = RULE_BY_ID[rule_id]
     for key in keys:

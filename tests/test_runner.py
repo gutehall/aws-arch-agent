@@ -33,6 +33,26 @@ def test_every_rule_runs_without_error(tmp_path: Path, rule_id: str) -> None:
     assert isinstance(warnings, list)
 
 
+def test_account_finding_emitted_once(tmp_path: Path) -> None:
+    from aws_arch_agent.rules.operational_excellence import CloudTrailMissing
+    from aws_arch_agent.rules.security_iam import SecurityHubNotEnabled
+
+    findings, _warnings = run_all_rules(
+        tmp_path,
+        [SecurityHubNotEnabled(), CloudTrailMissing()],
+        ["typescript", "python"],
+    )
+    assert [f.id for f in findings].count("SEC-026") == 1
+    assert findings[0].file is None
+
+
+def test_reserved_concurrency_is_only_rel_027(tmp_path: Path) -> None:
+    (tmp_path / "app.py").write_text("aws_lambda.Function(self, 'Fn')\n", encoding="utf-8")
+    findings, _warnings = run_all_rules(tmp_path, ALL_RULES, ["typescript", "python"])
+    ids = [f.id for f in findings if f.id in {"REL-027", "OPS-024"}]
+    assert ids == ["REL-027"]
+
+
 def test_fallback_search_skips_tests_directory(tmp_path: Path) -> None:
     from aws_arch_agent.rules.base import DEFAULT_EXCLUDE_GLOBS
     from aws_arch_agent.tools.rg import _fallback_search
