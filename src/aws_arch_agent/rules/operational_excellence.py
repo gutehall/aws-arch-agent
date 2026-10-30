@@ -603,28 +603,15 @@ class SsmParameterAdvancedTier(Rule):
 
 
 class LambdaReservedConcurrencyHint(Rule):
+    """Reserved concurrency is REL-027. This id no longer emits a second finding."""
+
     id = "OPS-024"
     title = "Lambda function may benefit from reserved concurrency"
     category = "Operational Excellence"
     severity = "Low"
 
     def run(self, repo_path: Path, language: str = "typescript") -> List[Finding]:
-        lambda_pat = r'new\s+(lambda\.Function|NodejsFunction|PythonFunction)\(' if language == "typescript" else r'(lambda_.Function|aws_lambda.Function)\('
-        lambdas = rg(repo_path, lambda_pat, glob=code_glob(language))
-        reserved = rg(repo_path, r'reservedConcurrentExecutions|reserved_concurrent_executions', glob=code_glob(language))
-        out: List[Finding] = []
-        if lambdas and not reserved:
-            return [Finding(
-                id=self.id,
-                title=self.title,
-                severity="Low",
-                category=self.category,
-                file=None,
-                line=None,
-                evidence=None,
-                recommendation="Consider reserved concurrency for critical latency-sensitive functions.",
-            )]
-        return out
+        return []
 
 
 class S3ReplicationMetrics(Rule):
