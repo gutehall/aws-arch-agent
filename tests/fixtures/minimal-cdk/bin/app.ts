@@ -1,13 +1,12 @@
 #!/usr/bin/env node
-import { App, Stack } from "aws-cdk-lib";
-import { Construct } from "constructs";
+const { Stack, App } = require("aws-cdk-lib");
 
 class MinimalStack extends Stack {
-  constructor(scope: Construct, id: string) {
+  constructor(scope: any, id: string) {
     super(scope, id);
   }
 }
 
 const app = new App();
-new MinimalStack(app, 'MinimalStack');
+new MinimalStack(app, "MinimalStack");
 app.synth();
