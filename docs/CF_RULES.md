@@ -4,7 +4,7 @@ This document provides a comprehensive list of all rules checked by AWS Arch Age
 
 ## Overview
 
-AWS Arch Agent checks **170 static analysis rules** plus additional CloudFormation template rules across all 6 AWS Well-Architected Framework pillars.
+AWS Arch Agent checks **169 static analysis rules** plus additional CloudFormation template rules across all 6 AWS Well-Architected Framework pillars.
 
 ## Static Analysis Rules (V1 & V2 Modes)
 
@@ -66,7 +66,7 @@ These rules run on your CDK TypeScript/Python code and execute in both V1 and V2
 - SEC-051: Transfer Family server logging not enabled
 
 **Container & Compute Security:**
-- SEC-019: ECS container may not use read-only root filesystem
+- SEC-020: ECS task definition not using read-only root filesystem
 - SEC-028: ECR repository image scanning not enabled
 - SEC-029: ECR image tag immutability not configured
 - SEC-030: ECR repository lifecycle policy missing
@@ -78,7 +78,7 @@ These rules run on your CDK TypeScript/Python code and execute in both V1 and V2
 
 **Application Security:**
 - SEC-018: CloudFront may not enforce HTTPS-only
-- SEC-020: CloudFront using legacy TLS (< 1.2)
+- SEC-019: CloudFront using legacy SSL/TLS
 - SEC-021: RDS may not enforce SSL connections
 - SEC-040: OpenSearch fine-grained access control not enabled
 - SEC-045: MSK cluster client authentication not configured
@@ -120,7 +120,7 @@ These rules run on your CDK TypeScript/Python code and execute in both V1 and V2
 - REL-008: SQS queue missing dead-letter queue
 - REL-009: Lambda timeout may be too short
 - REL-015: Step Functions missing retry policies
-- REL-013: EventBridge missing DLQ
+- OPS-013: EventBridge rules not using DLQ
 
 **Throttling & Limits:**
 - REL-006: API Gateway throttling not configured
@@ -179,7 +179,7 @@ These rules run on your CDK TypeScript/Python code and execute in both V1 and V2
 - OPS-021: CloudWatch dashboards not configured
 - OPS-022: Resource tagging strategy may be incomplete
 - OPS-023: SSM Parameter Store not using advanced tier
-- OPS-024: Lambda function may benefit from reserved concurrency
+- OPS-024: folded into REL-027; reserved concurrency is not reported twice
 - OPS-025: S3 replication metrics not enabled
 
 ### Performance Efficiency (19 rules)

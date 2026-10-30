@@ -1,6 +1,6 @@
 # AWS Arch Agent
 
-**Note:** Early-stage project — **170 static rules** are implemented and tested, but expect occasional false positives/negatives and API changes.
+**Note:** Early-stage project — **169 static rules** are implemented and tested, but expect occasional false positives/negatives and API changes.
 
 > **Automated AWS CDK architecture review tool** that scans your infrastructure code and finds security, reliability, performance, and cost issues.
 
@@ -16,7 +16,7 @@ aws-arch-agent --repo ./my-cdk-project --no-llm
 
 ## What It Does
 
-AWS Arch Agent reviews your CDK code against **170 rules** across the six AWS Well-Architected Framework pillars, plus CDK best-practice checks:
+AWS Arch Agent reviews your CDK code against **169 rules** across the six AWS Well-Architected Framework pillars, plus CDK best-practice checks:
 
 | Pillar | Rules | Examples |
 |--------|-------|----------|

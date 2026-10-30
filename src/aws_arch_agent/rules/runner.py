@@ -28,15 +28,26 @@ def run_all_rules(
     rules: list,
     languages: list[str],
 ) -> tuple[list[Finding], list[str]]:
-    """Run rules for each language; return findings and warning messages for failed rules."""
+    """Run rules for each language; return findings and warning messages for failed rules.
+
+    A file-less account finding is recorded once even when several languages are scanned.
+    """
     findings: list[Finding] = []
     warnings: list[str] = []
+    seen_account: set[str] = set()
     for lang in languages:
         for rule in rules:
             try:
-                findings.extend(rule.run(repo_path, lang))
+                produced = rule.run(repo_path, lang)
             except Exception as e:
                 msg = f"Rule {rule.id} failed for {lang}: {e}"
                 warnings.append(msg)
                 logger.warning(msg)
+                continue
+            for finding in produced:
+                if finding.file is None:
+                    if finding.id in seen_account:
+                        continue
+                    seen_account.add(finding.id)
+                findings.append(finding)
     return findings, warnings
