@@ -3,7 +3,18 @@ from pathlib import Path
 from typing import List
 from aws_arch_agent.models import Finding
 from aws_arch_agent.rules.base import Rule, code_glob
+from aws_arch_agent.rules.scope import findings_for_unmatched
 from aws_arch_agent.tools.rg import rg
+
+# Known-bad listener policies. RECOMMENDED_TLS and TLS12* are not in this set.
+_BAD_SSL = (
+    r"ELBSecurityPolicy-2015-\d+|ELBSecurityPolicy-2016-0[8]"
+    r"|ELBSecurityPolicy-TLS-1-[01]\b|SslPolicy\.TLS1[01]\b"
+)
+_GOOD_SSL = (
+    r"RECOMMENDED_TLS|TLS12|TLS13|TLS_1_2|TLS-1-2|TLS-1-3|FS-1-2"
+    r"|FIPS_TLS|FORWARD_SECRECY_TLS12|ELBSecurityPolicy-TLS13|ELBSecurityPolicy-FS-"
+)
 
 class ApiGatewayAuthMissing(Rule):
     id = "SEC-009"
@@ -68,21 +79,18 @@ class AlbHttpsRedirect(Rule):
     def run(self, repo_path: Path, language: str = "typescript") -> List[Finding]:
         alb_pat = r'new\s+elbv2\.(ApplicationLoadBalancer|NetworkLoadBalancer)\(' if language == "typescript" else r'elbv2\.(ApplicationLoadBalancer|NetworkLoadBalancer)\('
         albs = rg(repo_path, alb_pat, glob=code_glob(language))
-        redirect = rg(repo_path, r'addRedirect|HttpsRedirect|redirect.*https|Protocol\.HTTPS', glob=code_glob(language))
-        out: List[Finding] = []
-        if albs and not redirect:
-            f, ln, txt = albs[0]
-            out.append(Finding(
-                id=self.id,
-                title=self.title,
-                severity="High",
-                category=self.category,
-                file=f,
-                line=ln,
-                evidence=txt,
-                recommendation="Configure HTTP to HTTPS redirect on ALB listeners. In CDK: listener.addRedirectResponse() or use Protocol.HTTPS",
-            ))
-        return out
+        redirect = rg(
+            repo_path,
+            r"addRedirect|add_redirect|HttpsRedirect|ListenerAction\.redirect",
+            glob=code_glob(language),
+        )
+        return findings_for_unmatched(
+            self,
+            albs,
+            redirect,
+            "Configure an HTTP to HTTPS redirect. An HTTPS listener alone does not redirect HTTP. "
+            "In CDK: ListenerAction.redirect({ protocol: 'HTTPS' }).",
+        )
 
 
 
@@ -94,22 +102,17 @@ class AlbSslPolicy(Rule):
 
     def run(self, repo_path: Path, language: str = "typescript") -> List[Finding]:
         alb_pat = r'new\s+elbv2\.ApplicationLoadBalancer\(' if language == "typescript" else r'elbv2\.ApplicationLoadBalancer\('
-        albs = rg(repo_path, alb_pat, glob=code_glob(language))
-        ssl = rg(repo_path, r'sslPolicy.*ELBSecurityPolicy-TLS|sslPolicy.*2016|sslPolicy.*FS', glob=code_glob(language))
-        out: List[Finding] = []
-        if albs and not ssl:
-            f, ln, txt = albs[0]
-            out.append(Finding(
-                id=self.id,
-                title=self.title,
-                severity="Medium",
-                category=self.category,
-                file=f,
-                line=ln,
-                evidence=txt,
-                recommendation="Use secure SSL/TLS policy (ELBSecurityPolicy-TLS-1-2-2017-01 or later). In CDK: sslPolicy: elbv2.SslPolicy.RECOMMENDED",
-            ))
-        return out
+        glob = code_glob(language)
+        albs = rg(repo_path, alb_pat, glob=glob)
+        good = rg(repo_path, _GOOD_SSL, glob=glob)
+        bad = rg(repo_path, _BAD_SSL, glob=glob)
+        recommendation = (
+            "Use a TLS 1.2+ policy such as ELBSecurityPolicy-TLS13-1-2-2021-06. "
+            "In CDK: sslPolicy: elbv2.SslPolicy.RECOMMENDED_TLS."
+        )
+        findings = findings_for_unmatched(self, albs, good + bad, recommendation)
+        findings.extend(findings_for_unmatched(self, bad, [], recommendation))
+        return findings
 
 
 
@@ -122,21 +125,18 @@ class CloudFrontHttpsOnly(Rule):
     def run(self, repo_path: Path, language: str = "typescript") -> List[Finding]:
         cf_pat = r'new\s+cloudfront\.(Distribution|CloudFrontWebDistribution)\(' if language == "typescript" else r'cloudfront\.(Distribution|CloudFrontWebDistribution)\('
         distros = rg(repo_path, cf_pat, glob=code_glob(language))
-        https = rg(repo_path, r'ViewerProtocolPolicy\.REDIRECT_TO_HTTPS|viewerProtocolPolicy.*https-only', glob=code_glob(language))
-        out: List[Finding] = []
-        if distros and not https:
-            f, ln, txt = distros[0]
-            out.append(Finding(
-                id=self.id,
-                title=self.title,
-                severity="High",
-                category=self.category,
-                file=f,
-                line=ln,
-                evidence=txt,
-                recommendation="Enforce HTTPS on CloudFront distributions. In CDK: viewerProtocolPolicy: cloudfront.ViewerProtocolPolicy.REDIRECT_TO_HTTPS",
-            ))
-        return out
+        https = rg(
+            repo_path,
+            r"ViewerProtocolPolicy\.(?:REDIRECT_TO_HTTPS|HTTPS_ONLY)|https-only|https_only",
+            glob=code_glob(language),
+        )
+        return findings_for_unmatched(
+            self,
+            distros,
+            https,
+            "Enforce HTTPS on CloudFront. In CDK: viewerProtocolPolicy: "
+            "cloudfront.ViewerProtocolPolicy.HTTPS_ONLY or REDIRECT_TO_HTTPS.",
+        )
 
 
 
