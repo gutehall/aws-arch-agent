@@ -1,5 +1,5 @@
 name: AWS Arch Agent
-description: Run aws-arch-agent architecture review on a CDK repository
+description: Run aws-arch-agent architecture review on a CDK repository. This action stays on Python 3.11. CI tests 3.11 and 3.12.
 inputs:
   repo:
     description: Path to the repository to scan
