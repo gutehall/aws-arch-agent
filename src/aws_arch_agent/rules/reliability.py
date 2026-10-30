@@ -16,21 +16,13 @@ class RdsMultiAzMissing(Rule):
     def run(self, repo_path: Path, language: str = "typescript") -> List[Finding]:
         rds_pat = r'new\s+rds\.(DatabaseInstance|DatabaseCluster)\(' if language == "typescript" else r'rds\.(DatabaseInstance|DatabaseCluster)\('
         rds = rg(repo_path, rds_pat, glob=code_glob(language))
-        maz = rg(repo_path, r'multi_az\s*:\s*True|multiAz\s*:\s*true', glob=code_glob(language))
-        out: List[Finding] = []
-        if rds and not maz:
-            f, ln, txt = rds[0]
-            out.append(Finding(
-                id=self.id,
-                title=self.title,
-                severity="Medium",
-                category=self.category,
-                file=f,
-                line=ln,
-                evidence=txt,
-                recommendation="Consider Multi-AZ for higher availability (especially in production).",
-            ))
-        return out
+        maz = rg(repo_path, r"multi_az\s*[:=]\s*True|multiAz\s*:\s*true", glob=code_glob(language))
+        return findings_for_unmatched(
+            self,
+            rds,
+            maz,
+            "Consider Multi-AZ for higher availability (especially in production).",
+        )
 
 
 class BackupRetentionMissing(Rule):
@@ -192,21 +184,17 @@ class SqsDlqMissing(Rule):
     def run(self, repo_path: Path, language: str = "typescript") -> List[Finding]:
         sqs_pat = r'new\s+sqs\.Queue\(' if language == "typescript" else r'sqs\.Queue\('
         queues = rg(repo_path, sqs_pat, glob=code_glob(language))
-        dlq = rg(repo_path, r'deadLetterQueue\s*:|redrivePolicy', glob=code_glob(language))
-        out: List[Finding] = []
-        if queues and not dlq:
-            f, ln, txt = queues[0]
-            out.append(Finding(
-                id=self.id,
-                title=self.title,
-                severity="Medium",
-                category=self.category,
-                file=f,
-                line=ln,
-                evidence=txt,
-                recommendation="Configure dead-letter queue for SQS to handle failed message processing. In CDK: deadLetterQueue with maxReceiveCount",
-            ))
-        return out
+        dlq = rg(
+            repo_path,
+            r"deadLetterQueue\s*:|dead_letter_queue\s*=|redrivePolicy|redrive_policy",
+            glob=code_glob(language),
+        )
+        return findings_for_unmatched(
+            self,
+            queues,
+            dlq,
+            "Configure dead-letter queue for SQS to handle failed message processing. In CDK: deadLetterQueue with maxReceiveCount",
+        )
 
 
 class LambdaTimeout(Rule):
@@ -218,7 +206,11 @@ class LambdaTimeout(Rule):
     def run(self, repo_path: Path, language: str = "typescript") -> List[Finding]:
         lambda_pat = r'new\s+(lambda\.Function|NodejsFunction|PythonFunction|DockerImageFunction)\(' if language == "typescript" else r'(lambda_.Function|aws_lambda_python_alpha.PythonFunction|aws_lambda.Function)\('
         lambdas = rg(repo_path, lambda_pat, glob=code_glob(language))
-        timeout = rg(repo_path, r'timeout\s*:\s*Duration\.(seconds|minutes)\(', glob=code_glob(language))
+        timeout = rg(
+            repo_path,
+            r"timeout\s*[:=]\s*Duration\.(seconds|minutes)\(",
+            glob=code_glob(language),
+        )
         return findings_for_unmatched(
             self,
             lambdas,

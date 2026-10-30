@@ -161,21 +161,17 @@ class SecurityGroupEgressOpen(Rule):
     def run(self, repo_path: Path, language: str = "typescript") -> List[Finding]:
         sg_pat = r'new\s+ec2\.SecurityGroup\(' if language == "typescript" else r'ec2\.SecurityGroup\('
         sgs = rg(repo_path, sg_pat, glob=code_glob(language))
-        egress_all = rg(repo_path, r'allowAllOutbound\s*:\s*true|0\.0\.0\.0/0.*egress', glob=code_glob(language))
-        out: List[Finding] = []
-        if sgs and egress_all:
-            f, ln, txt = egress_all[0]
-            out.append(Finding(
-                id=self.id,
-                title=self.title,
-                severity="Low",
-                category=self.category,
-                file=f,
-                line=ln,
-                evidence=txt,
-                recommendation="Consider restricting egress rules to specific destinations for defense-in-depth. In CDK: allowAllOutbound: false",
-            ))
-        return out
+        egress_all = rg(
+            repo_path,
+            r"allowAllOutbound\s*:\s*true|allow_all_outbound\s*=\s*True|0\.0\.0\.0/0.*egress",
+            glob=code_glob(language),
+        )
+        return findings_when_same_file(
+            self,
+            sgs,
+            egress_all,
+            "Consider restricting egress rules to specific destinations for defense-in-depth. In CDK: allowAllOutbound: false",
+        )
 
 
 
