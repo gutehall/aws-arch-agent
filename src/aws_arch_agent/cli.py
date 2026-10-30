@@ -205,6 +205,7 @@ def analyze(
             use_llm=use_llm,
             rules_include=rules_include,
             rules_exclude=rules_exclude,
+            rules_org=cfg.rules_org,
             severity_threshold=severity_threshold,
             templates_path=cfg.templates,
             skip_synth=cfg.no_synth,
@@ -221,6 +222,7 @@ def analyze(
             use_llm=use_llm,
             rules_include=rules_include,
             rules_exclude=rules_exclude,
+            rules_org=cfg.rules_org,
             severity_threshold=severity_threshold,
         )
 

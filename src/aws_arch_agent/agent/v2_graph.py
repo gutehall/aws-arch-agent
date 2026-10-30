@@ -42,6 +42,7 @@ class State(TypedDict, total=False):
     llm_mode: str
     rules_include: List[str] | None
     rules_exclude: List[str] | None
+    rules_org: bool
     severity_threshold: str
     templates_path: str
     skip_synth: bool
@@ -159,6 +160,7 @@ def node_collect(state: State) -> State:
         ALL_RULES,
         state.get("rules_include"),
         state.get("rules_exclude"),
+        org=bool(state.get("rules_org")),
     )
     language = ctx.language
     findings, warnings = run_all_rules(repo_path, rules, _languages_to_scan(language))
@@ -476,6 +478,7 @@ def analyze_v2(
     rag_embedding_provider: str | None = None,
     rag_embedding_model: str | None = None,
     llm_mode: LLMMode = "full",
+    rules_org: bool = False,
 ) -> tuple[str, RepoContext, List[Finding], List[str]]:
     """Run V2 graph; return (final_report_md, ctx, findings, warnings)."""
     graph = build_graph()
@@ -486,6 +489,7 @@ def analyze_v2(
         "llm_mode": llm_mode,
         "rules_include": rules_include if rules_include else None,
         "rules_exclude": rules_exclude if rules_exclude else None,
+        "rules_org": rules_org,
         "severity_threshold": severity_threshold or "",
         "templates_path": templates_path or "",
         "skip_synth": skip_synth,
