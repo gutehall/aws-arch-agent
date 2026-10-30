@@ -2,17 +2,42 @@
 from __future__ import annotations
 import re
 import subprocess
-from pathlib import Path, PurePosixPath
+from pathlib import Path
 from typing import List, Tuple
 
 from aws_arch_agent.rules.base import DEFAULT_EXCLUDE_GLOBS
 from aws_arch_agent.tools.paths import normalize_rel_path
 
 
+def _glob_match(path: str, pattern: str) -> bool:
+    """Match a repo-relative path. `**` may cross directories. `*` does not."""
+    path = path.strip("/")
+    pattern = pattern.strip("/")
+    regex: list[str] = []
+    i = 0
+    while i < len(pattern):
+        if pattern.startswith("**/", i):
+            regex.append("(?:.*/)?")
+            i += 3
+        elif pattern.startswith("**", i):
+            regex.append(".*")
+            i += 2
+        elif pattern[i] == "*":
+            regex.append("[^/]*")
+            i += 1
+        elif pattern[i] == "?":
+            regex.append("[^/]")
+            i += 1
+        else:
+            regex.append(re.escape(pattern[i]))
+            i += 1
+    return re.fullmatch("".join(regex), path) is not None
+
+
 def _path_excluded(rel: str, exclude_globs: tuple[str, ...] | list[str]) -> bool:
     """Return True if rel path matches any exclude glob."""
-    path = PurePosixPath(normalize_rel_path(rel) or rel)
-    return any(path.match(pattern) for pattern in exclude_globs)
+    path = normalize_rel_path(rel) or rel
+    return any(_glob_match(path, pattern) for pattern in exclude_globs)
 
 
 def _fallback_search(
