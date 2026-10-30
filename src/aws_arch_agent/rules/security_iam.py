@@ -3,6 +3,7 @@ from pathlib import Path
 from typing import List
 from aws_arch_agent.models import Finding
 from aws_arch_agent.rules.base import Rule, code_glob
+from aws_arch_agent.rules.scope import findings_for_unmatched
 from aws_arch_agent.tools.rg import rg
 
 class IamWildcardAction(Rule):
@@ -306,20 +307,12 @@ class CognitoPasswordPolicy(Rule):
         cognito_pat = r'new\s+cognito\.UserPool\(' if language == "typescript" else r'cognito\.UserPool\('
         pools = rg(repo_path, cognito_pat, glob=code_glob(language))
         policy = rg(repo_path, r'passwordPolicy\s*:|minLength.*12|requireUppercase.*true', glob=code_glob(language))
-        out: List[Finding] = []
-        if pools and not policy:
-            f, ln, txt = pools[0]
-            out.append(Finding(
-                id=self.id,
-                title=self.title,
-                severity="Medium",
-                category=self.category,
-                file=f,
-                line=ln,
-                evidence=txt,
-                recommendation="Configure strong password policy for Cognito (min 12 chars, require uppercase, lowercase, numbers, symbols). In CDK: passwordPolicy property",
-            ))
-        return out
+        return findings_for_unmatched(
+            self,
+            pools,
+            policy,
+            "Configure strong password policy for Cognito (min 12 chars, require uppercase, lowercase, numbers, symbols). In CDK: passwordPolicy property",
+        )
 
 
 
