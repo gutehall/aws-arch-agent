@@ -23,6 +23,10 @@ def filter_by_severity(findings: list[Finding], severity_threshold: str | None) 
         return findings
 
 
+def _finding_key(finding: Finding) -> tuple[str, str | None, int | None, str | None]:
+    return (finding.id, finding.file, finding.line, finding.evidence)
+
+
 def run_all_rules(
     repo_path: Path,
     rules: list,
@@ -30,11 +34,12 @@ def run_all_rules(
 ) -> tuple[list[Finding], list[str]]:
     """Run rules for each language; return findings and warning messages for failed rules.
 
-    A file-less account finding is recorded once even when several languages are scanned.
+    The same finding from more than one language pass is kept once. Identity is
+    id, file, line, and evidence. A different file or line stays.
     """
     findings: list[Finding] = []
     warnings: list[str] = []
-    seen_account: set[str] = set()
+    seen: set[tuple[str, str | None, int | None, str | None]] = set()
     for lang in languages:
         for rule in rules:
             try:
@@ -45,9 +50,9 @@ def run_all_rules(
                 logger.warning(msg)
                 continue
             for finding in produced:
-                if finding.file is None:
-                    if finding.id in seen_account:
-                        continue
-                    seen_account.add(finding.id)
+                key = _finding_key(finding)
+                if key in seen:
+                    continue
+                seen.add(key)
                 findings.append(finding)
     return findings, warnings
