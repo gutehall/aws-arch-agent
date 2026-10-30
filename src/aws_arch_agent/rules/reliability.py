@@ -3,6 +3,7 @@ from pathlib import Path
 from typing import List
 from aws_arch_agent.models import Finding
 from aws_arch_agent.rules.base import Rule, code_glob
+from aws_arch_agent.rules.scope import findings_for_unmatched
 from aws_arch_agent.tools.rg import rg
 
 
@@ -148,20 +149,12 @@ class ApiGatewayThrottling(Rule):
         api_pat = r'new\s+(apigateway\.(RestApi|HttpApi)|RestApi|HttpApi)\(' if language == "typescript" else r'(apigateway\.(RestApi|HttpApi)|RestApi|HttpApi)\('
         apis = rg(repo_path, api_pat, glob=code_glob(language))
         throttle = rg(repo_path, r'throttle|rateLimit|burstLimit', glob=code_glob(language))
-        out: List[Finding] = []
-        if apis and not throttle:
-            f, ln, txt = apis[0]
-            out.append(Finding(
-                id=self.id,
-                title=self.title,
-                severity="Medium",
-                category=self.category,
-                file=f,
-                line=ln,
-                evidence=txt,
-                recommendation="Configure throttling limits for API Gateway to prevent overwhelming backend services. In CDK: throttle with rateLimit and burstLimit",
-            ))
-        return out
+        return findings_for_unmatched(
+            self,
+            apis,
+            throttle,
+            "Configure throttling limits for API Gateway to prevent overwhelming backend services. In CDK: throttle with rateLimit and burstLimit",
+        )
 
 
 class AlbHealthCheck(Rule):
@@ -226,20 +219,12 @@ class LambdaTimeout(Rule):
         lambda_pat = r'new\s+(lambda\.Function|NodejsFunction|PythonFunction|DockerImageFunction)\(' if language == "typescript" else r'(lambda_.Function|aws_lambda_python_alpha.PythonFunction|aws_lambda.Function)\('
         lambdas = rg(repo_path, lambda_pat, glob=code_glob(language))
         timeout = rg(repo_path, r'timeout\s*:\s*Duration\.(seconds|minutes)\(', glob=code_glob(language))
-        out: List[Finding] = []
-        if lambdas and not timeout:
-            f, ln, txt = lambdas[0]
-            out.append(Finding(
-                id=self.id,
-                title=self.title,
-                severity="Low",
-                category=self.category,
-                file=f,
-                line=ln,
-                evidence=txt,
-                recommendation="Set appropriate Lambda timeout based on function workload (avoid default 3s or max 15min unless needed). In CDK: timeout: Duration.seconds(30)",
-            ))
-        return out
+        return findings_for_unmatched(
+            self,
+            lambdas,
+            timeout,
+            "Set appropriate Lambda timeout based on function workload (avoid default 3s or max 15min unless needed). In CDK: timeout: Duration.seconds(30)",
+        )
 
 
 class LambdaVpcAccess(Rule):
@@ -253,20 +238,14 @@ class LambdaVpcAccess(Rule):
         lambdas = rg(repo_path, lambda_pat, glob=code_glob(language))
         rds_or_cache = rg(repo_path, r'DatabaseInstance|DatabaseCluster|CfnCacheCluster', glob=code_glob(language))
         vpc_config = rg(repo_path, r'vpc\s*:\s*|vpcSubnets', glob=code_glob(language))
-        out: List[Finding] = []
-        if lambdas and rds_or_cache and not vpc_config:
-            f, ln, txt = lambdas[0]
-            out.append(Finding(
-                id=self.id,
-                title=self.title,
-                severity="Medium",
-                category=self.category,
-                file=f,
-                line=ln,
-                evidence=txt,
-                recommendation="Lambda functions accessing RDS/ElastiCache should be in VPC for security and connectivity. In CDK: vpc and vpcSubnets properties",
-            ))
-        return out
+        if not rds_or_cache:
+            return []
+        return findings_for_unmatched(
+            self,
+            lambdas,
+            vpc_config,
+            "Lambda functions accessing RDS/ElastiCache should be in VPC for security and connectivity. In CDK: vpc and vpcSubnets properties",
+        )
 
 
 class RdsReadReplicas(Rule):
