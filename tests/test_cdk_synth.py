@@ -1,6 +1,7 @@
 """Tests for CDK synth helpers (list_cf_templates, load_json, load_template, summarize_templates, list_templates_from_path)."""
 import json
 import shutil
+import subprocess
 from pathlib import Path
 
 import pytest
@@ -128,20 +129,49 @@ def test_summarize_templates_from_paths(tmp_path: Path) -> None:
     assert "s1" in out or "template" in out
 
 
-@pytest.mark.skipif(shutil.which("npx") is None, reason="npx not available")
+def _cdk_on_path(fixture: Path) -> bool:
+    return (fixture / "node_modules" / ".bin" / "cdk").exists() or shutil.which("cdk") is not None
+
+
+@pytest.mark.skipif(shutil.which("npx") is None, reason="npx not on PATH")
 def test_run_cdk_synth_on_minimal_fixture() -> None:
-    """Integration test: run cdk synth when Node/npx is available."""
+    """With CDK installed, a non-zero synth fails. Skip only when npx or cdk is absent."""
     from aws_arch_agent.tools.cdk_synth import run_cdk_synth
 
     fixture = Path(__file__).parent / "fixtures" / "minimal-cdk"
     if not (fixture / "cdk.json").exists():
         pytest.skip("minimal-cdk fixture missing")
-    if not (fixture / "node_modules").exists() and shutil.which("npm"):
-        import subprocess
+    if not _cdk_on_path(fixture):
+        if shutil.which("npm") is None:
+            pytest.skip("cdk not on PATH")
         proc = subprocess.run(["npm", "install"], cwd=str(fixture), capture_output=True)
-        if proc.returncode != 0:
-            pytest.skip(f"npm install failed: {proc.stderr.decode()[:200]}")
+        if proc.returncode != 0 or not _cdk_on_path(fixture):
+            pytest.skip("cdk not on PATH")
     rc, out, err = run_cdk_synth(fixture, language="typescript")
-    if rc != 0:
-        pytest.skip(f"cdk synth not available in this environment: {err[:200]}")
-    assert rc == 0
+    assert rc == 0, (err or out)[-500:]
+
+
+def test_synth_timeout_is_a_failed_synth(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    from aws_arch_agent.tools.cdk_synth import run_cdk_synth
+
+    def timed_out(*_args: object, **_kwargs: object) -> None:
+        raise subprocess.TimeoutExpired(cmd=["npx", "cdk", "synth"], timeout=180)
+
+    monkeypatch.setattr(subprocess, "run", timed_out)
+    rc, out, err = run_cdk_synth(tmp_path)
+    assert rc != 0
+    assert out == ""
+    assert err == "CDK synth timed out after 180s"
+
+
+def test_missing_npx_is_a_failed_synth(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    from aws_arch_agent.tools.cdk_synth import run_cdk_synth
+
+    def missing(*_args: object, **_kwargs: object) -> None:
+        raise FileNotFoundError("npx")
+
+    monkeypatch.setattr(subprocess, "run", missing)
+    rc, out, err = run_cdk_synth(tmp_path)
+    assert rc == 127
+    assert out == ""
+    assert "npx not found" in err
