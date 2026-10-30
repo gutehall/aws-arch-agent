@@ -2,7 +2,7 @@
 const { Stack, App } = require("aws-cdk-lib");
 
 class MinimalStack extends Stack {
-  constructor(scope: any, id: string) {
+  constructor(scope, id) {
     super(scope, id);
   }
 }
