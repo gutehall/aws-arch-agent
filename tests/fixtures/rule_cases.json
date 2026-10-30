@@ -267,7 +267,9 @@
   },
   "REL-001": {
     "negative_ts": "multiAz: true",
-    "positive_ts": "new rds.DatabaseInstance(this, \"DB\", { instanceIdentifier: \"db\", engine: rds.DatabaseInstanceEngine.mysql({ version: rds.MysqlEngineVersion.VER_8_0 }) });"
+    "negative_py": "rds.DatabaseInstance(self, 'DB', multi_az=True, vpc=vpc)",
+    "positive_ts": "new rds.DatabaseInstance(this, \"DB\", { instanceIdentifier: \"db\", engine: rds.DatabaseInstanceEngine.mysql({ version: rds.MysqlEngineVersion.VER_8_0 }) });",
+    "positive_py": "rds.DatabaseInstance(self, 'DB', vpc=vpc)"
   },
   "REL-002": {
     "negative_ts": "backupRetention: Duration.days(7)",
@@ -295,11 +297,15 @@
   },
   "REL-008": {
     "negative_ts": "deadLetterQueue:",
-    "positive_ts": "new sqs.Queue(this, 'Q');"
+    "negative_py": "sqs.Queue(self, 'Q', dead_letter_queue=dlq)",
+    "positive_ts": "new sqs.Queue(this, 'Q');",
+    "positive_py": "sqs.Queue(self, 'Q')"
   },
   "REL-009": {
     "negative_ts": "// clean compliant stack",
-    "positive_ts": "new lambda.Function(this, 'Fn', { environment: { PASSWORD: 'secret123456789' } });"
+    "negative_py": "aws_lambda.Function(self, 'Fn', timeout=Duration.seconds(30))",
+    "positive_ts": "new lambda.Function(this, 'Fn', { environment: { PASSWORD: 'secret123456789' } });",
+    "positive_py": "aws_lambda.Function(self, 'Fn')"
   },
   "REL-010": {
     "negative_ts": "vpcSubnets:",
@@ -439,11 +445,15 @@
   },
   "SEC-013": {
     "negative_ts": "encryption: sqs.QueueEncryption.KMS_MANAGED",
-    "positive_ts": "new sqs.Queue(this, 'Q');"
+    "negative_py": "sqs.Queue(self, 'Q', encryption=sqs.QueueEncryption.SQS_MANAGED)",
+    "positive_ts": "new sqs.Queue(this, 'Q');",
+    "positive_py": "sqs.Queue(self, 'Q')"
   },
   "SEC-014": {
     "negative_ts": "masterKey: kmsKey",
-    "positive_ts": "new sns.Topic(this, 'T');"
+    "negative_py": "sns.Topic(self, 'T', master_key=key)",
+    "positive_ts": "new sns.Topic(this, 'T');",
+    "positive_py": "sns.Topic(self, 'T')"
   },
   "SEC-015": {
     "negative_ts": "// clean compliant stack",
@@ -467,7 +477,9 @@
   },
   "SEC-020": {
     "negative_ts": "// clean compliant stack",
-    "positive_ts": "new ecs.TaskDefinition(this, 'Td', { compatibility: ecs.Compatibility.FARGATE });"
+    "negative_py": "ecs.FargateTaskDefinition(self, 'Td', readonly_root_filesystem=True)",
+    "positive_ts": "new ecs.TaskDefinition(this, 'Td', { compatibility: ecs.Compatibility.FARGATE });",
+    "positive_py": "ecs.FargateTaskDefinition(self, 'Td')"
   },
   "SEC-021": {
     "negative_ts": "// clean compliant stack",
@@ -479,7 +491,9 @@
   },
   "SEC-023": {
     "negative_ts": "// clean compliant stack",
-    "positive_ts": "new kms.Key(this, 'Key');"
+    "negative_py": "kms.Key(self, 'Key', enable_key_rotation=True)",
+    "positive_ts": "new kms.Key(this, 'Key');",
+    "positive_py": "kms.Key(self, 'Key')"
   },
   "SEC-024": {
     "negative_ts": "// clean compliant stack",
@@ -601,7 +615,9 @@
   },
   "SEC-054": {
     "negative_ts": "allowAllOutbound: false",
-    "positive_ts": "new ec2.SecurityGroup(this, 'SG', { vpc, allowAllOutbound: true });"
+    "negative_py": "ec2.SecurityGroup(self, 'SG', vpc=vpc, allow_all_outbound=False)",
+    "positive_ts": "new ec2.SecurityGroup(this, 'SG', { vpc, allowAllOutbound: true });",
+    "positive_py": "ec2.SecurityGroup(self, 'SG', vpc=vpc, allow_all_outbound=True)"
   },
   "SEC-055": {
     "negative_ts": "// clean compliant stack",

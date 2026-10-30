@@ -93,21 +93,17 @@ class SqsEncryptionMissing(Rule):
     def run(self, repo_path: Path, language: str = "typescript") -> List[Finding]:
         sqs_pat = r'new\s+sqs\.Queue\(' if language == "typescript" else r'sqs\.Queue\('
         queues = rg(repo_path, sqs_pat, glob=code_glob(language))
-        enc = rg(repo_path, r'encryption\s*:\s*sqs\.QueueEncryption|encryptionMasterKey', glob=code_glob(language))
-        out: List[Finding] = []
-        if queues and not enc:
-            f, ln, txt = queues[0]
-            out.append(Finding(
-                id=self.id,
-                title=self.title,
-                severity="Medium",
-                category=self.category,
-                file=f,
-                line=ln,
-                evidence=txt,
-                recommendation="Enable SQS encryption (KMS or SQS managed). In CDK: encryption: sqs.QueueEncryption.KMS_MANAGED",
-            ))
-        return out
+        enc = rg(
+            repo_path,
+            r"encryption\s*[:=]\s*sqs\.QueueEncryption|encryptionMasterKey|encryption_master_key\s*=",
+            glob=code_glob(language),
+        )
+        return findings_for_unmatched(
+            self,
+            queues,
+            enc,
+            "Enable SQS encryption (KMS or SQS managed). In CDK: encryption: sqs.QueueEncryption.KMS_MANAGED",
+        )
 
 
 
@@ -120,21 +116,17 @@ class SnsEncryptionMissing(Rule):
     def run(self, repo_path: Path, language: str = "typescript") -> List[Finding]:
         sns_pat = r'new\s+sns\.Topic\(' if language == "typescript" else r'sns\.Topic\('
         topics = rg(repo_path, sns_pat, glob=code_glob(language))
-        enc = rg(repo_path, r'masterKey\s*:|encryptionMasterKey', glob=code_glob(language))
-        out: List[Finding] = []
-        if topics and not enc:
-            f, ln, txt = topics[0]
-            out.append(Finding(
-                id=self.id,
-                title=self.title,
-                severity="Medium",
-                category=self.category,
-                file=f,
-                line=ln,
-                evidence=txt,
-                recommendation="Enable SNS topic encryption with KMS. In CDK: masterKey: kms.Key",
-            ))
-        return out
+        enc = rg(
+            repo_path,
+            r"masterKey\s*:|master_key\s*=|encryptionMasterKey|encryption_master_key\s*=",
+            glob=code_glob(language),
+        )
+        return findings_for_unmatched(
+            self,
+            topics,
+            enc,
+            "Enable SNS topic encryption with KMS. In CDK: masterKey: kms.Key",
+        )
 
 
 

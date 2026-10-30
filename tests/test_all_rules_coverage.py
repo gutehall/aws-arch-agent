@@ -35,33 +35,43 @@ CASES = _load_cases()
 RULE_IDS = [r.id for r in ALL_RULES]
 
 
+def _snippet_keys(case: dict[str, str | None], kind: str) -> list[str]:
+    return [key for key in (f"{kind}_ts", f"{kind}_py") if case.get(key)]
+
+
 @pytest.mark.parametrize("rule_id", RULE_IDS)
 def test_rule_positive_case(tmp_path: Path, rule_id: str) -> None:
-    """Rule should fire on its positive snippet."""
+    """Rule should fire on each positive snippet, including Python."""
     case = CASES.get(rule_id, {})
-    pos_key = next((k for k in ("positive_ts", "positive_py") if case.get(k)), None)
-    if not pos_key:
+    keys = _snippet_keys(case, "positive")
+    if not keys:
         pytest.skip(f"No positive case for {rule_id}")
-    lang = _lang_from_key(pos_key)
-    _write_repo(tmp_path, lang, case[pos_key] or "")
     rule = RULE_BY_ID[rule_id]
-    findings = rule.run(tmp_path, lang)
-    assert any(f.id == rule_id for f in findings), (
-        f"{rule_id} did not fire on positive case: {case[pos_key]!r}"
-    )
+    for key in keys:
+        lang = _lang_from_key(key)
+        repo = tmp_path / key
+        repo.mkdir()
+        _write_repo(repo, lang, case[key] or "")
+        findings = rule.run(repo, lang)
+        assert any(f.id == rule_id for f in findings), (
+            f"{rule_id} did not fire on {key}: {case[key]!r}"
+        )
 
 
 @pytest.mark.parametrize("rule_id", RULE_IDS)
 def test_rule_negative_case(tmp_path: Path, rule_id: str) -> None:
-    """Rule should not fire on its negative snippet (when provided)."""
+    """Rule should not fire on each negative snippet (when provided)."""
     case = CASES.get(rule_id, {})
-    neg_key = next((k for k in ("negative_ts", "negative_py") if case.get(k)), None)
-    if not neg_key:
+    keys = _snippet_keys(case, "negative")
+    if not keys:
         pytest.skip(f"No negative case for {rule_id}")
-    lang = _lang_from_key(neg_key)
-    _write_repo(tmp_path, lang, case[neg_key] or "")
     rule = RULE_BY_ID[rule_id]
-    findings = rule.run(tmp_path, lang)
-    assert not any(f.id == rule_id for f in findings), (
-        f"{rule_id} false positive on negative case: {case[neg_key]!r}"
-    )
+    for key in keys:
+        lang = _lang_from_key(key)
+        repo = tmp_path / key
+        repo.mkdir()
+        _write_repo(repo, lang, case[key] or "")
+        findings = rule.run(repo, lang)
+        assert not any(f.id == rule_id for f in findings), (
+            f"{rule_id} false positive on {key}: {case[key]!r}"
+        )
