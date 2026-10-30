@@ -178,21 +178,17 @@ class KmsKeyRotation(Rule):
     def run(self, repo_path: Path, language: str = "typescript") -> List[Finding]:
         kms_pat = r'new\s+kms\.Key\(' if language == "typescript" else r'kms\.Key\('
         keys = rg(repo_path, kms_pat, glob=code_glob(language))
-        rotation = rg(repo_path, r'enableKeyRotation\s*:\s*true', glob=code_glob(language))
-        out: List[Finding] = []
-        if keys and not rotation:
-            f, ln, txt = keys[0]
-            out.append(Finding(
-                id=self.id,
-                title=self.title,
-                severity="Low",
-                category=self.category,
-                file=f,
-                line=ln,
-                evidence=txt,
-                recommendation="Enable automatic key rotation for KMS customer-managed keys. In CDK: enableKeyRotation: true",
-            ))
-        return out
+        rotation = rg(
+            repo_path,
+            r"enableKeyRotation\s*:\s*true|enable_key_rotation\s*=\s*True",
+            glob=code_glob(language),
+        )
+        return findings_for_unmatched(
+            self,
+            keys,
+            rotation,
+            "Enable automatic key rotation for KMS customer-managed keys. In CDK: enableKeyRotation: true",
+        )
 
 
 
