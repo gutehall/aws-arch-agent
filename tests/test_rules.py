@@ -267,7 +267,7 @@ def test_lambda_function_url_auth_iam_no_finding(tmp_path: Path) -> None:
 def test_rds_publicly_accessible_ts(tmp_path: Path) -> None:
     (tmp_path / "lib").mkdir()
     (tmp_path / "lib" / "stack.ts").write_text(
-        'new rds.DatabaseInstance(this, "DB", { engine: rds.DatabaseInstanceEngine.postgres({ version: rds.PostgresEngineVersion.VER_15 }), vpc });',
+        'new rds.DatabaseInstance(this, "DB", { publiclyAccessible: true, engine: rds.DatabaseInstanceEngine.postgres({ version: rds.PostgresEngineVersion.VER_15 }), vpc });',
         encoding="utf-8",
     )
     rule = RdsPubliclyAccessible()

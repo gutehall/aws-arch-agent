@@ -31,3 +31,15 @@ def test_every_rule_runs_without_error(tmp_path: Path, rule_id: str) -> None:
     findings, warnings = run_all_rules(tmp_path, [rule], ["typescript", "python"])
     assert isinstance(findings, list)
     assert isinstance(warnings, list)
+
+
+def test_fallback_search_skips_tests_directory(tmp_path: Path) -> None:
+    from aws_arch_agent.rules.base import DEFAULT_EXCLUDE_GLOBS
+    from aws_arch_agent.tools.rg import _fallback_search
+
+    tests = tmp_path / "tests"
+    tests.mkdir()
+    (tests / "stack.py").write_text('Action: "*"\n', encoding="utf-8")
+    (tmp_path / "app.py").write_text('Action: "*"\n', encoding="utf-8")
+    hits = _fallback_search(tmp_path, r'Action:\s*"\*"', "**/*.py", 50, DEFAULT_EXCLUDE_GLOBS)
+    assert [hit[0] for hit in hits] == ["app.py"]

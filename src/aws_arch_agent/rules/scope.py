@@ -23,6 +23,38 @@ def unmatched_resources(resources: list[Hit], mitigations: list[Hit]) -> list[Hi
     return [hit for hit in resources if _file_key(hit[0]) not in covered]
 
 
+def findings_when_same_file(
+    rule: Rule,
+    anchors: list[Hit],
+    signals: list[Hit],
+    recommendation: str,
+    suggested_code: str | None = None,
+) -> list[Finding]:
+    """One finding per signal whose file also contains an anchor.
+
+    A signal in another file does not attach to an anchor.
+    """
+    anchor_files = {_file_key(path) for path, _line, _text in anchors}
+    findings: list[Finding] = []
+    for path, line, text in signals:
+        if _file_key(path) not in anchor_files:
+            continue
+        findings.append(
+            Finding(
+                id=rule.id,
+                title=rule.title,
+                severity=cast(Severity, rule.severity),
+                category=rule.category,
+                file=path,
+                line=line,
+                evidence=text,
+                recommendation=recommendation,
+                suggested_code=suggested_code,
+            )
+        )
+    return findings
+
+
 def findings_for_unmatched(
     rule: Rule,
     resources: list[Hit],

@@ -3,7 +3,7 @@ from pathlib import Path
 from typing import List
 from aws_arch_agent.models import Finding
 from aws_arch_agent.rules.base import Rule, code_glob
-from aws_arch_agent.rules.scope import findings_for_unmatched
+from aws_arch_agent.rules.scope import findings_for_unmatched, findings_when_same_file
 from aws_arch_agent.tools.rg import rg
 
 class S3PublicAccessNotBlocked(Rule):
@@ -524,21 +524,18 @@ class RdsPubliclyAccessible(Rule):
 
     def run(self, repo_path: Path, language: str = "typescript") -> List[Finding]:
         rds_pat = r'new\s+rds\.(DatabaseInstance|DatabaseCluster)\(' if language == "typescript" else r'rds\.(DatabaseInstance|DatabaseCluster)\('
-        dbs = rg(repo_path, rds_pat, glob=code_glob(language))
-        public_false = rg(repo_path, r'publiclyAccessible\s*:\s*false|publicly_accessible\s*:\s*False', glob=code_glob(language))
-        out: List[Finding] = []
-        if dbs and not public_false:
-            f, ln, txt = dbs[0]
-            out.append(Finding(
-                id=self.id,
-                title=self.title,
-                severity="High",
-                category=self.category,
-                file=f,
-                line=ln,
-                evidence=txt,
-                recommendation="Set publiclyAccessible: false for RDS instances. Databases should not be exposed to the internet.",
-            ))
-        return out
+        glob = code_glob(language)
+        dbs = rg(repo_path, rds_pat, glob=glob)
+        public_true = rg(
+            repo_path,
+            r"publiclyAccessible\s*:\s*true|publicly_accessible\s*[:=]\s*True",
+            glob=glob,
+        )
+        return findings_when_same_file(
+            self,
+            dbs,
+            public_true,
+            "Set publiclyAccessible to false. Omitted uses the CloudFormation default, which is not public.",
+        )
 
 
