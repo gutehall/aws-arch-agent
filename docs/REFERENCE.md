@@ -9,7 +9,7 @@ The agent covers all six AWS Well-Architected pillars. Static and CloudFormation
 | `--repo`, `-r` | — | Path to repo (required unless `--templates` is set; then repo defaults to templates path) |
 | `--out`, `-o` | `report.md` | Output report path |
 | `--mode` | `v1` | `v1` (rules + LLM) or `v2` (multi-agent + synth) |
-| `--max-files` | `400` | Max files to scan |
+| `--max-files` | `400` | Cap on files walked. Rules search only these files |
 | `--config` | (auto-detect) | Path to config file |
 | `--format`, `-f` | `markdown` | `markdown`, `json`, or `sarif` |
 | `--fail-on` | `none` | Exit 1 if any finding at or above: `high`, `medium`, `low`, `none` |

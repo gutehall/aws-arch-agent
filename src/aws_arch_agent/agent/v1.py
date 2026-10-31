@@ -13,6 +13,7 @@ from aws_arch_agent.rules.runner import filter_by_severity, run_all_rules
 from aws_arch_agent.report.markdown import render_markdown
 from aws_arch_agent.tools.llm import LLMClient
 from aws_arch_agent.tools.files import iter_files
+from aws_arch_agent.tools.rg import limit_to_files
 
 logger = logging.getLogger(__name__)
 
@@ -173,7 +174,8 @@ def _collect_findings(
         key_files=[p.name for p in files if p.name in {"cdk.json", "package.json", "requirements.txt"}],
     )
     rules = _filter_rules(ALL_RULES, rules_include, rules_exclude, org=rules_org)
-    findings, warnings = run_all_rules(repo_path, rules, _languages_to_scan(language))
+    with limit_to_files(repo_path, files):
+        findings, warnings = run_all_rules(repo_path, rules, _languages_to_scan(language))
     findings = filter_by_severity(findings, severity_threshold)
     return ctx, findings, warnings
 
