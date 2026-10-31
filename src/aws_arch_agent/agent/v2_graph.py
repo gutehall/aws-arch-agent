@@ -22,6 +22,7 @@ from aws_arch_agent.tools.cdk_synth import (
     summarize_templates,
     summarize_templates_from_paths,
 )
+from aws_arch_agent.tools.rg import limit_to_files
 from aws_arch_agent.rules.cf_template import (
     drop_static_covered_by_cf,
     run_cf_rules,
@@ -167,7 +168,8 @@ def node_collect(state: State) -> State:
         org=bool(state.get("rules_org")),
     )
     language = ctx.language
-    findings, warnings = run_all_rules(repo_path, rules, _languages_to_scan(language))
+    with limit_to_files(repo_path, files):
+        findings, warnings = run_all_rules(repo_path, rules, _languages_to_scan(language))
     findings = filter_by_severity(findings, state.get("severity_threshold"))
 
     return {"ctx": ctx, "raw_findings": findings, "rule_warnings": warnings}

@@ -1,7 +1,10 @@
 """Ripgrep wrapper for pattern search in the repo."""
 from __future__ import annotations
+import contextvars
 import re
 import subprocess
+from collections.abc import Iterator
+from contextlib import contextmanager
 from pathlib import Path
 from typing import List, Tuple
 
@@ -10,6 +13,10 @@ from aws_arch_agent.tools.paths import normalize_rel_path
 
 RG_TIMEOUT_S = 30
 Hit = tuple[str, int, str]
+_scan_files: contextvars.ContextVar[frozenset[str] | None] = contextvars.ContextVar(
+    "aws_arch_agent_scan_files",
+    default=None,
+)
 
 
 class RipgrepTimeout(RuntimeError):
@@ -47,12 +54,33 @@ def _path_excluded(rel: str, exclude_globs: tuple[str, ...] | list[str]) -> bool
     return any(_glob_match(path, pattern) for pattern in exclude_globs)
 
 
+@contextmanager
+def limit_to_files(repo_path: Path, files: list[Path]) -> Iterator[None]:
+    """Search only these files until the block exits. Rules call ``rg`` unchanged."""
+    root = repo_path.resolve()
+    allowed: set[str] = set()
+    for path in files:
+        try:
+            rel = path.resolve().relative_to(root).as_posix()
+        except ValueError:
+            continue
+        norm = normalize_rel_path(rel)
+        if norm:
+            allowed.add(norm)
+    token = _scan_files.set(frozenset(allowed))
+    try:
+        yield
+    finally:
+        _scan_files.reset(token)
+
+
 def _fallback_search(
     repo_path: Path,
     pattern: str,
     glob: str | None,
     max_hits: int,
     exclude_globs: tuple[str, ...] | list[str],
+    allowed: frozenset[str] | None = None,
 ) -> List[Tuple[str, int, str]]:
     """Pure-Python fallback when ripgrep is missing or returns no match (e.g. regex dialect)."""
     try:
@@ -66,7 +94,10 @@ def _fallback_search(
     hits: List[Tuple[str, int, str]] = []
     
     # Get files respecting exclusions (node_modules, .git, etc.)
-    all_files = iter_files(repo_path, max_files=1000)
+    if allowed is not None:
+        all_files = [repo_path / rel for rel in sorted(allowed)]
+    else:
+        all_files = iter_files(repo_path, max_files=1000)
     
     # Filter by extension based on glob
     if glob == "**/*.ts":
@@ -111,15 +142,22 @@ def rg(
     """Run ripgrep in repo_path; return list of (file, line_number, line_text) up to max_hits.
 
     Exit 1 is a clean miss and returns no hits. The Python walk runs only when
-    ripgrep is missing or exits with a real failure.
+    ripgrep is missing or exits with a real failure. Inside ``limit_to_files``,
+    only that allowlist is searched.
     """
     effective_excludes = DEFAULT_EXCLUDE_GLOBS if exclude_globs is None else exclude_globs
-    cmd = ["rg", "--line-number", "--no-heading", "--hidden", "--glob", "!.git/*"]
+    allowed = _scan_files.get()
+    if allowed is not None and glob:
+        allowed = frozenset(rel for rel in allowed if _glob_match(rel, glob))
+    if allowed is not None and not allowed:
+        return []
+    cmd = ["rg", "--line-number", "--with-filename", "--no-heading", "--hidden", "--glob", "!.git/*"]
     if glob:
         cmd += ["--glob", glob]
     for ex in effective_excludes:
         cmd += ["--glob", f"!{ex}"]
-    cmd += [pattern, "."]
+    cmd += [pattern, "--"]
+    cmd += sorted(allowed) if allowed is not None else ["."]
     try:
         p = subprocess.run(
             cmd,
@@ -130,11 +168,11 @@ def rg(
             timeout=RG_TIMEOUT_S,
         )
     except FileNotFoundError:
-        return _fallback_search(repo_path, pattern, glob, max_hits, effective_excludes)
+        return _fallback_search(repo_path, pattern, glob, max_hits, effective_excludes, allowed)
     except subprocess.TimeoutExpired as exc:
         raise RipgrepTimeout(f"ripgrep timed out after {RG_TIMEOUT_S}s") from exc
     if p.returncode not in (0, 1):
-        return _fallback_search(repo_path, pattern, glob, max_hits, effective_excludes)
+        return _fallback_search(repo_path, pattern, glob, max_hits, effective_excludes, allowed)
     hits: List[Tuple[str, int, str]] = []
     for line in p.stdout.splitlines():
         parts = line.split(":", 2)
@@ -142,6 +180,8 @@ def rg(
             continue
         f, ln, txt = parts
         rel = normalize_rel_path(f) or f
+        if allowed is not None and (rel not in allowed or (glob and not _glob_match(rel, glob))):
+            continue
         if _path_excluded(rel, effective_excludes):
             continue
         try:
