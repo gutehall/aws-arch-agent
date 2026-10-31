@@ -129,7 +129,9 @@ def analyze(
     repo: str | None = typer.Option(None, "--repo", "-r", help="Path to repo (required unless --templates is set; then defaults to templates path)"),
     out: str = typer.Option("report.md", "--out", "-o", help="Output report path"),
     mode: str = typer.Option("v1", "--mode", help="v1 (rules) or v2 (LangGraph multi-agent)"),
-    max_files: int = typer.Option(400, "--max-files", help="Max files to scan"),
+    max_files: int = typer.Option(
+        400, "--max-files", help="Max files to scan. Rules search only these files."
+    ),
     config: str | None = typer.Option(None, "--config", help="Path to config file (JSON or YAML)"),
     format: str = typer.Option("markdown", "--format", "-f", help="Output format: markdown | json | sarif"),
     fail_on: str = typer.Option(
