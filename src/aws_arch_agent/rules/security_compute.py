@@ -2,7 +2,7 @@ from __future__ import annotations
 from pathlib import Path
 from typing import List
 from aws_arch_agent.models import Finding
-from aws_arch_agent.rules.base import Rule, code_glob
+from aws_arch_agent.rules.base import Rule, cdk_bool_prop, code_glob
 from aws_arch_agent.rules.scope import findings_for_unmatched
 from aws_arch_agent.tools.rg import rg
 
@@ -21,7 +21,7 @@ class EcsReadonlyRootFs(Rule):
         tasks = rg(repo_path, task_pat, glob=code_glob(language))
         readonly = rg(
             repo_path,
-            r"readonlyRootFilesystem\s*:\s*true|readonly_root_filesystem\s*=\s*True",
+            cdk_bool_prop("readonlyRootFilesystem"),
             glob=code_glob(language),
         )
         return findings_for_unmatched(
@@ -96,7 +96,7 @@ class EcrImageScanning(Rule):
     def run(self, repo_path: Path, language: str = "typescript") -> List[Finding]:
         ecr_pat = r'new\s+ecr\.Repository\(' if language == "typescript" else r'ecr\.Repository\('
         repos = rg(repo_path, ecr_pat, glob=code_glob(language))
-        scanning = rg(repo_path, r'imageScanOnPush\s*:\s*true', glob=code_glob(language))
+        scanning = rg(repo_path, cdk_bool_prop("imageScanOnPush"), glob=code_glob(language))
         out: List[Finding] = []
         if repos and not scanning:
             f, ln, txt = repos[0]
@@ -336,7 +336,7 @@ class EcsTaskRunAsRoot(Rule):
     def run(self, repo_path: Path, language: str = "typescript") -> List[Finding]:
         task_pat = r'new\s+ecs\.(TaskDefinition|FargateTaskDefinition|Ec2TaskDefinition)\(' if language == "typescript" else r'ecs\.(TaskDefinition|FargateTaskDefinition|Ec2TaskDefinition)\('
         tasks = rg(repo_path, task_pat, glob=code_glob(language))
-        run_as_non_root = rg(repo_path, r'runAsNonRoot|run_as_non_root\s*:\s*true', glob=code_glob(language))
+        run_as_non_root = rg(repo_path, cdk_bool_prop("runAsNonRoot"), glob=code_glob(language))
         out: List[Finding] = []
         if tasks and not run_as_non_root:
             f, ln, txt = tasks[0]
