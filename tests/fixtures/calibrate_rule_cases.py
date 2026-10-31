@@ -18,7 +18,10 @@ KNOWN: dict[str, dict[str, str]] = {
     "SEC-003": {"positive_ts": "connections.allowFrom(ec2.Peer.anyIpv4(), ec2.Port.tcp(22));", "negative_ts": "// clean"},
     "SEC-004": {"positive_ts": "sg.addIngressRule(ec2.Peer.anyIpv4(), ec2.Port.tcp(3306));", "negative_ts": "// clean"},
     "SEC-005": {"positive_ts": 'new s3.Bucket(this, "B");', "negative_ts": "blockPublicAccess: s3.BlockPublicAccess.BLOCK_ALL"},
-    "SEC-006": {"positive_ts": 'new s3.Bucket(this, "B");', "negative_ts": "encryption: s3.BucketEncryption.S3_MANAGED"},
+    "SEC-006": {
+        "positive_ts": 'new s3.Bucket(this, "B", { encryption: s3.BucketEncryption.UNENCRYPTED });',
+        "negative_ts": 'new s3.Bucket(this, "B");',
+    },
     "SEC-007": {"positive_ts": "key.addToResourcePolicy(new iam.PolicyStatement({ Principal: '*', Action: 'kms:*' }));", "negative_ts": "Principal: { AWS: 'arn:aws:iam::123:root' }"},
     "SEC-008": {"positive_ts": "new dynamodb.Table(this, 'T', { partitionKey: { name: 'id', type: dynamodb.AttributeType.STRING } });", "negative_ts": "encryption: dynamodb.TableEncryption.AWS_MANAGED"},
     "SEC-009": {"positive_ts": "new apigateway.RestApi(this, 'Api');", "negative_ts": "authorizer: cognitoAuthorizer"},
