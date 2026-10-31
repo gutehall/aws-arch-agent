@@ -1,41 +1,53 @@
 """Baseline / suppression support for gradual CI adoption."""
 from __future__ import annotations
 
+import hashlib
 import json
 import os
 import tempfile
 from pathlib import Path
-from typing import Any
+from typing import Any, NamedTuple
 
 from aws_arch_agent.models import Finding
 from aws_arch_agent.tools.paths import normalize_rel_path
 
 DEFAULT_BASELINE_NAME = ".aws-arch-agent-baseline.json"
 
-# Static findings: (id, file, line). CloudFormation findings have no line, so the
-# fourth element is the evidence string (logical id plus resource type).
-Fingerprint = tuple[str, str | None, int | None] | tuple[str, str | None, int | None, str]
+
+class Fingerprint(NamedTuple):
+    """Identity of an accepted finding.
+
+    ``evidence_hash`` distinguishes two findings in one file. ``match_file`` is
+    set only when loading an older entry that stored a line and no evidence, so
+    that entry still matches after the line moves.
+    """
+
+    rule_id: str
+    file: str | None
+    evidence_hash: str | None
+    logical_id: str | None = None
+    match_file: bool = False
 
 
 class BaselineError(ValueError):
     """Baseline file is unreadable or invalid."""
 
 
+def _evidence_hash(evidence: str | None) -> str | None:
+    if not evidence:
+        return None
+    return hashlib.sha256(evidence.encode()).hexdigest()[:16]
+
+
 def finding_fingerprint(f: Finding) -> Fingerprint:
-    """Stable key for baseline matching.
-
-    Findings with a line stay (id, file, line). CloudFormation findings have no
-    line, so they also include evidence. Two resources of one rule stay distinct.
-    """
-    file_path = normalize_rel_path(f.file)
-    if f.line is None and f.evidence and f.id.startswith("CF-"):
-        return (f.id, file_path, None, f.evidence)
-    return (f.id, file_path, f.line)
-
-
-def _parts(fp: tuple) -> tuple[str, str | None, int | None, str | None]:
-    qualifier = fp[3] if len(fp) > 3 else None
-    return (fp[0], fp[1], fp[2], qualifier)
+    """Stable key for baseline matching. The line number is not part of the key."""
+    evidence = f.evidence if isinstance(f.evidence, str) and f.evidence else None
+    return Fingerprint(
+        f.id,
+        normalize_rel_path(f.file),
+        _evidence_hash(evidence),
+        evidence,
+    )
 
 
 def _files_match(baseline_file: str | None, finding_file: str | None) -> bool:
@@ -73,13 +85,17 @@ def _coerce_line(value: Any) -> int | None:
         raise BaselineError(f"baseline line must be an integer or null, got {value!r}") from exc
 
 
-def _sort_key(fp: Fingerprint) -> tuple[str, str, bool, int, str]:
-    """Order None lines after numbered lines without comparing None to int."""
-    rule_id, file_path, line, qualifier = _parts(fp)
-    return (rule_id, file_path or "", line is None, line if line is not None else 0, qualifier or "")
+def _sort_key(fp: Fingerprint) -> tuple[str, str, str, str, bool]:
+    return (
+        fp.rule_id,
+        fp.file or "",
+        fp.evidence_hash or "",
+        fp.logical_id or "",
+        fp.match_file,
+    )
 
 
-def _qualifier(value: Any) -> str | None:
+def _logical_id(value: Any) -> str | None:
     if value is None:
         return None
     if not isinstance(value, str) or not value:
@@ -87,20 +103,52 @@ def _qualifier(value: Any) -> str | None:
     return value
 
 
+def _stored_hash(value: Any) -> str | None:
+    if value is None:
+        return None
+    if not isinstance(value, str) or not value:
+        raise BaselineError(f"baseline evidence_hash must be a string, got {value!r}")
+    return value
+
+
+def _fingerprint_from_parts(
+    rule_id: str,
+    file_path: str | None,
+    line: int | None,
+    logical_id: str | None,
+    evidence_hash: str | None,
+    *,
+    has_evidence_hash: bool,
+) -> Fingerprint:
+    if has_evidence_hash:
+        return Fingerprint(rule_id, file_path, evidence_hash, logical_id)
+    if logical_id is not None:
+        return Fingerprint(rule_id, file_path, _evidence_hash(logical_id), logical_id)
+    # Older static entries stored a line and no evidence. Match the file, not the line.
+    if line is not None:
+        return Fingerprint(rule_id, file_path, None, None, True)
+    return Fingerprint(rule_id, file_path, None)
+
+
 def _entry_fingerprint(item: Any) -> Fingerprint:
-    qualifier_value: Any = None
+    logical_value: Any = None
+    evidence_value: Any = None
+    has_evidence_hash = False
     if isinstance(item, dict):
         rule_id = item.get("id", "")
         file_path = item.get("file")
-        line_value = item.get("line")
+        line_value = item.get("line") if "line" in item else None
         if "logical_id" in item:
-            qualifier_value = item.get("logical_id")
+            logical_value = item.get("logical_id")
+        if "evidence_hash" in item:
+            has_evidence_hash = True
+            evidence_value = item.get("evidence_hash")
     elif isinstance(item, list) and item:
         rule_id = item[0]
         file_path = item[1] if len(item) > 1 else None
         line_value = item[2] if len(item) > 2 else None
         if len(item) > 3:
-            qualifier_value = item[3]
+            logical_value = item[3]
     else:
         raise BaselineError(f"baseline accepted entry is invalid: {item!r}")
     if not isinstance(rule_id, str):
@@ -109,17 +157,21 @@ def _entry_fingerprint(item: Any) -> Fingerprint:
         if not isinstance(file_path, str):
             raise BaselineError(f"baseline file must be a string or null, got {file_path!r}")
         file_path = normalize_rel_path(file_path)
-    qualifier = _qualifier(qualifier_value)
-    line = _coerce_line(line_value)
-    if qualifier is None:
-        return (rule_id, file_path, line)
-    return (rule_id, file_path, line, qualifier)
+    return _fingerprint_from_parts(
+        rule_id,
+        file_path,
+        _coerce_line(line_value),
+        _logical_id(logical_value),
+        _stored_hash(evidence_value) if has_evidence_hash else None,
+        has_evidence_hash=has_evidence_hash,
+    )
 
 
 def load_baseline(path: Path) -> set[Fingerprint]:
     """Load accepted finding fingerprints from a baseline JSON file.
 
     A missing file is an empty set. A corrupt file raises BaselineError.
+    Older files that stored a line number still load. The line is not used as a key.
     """
     if not path.exists():
         return set()
@@ -143,10 +195,13 @@ def save_baseline(path: Path, fingerprints: set[Fingerprint]) -> None:
     """Write baseline file atomically. A failed write leaves the previous file intact."""
     accepted = []
     for fp in sorted(fingerprints, key=_sort_key):
-        rule_id, file_path, line, qualifier = _parts(fp)
-        entry: dict[str, Any] = {"id": rule_id, "file": file_path, "line": line}
-        if qualifier is not None:
-            entry["logical_id"] = qualifier
+        entry: dict[str, Any] = {
+            "id": fp.rule_id,
+            "file": fp.file,
+            "evidence_hash": fp.evidence_hash,
+        }
+        if fp.logical_id is not None:
+            entry["logical_id"] = fp.logical_id
         accepted.append(entry)
     payload = json.dumps({"accepted": accepted}, indent=2)
     directory = path.parent
@@ -167,23 +222,20 @@ def save_baseline(path: Path, fingerprints: set[Fingerprint]) -> None:
 def is_baselined(finding: Finding, baseline: set[Fingerprint]) -> bool:
     """True when this finding was accepted.
 
-    An older absolute path matches the same repo-relative path. An entry with
-    no logical id does not match a line-less finding, so one accepted bucket
-    cannot hide every other bucket in the template.
+    An older absolute path matches the same repo-relative path. An entry that
+    only stored a line matches the same id and file at any line. An entry with
+    no evidence does not match a finding that has evidence, so one accepted
+    bucket cannot hide every other bucket in the template.
     """
     fp = finding_fingerprint(finding)
     if fp in baseline:
         return True
-    rule_id, file_path, line, qualifier = _parts(fp)
     for item in baseline:
-        accepted_id, accepted_file, accepted_line, accepted_qualifier = _parts(item)
-        if accepted_id != rule_id or accepted_line != line:
+        if item.rule_id != fp.rule_id or not _files_match(item.file, fp.file):
             continue
-        if not _files_match(accepted_file, file_path):
-            continue
-        if accepted_qualifier is None and qualifier is not None:
-            continue
-        if accepted_qualifier == qualifier:
+        if item.match_file:
+            return True
+        if item.evidence_hash is not None and item.evidence_hash == fp.evidence_hash:
             return True
     return False
 
