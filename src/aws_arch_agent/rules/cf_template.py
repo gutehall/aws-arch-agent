@@ -13,6 +13,14 @@ from aws_arch_agent.tools.paths import to_repo_relative
 # Sensitive ports for security group checks (SSH, RDP, Postgres, MySQL, Mongo)
 SENSITIVE_PORTS = {22, 3389, 3306, 5432, 27017}
 
+# Static rule dropped when the CF rule already reported that control.
+CF_COVERS_STATIC: dict[str, str] = {
+    "CF-S3-001": "SEC-005",
+    "CF-S3-002": "SEC-006",
+    "CF-VPC-001": "SEC-022",
+    "CF-FL-001": "OPS-002",
+}
+
 
 def _is_large_instance_class(instance_class: Any) -> bool:
     """True if instance class suggests right-sizing review (xlarge, 2xlarge, etc.)."""
@@ -753,6 +761,14 @@ def _store_repo_relative(findings: List[Finding], repo_path: Path | None) -> Non
     for finding in findings:
         if finding.file:
             finding.file = to_repo_relative(finding.file, repo_path)
+
+
+def drop_static_covered_by_cf(findings: List[Finding]) -> List[Finding]:
+    """Drop a static finding when a CloudFormation finding already covers that control."""
+    covered = {CF_COVERS_STATIC[f.id] for f in findings if f.id in CF_COVERS_STATIC}
+    if not covered:
+        return findings
+    return [f for f in findings if f.id not in covered]
 
 
 def run_cf_rules_from_paths(
