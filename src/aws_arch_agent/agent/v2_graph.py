@@ -22,7 +22,11 @@ from aws_arch_agent.tools.cdk_synth import (
     summarize_templates,
     summarize_templates_from_paths,
 )
-from aws_arch_agent.rules.cf_template import run_cf_rules, run_cf_rules_from_paths
+from aws_arch_agent.rules.cf_template import (
+    drop_static_covered_by_cf,
+    run_cf_rules,
+    run_cf_rules_from_paths,
+)
 
 from langgraph.graph import StateGraph, END
 
@@ -215,6 +219,7 @@ def node_synth(state: State) -> State:
                 template_paths, repo_path=repo_path, warnings=cf_warnings
             )
             out_findings.extend(cf_findings)
+            out_findings = drop_static_covered_by_cf(out_findings)
         except Exception as exc:
             cf_failed = True
             _note(warnings, f"CF template rules failed: {exc}")
@@ -296,6 +301,7 @@ def node_synth(state: State) -> State:
     try:
         cf_findings = run_cf_rules(cdk_out, repo_path=repo_path, warnings=cf_warnings)
         out_findings.extend(cf_findings)
+        out_findings = drop_static_covered_by_cf(out_findings)
     except Exception as exc:
         cf_failed = True
         _note(warnings, f"CF template rules failed: {exc}")
