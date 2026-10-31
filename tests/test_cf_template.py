@@ -2,7 +2,12 @@
 import json
 from pathlib import Path
 
-from aws_arch_agent.rules.cf_template import run_cf_rules, run_cf_rules_from_paths
+from aws_arch_agent.models import Finding
+from aws_arch_agent.rules.cf_template import (
+    drop_static_covered_by_cf,
+    run_cf_rules,
+    run_cf_rules_from_paths,
+)
 
 
 def test_s3_missing_public_access_block(tmp_path: Path) -> None:
@@ -567,3 +572,26 @@ def test_string_launch_template_properties_keep_sibling_findings(tmp_path: Path)
     findings = run_cf_rules(cdk_out, warnings=warnings)
     assert any(f.id == "CF-S3-001" for f in findings)
     assert any("BadLt" in warning for warning in warnings)
+
+
+def test_drop_static_covered_by_cf() -> None:
+    def finding(rule_id: str) -> Finding:
+        return Finding(id=rule_id, title=rule_id, recommendation="fix")
+
+    kept = drop_static_covered_by_cf(
+        [
+            finding("SEC-005"),
+            finding("SEC-006"),
+            finding("SEC-022"),
+            finding("OPS-002"),
+            finding("SEC-001"),
+            finding("CF-S3-001"),
+            finding("CF-S3-002"),
+            finding("CF-VPC-001"),
+            finding("CF-FL-001"),
+        ]
+    )
+    ids = [item.id for item in kept]
+    assert ids == ["SEC-001", "CF-S3-001", "CF-S3-002", "CF-VPC-001", "CF-FL-001"]
+    untouched = drop_static_covered_by_cf([finding("SEC-005")])
+    assert [item.id for item in untouched] == ["SEC-005"]
