@@ -221,3 +221,54 @@ def test_fallback_search_skips_tests_directory(tmp_path: Path) -> None:
     (tmp_path / "app.py").write_text('Action: "*"\n', encoding="utf-8")
     hits = _fallback_search(tmp_path, r'Action:\s*"\*"', "**/*.py", 50, DEFAULT_EXCLUDE_GLOBS)
     assert [hit[0] for hit in hits] == ["app.py"]
+
+
+def test_limit_to_files_skips_the_rest_of_the_tree(tmp_path: Path) -> None:
+    from aws_arch_agent.agent.v1 import collect_ctx_findings
+    from aws_arch_agent.tools.rg import limit_to_files, rg
+
+    (tmp_path / "package.json").write_text("{}", encoding="utf-8")
+    lib = tmp_path / "lib"
+    lib.mkdir()
+    clean = lib / "clean.ts"
+    bad = lib / "bad.ts"
+    clean.write_text("export const x = 1;\n", encoding="utf-8")
+    bad.write_text('Action: "*"\n', encoding="utf-8")
+
+    assert rg(tmp_path, r'Action:\s*"\*"', glob="**/*.ts")
+    with limit_to_files(tmp_path, [bad]):
+        hits = rg(tmp_path, r'Action:\s*"\*"', glob="**/*.ts")
+    assert [hit[0] for hit in hits] == ["lib/bad.ts"]
+    with limit_to_files(tmp_path, [clean]):
+        assert rg(tmp_path, r'Action:\s*"\*"', glob="**/*.ts") == []
+
+    _ctx, findings, warnings = collect_ctx_findings(tmp_path)
+    assert any(finding.id == "SEC-001" for finding in findings)
+    assert warnings == []
+
+
+def test_collect_searches_only_sampled_files(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    from aws_arch_agent.agent.v1 import collect_ctx_findings
+    from aws_arch_agent.agent.v2_graph import analyze_v2
+
+    (tmp_path / "package.json").write_text("{}", encoding="utf-8")
+    lib = tmp_path / "lib"
+    lib.mkdir()
+    clean = lib / "clean.ts"
+    (lib / "bad.ts").write_text('Action: "*"\n', encoding="utf-8")
+    clean.write_text("export const x = 1;\n", encoding="utf-8")
+
+    def only_clean(repo: Path, max_files: int = 400) -> list[Path]:
+        return [clean]
+
+    monkeypatch.setattr("aws_arch_agent.agent.v1.iter_files", only_clean)
+    _ctx, findings, warnings = collect_ctx_findings(tmp_path, max_files=1)
+    assert warnings == []
+    assert not any(finding.id == "SEC-001" for finding in findings)
+
+    monkeypatch.setattr("aws_arch_agent.agent.v2_graph.iter_files", only_clean)
+    _report, _ctx, v2_findings, v2_warnings = analyze_v2(
+        tmp_path, max_files=1, use_llm=False, skip_synth=True
+    )
+    assert v2_warnings == []
+    assert not any(finding.id == "SEC-001" for finding in v2_findings)
