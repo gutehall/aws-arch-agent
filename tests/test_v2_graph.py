@@ -73,6 +73,16 @@ def _finding(rule_id: str) -> Finding:
 _BUCKET_AND_VPC = {
     "Resources": {
         "MyBucket": {"Type": "AWS::S3::Bucket", "Properties": {}},
+        "Disabled": {
+            "Type": "AWS::S3::Bucket",
+            "Properties": {
+                "BucketEncryption": {
+                    "ServerSideEncryptionConfiguration": [
+                        {"ServerSideEncryptionByDefault": {"SSEAlgorithm": "UNENCRYPTED"}}
+                    ]
+                }
+            },
+        },
         "Vpc": {"Type": "AWS::EC2::VPC", "Properties": {"CidrBlock": "10.0.0.0/16"}},
     }
 }

@@ -34,17 +34,16 @@ class S3PublicAccessNotBlocked(Rule):
 
 class S3EncryptionMissing(Rule):
     id = "SEC-006"
-    title = "S3 bucket may miss encryption setting"
+    title = "S3 bucket encryption explicitly disabled"
     category = "Security"
     severity = "Medium"
 
     def run(self, repo_path: Path, language: str = "typescript") -> List[Finding]:
-        bucket_pat = r'new\s+s3\.Bucket\(' if language == "typescript" else r's3\.Bucket\('
-        buckets = rg(repo_path, bucket_pat, glob=code_glob(language))
-        enc = rg(repo_path, r'encryption\s*:\s*s3\.|BucketEncryption\.', glob=code_glob(language))
+        # SSE-S3 is the AWS default. Omitted encryption is not a finding.
+        # Customer-managed KMS is not required unless a separate policy says so.
+        disabled = rg(repo_path, r"BucketEncryption\.UNENCRYPTED", glob=code_glob(language))
         out: List[Finding] = []
-        if buckets and not enc:
-            f, ln, txt = buckets[0]
+        for f, ln, txt in disabled:
             suggested = (
                 'new s3.Bucket(this, "B", { encryption: s3.BucketEncryption.S3_MANAGED });'
                 if language == "typescript"
@@ -58,7 +57,10 @@ class S3EncryptionMissing(Rule):
                 file=f,
                 line=ln,
                 evidence=txt,
-                recommendation="Enable S3 encryption (e.g. S3_MANAGED or KMS) per security requirements.",
+                recommendation=(
+                    "S3 encrypts new objects with SSE-S3 when encryption is omitted. "
+                    "Remove the explicit UNENCRYPTED setting."
+                ),
                 suggested_code=suggested,
             ))
         return out

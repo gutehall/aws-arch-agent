@@ -70,6 +70,30 @@ def _redrive_has_dlq(redrive: Any) -> bool | None:
     return False
 
 
+_DISABLED_SSE = frozenset({"NONE", "DISABLED", "UNENCRYPTED"})
+
+
+def _s3_encryption_disabled(enc: Any) -> bool:
+    """True when the template opts out of encryption. Omission is the SSE-S3 default."""
+    if not isinstance(enc, dict):
+        return False
+    configs = enc.get("ServerSideEncryptionConfiguration")
+    if isinstance(configs, dict):
+        configs = [configs]
+    if not isinstance(configs, list):
+        return False
+    for item in configs:
+        if not isinstance(item, dict):
+            continue
+        default = item.get("ServerSideEncryptionByDefault")
+        if not isinstance(default, dict):
+            continue
+        algorithm = default.get("SSEAlgorithm")
+        if isinstance(algorithm, str) and algorithm.strip().upper() in _DISABLED_SSE:
+            return True
+    return False
+
+
 def _backup_retention_missing(value: Any) -> bool:
     """Zero days disables backups. An unresolved intrinsic is not treated as zero."""
     if value is None:
@@ -184,16 +208,19 @@ def _run_cf_rules_on_template(
                         ))
 
                     enc = props.get("BucketEncryption")
-                    if not enc:
+                    if _s3_encryption_disabled(enc):
                         findings.append(Finding(
                             id="CF-S3-002",
-                            title="S3 bucket encryption not configured",
+                            title="S3 bucket encryption explicitly disabled",
                             severity="Medium",
                             category="Security",
                             file=str(template_path),
                             line=None,
                             evidence=f"{logical_id} ({rtype})",
-                            recommendation="Enable S3 encryption (SSE-S3 or SSE-KMS) per requirements. In CDK: encryption: s3.BucketEncryption.S3_MANAGED/KMS.",
+                            recommendation=(
+                                "S3 applies SSE-S3 when BucketEncryption is omitted. "
+                                "Remove the explicit disable. Customer-managed KMS is not required here."
+                            ),
                         ))
 
                     ver = props.get("VersioningConfiguration")

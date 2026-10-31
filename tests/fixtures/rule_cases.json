@@ -426,8 +426,10 @@
     "positive_ts": "new s3.Bucket(this, \"B\");"
   },
   "SEC-006": {
-    "negative_ts": "encryption: s3.BucketEncryption.S3_MANAGED",
-    "positive_ts": "new s3.Bucket(this, \"B\");"
+    "negative_ts": "new s3.Bucket(this, \"Plain\");\nnew s3.Bucket(this, \"Managed\", { encryption: s3.BucketEncryption.S3_MANAGED });\nnew s3.Bucket(this, \"Kms\", { encryption: s3.BucketEncryption.KMS });",
+    "negative_py": "s3.Bucket(self, \"Plain\")\ns3.Bucket(self, \"Managed\", encryption=s3.BucketEncryption.S3_MANAGED)",
+    "positive_ts": "new s3.Bucket(this, \"B\", { encryption: s3.BucketEncryption.UNENCRYPTED });",
+    "positive_py": "s3.Bucket(self, \"B\", encryption=s3.BucketEncryption.UNENCRYPTED)"
   },
   "SEC-007": {
     "negative_ts": "const key = new kms.Key(this, 'Key');\nkey.addToResourcePolicy(new iam.PolicyStatement({ Principal: { AWS: 'arn:aws:iam::123:root' }, Action: 'kms:*' }));",
