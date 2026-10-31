@@ -15,15 +15,26 @@ from aws_arch_agent.rules.security import (
 )
 
 
-def test_s3_encryption_missing_ts(tmp_path: Path) -> None:
+def test_s3_omitted_encryption_is_not_a_finding(tmp_path: Path) -> None:
     (tmp_path / "lib").mkdir()
     (tmp_path / "lib" / "stack.ts").write_text(
-        'new s3.Bucket(this, "B");',
+        'new s3.Bucket(this, "B");\n'
+        'new s3.Bucket(this, "M", { encryption: s3.BucketEncryption.S3_MANAGED });\n'
+        'new s3.Bucket(this, "K", { encryption: s3.BucketEncryption.KMS });',
         encoding="utf-8",
     )
-    rule = S3EncryptionMissing()
-    findings = rule.run(tmp_path, "typescript")
-    assert len(findings) >= 1
+    findings = S3EncryptionMissing().run(tmp_path, "typescript")
+    assert findings == []
+
+
+def test_s3_unencrypted_is_a_finding(tmp_path: Path) -> None:
+    (tmp_path / "lib").mkdir()
+    (tmp_path / "lib" / "stack.ts").write_text(
+        'new s3.Bucket(this, "B", { encryption: s3.BucketEncryption.UNENCRYPTED });',
+        encoding="utf-8",
+    )
+    findings = S3EncryptionMissing().run(tmp_path, "typescript")
+    assert len(findings) == 1
     assert findings[0].id == "SEC-006"
 
 
