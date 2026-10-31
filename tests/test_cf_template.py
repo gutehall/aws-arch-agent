@@ -26,6 +26,7 @@ def test_s3_missing_public_access_block(tmp_path: Path) -> None:
     findings = run_cf_rules(cdk_out)
     ids = [f.id for f in findings]
     assert "CF-S3-001" in ids
+    assert "CF-S3-002" not in ids
     assert any(f.id == "CF-S3-001" and "PublicAccessBlock" in f.recommendation for f in findings)
 
 
@@ -56,6 +57,61 @@ def test_s3_with_encryption_no_finding(tmp_path: Path) -> None:
     assert "CF-S3-001" not in ids
     assert "CF-S3-002" not in ids
     assert "CF-S3-003" not in ids
+
+
+def test_s3_sse_s3_and_kms_are_not_encryption_findings(tmp_path: Path) -> None:
+    """SSE-S3 and SSE-KMS are encrypted. Customer-managed KMS is not required."""
+    template = {
+        "Resources": {
+            "SseS3": {
+                "Type": "AWS::S3::Bucket",
+                "Properties": {
+                    "BucketEncryption": {
+                        "ServerSideEncryptionConfiguration": [
+                            {"ServerSideEncryptionByDefault": {"SSEAlgorithm": "AES256"}}
+                        ]
+                    }
+                },
+            },
+            "SseKms": {
+                "Type": "AWS::S3::Bucket",
+                "Properties": {
+                    "BucketEncryption": {
+                        "ServerSideEncryptionConfiguration": [
+                            {"ServerSideEncryptionByDefault": {"SSEAlgorithm": "aws:kms"}}
+                        ]
+                    }
+                },
+            },
+        }
+    }
+    cdk_out = tmp_path / "cdk.out"
+    cdk_out.mkdir()
+    (cdk_out / "mystack.template.json").write_text(json.dumps(template), encoding="utf-8")
+    findings = run_cf_rules(cdk_out)
+    assert not any(f.id == "CF-S3-002" for f in findings)
+
+
+def test_s3_explicit_unencrypted_is_a_finding(tmp_path: Path) -> None:
+    template = {
+        "Resources": {
+            "Open": {
+                "Type": "AWS::S3::Bucket",
+                "Properties": {
+                    "BucketEncryption": {
+                        "ServerSideEncryptionConfiguration": [
+                            {"ServerSideEncryptionByDefault": {"SSEAlgorithm": "UNENCRYPTED"}}
+                        ]
+                    }
+                },
+            }
+        }
+    }
+    cdk_out = tmp_path / "cdk.out"
+    cdk_out.mkdir()
+    (cdk_out / "mystack.template.json").write_text(json.dumps(template), encoding="utf-8")
+    findings = run_cf_rules(cdk_out)
+    assert any(f.id == "CF-S3-002" for f in findings)
 
 
 def test_rds_storage_encryption(tmp_path: Path) -> None:
