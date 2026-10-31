@@ -2,7 +2,7 @@ from __future__ import annotations
 from pathlib import Path
 from typing import List
 from aws_arch_agent.models import Finding
-from aws_arch_agent.rules.base import Rule, code_glob
+from aws_arch_agent.rules.base import Rule, cdk_bool_prop, code_glob
 from aws_arch_agent.rules.scope import findings_for_unmatched
 from aws_arch_agent.tools.rg import rg
 
@@ -16,7 +16,7 @@ class RdsMultiAzMissing(Rule):
     def run(self, repo_path: Path, language: str = "typescript") -> List[Finding]:
         rds_pat = r'new\s+rds\.(DatabaseInstance|DatabaseCluster)\(' if language == "typescript" else r'rds\.(DatabaseInstance|DatabaseCluster)\('
         rds = rg(repo_path, rds_pat, glob=code_glob(language))
-        maz = rg(repo_path, r"multi_az\s*[:=]\s*True|multiAz\s*:\s*true", glob=code_glob(language))
+        maz = rg(repo_path, cdk_bool_prop("multiAz"), glob=code_glob(language))
         return findings_for_unmatched(
             self,
             rds,
@@ -87,7 +87,7 @@ class DynamoDbPitrMissing(Rule):
     def run(self, repo_path: Path, language: str = "typescript") -> List[Finding]:
         ddb_pat = r'new\s+(dynamodb\.Table|Table)\(' if language == "typescript" else r'(dynamodb.Table|aws_dynamodb.Table)\('
         tables = rg(repo_path, ddb_pat, glob=code_glob(language))
-        pitr = rg(repo_path, r'point_in_time_recovery|pointInTimeRecovery\s*:\s*true', glob=code_glob(language))
+        pitr = rg(repo_path, cdk_bool_prop("pointInTimeRecovery"), glob=code_glob(language))
         out: List[Finding] = []
         if tables and not pitr:
             f, ln, txt = tables[0]
@@ -736,7 +736,7 @@ class RdsDeletionProtection(Rule):
     def run(self, repo_path: Path, language: str = "typescript") -> List[Finding]:
         rds_pat = r'new\s+rds\.(DatabaseInstance|DatabaseCluster)\(' if language == "typescript" else r'rds\.(DatabaseInstance|DatabaseCluster)\('
         dbs = rg(repo_path, rds_pat, glob=code_glob(language))
-        protection = rg(repo_path, r'deletionProtection\s*:\s*true|deletion_protection\s*:\s*True', glob=code_glob(language))
+        protection = rg(repo_path, cdk_bool_prop("deletionProtection"), glob=code_glob(language))
         out: List[Finding] = []
         if dbs and not protection:
             f, ln, txt = dbs[0]
@@ -762,7 +762,11 @@ class S3VersioningMissing(Rule):
     def run(self, repo_path: Path, language: str = "typescript") -> List[Finding]:
         bucket_pat = r'new\s+s3\.Bucket\(' if language == "typescript" else r's3\.Bucket\('
         buckets = rg(repo_path, bucket_pat, glob=code_glob(language))
-        versioning = rg(repo_path, r'versioned\s*:\s*true|versioning.*enabled|BucketVersioned', glob=code_glob(language))
+        versioning = rg(
+            repo_path,
+            cdk_bool_prop("versioned") + r"|versioning.*enabled|BucketVersioned",
+            glob=code_glob(language),
+        )
         out: List[Finding] = []
         if buckets and not versioning:
             f, ln, txt = buckets[0]
