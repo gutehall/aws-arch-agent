@@ -4,12 +4,16 @@
     "positive_ts": "export class Stack {};"
   },
   "BP-002": {
-    "negative_ts": "// clean compliant stack",
-    "positive_ts": "new lambda.Function(this, 'Fn', { environment: { PASSWORD: 'secret123456789' } });"
+    "negative_ts": "new lambda.Function(this, 'Fn', { environment: { NODE_ENV: 'prod' } });",
+    "positive_ts": "new lambda.Function(this, 'Fn', { environment: { PASSWORD: 'secret123456789' } });",
+    "negative_py": "environment={'NODE_ENV': 'prod'}",
+    "positive_py": "environment={'DB_PASSWORD': 'x'}"
   },
   "BP-003": {
-    "negative_ts": "MyAppDatabase",
-    "positive_ts": "new s3.Bucket(this, \"A\");\nnew s3.Bucket(this, \"B\");\nnew s3.Bucket(this, \"C\");\nnew s3.Bucket(this, \"D\");"
+    "negative_ts": "new s3.Bucket(this, \"A\");\nnew s3.Bucket(this, \"B\");\nnew s3.Bucket(this, \"C\");\nnew s3.Bucket(this, \"D\");",
+    "positive_ts": "bucketName: \"b\"",
+    "negative_py": "s3.Bucket(self, 'A')\ns3.Bucket(self, 'B')\ns3.Bucket(self, 'C')\ns3.Bucket(self, 'D')",
+    "positive_py": "bucket_name=\"b\""
   },
   "BP-004": {
     "negative_ts": "Aspects.of",
@@ -198,8 +202,10 @@
     "positive_ts": "new lambda.Function(this, \"Fn\", { runtime: lambda.Runtime.NODEJS_18_X, handler: \"index.handler\", code: lambda.Code.fromInline(\"x\") });"
   },
   "PERF-002": {
-    "negative_ts": "new cloudfront.Distribution(this, 'Cf')",
-    "positive_ts": "new s3.Bucket(this, \"B\");"
+    "negative_ts": "new s3.Bucket(this, \"B\");",
+    "positive_ts": "new apigateway.RestApi(this, \"Api\");",
+    "negative_py": "s3.Bucket(self, 'B')",
+    "positive_py": "aws_apigateway.RestApi(self, 'Api')"
   },
   "PERF-003": {
     "negative_ts": "// clean compliant stack",
