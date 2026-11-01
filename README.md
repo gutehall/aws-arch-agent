@@ -105,6 +105,7 @@ aws-arch-agent --repo . --fail-on high
 - Multi-agent LangGraph pipeline with 6 specialized reviewers
 - Catches resource-level issues (encryption, settings, etc.)
 - Best for: Comprehensive reviews, production deployments
+- Install with `pip install -e ".[v2]"`. A V1 `--no-llm` scan does not need LangGraph.
 
 ```bash
 # V1 - Fast static analysis
