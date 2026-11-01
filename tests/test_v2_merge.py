@@ -73,6 +73,27 @@ def test_v2_rag_included_in_pillar_prompt(tmp_path: Path) -> None:
     assert "Reference (RAG)" in prompts or "least privilege" in prompts
 
 
+def test_v2_builds_rag_once(tmp_path: Path) -> None:
+    """Collect loads RAG once. Pillars and merge retrieve from that instance."""
+    rag_doc = tmp_path / "waf.md"
+    rag_doc.write_text("# Security\nUse least privilege IAM.", encoding="utf-8")
+    (tmp_path / "package.json").write_text("{}", encoding="utf-8")
+    calls: list[Path] = []
+
+    def fake_get_rag(path: Path, **kwargs: object):
+        from aws_arch_agent.rag.simple import SimpleRAG
+
+        calls.append(path)
+        return SimpleRAG(path=path)
+
+    with patch("aws_arch_agent.rag.get_rag", side_effect=fake_get_rag):
+        report, _, _, _ = analyze_v2(
+            tmp_path, use_llm=False, skip_synth=True, rag_path=str(rag_doc)
+        )
+    assert calls == [rag_doc]
+    assert "least privilege" in report
+
+
 def test_merge_node_produces_merged_notes() -> None:
     state = {
         "use_llm": False,
