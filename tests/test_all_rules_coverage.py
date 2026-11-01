@@ -41,6 +41,7 @@ PROJECT_TOUCHED = frozenset({
     "SEC-001", "SEC-002", "SEC-003", "SEC-004", "SEC-007", "SEC-011", "SEC-012", "SEC-018", "SEC-064",
     "REL-001", "REL-008", "SEC-013", "SEC-014", "SEC-020", "SEC-023", "SEC-054",
     "OPS-003",
+    "BP-002", "BP-003", "PERF-002",
 })
 
 

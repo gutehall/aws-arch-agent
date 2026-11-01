@@ -4,7 +4,22 @@ from pathlib import Path
 from typing import List
 from aws_arch_agent.models import Finding
 from aws_arch_agent.rules.base import Rule, code_glob
+from aws_arch_agent.rules.scope import findings_for_unmatched
 from aws_arch_agent.tools.rg import rg
+
+# Request path that benefits from a cache. A bucket or queue does not.
+_CACHE_WORKLOAD = (
+    r"(?:aws_)?apigateway\.(?:RestApi|HttpApi|LambdaRestApi)\(|"
+    r"apigwv2\.HttpApi\(|(?:aws_)?apigatewayv2\.HttpApi\(|"
+    r"elbv2\.ApplicationLoadBalancer\(|"
+    r"aws_elasticloadbalancingv2\.ApplicationLoadBalancer\(|"
+    r"ApplicationLoadBalancedFargateService\("
+)
+_CACHE_LAYER = (
+    r"(?:aws_)?cloudfront\.Distribution|CloudFrontWebDistribution|"
+    r"(?:aws_)?elasticache\.|\bElastiCache\b|\bRedis\b|\bMemcached\b|"
+    r"cachingEnabled|cache_cluster_enabled|(?:aws_)?dax\.Cluster"
+)
 
 
 class GravitonNotUsed(Rule):
@@ -40,20 +55,15 @@ class CachingHint(Rule):
     severity = "Low"
 
     def run(self, repo_path: Path, language: str = "typescript") -> List[Finding]:
-        # Check for caching layers including DynamoDB (which can act as cache), CloudFront, ElastiCache, API Gateway caching
-        cache = rg(repo_path, r"CloudFront|Distribution|ElastiCache|Redis|Memcached|(dynamodb\.Table|Table)\(|api\.(RestApi|HttpApi)", glob=code_glob(language))
-        if not cache:
-            return [Finding(
-                id=self.id,
-                title=self.title,
-                severity="Low",
-                category=self.category,
-                file=None,
-                line=None,
-                evidence=None,
-                recommendation="Consider CloudFront, ElastiCache, DynamoDB, or API caching for latency and efficiency.",
-            )]
-        return []
+        glob = code_glob(language)
+        workloads = rg(repo_path, _CACHE_WORKLOAD, glob=glob)
+        caches = rg(repo_path, _CACHE_LAYER, glob=glob)
+        return findings_for_unmatched(
+            self,
+            workloads,
+            caches,
+            "This API or load balancer has no CloudFront, ElastiCache, API cache, or DAX.",
+        )
 
 
 class DynamoDbProvisionedCapacity(Rule):

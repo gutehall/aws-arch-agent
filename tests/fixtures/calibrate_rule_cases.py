@@ -45,7 +45,7 @@ KNOWN: dict[str, dict[str, str]] = {
     "OPS-002": {"positive_ts": 'new ec2.Vpc(this, "Vpc", { maxAzs: 2 });', "negative_ts": "new ec2.FlowLog(this, 'FL')"},
     "OPS-003": {"positive_ts": 'new apigateway.RestApi(this, "Api");', "negative_ts": "tracingEnabled: true"},
     "PERF-001": {"positive_ts": 'new lambda.Function(this, "Fn", { runtime: lambda.Runtime.NODEJS_18_X, handler: "index.handler", code: lambda.Code.fromInline("x") });', "negative_ts": "architecture: lambda.Architecture.ARM_64"},
-    "PERF-002": {"positive_ts": 'new s3.Bucket(this, "B");', "negative_ts": "new cloudfront.Distribution(this, 'Cf')"},
+    "PERF-002": {"positive_ts": 'new apigateway.RestApi(this, "Api");', "negative_ts": 'new s3.Bucket(this, "B");'},
     "SUST-001": {"positive_ts": 'new ecs.FargateService(this, "Svc", { cluster, taskDefinition });', "negative_ts": "capacityProviderStrategy"},
     "SUST-002": {"positive_ts": "new ec2.Instance(this, 'Inst', { instanceType: ec2.InstanceType.of(ec2.InstanceClass.T3, ec2.InstanceSize.MEDIUM), vpc, machineImage: ec2.MachineImage.latestAmazonLinux() });", "negative_ts": "// right-sized"},
 }
