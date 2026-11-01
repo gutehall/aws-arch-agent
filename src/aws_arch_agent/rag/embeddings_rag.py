@@ -41,6 +41,17 @@ class EmbeddingRAG:
         self._embeddings: List[List[float]] | None = None
         self._model = None
 
+    def ensure_chunk_embeddings(self) -> None:
+        """Embed document chunks once. Later retrieves only embed the query."""
+        if not self.chunks or self._embeddings is not None:
+            return
+        if self.provider == "openai":
+            embedded = self._get_embeddings_openai(self.chunks)
+            if len(embedded) == len(self.chunks):
+                self._embeddings = embedded
+            return
+        self._get_embeddings_sentence_transformers()
+
     def _get_embeddings_sentence_transformers(self) -> List[List[float]]:
         try:
             from sentence_transformers import SentenceTransformer  # type: ignore
@@ -87,11 +98,12 @@ class EmbeddingRAG:
         q_vec: List[float]
         chunk_embs: List[List[float]]
         if self.provider == "openai":
+            self.ensure_chunk_embeddings()
+            chunk_embs = self._embeddings or []
+            if len(chunk_embs) != len(self.chunks):
+                return self._fallback_keyword(query, k)
             query_emb = self._get_embeddings_openai([query])
             if not query_emb:
-                return self._fallback_keyword(query, k)
-            chunk_embs = self._get_embeddings_openai(self.chunks)
-            if len(chunk_embs) != len(self.chunks):
                 return self._fallback_keyword(query, k)
             q_vec = query_emb[0]
         else:
