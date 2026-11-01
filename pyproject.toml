@@ -31,12 +31,13 @@ dependencies = [
   "requests>=2.32.0",
   "python-dotenv>=1.0.1",
   "PyYAML>=6.0",
-  # V2 (advanced)
-  "langgraph>=0.2.0",
-  "langchain-core>=0.3.0",
 ]
 
 [project.optional-dependencies]
+v2 = [
+  "langgraph>=0.2.0",
+  "langchain-core>=0.3.0",
+]
 cloud = [
   "openai>=1.40.0",
   "anthropic>=0.34.0",
@@ -51,6 +52,8 @@ dev = [
   "mypy>=1.11.0",
   "types-requests>=2.32.0",
   "types-PyYAML>=6.0",
+  "langgraph>=0.2.0",
+  "langchain-core>=0.3.0",
 ]
 
 [project.scripts]

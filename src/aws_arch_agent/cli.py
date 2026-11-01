@@ -10,7 +10,6 @@ from rich.console import Console
 from rich.panel import Panel
 
 from aws_arch_agent.agent.v1 import analyze_v1
-from aws_arch_agent.agent.v2_graph import analyze_v2
 from aws_arch_agent.baseline import (
     DEFAULT_BASELINE_NAME,
     BaselineError,
@@ -119,7 +118,7 @@ def _mark_baselined(
 
 
 def _fail(message: str) -> NoReturn:
-    console.print(f"[red]{message}[/red]")
+    console.print(message, style="red", markup=False)
     raise typer.Exit(code=1)
 
 
@@ -189,6 +188,15 @@ def analyze(
             accepted_before = load_baseline(baseline_path)
         except BaselineError as exc:
             _fail(str(exc))
+
+    if mode_value == "v2":
+        try:
+            from aws_arch_agent.agent.v2_graph import analyze_v2
+        except ImportError as exc:
+            _fail(
+                "V2 mode requires the v2 extra: pip install 'aws-arch-agent[v2]'. "
+                f"({exc})"
+            )
 
     console.print(Panel.fit(
         f"[bold]Analyzing[/bold] {repo_path}\nMode: {mode_value} | Format: {cfg.format} | LLM: {'off' if cfg.no_llm else 'on'}",

@@ -42,13 +42,16 @@ def render_sarif(ctx: RepoContext, findings: list[Finding], warnings: list[str] 
                 "locations": [_location(f)],
             }
         )
-
-    run: dict[str, Any] = {
-        "tool": {"driver": {"name": "aws-arch-agent", "rules": list(rules.values())}},
-        "results": results,
-        "automationDetails": {"description": {"text": f"Scan of {ctx.repo_path}"}},
-    }
     if warnings:
+        rules["AWS-ARCH-AGENT-WARNING"] = {
+            "id": "AWS-ARCH-AGENT-WARNING",
+            "name": "AWS-ARCH-AGENT-WARNING",
+            "shortDescription": {"text": "Scan check failed"},
+            "fullDescription": {
+                "text": "A rule, template read, or cdk synth step failed. The result message is the warning."
+            },
+            "defaultConfiguration": {"level": "warning"},
+        }
         for w in warnings:
             results.append(
                 {
@@ -58,6 +61,12 @@ def render_sarif(ctx: RepoContext, findings: list[Finding], warnings: list[str] 
                     "locations": [{"physicalLocation": {"artifactLocation": {"uri": ctx.repo_path}}}],
                 }
             )
+
+    run: dict[str, Any] = {
+        "tool": {"driver": {"name": "aws-arch-agent", "rules": list(rules.values())}},
+        "results": results,
+        "automationDetails": {"description": {"text": f"Scan of {ctx.repo_path}"}},
+    }
 
     doc = {
         "$schema": "https://raw.githubusercontent.com/oasis-tcs/sarif-spec/master/Schemata/sarif-schema-2.1.0.json",
