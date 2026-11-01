@@ -55,6 +55,7 @@ class State(TypedDict, total=False):
     rag_use_embeddings: bool
     rag_embedding_provider: str
     rag_embedding_model: str
+    rag: object
     synth_ok: bool
     synth_stdout: str
     synth_stderr: str
@@ -85,10 +86,11 @@ def _findings_hash(findings: List[Finding], synth_summary: str, role: str) -> st
     return hashlib.sha256(json.dumps(payload, sort_keys=True).encode()).hexdigest()
 
 
-def _load_rag_block(state: State, query: str | None = None) -> str:
+def _build_rag(state: State) -> object | None:
+    """Load the RAG doc once. Pillars and merge reuse this instance."""
     rag_path = state.get("rag_path")
     if not rag_path:
-        return ""
+        return None
     try:
         from aws_arch_agent.rag import get_rag
 
@@ -101,10 +103,26 @@ def _load_rag_block(state: State, query: str | None = None) -> str:
             embedding_provider=provider,
             embedding_model=model,
         )
-        q = query or "operational excellence security reliability performance cost sustainability"
-        return "\n\n## Reference (RAG)\n" + rag.retrieve(q, k=3)
+        warm = getattr(rag, "ensure_chunk_embeddings", None)
+        if warm is not None:
+            warm()
+        return rag
     except Exception as e:
-        logger.warning("RAG load or retrieve failed for %s: %s", rag_path, e)
+        logger.warning("RAG load failed for %s: %s", rag_path, e)
+        return None
+
+
+def _rag_block(state: State, query: str | None = None) -> str:
+    rag = state.get("rag")
+    retrieve = getattr(rag, "retrieve", None)
+    if retrieve is None:
+        return ""
+    try:
+        q = query or "operational excellence security reliability performance cost sustainability"
+        text = str(retrieve(q, k=3))
+        return "\n\n## Reference (RAG)\n" + text
+    except Exception as e:
+        logger.warning("RAG retrieve failed: %s", e)
         return ""
 
 
@@ -172,7 +190,12 @@ def node_collect(state: State) -> State:
         findings, warnings = run_all_rules(repo_path, rules, _languages_to_scan(language))
     findings = filter_by_severity(findings, state.get("severity_threshold"))
 
-    return {"ctx": ctx, "raw_findings": findings, "rule_warnings": warnings}
+    return {
+        "ctx": ctx,
+        "raw_findings": findings,
+        "rule_warnings": warnings,
+        "rag": _build_rag(state),
+    }
 
 
 def _note(warnings: list[str], message: str) -> None:
@@ -324,7 +347,7 @@ def _pillar_node(role: str, state_key: str):
         llm_mode = state.get("llm_mode", "full")
         findings = state.get("raw_findings", [])
         synth_summary = state.get("synth_summary", "")
-        rag_block = _load_rag_block(state, query=f"{role} AWS Well-Architected best practices")
+        rag_block = _rag_block(state, query=f"{role} AWS Well-Architected best practices")
         if llm_mode == "compact":
             categories = PILLAR_CATEGORIES.get(role, [role])
             rel = [f for f in findings if f.category.lower() in [c.lower() for c in categories]]
@@ -353,7 +376,7 @@ node_sustainability = _pillar_node("Sustainability", "sustainability_notes")
 def node_merge(state: State) -> State:
     use_llm = state.get("use_llm", True)
     llm_mode = state.get("llm_mode", "full")
-    rag_block = _load_rag_block(state)
+    rag_block = _rag_block(state)
     findings = state.get("raw_findings", [])
     synth_summary = state.get("synth_summary", "")
 
