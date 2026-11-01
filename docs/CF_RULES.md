@@ -145,7 +145,7 @@ These rules run on your CDK TypeScript/Python code and execute in both V1 and V2
 - REL-030: RDS deletion protection not enabled
 - REL-031: S3 bucket versioning not enabled
 
-### Operational Excellence (25 rules)
+### Operational Excellence (24 rules)
 
 **Logging:**
 - OPS-001: CloudTrail not enabled
@@ -287,7 +287,7 @@ CloudFormation template rules run in V2 when the agent has access to template fi
 - **Security groups**: CF-SG-001 (0.0.0.0/0 or ::/0 on sensitive ports)
 - **CloudWatch Logs**: CF-CW-001 (no retention), CF-CW-002 (no KMS)
 - **SQS**: CF-SQS-001 (encryption not configured), CF-SQS-002 (no redrive/DLQ)
-- **API Gateway**: CF-APIGW-001 (access logging), CF-APIGW-002 (X-Ray tracing)
+- **API Gateway**: CF-APIGW-001 (REST access logging), CF-APIGW-002 (REST X-Ray), CF-APIGW-V2-001 (HTTP API access logging), CF-APIGW-V2-002 (HTTP API X-Ray)
 - **Auto Scaling**: CF-SUST-001 (no Spot / mixed instances)
 - **ECS**: CF-SUST-002 (Fargate without FARGATE_SPOT)
 - **EC2**: CF-PERF-004 (large instance right-sizing)
@@ -305,10 +305,10 @@ CloudFormation template rules run in V2 when the agent has access to template fi
 | Performance Efficiency | CF-PERF-001, CF-PERF-002, CF-PERF-003, CF-PERF-004 |
 | Cost Optimization | CF-CW-001, CF-COST-002 |
 | Sustainability | CF-SUST-001, CF-SUST-002, CF-SUST-003 |
-| Observability (reported under Operational Excellence) | CF-ALB-001, CF-LAM-002, CF-APIGW-001, CF-APIGW-002 |
+| Observability (reported under Operational Excellence) | CF-ALB-001, CF-LAM-002, CF-APIGW-001, CF-APIGW-002, CF-APIGW-V2-001, CF-APIGW-V2-002 |
 | Best Practices | CF-VPC-001 |
 
 ## See also
 
-- [REFERENCE.md](REFERENCE.md) — CLI options and static (code) rule IDs (OPS-001, SEC-001, etc.).
+- [REFERENCE.md](REFERENCE.md) — CLI options. Static and CloudFormation rule IDs are listed above.
 - [CONFIG.md](CONFIG.md) — `templates` and `no_synth` config keys for V2.
