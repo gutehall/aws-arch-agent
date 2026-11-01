@@ -66,6 +66,40 @@ def test_get_rag_embedding_when_requested(tmp_path: Path) -> None:
     assert out
 
 
+def test_openai_chunk_embeddings_cached(tmp_path: Path, monkeypatch) -> None:
+    """Chunk vectors are embedded once. Each retrieve only embeds its query."""
+    import sys
+    from types import ModuleType, SimpleNamespace
+
+    doc = tmp_path / "doc.md"
+    doc.write_text("## Security\nleast privilege\n\n## Cost\nright size instances\n", encoding="utf-8")
+    calls: list[list[str]] = []
+
+    class _Embeddings:
+        def create(self, model: str, input: list[str]):
+            calls.append(list(input))
+            data = [SimpleNamespace(embedding=[float(len(text)), 1.0]) for text in input]
+            return SimpleNamespace(data=data)
+
+    class _OpenAI:
+        def __init__(self, api_key: str | None = None) -> None:
+            self.embeddings = _Embeddings()
+
+    fake = ModuleType("openai")
+    fake.OpenAI = _OpenAI  # type: ignore[attr-defined]
+    monkeypatch.setitem(sys.modules, "openai", fake)
+    monkeypatch.setenv("OPENAI_API_KEY", "test-key")
+
+    rag = EmbeddingRAG(path=doc, provider="openai")
+    assert len(rag.chunks) > 1
+    first = rag.retrieve("security", k=1)
+    second = rag.retrieve("cost", k=1)
+    chunk_calls = [batch for batch in calls if len(batch) == len(rag.chunks)]
+    assert len(chunk_calls) == 1
+    assert len(calls) == 3
+    assert first and second
+
+
 def test_embedding_rag_fallback_keyword(tmp_path: Path) -> None:
     """EmbeddingRAG with provider that fails to load falls back to keyword retrieval."""
     (tmp_path / "doc.md").write_text("## Security\nUse IAM least privilege.", encoding="utf-8")
