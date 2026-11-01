@@ -22,7 +22,7 @@ AWS Arch Agent reviews your CDK code against **169 rules** across the six AWS We
 |--------|-------|----------|
 | **Security** | 65 | Encryption missing, public access, hardcoded secrets, MFA not enabled |
 | **Reliability** | 31 | Missing DLQs, no backups, single-AZ deployments, no health checks |
-| **Operational Excellence** | 25 | No logging, missing alarms, no monitoring, no observability |
+| **Operational Excellence** | 24 | No logging, missing alarms, no monitoring, no observability |
 | **Performance Efficiency** | 19 | No caching, wrong instance sizes, ARM not used, no CDN |
 | **Cost Optimization** | 18 | No autoscaling, oversized resources, NAT costs, no lifecycle policies |
 | **Sustainability** | 7 | Spot instances not used, right-sizing opportunities |

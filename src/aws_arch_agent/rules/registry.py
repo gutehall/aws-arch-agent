@@ -190,7 +190,7 @@ ALL_RULES = [
     ResourceNamingConvention(),
     CdkAspectsMissing(),
     CdkContextMissing(),
-    # Operational Excellence (20 rules)
+    # Operational Excellence (24 rules)
     CloudTrailMissing(),
     VpcFlowLogsMissing(),
     XRayTracingMissing(),
