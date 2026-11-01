@@ -7,7 +7,11 @@ from aws_arch_agent.rules.security import (
     LambdaFunctionUrlAuth,
     RdsPubliclyAccessible,
 )
-from aws_arch_agent.rules.best_practices import MissingStandardTags
+from aws_arch_agent.rules.best_practices import (
+    MissingStandardTags,
+    ResourceNamingConvention,
+    SecretsInEnvVars,
+)
 from aws_arch_agent.rules.reliability import (
     RdsMultiAzMissing,
     BackupRetentionMissing,
@@ -219,16 +223,81 @@ def test_graviton_not_used_ts(tmp_path: Path) -> None:
     assert findings[0].id == "PERF-001"
 
 
-def test_caching_hint_no_cache_ts(tmp_path: Path) -> None:
+def test_caching_hint_api_without_cache_ts(tmp_path: Path) -> None:
+    (tmp_path / "lib").mkdir()
+    (tmp_path / "lib" / "stack.ts").write_text(
+        'new apigateway.RestApi(this, "Api");',
+        encoding="utf-8",
+    )
+    findings = CachingHint().run(tmp_path, "typescript")
+    assert any(finding.id == "PERF-002" for finding in findings)
+
+
+def test_caching_hint_ignores_stack_that_does_not_serve_requests(tmp_path: Path) -> None:
     (tmp_path / "lib").mkdir()
     (tmp_path / "lib" / "stack.ts").write_text(
         'new s3.Bucket(this, "B");',
         encoding="utf-8",
     )
-    rule = CachingHint()
-    findings = rule.run(tmp_path, "typescript")
-    assert len(findings) >= 1
-    assert findings[0].id == "PERF-002"
+    assert CachingHint().run(tmp_path, "typescript") == []
+
+
+def test_caching_hint_suppressed_by_cloudfront_in_the_same_file(tmp_path: Path) -> None:
+    (tmp_path / "lib").mkdir()
+    (tmp_path / "lib" / "stack.ts").write_text(
+        'new apigateway.RestApi(this, "Api");\nnew cloudfront.Distribution(this, "Cf");\n',
+        encoding="utf-8",
+    )
+    assert CachingHint().run(tmp_path, "typescript") == []
+
+
+def test_secrets_in_env_requires_secret_like_key(tmp_path: Path) -> None:
+    (tmp_path / "lib").mkdir()
+    stack = tmp_path / "lib" / "stack.ts"
+    stack.write_text(
+        'new lambda.Function(this, "Fn", { environment: { NODE_ENV: "prod" } });\n',
+        encoding="utf-8",
+    )
+    assert SecretsInEnvVars().run(tmp_path, "typescript") == []
+    stack.write_text(
+        'new lambda.Function(this, "Fn", { environment: { securityTokenPASSWORD: "x" } });\n',
+        encoding="utf-8",
+    )
+    assert SecretsInEnvVars().run(tmp_path, "typescript") == []
+    stack.write_text(
+        "new lambda.Function(this, 'Fn', { environment: { PASSWORD: 'secret123456789' } });\n",
+        encoding="utf-8",
+    )
+    findings = SecretsInEnvVars().run(tmp_path, "typescript")
+    assert any(finding.id == "BP-002" for finding in findings)
+
+
+def test_secrets_in_env_suppressed_by_secrets_manager_in_the_same_file(tmp_path: Path) -> None:
+    (tmp_path / "lib").mkdir()
+    (tmp_path / "lib" / "stack.ts").write_text(
+        "environment: { DB_PASSWORD: secret.secretValue.unsafeUnwrap() }\n"
+        "new secretsmanager.Secret(this, 'DbSecret');\n",
+        encoding="utf-8",
+    )
+    assert SecretsInEnvVars().run(tmp_path, "typescript") == []
+
+
+def test_resource_naming_ignores_short_construct_ids(tmp_path: Path) -> None:
+    (tmp_path / "lib").mkdir()
+    (tmp_path / "lib" / "stack.ts").write_text(
+        'new s3.Bucket(this, "A");\n'
+        'new s3.Bucket(this, "B");\n'
+        'new s3.Bucket(this, "C");\n'
+        'new s3.Bucket(this, "D");\n',
+        encoding="utf-8",
+    )
+    assert ResourceNamingConvention().run(tmp_path, "typescript") == []
+
+
+def test_resource_naming_flags_short_physical_name(tmp_path: Path) -> None:
+    (tmp_path / "app.py").write_text('bucket_name="b"\n', encoding="utf-8")
+    findings = ResourceNamingConvention().run(tmp_path, "python")
+    assert any(finding.id == "BP-003" for finding in findings)
 
 
 # --- Sustainability (SUST-001, SUST-002) ---
