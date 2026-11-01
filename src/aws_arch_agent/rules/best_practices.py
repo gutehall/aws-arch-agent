@@ -3,7 +3,26 @@ from pathlib import Path
 from typing import List
 from aws_arch_agent.models import Finding
 from aws_arch_agent.rules.base import Rule, code_glob
+from aws_arch_agent.rules.scope import findings_for_unmatched
+from aws_arch_agent.tools.paths import normalize_rel_path
 from aws_arch_agent.tools.rg import rg
+
+# A plain environment block is not a secret. The key has to look like one.
+_ENV_BLOCK = r"environment\s*[:=]\s*\{"
+_SECRET_ENV_KEY = (
+    "(?<![A-Z0-9_])"
+    "['\"]?"
+    "(?:[A-Z][A-Z0-9_]*_)?"
+    "(?:PASSWORD|SECRET|TOKEN|API_KEY|PRIVATE_KEY|ACCESS_KEY)"
+    "['\"]?"
+    r"\s*[:=]"
+)
+_SECRETS_MANAGER = r"secretsmanager\.Secret|Secret\.fromSecretAttributes|Secret\.from_secret"
+# Physical name properties. A short construct id is not a name.
+_SHORT_PHYSICAL_NAME = (
+    r"(?:bucket|function|table|queue|topic|role|stream|repository|cluster|log_?[Gg]roup)"
+    r"_?[Nn]ame\s*[:=]\s*[\"'][A-Za-z0-9]{1,2}[\"']"
+)
 
 
 class MissingStandardTags(Rule):
@@ -37,23 +56,23 @@ class SecretsInEnvVars(Rule):
     severity = "Low"
 
     def run(self, repo_path: Path, language: str = "typescript") -> List[Finding]:
-        # Check if environment variables are used without Secrets Manager
-        env_vars = rg(repo_path, r'environment\s*:\s*\{', glob=code_glob(language))
-        secrets_mgr = rg(repo_path, r'secretsmanager\.Secret|Secret\.fromSecretAttributes', glob=code_glob(language))
-        out: List[Finding] = []
-        if env_vars and not secrets_mgr:
-            f, ln, txt = env_vars[0]
-            out.append(Finding(
-                id=self.id,
-                title=self.title,
-                severity="Low",
-                category=self.category,
-                file=f,
-                line=ln,
-                evidence=txt[:100],
-                recommendation="For sensitive configuration, use AWS Secrets Manager or Systems Manager Parameter Store instead of environment variables",
-            ))
-        return out
+        glob = code_glob(language)
+        env_files = {
+            normalize_rel_path(path) or path
+            for path, _line, _text in rg(repo_path, _ENV_BLOCK, glob=glob)
+        }
+        secret_keys = [
+            hit
+            for hit in rg(repo_path, _SECRET_ENV_KEY, glob=glob)
+            if (normalize_rel_path(hit[0]) or hit[0]) in env_files
+        ]
+        secrets_mgr = rg(repo_path, _SECRETS_MANAGER, glob=glob)
+        return findings_for_unmatched(
+            self,
+            secret_keys,
+            secrets_mgr,
+            "For sensitive configuration, use AWS Secrets Manager or Systems Manager Parameter Store instead of environment variables",
+        )
 
 
 class ResourceNamingConvention(Rule):
@@ -63,21 +82,23 @@ class ResourceNamingConvention(Rule):
     severity = "Low"
 
     def run(self, repo_path: Path, language: str = "typescript") -> List[Finding]:
-        # Heuristic: very short or generic resource IDs
-        short_ids = rg(repo_path, r'"[A-Za-z]{1,2}"\s*[,\)]|"\d+"\s*[,\)]', glob=code_glob(language))
-        out: List[Finding] = []
-        if len(short_ids) > 3:
-            return [Finding(
+        short_names = rg(repo_path, _SHORT_PHYSICAL_NAME, glob=code_glob(language))
+        return [
+            Finding(
                 id=self.id,
                 title=self.title,
                 severity="Low",
                 category=self.category,
-                file=None,
-                line=None,
-                evidence=None,
-                recommendation="Use descriptive resource IDs (e.g., MyAppDatabase, ApiGatewayProd) for easier management.",
-            )]
-        return out
+                file=path,
+                line=line,
+                evidence=text,
+                recommendation=(
+                    "Use a descriptive physical name (bucketName, functionName, tableName). "
+                    "A short CDK construct id is not a naming-convention finding."
+                ),
+            )
+            for path, line, text in short_names
+        ]
 
 
 class CdkAspectsMissing(Rule):
