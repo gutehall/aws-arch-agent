@@ -1,5 +1,8 @@
 """Tests for CLI entrypoint and analyze command."""
 import json
+import os
+import subprocess
+import sys
 from pathlib import Path
 
 from typer.testing import CliRunner
@@ -41,6 +44,87 @@ def test_analyze_json_format(tmp_path: Path) -> None:
     assert "context" in data
     assert "findings" in data
     assert "repo_path" in data["context"]
+
+
+def test_analyze_sarif_format(tmp_path: Path) -> None:
+    """--format sarif writes SARIF and registers each result rule on the driver."""
+    _high_finding_repo(tmp_path)
+    out_file = tmp_path / "report.sarif"
+    result = runner.invoke(
+        app,
+        [
+            "--repo",
+            str(tmp_path),
+            "--no-llm",
+            "--format",
+            "sarif",
+            "--fail-on",
+            "none",
+            "--out",
+            str(out_file),
+        ],
+    )
+    assert result.exit_code == 0, result.output or result.stderr
+    data = json.loads(out_file.read_text(encoding="utf-8"))
+    assert data["version"] == "2.1.0"
+    run = data["runs"][0]
+    assert any(item["ruleId"] == "SEC-001" for item in run["results"])
+    assert any(rule["id"] == "SEC-001" for rule in run["tool"]["driver"]["rules"])
+
+
+_BLOCK_LANGGRAPH = """
+import sys
+from importlib.abc import MetaPathFinder
+
+class _Block(MetaPathFinder):
+    def find_spec(self, fullname, path, target=None):
+        root = fullname.split(".", 1)[0]
+        if root in {"langgraph", "langchain_core"}:
+            raise ImportError(fullname)
+        return None
+
+sys.meta_path.insert(0, _Block())
+"""
+
+
+def _run_without_langgraph(tmp_path: Path, mode: str) -> subprocess.CompletedProcess[str]:
+    repo = Path(__file__).resolve().parents[1]
+    out_file = tmp_path / "report.md"
+    script = tmp_path / "run_scan.py"
+    script.write_text(
+        _BLOCK_LANGGRAPH
+        + (
+            "sys.argv = ['aws-arch-agent', '--repo', sys.argv[1], '--mode', sys.argv[2], "
+            "'--no-llm', '--no-synth', '--fail-on', 'none', '--out', sys.argv[3]]\n"
+            "from aws_arch_agent.cli import app\n"
+            "app()\n"
+        ),
+        encoding="utf-8",
+    )
+    env = os.environ.copy()
+    env["PYTHONPATH"] = str(repo / "src")
+    return subprocess.run(
+        [sys.executable, str(script), str(tmp_path), mode, str(out_file)],
+        cwd=repo,
+        env=env,
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+
+
+def test_v1_scan_does_not_import_langgraph(tmp_path: Path) -> None:
+    _make_repo(tmp_path)
+    result = _run_without_langgraph(tmp_path, "v1")
+    assert result.returncode == 0, result.stdout + result.stderr
+    assert (tmp_path / "report.md").is_file()
+
+
+def test_v2_without_langgraph_names_the_extra(tmp_path: Path) -> None:
+    _make_repo(tmp_path)
+    result = _run_without_langgraph(tmp_path, "v2")
+    assert result.returncode != 0
+    assert "aws-arch-agent[v2]" in result.stdout + result.stderr
 
 
 def test_analyze_fail_on_high_exit_code(tmp_path: Path) -> None:

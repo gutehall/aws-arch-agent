@@ -17,3 +17,6 @@ def test_render_sarif_valid_json() -> None:
     results = data["runs"][0]["results"]
     assert any(r["ruleId"] == "SEC-001" for r in results)
     assert any(r["ruleId"] == "AWS-ARCH-AGENT-WARNING" for r in results)
+    driver_rules = data["runs"][0]["tool"]["driver"]["rules"]
+    assert any(rule["id"] == "AWS-ARCH-AGENT-WARNING" for rule in driver_rules)
+    assert any(rule["id"] == "SEC-001" for rule in driver_rules)
