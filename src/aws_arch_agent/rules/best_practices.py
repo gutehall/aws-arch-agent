@@ -10,7 +10,7 @@ from aws_arch_agent.tools.rg import rg
 # A plain environment block is not a secret. The key has to look like one.
 _ENV_BLOCK = r"environment\s*[:=]\s*\{"
 _SECRET_ENV_KEY = (
-    "(?<![A-Z0-9_])"
+    "(?<![A-Za-z0-9])"
     "['\"]?"
     "(?:[A-Z][A-Z0-9_]*_)?"
     "(?:PASSWORD|SECRET|TOKEN|API_KEY|PRIVATE_KEY|ACCESS_KEY)"

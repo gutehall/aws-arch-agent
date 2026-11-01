@@ -260,6 +260,11 @@ def test_secrets_in_env_requires_secret_like_key(tmp_path: Path) -> None:
     )
     assert SecretsInEnvVars().run(tmp_path, "typescript") == []
     stack.write_text(
+        'new lambda.Function(this, "Fn", { environment: { securityTokenPASSWORD: "x" } });\n',
+        encoding="utf-8",
+    )
+    assert SecretsInEnvVars().run(tmp_path, "typescript") == []
+    stack.write_text(
         "new lambda.Function(this, 'Fn', { environment: { PASSWORD: 'secret123456789' } });\n",
         encoding="utf-8",
     )
