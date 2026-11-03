@@ -141,3 +141,45 @@ def test_cli_default_v1_reports_template_findings(tmp_path: Path) -> None:
     data = json.loads(out.read_text())
     assert data["context"]["source"] == "cloudformation"
     assert any(f["id"] == "CF-S3-001" for f in data["findings"])
+
+
+def test_discovery_skips_symlinked_dirs(tmp_path: Path) -> None:
+    _cf_repo(tmp_path)
+    (tmp_path / "templates" / "loop").symlink_to(tmp_path, target_is_directory=True)
+    found = list_templates_from_path(tmp_path, real_only=True)
+    assert [p.relative_to(tmp_path).as_posix() for p in found] == ["templates/data.yaml"]
+
+
+def test_json_template_with_tabs_in_template_suffix(tmp_path: Path) -> None:
+    path = tmp_path / "stack.template"
+    path.write_text(
+        '{\n\t"Resources": {\n\t\t"B": {"Type": "AWS::S3::Bucket"}\n\t}\n}\n', encoding="utf-8"
+    )
+    warnings: list[str] = []
+    findings = run_cf_rules_from_paths([path], repo_path=tmp_path, warnings=warnings)
+    assert warnings == []
+    assert any(f.id == "CF-S3-001" for f in findings)
+
+
+def test_intrinsic_lambda_architectures_do_not_break_checks(tmp_path: Path) -> None:
+    path = tmp_path / "fn.yaml"
+    path.write_text(
+        """Conditions:
+  UseArm: !Equals [!Ref Arch, arm64]
+Resources:
+  FnIf:
+    Type: AWS::Lambda::Function
+    Properties:
+      Architectures: !If [UseArm, [arm64], [x86_64]]
+  FnRef:
+    Type: AWS::Lambda::Function
+    Properties:
+      Architectures: [!Ref Arch]
+""",
+        encoding="utf-8",
+    )
+    warnings: list[str] = []
+    findings = run_cf_rules_from_paths([path], repo_path=tmp_path, warnings=warnings)
+    assert warnings == []
+    assert not any(f.id == "CF-PERF-001" for f in findings)
+    assert any(f.id == "CF-LAM-002" for f in findings)

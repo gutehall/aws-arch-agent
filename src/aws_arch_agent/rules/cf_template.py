@@ -452,7 +452,9 @@ def _run_cf_rules_on_template(
                     archs = props.get("Architectures") or []
                     if isinstance(archs, str):
                         archs = [archs]
-                    if "arm64" not in [a.lower() for a in archs]:
+                    # An intrinsic (!If, !Ref) decides the arch at deploy time: no finding.
+                    arch_known = isinstance(archs, list) and all(isinstance(a, str) for a in archs)
+                    if arch_known and "arm64" not in [a.lower() for a in archs]:
                         findings.append(Finding(
                             id="CF-PERF-001",
                             title="Lambda function does not use ARM64 (Graviton)",

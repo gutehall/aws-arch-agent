@@ -94,7 +94,12 @@ def _discover_real_templates(root: Path) -> List[Path]:
             continue
         for entry in entries:
             if entry.is_dir():
-                if entry.name not in DEFAULT_EXCLUDES and not entry.name.startswith("."):
+                # Symlinked dirs are skipped: a link loop would never end.
+                if (
+                    not entry.is_symlink()
+                    and entry.name not in DEFAULT_EXCLUDES
+                    and not entry.name.startswith(".")
+                ):
                     stack.append(entry)
             elif entry.is_file() and is_cf_template(entry):
                 out.append(entry)

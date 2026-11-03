@@ -54,6 +54,12 @@ def parse_template_text(path: Path, text: str) -> Any:
     """Parse template text by suffix: JSON for .json, CloudFormation YAML otherwise."""
     if path.suffix.lower() == ".json":
         return json.loads(text)
+    if text.lstrip().startswith("{"):
+        # JSON in a .template file; PyYAML rejects tab indentation that JSON allows.
+        try:
+            return json.loads(text)
+        except ValueError:
+            pass
     return load_cfn_yaml(text)
 
 
@@ -70,7 +76,7 @@ def is_cf_template(path: Path) -> bool:
         return False
     try:
         doc = parse_template_text(path, text)
-    except (ValueError, yaml.YAMLError):
+    except Exception:  # noqa: BLE001 - any parse failure means "not readable as a template"
         # Unparseable (e.g. truncated): fall back to a top-level version key.
         return bool(_CF_VERSION_KEY.search(text))
     if not isinstance(doc, dict):

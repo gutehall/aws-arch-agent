@@ -243,8 +243,10 @@ TEMPLATE_SOURCES = frozenset({"cloudformation", "mixed"})
 
 def discover_templates(repo_path: Path, files: list[Path]) -> list[Path]:
     """Real CloudFormation templates in the repo, limited to the files walked (--max-files)."""
-    walked = {p.resolve() for p in files}
-    return [p for p in list_templates_from_path(repo_path, real_only=True) if p.resolve() in walked]
+    found: list[Path] = []
+    for path in files:
+        found.extend(list_templates_from_path(path, real_only=True))
+    return sorted(found)
 
 
 def _scan_templates(
