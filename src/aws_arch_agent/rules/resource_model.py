@@ -55,6 +55,8 @@ class Resource:
     source_type: the type as written in the source (e.g. "AWS::S3::Bucket").
     malformed: why the properties could not be read (they are then empty). The resource
     still counts for template-level checks; per-resource checks skip it with a warning.
+    unresolved: property names whose value depends on input the scan cannot see
+    (Terraform var.* / local.*). Checks that read them report nothing.
     """
 
     type: str | None
@@ -64,6 +66,7 @@ class Resource:
     line: int | None = None
     source_type: str = ""
     malformed: str | None = None
+    unresolved: frozenset[str] = frozenset()
 
 
 def resources_from_cf_template(
