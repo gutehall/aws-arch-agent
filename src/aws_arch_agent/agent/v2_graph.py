@@ -17,6 +17,7 @@ from aws_arch_agent.agent.v1 import (
 )
 from aws_arch_agent.tools.files import iter_files
 from aws_arch_agent.tools.llm import LLMClient
+from aws_arch_agent.rules.fix_snippets import attach_fixes
 from aws_arch_agent.rules.registry import ALL_RULES
 from aws_arch_agent.rules.runner import filter_by_severity, run_all_rules
 from aws_arch_agent.report.markdown import render_markdown
@@ -173,6 +174,14 @@ CloudFormation synth summary:
     return result
 
 
+def _parts_under(path: Path, root: Path) -> tuple[str, ...]:
+    """Path parts below root (all parts when path is outside it)."""
+    try:
+        return path.resolve().relative_to(root.resolve()).parts
+    except ValueError:
+        return path.parts
+
+
 def node_collect(state: State) -> State:
     repo_path = Path(state["repo_path"])
     max_files = state.get("max_files") or 400
@@ -251,6 +260,9 @@ def node_synth(state: State) -> State:
             cf_findings = run_cf_rules_from_paths(
                 template_paths, repo_path=repo_path, warnings=cf_warnings
             )
+            # --templates points at templates the user edits; synth output (cdk.out) keeps CDK hints.
+            if not any("cdk.out" in _parts_under(p, repo_path) for p in template_paths):
+                attach_fixes(cf_findings, "cloudformation")
             out_findings.extend(cf_findings)
             out_findings = drop_static_covered_by_cf(out_findings)
         except Exception as exc:
