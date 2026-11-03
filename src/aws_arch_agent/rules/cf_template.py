@@ -129,6 +129,46 @@ _PER_RESOURCE_TYPES = frozenset({
 })
 
 
+# Properties each per-resource check reads. A finding is dropped when any of them is unresolved.
+CHECK_PROPERTIES: dict[str, frozenset[str]] = {
+    check_id: frozenset(props) for check_id, props in {
+        "CF-S3-001": {"PublicAccessBlockConfiguration"},
+        "CF-S3-002": {"BucketEncryption"},
+        "CF-S3-003": {"VersioningConfiguration"},
+        "CF-S3-004": {"LoggingConfiguration"},
+        "CF-RDS-001": {"StorageEncrypted", "DBClusterIdentifier"},
+        "CF-RDS-002": {"BackupRetentionPeriod", "DBClusterIdentifier"},
+        "CF-RDS-003": {"MultiAZ", "DBClusterIdentifier"},
+        "CF-RDS-005": {"DeletionProtection", "DBClusterIdentifier"},
+        "CF-RDS-004": {"PubliclyAccessible"},
+        "CF-PERF-003": {"DBInstanceClass"},
+        "CF-PERF-004": {"InstanceType"},
+        "CF-ALB-001": {"LoadBalancerAttributes"},
+        "CF-CT-001": {"EnableLogFileValidation"},
+        "CF-CT-002": {"IsMultiRegionTrail"},
+        "CF-CT-003": {"KmsKeyId"},
+        "CF-KMS-001": {"KeyPolicy"},
+        "CF-LAM-001": {"DeadLetterConfig"},
+        "CF-LAM-002": {"TracingConfig"},
+        "CF-PERF-001": {"Architectures"},
+        "CF-DDB-001": {"PointInTimeRecoverySpecification"},
+        "CF-DDB-002": {"SSESpecification"},
+        "CF-SG-001": {"SecurityGroupIngress", "CidrIp", "CidrIpv6", "FromPort", "ToPort"},
+        "CF-CW-001": {"RetentionInDays"},
+        "CF-CW-002": {"KmsKeyId"},
+        "CF-SQS-001": {"SqsManagedSseEnabled", "KmsMasterKeyId"},
+        "CF-SQS-002": {"RedrivePolicy"},
+        "CF-APIGW-001": {"AccessLogSetting"},
+        "CF-APIGW-002": {"TracingEnabled"},
+        "CF-APIGW-V2-001": {"AccessLogSettings"},
+        "CF-APIGW-V2-002": {"TracingEnabled"},
+        "CF-SUST-001": {"MixedInstancesPolicy"},
+        "CF-SUST-002": {"CapacityProviderStrategy", "LaunchType"},
+        "CF-EKS-001": {"Logging"},
+    }.items()
+}
+
+
 def run_resource_checks(
     resources: List[Resource],
     template_path: Path,
@@ -160,6 +200,8 @@ def run_resource_checks(
         if r.malformed:
             warnings.append(f"CF rules skipped resource {r.name} in {template_path.name}: {r.malformed}")
             continue
+        if "LaunchTemplateData" in r.unresolved:
+            continue
         ltd = r.properties.get("LaunchTemplateData") or {}
         if not isinstance(ltd, dict):
             warnings.append(
@@ -178,6 +220,7 @@ def run_resource_checks(
                     f"CF rules skipped resource {logical_id} in {template_path.name}: {res.malformed}"
                 )
             continue
+        first_new = len(findings)
         try:
                 rtype = res.source_type
                 ctype = res.type
@@ -700,6 +743,11 @@ def run_resource_checks(
             warnings.append(
                 f"CF rules skipped resource {logical_id} in {template_path.name}: {exc}"
             )
+        if res.unresolved:
+            findings[first_new:] = [
+                f for f in findings[first_new:]
+                if not (CHECK_PROPERTIES.get(f.id, frozenset()) & res.unresolved)
+            ]
 
     # --- VPC endpoints (template-level: VPC present but no endpoints) ---
     if vpc_count > 0 and vpce_count == 0:
