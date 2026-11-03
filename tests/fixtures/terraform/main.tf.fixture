@@ -1,0 +1,57 @@
+# Regression fixture for Terraform root-module scans (DM3-517).
+# Mirrors tests/fixtures/cloudformation/stack.yaml.fixture.
+
+variable "env" {
+  type = string
+}
+
+variable "backup_days" {
+  type = number
+}
+
+variable "use_arm" {
+  type = bool
+}
+
+locals {
+  architectures = var.use_arm ? ["arm64"] : ["x86_64"]
+}
+
+resource "aws_s3_bucket" "data" {
+  bucket = "demo-${var.env}-data"
+}
+
+resource "aws_db_instance" "database" {
+  instance_class          = "db.t3.micro"
+  storage_encrypted       = true
+  multi_az                = false
+  deletion_protection     = true
+  backup_retention_period = var.backup_days
+}
+
+resource "aws_sqs_queue" "dead_letters" {
+  sqs_managed_sse_enabled = true
+}
+
+resource "aws_sqs_queue" "jobs" {
+  sqs_managed_sse_enabled = true
+  redrive_policy          = local.redrive
+}
+
+resource "aws_lambda_function" "worker" {
+  function_name = "worker"
+  role          = "arn:aws:iam::123456789012:role/worker"
+  architectures = local.architectures
+
+  tracing_config {
+    mode = "Active"
+  }
+
+  dead_letter_config {
+    target_arn = aws_sqs_queue.dead_letters.arn
+  }
+}
+
+module "logs" {
+  source = "./modules/logs"
+}

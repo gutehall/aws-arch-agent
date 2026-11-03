@@ -1,0 +1,144 @@
+"""Locked V1 output for one CDK, one CloudFormation, and one Terraform fixture.
+
+A change that moves any finding (id, severity, file, line, evidence) fails here.
+
+The CloudFormation and Terraform fixture files end in `.fixture` so that scanning this
+repo itself (CI dogfood, pre-commit) does not detect them as IaC sources. Tests copy
+them to a temp dir under their real names.
+
+After an intended change, regenerate with:
+
+    UPDATE_SNAPSHOTS=1 pytest tests/test_source_regression.py
+"""
+import json
+import os
+import shutil
+from pathlib import Path
+
+import pytest
+
+from aws_arch_agent.agent.v1 import analyze_v1
+from aws_arch_agent.models import Finding
+
+FIXTURES = Path(__file__).parent / "fixtures"
+SNAPSHOTS = FIXTURES / "snapshots"
+UPDATE = os.environ.get("UPDATE_SNAPSHOTS") == "1"
+
+
+def _rows(findings: list[Finding]) -> list[dict]:
+    rows = [
+        {"id": f.id, "severity": f.severity, "file": f.file, "line": f.line, "evidence": f.evidence}
+        for f in findings
+    ]
+    return sorted(rows, key=lambda r: (r["id"], r["file"] or "", r["line"] or 0, r["evidence"] or ""))
+
+
+def _scan(repo: Path) -> tuple[str, list[dict], list[str]]:
+    _report, ctx, findings, warnings = analyze_v1(repo, use_llm=False)
+    return ctx.source, _rows(findings), warnings
+
+
+def _check_snapshot(name: str, rows: list[dict]) -> None:
+    path = SNAPSHOTS / f"{name}.json"
+    if UPDATE or not path.exists():
+        path.write_text(json.dumps(rows, indent=2) + "\n", encoding="utf-8")
+        if not UPDATE:
+            pytest.fail(f"Wrote missing snapshot {path.name}; review and commit it.")
+    assert rows == json.loads(path.read_text(encoding="utf-8"))
+
+
+def _materialize(name: str, dest: Path) -> Path:
+    """Copy fixtures/<name> to dest, dropping the .fixture suffix."""
+    src = FIXTURES / name
+    for path in src.rglob("*.fixture"):
+        target = dest / path.relative_to(src).with_suffix("")
+        target.parent.mkdir(parents=True, exist_ok=True)
+        shutil.copyfile(path, target)
+    return dest
+
+
+@pytest.fixture
+def cf_repo(tmp_path: Path) -> Path:
+    return _materialize("cloudformation", tmp_path / "cloudformation")
+
+
+@pytest.fixture
+def tf_repo(tmp_path: Path) -> Path:
+    return _materialize("terraform", tmp_path / "terraform")
+
+
+def _copy_cdk_app(dest: Path) -> Path:
+    src = FIXTURES / "minimal-cdk"
+    shutil.copytree(src, dest, ignore=shutil.ignore_patterns("node_modules", "cdk.out"))
+    return dest
+
+
+def test_cdk_fixture_report_is_unchanged() -> None:
+    source, rows, warnings = _scan(FIXTURES / "minimal-cdk")
+    assert source == "cdk"
+    assert warnings == []
+    _check_snapshot("minimal-cdk", rows)
+
+
+def test_workflow_yaml_does_not_switch_a_cdk_repo(tmp_path: Path) -> None:
+    repo = _copy_cdk_app(tmp_path / "app")
+    workflows = repo / ".github" / "workflows"
+    workflows.mkdir(parents=True)
+    (workflows / "deploy.yml").write_text(
+        "name: deploy\non: [push]\njobs:\n  deploy:\n    runs-on: ubuntu-latest\n"
+        "    steps:\n      - run: npx cdk deploy\n",
+        encoding="utf-8",
+    )
+    # Root-level YAML that mentions an AWS:: type but is not a template.
+    (repo / "buildspec.yml").write_text(
+        "version: 0.2\nphases:\n  build:\n    commands:\n"
+        "      - echo AWS::S3::Bucket\n",
+        encoding="utf-8",
+    )
+    source, rows, _warnings = _scan(repo)
+    assert source == "cdk"
+    assert rows == _scan(FIXTURES / "minimal-cdk")[1]
+
+
+def test_cloudformation_fixture_runs_template_checks_without_synth(cf_repo: Path) -> None:
+    source, rows, warnings = _scan(cf_repo)
+    assert source == "cloudformation"
+    assert warnings == []
+    assert rows and all(r["id"].startswith("CF-") for r in rows)
+    assert {r["file"] for r in rows} == {"stack.yaml"}  # deploy.yml is not a template
+    _check_snapshot("cloudformation", rows)
+
+
+def test_terraform_fixture_reports_controls_at_hcl_lines(tf_repo: Path) -> None:
+    source, rows, warnings = _scan(tf_repo)
+    assert source == "terraform"
+    assert warnings == []
+    assert all(r["line"] for r in rows)
+    assert not any(r["file"].startswith("modules/") for r in rows)  # child module not read
+    _check_snapshot("terraform", rows)
+
+
+def test_cloudformation_and_terraform_fixtures_report_the_same_controls(
+    cf_repo: Path, tf_repo: Path
+) -> None:
+    cf_ids = sorted(r["id"] for r in _scan(cf_repo)[1])
+    tf_ids = sorted(r["id"] for r in _scan(tf_repo)[1])
+    assert cf_ids == tf_ids
+
+
+@pytest.mark.parametrize("fixture", ["cloudformation", "terraform"])
+def test_unresolved_values_are_not_findings(fixture: str, tmp_path: Path) -> None:
+    """Backup days, the jobs queue redrive policy, and Lambda architectures are unresolved."""
+    rows = _scan(_materialize(fixture, tmp_path / fixture))[1]
+    ids = {r["id"] for r in rows}
+    assert "CF-RDS-002" not in ids
+    assert "CF-PERF-001" not in ids
+    sqs = [r["evidence"] for r in rows if r["id"] == "CF-SQS-002"]
+    assert len(sqs) == 1 and "jobs" not in sqs[0].lower()
+
+
+def test_fixtures_are_invisible_to_a_scan_of_this_repo() -> None:
+    """Only .fixture files live there, so the repo's own source stays as detected before."""
+    for name in ("cloudformation", "terraform"):
+        files = [p for p in (FIXTURES / name).rglob("*") if p.is_file()]
+        assert files and all(p.suffix == ".fixture" for p in files)

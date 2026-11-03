@@ -1,0 +1,58 @@
+[
+  {
+    "id": "CF-FL-001",
+    "severity": "Low",
+    "file": "network.tf",
+    "line": 1,
+    "evidence": "Template has 1 VPC(s) and 0 FlowLog(s) (aws_vpc.network)"
+  },
+  {
+    "id": "CF-PERF-002",
+    "severity": "Low",
+    "file": "main.tf",
+    "line": 41,
+    "evidence": "Template has API Gateway or Lambda but no CloudFront or ElastiCache (aws_lambda_function.worker)"
+  },
+  {
+    "id": "CF-RDS-003",
+    "severity": "Medium",
+    "file": "main.tf",
+    "line": 24,
+    "evidence": "aws_db_instance.database (aws_db_instance)"
+  },
+  {
+    "id": "CF-S3-001",
+    "severity": "High",
+    "file": "main.tf",
+    "line": 20,
+    "evidence": "aws_s3_bucket.data (aws_s3_bucket)"
+  },
+  {
+    "id": "CF-S3-003",
+    "severity": "Low",
+    "file": "main.tf",
+    "line": 20,
+    "evidence": "aws_s3_bucket.data (aws_s3_bucket)"
+  },
+  {
+    "id": "CF-S3-004",
+    "severity": "Low",
+    "file": "main.tf",
+    "line": 20,
+    "evidence": "aws_s3_bucket.data (aws_s3_bucket)"
+  },
+  {
+    "id": "CF-SQS-002",
+    "severity": "Low",
+    "file": "main.tf",
+    "line": 32,
+    "evidence": "aws_sqs_queue.dead_letters (aws_sqs_queue)"
+  },
+  {
+    "id": "CF-VPC-001",
+    "severity": "Low",
+    "file": "network.tf",
+    "line": 1,
+    "evidence": "Template has 1 VPC(s) and 0 VPCEndpoint(s) (aws_vpc.network)"
+  }
+]
