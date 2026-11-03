@@ -65,8 +65,10 @@ def test_terraform_repo_reports_cf_findings_at_hcl_lines(tmp_path: Path) -> None
     assert "CF-RDS-001" not in by_id  # storage_encrypted = var.encrypt
     # Template-level control points at the resource that triggered it.
     assert (by_id["CF-FL-001"].file, by_id["CF-FL-001"].line) == ("infra/network.tf", 1)
-    # The local child module is not a root module.
+    assert by_id["CF-FL-001"].evidence == "Template has 1 VPC(s) and 0 FlowLog(s) (aws_vpc.main)"
+    # The local child module is not a root module, and the report says it was skipped.
     assert not any("modules/child" in (f.file or "") for f in findings)
+    assert ctx.notes["terraform_child_modules_skipped"] == ["modules/child"]
     assert "CF-S3-001" in report
 
 
@@ -128,3 +130,23 @@ def test_cli_sarif_has_hcl_location(tmp_path: Path) -> None:
     loc = s3["locations"][0]["physicalLocation"]
     assert loc["artifactLocation"]["uri"] == "infra/main.tf"
     assert loc["region"]["startLine"] == 5
+
+
+def test_launch_template_finding_points_at_one_without_spot(tmp_path: Path) -> None:
+    (tmp_path / "lt.tf").write_text(
+        """resource "aws_launch_template" "spot" {
+  instance_market_options {
+    market_type = "spot"
+  }
+}
+
+resource "aws_launch_template" "ondemand" {
+  instance_type = "t3.micro"
+}
+""",
+        encoding="utf-8",
+    )
+    _r, _c, findings, _w = analyze_v1(tmp_path, use_llm=False)
+    sust = next(f for f in findings if f.id == "CF-SUST-003")
+    assert (sust.file, sust.line) == ("lt.tf", 7)
+    assert sust.evidence.endswith("(aws_launch_template.ondemand)")

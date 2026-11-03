@@ -10,7 +10,7 @@ from typing import Literal
 from aws_arch_agent.models import IacSource, RepoContext, Finding
 from aws_arch_agent.rules.registry import ALL_RULES
 from aws_arch_agent.rules.cf_template import run_cf_rules_from_paths, run_resource_checks
-from aws_arch_agent.rules.terraform_model import find_root_modules, resources_from_terraform
+from aws_arch_agent.rules.terraform_model import find_modules, resources_from_terraform
 from aws_arch_agent.rules.runner import filter_by_severity, run_all_rules
 from aws_arch_agent.report.markdown import render_markdown
 from aws_arch_agent.tools.llm import LLMClient
@@ -323,8 +323,13 @@ def _collect_findings(
             findings.extend(found)
             warnings.extend(warned)
         if source in TERRAFORM_SOURCES:
-            modules = find_root_modules(files)
+            modules, children = find_modules(files)
             ctx.notes["terraform_modules"] = [to_repo_relative(str(m), repo_path) for m in modules]
+            if children:
+                # Child modules are not read (no terraform init); say which were left out.
+                ctx.notes["terraform_child_modules_skipped"] = [
+                    to_repo_relative(str(m), repo_path) for m in children
+                ]
             found, warned = _scan_terraform(repo_path, modules, rules_include, rules_exclude)
             findings.extend(found)
             warnings.extend(warned)
