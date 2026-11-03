@@ -15,6 +15,10 @@ REPORT_SCHEMA: dict = {
             "properties": {
                 "repo_path": {"type": "string"},
                 "language": {"type": "string", "enum": ["typescript", "python", "unknown"]},
+                "source": {
+                    "type": "string",
+                    "enum": ["cdk", "cloudformation", "terraform", "mixed"],
+                },
                 "files_scanned": {"type": "integer", "minimum": 0},
                 "key_files": {"type": "array", "items": {"type": "string"}},
                 "notes": {"type": "object"},

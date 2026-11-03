@@ -7,18 +7,26 @@ import re
 from pathlib import Path
 from typing import Literal
 
-from aws_arch_agent.models import RepoContext, Finding
+import yaml
+
+from aws_arch_agent.models import IacSource, RepoContext, Finding
 from aws_arch_agent.rules.registry import ALL_RULES
 from aws_arch_agent.rules.runner import filter_by_severity, run_all_rules
 from aws_arch_agent.report.markdown import render_markdown
 from aws_arch_agent.tools.llm import LLMClient
-from aws_arch_agent.tools.files import iter_files
+from aws_arch_agent.tools.files import iter_files, read_text_safe
 from aws_arch_agent.tools.rg import limit_to_files
 
 logger = logging.getLogger(__name__)
 
 
 RepoLanguage = Literal["typescript", "python", "unknown"]
+IacChoice = Literal["auto", "cdk", "cloudformation", "terraform"]
+IAC_CHOICES: tuple[str, ...] = ("auto", "cdk", "cloudformation", "terraform")
+
+
+class IacError(ValueError):
+    """An explicit --iac source has no matching files in the repo."""
 
 
 _PYTHON_CMD = re.compile(
@@ -127,6 +135,126 @@ def detect_language(repo_path: Path) -> RepoLanguage:
     return "unknown"
 
 
+_CF_VERSION_KEY = re.compile(r"""^\s*["']?AWSTemplateFormatVersion["']?\s*:""", re.MULTILINE)
+_TEMPLATE_SUFFIXES = {".json", ".yaml", ".yml", ".template"}
+_PY_CDK_PACKAGE = re.compile(r"\baws[-_]cdk(?:[-_.]lib|\.)", re.IGNORECASE)
+
+
+class _TagTolerantLoader(yaml.SafeLoader):
+    """SafeLoader that reads CloudFormation short tags (!Ref, !Sub) as plain values."""
+
+
+def _construct_tag(loader: yaml.SafeLoader, _suffix: str, node: yaml.Node) -> object:
+    if isinstance(node, yaml.ScalarNode):
+        return loader.construct_scalar(node)
+    if isinstance(node, yaml.SequenceNode):
+        return loader.construct_sequence(node)
+    return loader.construct_mapping(node)  # type: ignore[arg-type]
+
+
+_TagTolerantLoader.add_multi_constructor("!", _construct_tag)
+
+
+def _python_has_cdk(repo_path: Path) -> bool:
+    for name in ("requirements.txt", "pyproject.toml", "setup.py"):
+        path = repo_path / name
+        if path.is_file() and _PY_CDK_PACKAGE.search(read_text_safe(path)):
+            return True
+    return False
+
+
+def has_cdk_markers(repo_path: Path) -> bool:
+    """True when cdk.json, a CDK app command, or a CDK package is present."""
+    if (repo_path / "cdk.json").is_file() or _cdk_app_command(repo_path):
+        return True
+    return _package_has_cdk(repo_path) or _python_has_cdk(repo_path)
+
+
+def is_cf_template(path: Path) -> bool:
+    """True for a CloudFormation template.
+
+    Needs AWSTemplateFormatVersion, or a Resources entry whose Type starts with AWS::.
+    Other YAML and JSON (GitHub Actions, package.json) is not a template.
+    """
+    if path.suffix.lower() not in _TEMPLATE_SUFFIXES:
+        return False
+    text = read_text_safe(path)
+    if "AWSTemplateFormatVersion" not in text and "AWS::" not in text:
+        return False
+    if _CF_VERSION_KEY.search(text):
+        return True
+    try:
+        if path.suffix.lower() == ".json":
+            doc = json.loads(text)
+        else:
+            doc = yaml.load(text, Loader=_TagTolerantLoader)  # noqa: S506 - SafeLoader subclass
+    except (ValueError, yaml.YAMLError):
+        return False
+    if not isinstance(doc, dict):
+        return False
+    resources = doc.get("Resources")
+    if not isinstance(resources, dict):
+        return False
+    return any(
+        isinstance(res, dict) and isinstance(res.get("Type"), str) and res["Type"].startswith("AWS::")
+        for res in resources.values()
+    )
+
+
+def is_terraform_file(path: Path) -> bool:
+    name = path.name.lower()
+    return name.endswith(".tf") or name.endswith(".tf.json")
+
+
+def _has_cdk_sources(files: list[Path]) -> bool:
+    return any(p.suffix.lower() in {".ts", ".py"} for p in files)
+
+
+def detect_source(repo_path: Path, files: list[Path] | None = None) -> IacSource:
+    """Return 'cdk', 'cloudformation', 'terraform', or 'mixed' from repo contents.
+
+    CDK wins when its markers exist, so cdk.out templates and workflow YAML keep a CDK
+    repo a CDK repo. 'mixed' is CloudFormation and Terraform without CDK. A repo with
+    none of these falls back to 'cdk' (the source-code scan).
+    """
+    if has_cdk_markers(repo_path):
+        return "cdk"
+    if files is None:
+        files = iter_files(repo_path, max_files=400)
+    cloudformation = any(is_cf_template(p) for p in files)
+    terraform = any(is_terraform_file(p) for p in files)
+    if cloudformation and terraform:
+        return "mixed"
+    if cloudformation:
+        return "cloudformation"
+    if terraform:
+        return "terraform"
+    return "cdk"
+
+
+def resolve_source(repo_path: Path, iac: str, files: list[Path] | None = None) -> IacSource:
+    """Resolve --iac. auto detects; an explicit source with no matching files raises IacError."""
+    choice = iac.strip().lower()
+    if choice not in IAC_CHOICES:
+        raise IacError(f"--iac must be one of {', '.join(IAC_CHOICES)} (got {iac!r})")
+    if files is None:
+        files = iter_files(repo_path, max_files=400)
+    if choice == "auto":
+        return detect_source(repo_path, files)
+    if choice == "cdk":
+        found = has_cdk_markers(repo_path) or _has_cdk_sources(files)
+        label = "CDK app (cdk.json, CDK package, .ts or .py)"
+    elif choice == "cloudformation":
+        found = any(is_cf_template(p) for p in files)
+        label = "CloudFormation template"
+    else:
+        found = any(is_terraform_file(p) for p in files)
+        label = "Terraform (*.tf, *.tf.json)"
+    if not found:
+        raise IacError(f"--iac {choice}: no {label} files found in {repo_path}")
+    return choice  # type: ignore[return-value]
+
+
 def _languages_to_scan(language: str) -> list[str]:
     """Return list of languages to run rules for (both TS and PY when unknown)."""
     if language == "unknown":
@@ -164,12 +292,15 @@ def _collect_findings(
     rules_exclude: list[str] | None,
     severity_threshold: str | None,
     rules_org: bool = False,
+    iac: str = "auto",
 ) -> tuple[RepoContext, list[Finding], list[str]]:
     files = iter_files(repo_path, max_files=max_files)
+    source = resolve_source(repo_path, iac, files)
     language = detect_language(repo_path)
     ctx = RepoContext(
         repo_path=str(repo_path),
         language=language,
+        source=source,
         files_scanned=len(files),
         key_files=[p.name for p in files if p.name in {"cdk.json", "package.json", "requirements.txt"}],
     )
@@ -188,10 +319,11 @@ def analyze_v1(
     rules_exclude: list[str] | None = None,
     severity_threshold: str | None = None,
     rules_org: bool = False,
+    iac: str = "auto",
 ) -> tuple[str, RepoContext, list[Finding], list[str]]:
     """Run V1 pipeline: scan repo, run rules, optionally polish with LLM; return (report_md, ctx, findings, warnings)."""
     ctx, findings, warnings = _collect_findings(
-        repo_path, max_files, rules_include, rules_exclude, severity_threshold, rules_org
+        repo_path, max_files, rules_include, rules_exclude, severity_threshold, rules_org, iac
     )
 
     draft = render_markdown(ctx, findings, warnings=warnings)
@@ -209,8 +341,9 @@ def collect_ctx_findings(
     rules_exclude: list[str] | None = None,
     severity_threshold: str | None = None,
     rules_org: bool = False,
+    iac: str = "auto",
 ) -> tuple[RepoContext, list[Finding], list[str]]:
     """Run rules only and return context, findings, and warnings."""
     return _collect_findings(
-        repo_path, max_files, rules_include, rules_exclude, severity_threshold, rules_org
+        repo_path, max_files, rules_include, rules_exclude, severity_threshold, rules_org, iac
     )

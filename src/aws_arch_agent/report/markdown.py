@@ -24,6 +24,7 @@ def render_markdown(ctx: RepoContext, findings: List[Finding], warnings: List[st
     lines.append("# AWS Architecture Review Report")
     lines.append("")
     lines.append(f"- Repo: `{ctx.repo_path}`")
+    lines.append(f"- Source: **{ctx.source}**")
     lines.append(f"- Language: **{ctx.language}**")
     lines.append(f"- Files scanned: **{ctx.files_scanned}**")
     lines.append(f"- Generated: {now}")
