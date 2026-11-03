@@ -9,7 +9,7 @@ import typer
 from rich.console import Console
 from rich.panel import Panel
 
-from aws_arch_agent.agent.v1 import analyze_v1
+from aws_arch_agent.agent.v1 import IAC_CHOICES, IacError, analyze_v1, resolve_source
 from aws_arch_agent.baseline import (
     DEFAULT_BASELINE_NAME,
     BaselineError,
@@ -30,6 +30,7 @@ from aws_arch_agent.config import (
 from aws_arch_agent.models import Finding
 from aws_arch_agent.report.json_report import render_json
 from aws_arch_agent.report.sarif import render_sarif
+from aws_arch_agent.tools.files import iter_files
 
 app = typer.Typer(add_completion=False, help="AWS CDK architecture reviewer (agentic).")
 console = Console()
@@ -128,6 +129,9 @@ def analyze(
     repo: str | None = typer.Option(None, "--repo", "-r", help="Path to repo (required unless --templates is set; then defaults to templates path)"),
     out: str = typer.Option("report.md", "--out", "-o", help="Output report path"),
     mode: str = typer.Option("v1", "--mode", help="v1 (rules) or v2 (LangGraph multi-agent)"),
+    iac: str = typer.Option(
+        "auto", "--iac", help="IaC source: auto | cdk | cloudformation | terraform"
+    ),
     max_files: int = typer.Option(
         400, "--max-files", help="Max files to scan. Rules search only these files."
     ),
@@ -157,6 +161,7 @@ def analyze(
         repo_path = repo_path.parent
 
     mode_value = _require_choice(mode, _MODES, "--mode")
+    iac_value = _require_choice(iac, IAC_CHOICES, "--iac")
     if _passed(ctx, "format"):
         _require_choice(format, _FORMATS, "--format")
     if _passed(ctx, "fail_on"):
@@ -198,8 +203,13 @@ def analyze(
                 f"({exc})"
             )
 
+    try:
+        source = resolve_source(repo_path, iac_value, iter_files(repo_path, max_files=max_files))
+    except IacError as exc:
+        _fail(str(exc))
+
     console.print(Panel.fit(
-        f"[bold]Analyzing[/bold] {repo_path}\nMode: {mode_value} | Format: {cfg.format} | LLM: {'off' if cfg.no_llm else 'on'}",
+        f"[bold]Analyzing[/bold] {repo_path}\nMode: {mode_value} | Source: {source} | Format: {cfg.format} | LLM: {'off' if cfg.no_llm else 'on'}",
         title="aws-arch-agent",
     ))
 
@@ -224,6 +234,7 @@ def analyze(
             rag_embedding_provider=cfg.rag_embedding_provider,
             rag_embedding_model=cfg.rag_embedding_model,
             llm_mode=cast(LLMMode, cfg.llm_mode),
+            iac=iac_value,
         )
     else:
         report_md, ctx_report, findings, warnings = analyze_v1(
@@ -234,6 +245,7 @@ def analyze(
             rules_exclude=rules_exclude,
             rules_org=cfg.rules_org,
             severity_threshold=severity_threshold,
+            iac=iac_value,
         )
 
     if update_baseline:
