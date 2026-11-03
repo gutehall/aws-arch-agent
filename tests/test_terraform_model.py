@@ -246,3 +246,97 @@ def test_unknown_and_non_aws_types_have_no_canonical_type(tmp_path: Path) -> Non
     resources = resources_from_terraform(tmp_path)
     assert {r.type for r in resources} == {None}
     assert run_resource_checks(resources, tmp_path / "main.tf") == []
+
+
+def test_per_instance_refs_and_quoted_bools(tmp_path: Path) -> None:
+    (tmp_path / "main.tf").write_text(
+        """resource "aws_db_instance" "each" {
+  for_each            = var.dbs
+  storage_encrypted   = each.value.enc
+  multi_az            = "true"
+  deletion_protection = true
+  backup_retention_period = 7
+}
+resource "aws_cloudtrail" "t" {
+  enable_log_file_validation = count.index == 0
+  is_multi_region_trail      = true
+  kms_key_id                 = data.aws_kms_key.k.arn
+}
+""",
+        encoding="utf-8",
+    )
+    ids = _checks(tmp_path)
+    assert "CF-RDS-001" not in ids  # each.value.enc
+    assert "CF-RDS-003" not in ids  # "true" coerces to true
+    assert "CF-CT-001" not in ids  # count.index expression
+    assert "CF-CT-003" not in ids  # a data source reference counts as set
+
+
+def test_expressions_in_compared_arguments_are_unresolved(tmp_path: Path) -> None:
+    (tmp_path / "main.tf").write_text(
+        """resource "aws_s3_bucket" "b" {
+  versioning {
+    enabled = data.aws_ssm_parameter.v.value
+  }
+  dynamic "logging" {
+    for_each = var.log_bucket == null ? [] : [1]
+    content {
+      target_bucket = var.log_bucket
+    }
+  }
+}
+resource "aws_lb" "lb" {
+  access_logs {
+    bucket  = "logs"
+    enabled = "true"
+  }
+}
+resource "aws_security_group" "sg" {
+  ingress {
+    from_port   = 22
+    to_port     = 22
+    protocol    = "tcp"
+    cidr_blocks = concat(["0.0.0.0/0"], [])
+  }
+}
+resource "aws_vpc_security_group_ingress_rule" "port" {
+  cidr_ipv4   = "0.0.0.0/0"
+  ip_protocol = "tcp"
+  from_port   = data.aws_ssm_parameter.port.value
+  to_port     = data.aws_ssm_parameter.port.value
+}
+resource "aws_eks_cluster" "c" {
+  enabled_cluster_log_types = toset(["api"])
+}
+resource "aws_lambda_function" "f" {
+  architectures = [data.aws_ssm_parameter.arch.value]
+}
+""",
+        encoding="utf-8",
+    )
+    ids = _checks(tmp_path)
+    assert "CF-S3-003" not in ids  # enabled = data.* reference
+    assert "CF-S3-004" not in ids  # dynamic "logging"
+    assert "CF-ALB-001" not in ids  # enabled = "true"
+    assert "CF-SG-001" not in ids  # concat(...) and data-source ports
+    assert "CF-EKS-001" not in ids  # toset([...])
+    assert "CF-S3-001" in ids  # no public access block at all
+
+
+def test_sqs_redrive_policy_shapes(tmp_path: Path) -> None:
+    (tmp_path / "main.tf").write_text(
+        """resource "aws_sqs_queue" "literal" {
+  sqs_managed_sse_enabled = true
+  redrive_policy = "{\\"deadLetterTargetArn\\":\\"arn:aws:sqs:eu-north-1:1:dlq\\",\\"maxReceiveCount\\":3}"
+}
+resource "aws_sqs_queue" "encoded" {
+  sqs_managed_sse_enabled = true
+  redrive_policy = jsonencode({ deadLetterTargetArn = aws_sqs_queue.dlq.arn, maxReceiveCount = 3 })
+}
+resource "aws_sqs_queue" "none" {
+  sqs_managed_sse_enabled = true
+}
+""",
+        encoding="utf-8",
+    )
+    assert _checks(tmp_path)["CF-SQS-002"] == {"aws_sqs_queue.none (aws_sqs_queue)"}

@@ -5,7 +5,7 @@ module directory. aws_* types map onto the canonical types the CF-* checks use,
 and their arguments are translated into the CloudFormation-shaped properties
 those checks read. A value that depends on `var.*` or `local.*` is unresolved:
 the property is left out and recorded in Resource.unresolved, so no check
-reports on it.
+reports on it. Per-instance values (each.*, count.*, self.*) are treated the same.
 """
 from __future__ import annotations
 
@@ -57,7 +57,8 @@ _S3_PARTS: dict[str, str] = {
     "aws_s3_bucket_logging": "LoggingConfiguration",
 }
 
-_UNRESOLVED_REF = re.compile(r"\b(?:var|local)\.[A-Za-z_]")
+# var/local are module inputs; each/count/self differ per instance. None is known statically.
+_UNRESOLVED_REF = re.compile(r"\b(?:var|local|each|count|self)\.[A-Za-z_]")
 _BUCKET_REF = re.compile(r"\baws_s3_bucket\.([A-Za-z0-9_-]+)\.")
 _META_KEYS = {"__is_block__", "__start_line__", "__end_line__"}
 
@@ -70,6 +71,14 @@ class _Unresolved:
 
 
 UNRESOLVED = _Unresolved()
+
+
+class _Expr(str):
+    """A non-literal expression (resource/data reference, function call, template string).
+
+    Truthy, so presence checks (a KMS key or log target is set) see it as set. Arguments
+    whose value is compared (bools, enums, ports, lists) read it as unresolved via _v().
+    """
 
 
 class TerraformError(ValueError):
@@ -90,11 +99,15 @@ def _hcl_value(value: Any) -> Any:
     if isinstance(value, str):
         if len(value) >= 2 and value[0] == value[-1] == '"':
             text = value[1:-1].replace('\\"', '"')
-            return UNRESOLVED if "${" in text and _UNRESOLVED_REF.search(text) else text
+            if text in ("true", "false"):  # Terraform coerces "true" to a bool argument
+                return text == "true"
+            if "${" in text:  # template string
+                return UNRESOLVED if _UNRESOLVED_REF.search(text) else _Expr(text)
+            return text
         expr = value[2:-1] if value.startswith("${") and value.endswith("}") else value
         if expr in ("true", "false"):
             return expr == "true"
-        return UNRESOLVED if _UNRESOLVED_REF.search(expr) else expr
+        return UNRESOLVED if _UNRESOLVED_REF.search(expr) else _Expr(expr)
     if isinstance(value, list):
         return [_hcl_value(v) for v in value]
     if isinstance(value, dict):
@@ -105,11 +118,13 @@ def _hcl_value(value: Any) -> Any:
 def _json_value(value: Any) -> Any:
     """*.tf.json value: "${...}" strings are expressions."""
     if isinstance(value, str):
+        if value in ("true", "false"):
+            return value == "true"
         if "${" in value and _UNRESOLVED_REF.search(value):
             return UNRESOLVED
         if value.startswith("${") and value.endswith("}") and value.count("${") == 1:
-            return value[2:-1]
-        return value
+            return _Expr(value[2:-1])
+        return _Expr(value) if "${" in value else value
     if isinstance(value, list):
         return [_json_value(v) for v in value]
     if isinstance(value, dict):
@@ -146,6 +161,8 @@ class _Block:
 
 
 def _find_line(text: str, rtype: str, name: str, is_json: bool) -> int | None:
+    """Line of the resource declaration. For *.tf.json this is the first textual match
+    of the type and then the name, so it is approximate."""
     if is_json:
         type_at = text.find(f'"{rtype}"')
         if type_at < 0:
@@ -227,6 +244,17 @@ def _module_files(module_dir: Path) -> list[Path]:
 # --- argument -> CloudFormation property adapters ----------------------------
 
 
+def _v(body: dict, key: str, default: Any = None) -> Any:
+    """Argument whose value is compared: an expression is unresolved."""
+    value = body.get(key, default)
+    return UNRESOLVED if isinstance(value, _Expr) else value
+
+
+def _ref(body: dict, key: str) -> Any:
+    """Argument only checked for presence: a reference counts as set."""
+    return body.get(key)
+
+
 def _first_block(body: dict, key: str) -> dict:
     value = body.get(key)
     if isinstance(value, list):
@@ -260,7 +288,7 @@ def _s3_bucket(body: dict) -> dict:
     props: dict = {}
     versioning = _first_block(body, "versioning")
     if versioning:
-        enabled = versioning.get("enabled")
+        enabled = _v(versioning, "enabled")
         props["VersioningConfiguration"] = (
             UNRESOLVED if enabled is UNRESOLVED else {"Status": "Enabled" if enabled is True else "Suspended"}
         )
@@ -269,7 +297,7 @@ def _s3_bucket(body: dict) -> dict:
         props["BucketEncryption"] = _s3_encryption(sse)
     logging = _first_block(body, "logging")
     if logging:
-        props["LoggingConfiguration"] = {"DestinationBucketName": logging.get("target_bucket")}
+        props["LoggingConfiguration"] = {"DestinationBucketName": _ref(logging, "target_bucket")}
     return props
 
 
@@ -277,24 +305,24 @@ def _s3_encryption(body: dict) -> Any:
     configs = []
     for rule in _blocks(body, "rule"):
         default = _first_block(rule, "apply_server_side_encryption_by_default")
-        configs.append({"ServerSideEncryptionByDefault": {"SSEAlgorithm": default.get("sse_algorithm")}})
+        configs.append({"ServerSideEncryptionByDefault": {"SSEAlgorithm": _v(default, "sse_algorithm")}})
     return {"ServerSideEncryptionConfiguration": configs}
 
 
 def _s3_part(part_type: str, body: dict) -> Any:
     if part_type == "aws_s3_bucket_public_access_block":
         return {
-            "BlockPublicAcls": body.get("block_public_acls"),
-            "IgnorePublicAcls": body.get("ignore_public_acls"),
-            "BlockPublicPolicy": body.get("block_public_policy"),
-            "RestrictPublicBuckets": body.get("restrict_public_buckets"),
+            "BlockPublicAcls": _v(body, "block_public_acls"),
+            "IgnorePublicAcls": _v(body, "ignore_public_acls"),
+            "BlockPublicPolicy": _v(body, "block_public_policy"),
+            "RestrictPublicBuckets": _v(body, "restrict_public_buckets"),
         }
     if part_type == "aws_s3_bucket_versioning":
         status = _first_block(body, "versioning_configuration").get("status")
         return {"Status": status}
     if part_type == "aws_s3_bucket_server_side_encryption_configuration":
         return _s3_encryption(body)
-    return {"DestinationBucketName": body.get("target_bucket")}
+    return {"DestinationBucketName": _ref(body, "target_bucket")}
 
 
 def _db(body: dict) -> dict:
@@ -314,7 +342,7 @@ def _db(body: dict) -> dict:
 
 def _instance(body: dict) -> dict:
     props: dict = {}
-    _set(props, "InstanceType", body.get("instance_type"))
+    _set(props, "InstanceType", _v(body, "instance_type"))
     return props
 
 
@@ -322,14 +350,17 @@ def _launch_template(body: dict) -> dict:
     market = _first_block(body, "instance_market_options")
     data: dict = {}
     if market:
-        data["InstanceMarketOptions"] = {"MarketType": market.get("market_type")}
+        data["InstanceMarketOptions"] = {"MarketType": _v(market, "market_type")}
     return {"LaunchTemplateData": data}
 
 
 def _ingress_entries(rule: dict) -> Any:
     entries: list[dict] = []
-    ports = {"FromPort": rule.get("from_port"), "ToPort": rule.get("to_port")}
-    if rule.get("protocol") in ("-1", -1, "all"):
+    protocol = _v(rule, "protocol")
+    if protocol is UNRESOLVED:
+        return UNRESOLVED
+    ports = {"FromPort": _v(rule, "from_port"), "ToPort": _v(rule, "to_port")}
+    if protocol in ("-1", -1, "all"):
         ports = {"FromPort": None, "ToPort": None}
     for key, cf_key in (("cidr_blocks", "CidrIp"), ("ipv6_cidr_blocks", "CidrIpv6")):
         cidrs = rule.get(key)
@@ -355,7 +386,7 @@ def _security_group(body: dict) -> dict:
 def _ingress_rule(rtype: str, body: dict) -> dict | None:
     """aws_vpc_security_group_ingress_rule, or aws_security_group_rule with type ingress."""
     if rtype == "aws_security_group_rule":
-        kind = body.get("type")
+        kind = _v(body, "type")
         if kind is UNRESOLVED:
             return {"CidrIp": UNRESOLVED}
         if kind != "ingress":
@@ -369,19 +400,22 @@ def _ingress_rule(rtype: str, body: dict) -> dict | None:
         )
         return dict(open_entry)
     props: dict = {}
-    _set(props, "CidrIp", body.get("cidr_ipv4"))
-    _set(props, "CidrIpv6", body.get("cidr_ipv6"))
-    if body.get("ip_protocol") in ("-1", -1):
+    _set(props, "CidrIp", _v(body, "cidr_ipv4"))
+    _set(props, "CidrIpv6", _v(body, "cidr_ipv6"))
+    ip_protocol = _v(body, "ip_protocol")
+    if ip_protocol is UNRESOLVED:
+        return {"CidrIp": UNRESOLVED}
+    if ip_protocol in ("-1", -1):
         props["FromPort"] = props["ToPort"] = None
     else:
-        props["FromPort"] = body.get("from_port")
-        props["ToPort"] = body.get("to_port")
+        props["FromPort"] = _v(body, "from_port")
+        props["ToPort"] = _v(body, "to_port")
     return props
 
 
 def _lb(body: dict) -> dict:
     logs = _first_block(body, "access_logs")
-    enabled = logs.get("enabled", False)  # provider default: false, even with a bucket
+    enabled = _v(logs, "enabled", False)  # provider default: false, even with a bucket
     if enabled is UNRESOLVED:
         return {"LoadBalancerAttributes": UNRESOLVED}
     value = "true" if enabled is True else "false"
@@ -390,15 +424,15 @@ def _lb(body: dict) -> dict:
 
 def _cloudtrail(body: dict) -> dict:
     props: dict = {}
-    _set(props, "EnableLogFileValidation", body.get("enable_log_file_validation"))
-    _set(props, "IsMultiRegionTrail", body.get("is_multi_region_trail"))
-    _set(props, "KmsKeyId", body.get("kms_key_id"))
+    _set(props, "EnableLogFileValidation", _v(body, "enable_log_file_validation"))
+    _set(props, "IsMultiRegionTrail", _v(body, "is_multi_region_trail"))
+    _set(props, "KmsKeyId", _ref(body, "kms_key_id"))
     return props
 
 
 def _kms_key(body: dict) -> dict:
     props: dict = {}
-    _set(props, "KeyPolicy", body.get("policy"))
+    _set(props, "KeyPolicy", _ref(body, "policy"))
     return props
 
 
@@ -406,11 +440,11 @@ def _lambda(body: dict) -> dict:
     props: dict = {}
     dlq = _first_block(body, "dead_letter_config")
     if dlq:
-        props["DeadLetterConfig"] = {"TargetArn": dlq.get("target_arn")}
+        props["DeadLetterConfig"] = {"TargetArn": _ref(dlq, "target_arn")}
     tracing = _first_block(body, "tracing_config")
     if tracing:
-        props["TracingConfig"] = {"Mode": tracing.get("mode")}
-    _set(props, "Architectures", body.get("architectures"))
+        props["TracingConfig"] = {"Mode": _v(tracing, "mode")}
+    _set(props, "Architectures", _v(body, "architectures"))
     return props
 
 
@@ -418,29 +452,34 @@ def _dynamodb(body: dict) -> dict:
     props: dict = {}
     pitr = _first_block(body, "point_in_time_recovery")
     if pitr:
-        props["PointInTimeRecoverySpecification"] = {"PointInTimeRecoveryEnabled": pitr.get("enabled")}
+        props["PointInTimeRecoverySpecification"] = {"PointInTimeRecoveryEnabled": _v(pitr, "enabled")}
     sse = _first_block(body, "server_side_encryption")
     if sse:
-        props["SSESpecification"] = {"SSEEnabled": sse.get("enabled")}
+        props["SSESpecification"] = {"SSEEnabled": _v(sse, "enabled")}
     return props
 
 
 def _log_group(body: dict) -> dict:
     props: dict = {}
-    retention = body.get("retention_in_days")
+    retention = _v(body, "retention_in_days")
     if retention != 0:  # 0 means "never expire" in Terraform
         _set(props, "RetentionInDays", retention)
-    _set(props, "KmsKeyId", body.get("kms_key_id"))
+    _set(props, "KmsKeyId", _ref(body, "kms_key_id"))
     return props
 
 
 def _sqs(body: dict) -> dict:
     props: dict = {}
-    _set(props, "SqsManagedSseEnabled", body.get("sqs_managed_sse_enabled"))
-    _set(props, "KmsMasterKeyId", body.get("kms_master_key_id"))
-    redrive = body.get("redrive_policy")
-    if isinstance(redrive, str) and "deadLetterTargetArn" in redrive:
-        redrive = {"deadLetterTargetArn": redrive}
+    _set(props, "SqsManagedSseEnabled", _v(body, "sqs_managed_sse_enabled"))
+    _set(props, "KmsMasterKeyId", _ref(body, "kms_master_key_id"))
+    redrive = _ref(body, "redrive_policy")
+    if isinstance(redrive, _Expr):  # e.g. jsonencode({...}): only its text is known
+        redrive = {"deadLetterTargetArn": redrive} if "deadLetterTargetArn" in redrive else UNRESOLVED
+    elif isinstance(redrive, str):
+        try:
+            redrive = json.loads(redrive)
+        except ValueError:
+            redrive = UNRESOLVED
     _set(props, "RedrivePolicy", redrive)
     return props
 
@@ -449,8 +488,8 @@ def _api_stage(body: dict) -> dict:
     props: dict = {}
     logs = _first_block(body, "access_log_settings")
     if logs:
-        props["AccessLogSetting"] = {"DestinationArn": logs.get("destination_arn")}
-    _set(props, "TracingEnabled", body.get("xray_tracing_enabled"))
+        props["AccessLogSetting"] = {"DestinationArn": _ref(logs, "destination_arn")}
+    _set(props, "TracingEnabled", _v(body, "xray_tracing_enabled"))
     return props
 
 
@@ -458,7 +497,7 @@ def _apiv2_stage(body: dict) -> dict:
     props: dict = {}
     logs = _first_block(body, "access_log_settings")
     if logs:
-        props["AccessLogSettings"] = {"DestinationArn": logs.get("destination_arn")}
+        props["AccessLogSettings"] = {"DestinationArn": _ref(logs, "destination_arn")}
     return props
 
 
@@ -470,8 +509,8 @@ def _asg(body: dict) -> dict:
     return {
         "MixedInstancesPolicy": {
             "InstancesDistribution": {
-                "SpotMaxPrice": dist.get("spot_max_price"),
-                "SpotAllocationStrategy": dist.get("spot_allocation_strategy"),
+                "SpotMaxPrice": _ref(dist, "spot_max_price"),
+                "SpotAllocationStrategy": _ref(dist, "spot_allocation_strategy"),
             }
         }
     }
@@ -479,9 +518,9 @@ def _asg(body: dict) -> dict:
 
 def _ecs_service(body: dict) -> dict:
     props: dict = {}
-    _set(props, "LaunchType", body.get("launch_type"))
+    _set(props, "LaunchType", _v(body, "launch_type"))
     strategy = [
-        {"CapacityProvider": item.get("capacity_provider")}
+        {"CapacityProvider": _v(item, "capacity_provider")}
         for item in _blocks(body, "capacity_provider_strategy")
     ]
     if strategy:
@@ -490,7 +529,7 @@ def _ecs_service(body: dict) -> dict:
 
 
 def _eks(body: dict) -> dict:
-    types = body.get("enabled_cluster_log_types")
+    types = _v(body, "enabled_cluster_log_types")
     if types is UNRESOLVED:
         return {"Logging": UNRESOLVED}
     logs = [{"Type": t, "Enabled": True} for t in types] if isinstance(types, list) else []
@@ -520,13 +559,31 @@ _ADAPTERS: dict[str, Callable[[dict], dict]] = {
 }
 
 
+# Nested block name -> CloudFormation property it feeds. A `dynamic` block of that name
+# is built from input the scan cannot see.
+_BLOCK_PROPERTY: dict[str, str] = {
+    "versioning": "VersioningConfiguration",
+    "server_side_encryption_configuration": "BucketEncryption",
+    "logging": "LoggingConfiguration",
+    "instance_market_options": "LaunchTemplateData",
+    "ingress": "SecurityGroupIngress",
+    "access_logs": "LoadBalancerAttributes",
+    "dead_letter_config": "DeadLetterConfig",
+    "tracing_config": "TracingConfig",
+    "point_in_time_recovery": "PointInTimeRecoverySpecification",
+    "server_side_encryption": "SSESpecification",
+    "mixed_instances_policy": "MixedInstancesPolicy",
+    "capacity_provider_strategy": "CapacityProviderStrategy",
+}
+
+
 def _split_unresolved(props: dict) -> tuple[dict, frozenset[str]]:
     """Drop properties that depend on var/local and name them."""
     unresolved = frozenset(k for k, v in props.items() if _contains_unresolved(v))
     return {k: v for k, v in props.items() if k not in unresolved}, unresolved
 
 
-def _to_resource(block: _Block) -> Resource | None:
+def _to_resource(block: _Block) -> Resource:
     canonical = TF_TYPE_TO_CANONICAL.get(block.type)
     if block.type == "aws_security_group_rule":
         props = _ingress_rule(block.type, block.body)
@@ -537,6 +594,13 @@ def _to_resource(block: _Block) -> Resource | None:
     else:
         adapter = _ADAPTERS.get(block.type)
         props = adapter(block.body) if adapter else {}
+    for name in _dynamic_names(block.body):
+        cf_key = _BLOCK_PROPERTY.get(name)
+        if cf_key is not None and canonical is not None:
+            props[cf_key] = UNRESOLVED
+        if name == "access_log_settings" and canonical is not None:
+            key = "AccessLogSettings" if block.type == "aws_apigatewayv2_stage" else "AccessLogSetting"
+            props[key] = UNRESOLVED
     clean, unresolved = _split_unresolved(props)
     return Resource(
         type=canonical,
@@ -570,7 +634,7 @@ def _merge_s3_parts(blocks: list[_Block], resources: dict[str, Resource]) -> Non
         if target is None:
             unlinked.add(cf_key)
             continue
-        value = _s3_part(block.type, block.body)
+        value = UNRESOLVED if _dynamic_names(block.body) else _s3_part(block.type, block.body)
         if _contains_unresolved(value):
             target.properties.pop(cf_key, None)
             target.unresolved = target.unresolved | {cf_key}
@@ -599,8 +663,7 @@ def resources_from_terraform(module_dir: Path, warnings: list[str] | None = None
     resources: dict[str, Resource] = {}
     for block in blocks:
         resource = _to_resource(block)
-        if resource is not None:
-            resources[resource.name] = resource
+        resources[resource.name] = resource
     _merge_s3_parts(blocks, resources)
     return list(resources.values())
 
