@@ -668,8 +668,11 @@ def resources_from_terraform(module_dir: Path, warnings: list[str] | None = None
     return list(resources.values())
 
 
-def find_root_modules(files: list[Path]) -> list[Path]:
-    """Directories holding *.tf / *.tf.json, minus those used as local child modules."""
+def find_modules(files: list[Path]) -> tuple[list[Path], list[Path]]:
+    """Return (root modules, local child modules) among dirs holding *.tf / *.tf.json.
+
+    A child is a directory another module uses as a local `source` (./ or ../).
+    """
     dirs = sorted({
         p.parent.resolve() for p in files
         if p.name.endswith(".tf") or p.name.endswith(".tf.json")
@@ -680,6 +683,11 @@ def find_root_modules(files: list[Path]) -> list[Path]:
             try:
                 _blocks_unused, sources = parse_tf_file(path)
             except (TerraformError, OSError, UnicodeError):
-                continue
+                continue  # reported when the module itself is scanned
             children.update((module_dir / source).resolve() for source in sources)
-    return [d for d in dirs if d not in children]
+    return [d for d in dirs if d not in children], [d for d in dirs if d in children]
+
+
+def find_root_modules(files: list[Path]) -> list[Path]:
+    """Directories holding *.tf / *.tf.json, minus those used as local child modules."""
+    return find_modules(files)[0]
