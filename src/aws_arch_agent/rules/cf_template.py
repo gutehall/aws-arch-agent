@@ -182,6 +182,17 @@ def run_resource_checks(
     def count(*types: str) -> int:
         return sum(1 for r in resources if r.type in types)
 
+    def _anchor(*types: str) -> tuple[str, int | None]:
+        """File and line for a template-level finding: the first resource of these types.
+
+        One CloudFormation template is one file, so this is the template path. A Terraform
+        module spans files, so the finding points at the resource that triggered it.
+        """
+        for r in resources:
+            if r.type in types and r.file:
+                return r.file, r.line
+        return str(template_path), None
+
     vpc_count = count("vpc")
     vpce_count = count("vpc_endpoint")
     flow_log_count = count("flow_log")
@@ -756,8 +767,8 @@ def run_resource_checks(
             title="VPC has no VPC endpoints in this template",
             severity="Low",
             category="Best Practices",
-            file=str(template_path),
-            line=None,
+            file=_anchor("vpc")[0],
+            line=_anchor("vpc")[1],
             evidence=f"Template has {vpc_count} VPC(s) and 0 VPCEndpoint(s)",
             recommendation=(
                 "Consider adding VPC endpoints (gateway for S3/DynamoDB, or interface for AWS APIs) "
@@ -772,8 +783,8 @@ def run_resource_checks(
             title="VPC has no flow logs in this template",
             severity="Low",
             category="Operational Excellence",
-            file=str(template_path),
-            line=None,
+            file=_anchor("vpc")[0],
+            line=_anchor("vpc")[1],
             evidence=f"Template has {vpc_count} VPC(s) and 0 FlowLog(s)",
             recommendation="Add AWS::EC2::FlowLog for network troubleshooting and security analysis.",
         ))
@@ -785,8 +796,8 @@ def run_resource_checks(
             title="Consider CloudFront or ElastiCache for caching",
             severity="Low",
             category="Performance Efficiency",
-            file=str(template_path),
-            line=None,
+            file=_anchor("api_gateway_rest_api", "api_gateway_stage", "apigatewayv2_api", "apigatewayv2_stage", "lambda_function")[0],
+            line=_anchor("api_gateway_rest_api", "api_gateway_stage", "apigatewayv2_api", "apigatewayv2_stage", "lambda_function")[1],
             evidence="Template has API Gateway or Lambda but no CloudFront or ElastiCache",
             recommendation="Consider CloudFront (for APIs/static content) or ElastiCache (for data) to improve latency and efficiency.",
         ))
@@ -798,8 +809,8 @@ def run_resource_checks(
             title="NAT Gateway incurs data processing cost",
             severity="Low",
             category="Cost Optimization",
-            file=str(template_path),
-            line=None,
+            file=_anchor("nat_gateway")[0],
+            line=_anchor("nat_gateway")[1],
             evidence=f"Template has {nat_count} NAT Gateway(s)",
             recommendation="Consider VPC endpoints (S3, DynamoDB, or interface endpoints) to reduce NAT data processing costs.",
         ))
@@ -811,8 +822,8 @@ def run_resource_checks(
             title="Launch template(s) do not use Spot",
             severity="Low",
             category="Sustainability",
-            file=str(template_path),
-            line=None,
+            file=_anchor("launch_template")[0],
+            line=_anchor("launch_template")[1],
             evidence=f"Template has {launch_templates_without_spot} LaunchTemplate(s) without Spot",
             recommendation=(
                 "Consider InstanceMarketOptions.MarketType: spot for interruptible workloads "
