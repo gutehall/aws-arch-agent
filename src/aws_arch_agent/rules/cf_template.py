@@ -4,10 +4,9 @@ import json
 from pathlib import Path
 from typing import List, Dict, Any
 
-import yaml
-
 from aws_arch_agent.models import Finding
 from aws_arch_agent.tools.cdk_synth import list_cf_templates
+from aws_arch_agent.tools.cfn_yaml import parse_template_text
 from aws_arch_agent.tools.paths import to_repo_relative
 
 # Sensitive ports for security group checks (SSH, RDP, Postgres, MySQL, Mongo)
@@ -124,10 +123,7 @@ def _read_template(path: Path) -> tuple[dict, str | None]:
         return {}, f"Template file not found: {path}"
     try:
         text = path.read_text(encoding="utf-8")
-        if path.suffix.lower() in {".yaml", ".yml"} and not path.name.endswith(".template.json"):
-            doc = yaml.safe_load(text) or {}
-        else:
-            doc = json.loads(text)
+        doc = parse_template_text(path, text) or {}
     except Exception as exc:
         return {}, f"Failed to parse template {path.name}: {exc}"
     if not isinstance(doc, dict):

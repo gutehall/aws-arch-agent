@@ -7,14 +7,15 @@ import re
 from pathlib import Path
 from typing import Literal
 
-import yaml
-
 from aws_arch_agent.models import IacSource, RepoContext, Finding
 from aws_arch_agent.rules.registry import ALL_RULES
+from aws_arch_agent.rules.cf_template import run_cf_rules_from_paths
 from aws_arch_agent.rules.runner import filter_by_severity, run_all_rules
 from aws_arch_agent.report.markdown import render_markdown
 from aws_arch_agent.tools.llm import LLMClient
 from aws_arch_agent.tools.files import iter_files, read_text_safe
+from aws_arch_agent.tools.cdk_synth import list_templates_from_path
+from aws_arch_agent.tools.cfn_yaml import is_cf_template
 from aws_arch_agent.tools.rg import limit_to_files
 
 logger = logging.getLogger(__name__)
@@ -134,25 +135,7 @@ def detect_language(repo_path: Path) -> RepoLanguage:
     return "unknown"
 
 
-_CF_VERSION_KEY = re.compile(r"""^\s*["']?AWSTemplateFormatVersion["']?\s*:""", re.MULTILINE)
-_TEMPLATE_SUFFIXES = {".json", ".yaml", ".yml", ".template"}
-_TEMPLATE_MAX_BYTES = 5_000_000
 _PY_CDK_PACKAGE = re.compile(r"\baws[-_]cdk(?:[-_.]lib|\.)", re.IGNORECASE)
-
-
-class _TagTolerantLoader(yaml.SafeLoader):
-    """SafeLoader that reads CloudFormation short tags (!Ref, !Sub) as plain values."""
-
-
-def _construct_tag(loader: yaml.SafeLoader, _suffix: str, node: yaml.Node) -> object:
-    if isinstance(node, yaml.ScalarNode):
-        return loader.construct_scalar(node)
-    if isinstance(node, yaml.SequenceNode):
-        return loader.construct_sequence(node)
-    return loader.construct_mapping(node)  # type: ignore[arg-type]
-
-
-_TagTolerantLoader.add_multi_constructor("!", _construct_tag)
 
 
 def _python_has_cdk(repo_path: Path) -> bool:
@@ -168,38 +151,6 @@ def has_cdk_markers(repo_path: Path) -> bool:
     if (repo_path / "cdk.json").is_file() or _cdk_app_command(repo_path):
         return True
     return _package_has_cdk(repo_path) or _python_has_cdk(repo_path)
-
-
-def is_cf_template(path: Path) -> bool:
-    """True for a CloudFormation template.
-
-    Needs AWSTemplateFormatVersion, or a Resources entry whose Type starts with AWS::.
-    Other YAML and JSON (GitHub Actions, package.json) is not a template.
-    """
-    if path.suffix.lower() not in _TEMPLATE_SUFFIXES:
-        return False
-    text = read_text_safe(path, max_bytes=_TEMPLATE_MAX_BYTES)
-    if "AWSTemplateFormatVersion" not in text and "AWS::" not in text:
-        return False
-    try:
-        if path.suffix.lower() == ".json":
-            doc = json.loads(text)
-        else:
-            doc = yaml.load(text, Loader=_TagTolerantLoader)  # noqa: S506 - SafeLoader subclass
-    except (ValueError, yaml.YAMLError):
-        # Unparseable (e.g. truncated): fall back to a top-level version key.
-        return bool(_CF_VERSION_KEY.search(text))
-    if not isinstance(doc, dict):
-        return False
-    if "AWSTemplateFormatVersion" in doc:
-        return True
-    resources = doc.get("Resources")
-    if not isinstance(resources, dict):
-        return False
-    return any(
-        isinstance(res, dict) and isinstance(res.get("Type"), str) and res["Type"].startswith("AWS::")
-        for res in resources.values()
-    )
 
 
 def is_terraform_file(path: Path) -> bool:
@@ -286,6 +237,34 @@ def _filter_rules(
     return out
 
 
+# Sources scanned with the template checks instead of the CDK regex pass.
+TEMPLATE_SOURCES = frozenset({"cloudformation", "mixed"})
+
+
+def discover_templates(repo_path: Path, files: list[Path]) -> list[Path]:
+    """Real CloudFormation templates in the repo, limited to the files walked (--max-files)."""
+    walked = {p.resolve() for p in files}
+    return [p for p in list_templates_from_path(repo_path, real_only=True) if p.resolve() in walked]
+
+
+def _scan_templates(
+    repo_path: Path,
+    templates: list[Path],
+    rules_include: list[str] | None,
+    rules_exclude: list[str] | None,
+) -> tuple[list[Finding], list[str]]:
+    """Run the shared template checks on raw CloudFormation. No synth, no CDK regex pass."""
+    warnings: list[str] = []
+    findings = run_cf_rules_from_paths(templates, repo_path=repo_path, warnings=warnings)
+    if rules_include is not None:
+        allowed = set(rules_include)
+        findings = [f for f in findings if f.id in allowed]
+    if rules_exclude is not None:
+        blocked = set(rules_exclude)
+        findings = [f for f in findings if f.id not in blocked]
+    return findings, warnings
+
+
 def _collect_findings(
     repo_path: Path,
     max_files: int,
@@ -305,9 +284,14 @@ def _collect_findings(
         files_scanned=len(files),
         key_files=[p.name for p in files if p.name in {"cdk.json", "package.json", "requirements.txt"}],
     )
-    rules = _filter_rules(ALL_RULES, rules_include, rules_exclude, org=rules_org)
-    with limit_to_files(repo_path, files):
-        findings, warnings = run_all_rules(repo_path, rules, _languages_to_scan(language))
+    if source in TEMPLATE_SOURCES:
+        templates = discover_templates(repo_path, files)
+        ctx.notes["templates_scanned"] = len(templates)
+        findings, warnings = _scan_templates(repo_path, templates, rules_include, rules_exclude)
+    else:
+        rules = _filter_rules(ALL_RULES, rules_include, rules_exclude, org=rules_org)
+        with limit_to_files(repo_path, files):
+            findings, warnings = run_all_rules(repo_path, rules, _languages_to_scan(language))
     findings = filter_by_severity(findings, severity_threshold)
     return ctx, findings, warnings
 
