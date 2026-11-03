@@ -270,6 +270,7 @@ CloudFormation template rules run when the agent has access to template files. T
 **When CF rules run:**
 
 - In **V1** (the default) when the repo source is CloudFormation (`--iac auto` detects it, or `--iac cloudformation`). The agent discovers real templates (any `.json`, `.yaml`, `.yml`, or `.template` with `AWSTemplateFormatVersion` or an `AWS::` resource; `node_modules`, `cdk.out`, and dot dirs are skipped) and runs these rules instead of the CDK code heuristics. No synth, no `--mode v2`. YAML short tags (`!Ref`, `!Sub`, `!GetAtt`) are read as their long-form intrinsics.
+- In **V1** on **Terraform** root modules (`*.tf`, `*.tf.json`; `--iac auto` detects them, or `--iac terraform`). `aws_*` resources map onto the same checks and ids; findings point at the HCL file and line. Values from `var.*` / `local.*` produce no finding. No `terraform init`; child and registry modules are not read.
 - In **V2** after **`cdk synth`** — templates in `cdk.out/*.template.json` are analyzed.
 - In **V2** with **`--templates`** — you provide a path to a directory or file; the agent discovers templates and skips synth. No Node.js or CDK required. You can omit `--repo` when using `--templates` (the templates path is used as the repo root).
 

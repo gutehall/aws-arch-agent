@@ -9,13 +9,15 @@ from typing import Literal
 
 from aws_arch_agent.models import IacSource, RepoContext, Finding
 from aws_arch_agent.rules.registry import ALL_RULES
-from aws_arch_agent.rules.cf_template import run_cf_rules_from_paths
+from aws_arch_agent.rules.cf_template import run_cf_rules_from_paths, run_resource_checks
+from aws_arch_agent.rules.terraform_model import find_modules, resources_from_terraform
 from aws_arch_agent.rules.runner import filter_by_severity, run_all_rules
 from aws_arch_agent.report.markdown import render_markdown
 from aws_arch_agent.tools.llm import LLMClient
 from aws_arch_agent.tools.files import iter_files, read_text_safe
 from aws_arch_agent.tools.cdk_synth import list_templates_from_path
 from aws_arch_agent.tools.cfn_yaml import is_cf_template
+from aws_arch_agent.tools.paths import to_repo_relative
 from aws_arch_agent.tools.rg import limit_to_files
 
 logger = logging.getLogger(__name__)
@@ -237,8 +239,9 @@ def _filter_rules(
     return out
 
 
-# Sources scanned with the template checks instead of the CDK regex pass.
+# Sources scanned with the CF-* checks instead of the CDK regex pass.
 TEMPLATE_SOURCES = frozenset({"cloudformation", "mixed"})
+TERRAFORM_SOURCES = frozenset({"terraform", "mixed"})
 
 
 def discover_templates(repo_path: Path, files: list[Path]) -> list[Path]:
@@ -258,13 +261,38 @@ def _scan_templates(
     """Run the shared template checks on raw CloudFormation. No synth, no CDK regex pass."""
     warnings: list[str] = []
     findings = run_cf_rules_from_paths(templates, repo_path=repo_path, warnings=warnings)
+    return _filter_ids(findings, rules_include, rules_exclude), warnings
+
+
+def _filter_ids(
+    findings: list[Finding], rules_include: list[str] | None, rules_exclude: list[str] | None
+) -> list[Finding]:
     if rules_include is not None:
         allowed = set(rules_include)
         findings = [f for f in findings if f.id in allowed]
     if rules_exclude is not None:
         blocked = set(rules_exclude)
         findings = [f for f in findings if f.id not in blocked]
-    return findings, warnings
+    return findings
+
+
+def _scan_terraform(
+    repo_path: Path,
+    modules: list[Path],
+    rules_include: list[str] | None,
+    rules_exclude: list[str] | None,
+) -> tuple[list[Finding], list[str]]:
+    """Run the CF-* checks on each Terraform root module. Findings point at the HCL file and line."""
+    warnings: list[str] = []
+    findings: list[Finding] = []
+    for module in modules:
+        resources = resources_from_terraform(module, warnings)
+        module_findings = run_resource_checks(resources, module, warnings)
+        for finding in module_findings:
+            if finding.file:
+                finding.file = to_repo_relative(finding.file, repo_path)
+        findings.extend(module_findings)
+    return _filter_ids(findings, rules_include, rules_exclude), warnings
 
 
 def _collect_findings(
@@ -286,10 +314,25 @@ def _collect_findings(
         files_scanned=len(files),
         key_files=[p.name for p in files if p.name in {"cdk.json", "package.json", "requirements.txt"}],
     )
-    if source in TEMPLATE_SOURCES:
-        templates = discover_templates(repo_path, files)
-        ctx.notes["templates_scanned"] = len(templates)
-        findings, warnings = _scan_templates(repo_path, templates, rules_include, rules_exclude)
+    if source in TEMPLATE_SOURCES or source in TERRAFORM_SOURCES:
+        findings, warnings = [], []
+        if source in TEMPLATE_SOURCES:
+            templates = discover_templates(repo_path, files)
+            ctx.notes["templates_scanned"] = len(templates)
+            found, warned = _scan_templates(repo_path, templates, rules_include, rules_exclude)
+            findings.extend(found)
+            warnings.extend(warned)
+        if source in TERRAFORM_SOURCES:
+            modules, children = find_modules(files)
+            ctx.notes["terraform_modules"] = [to_repo_relative(str(m), repo_path) for m in modules]
+            if children:
+                # Child modules are not read (no terraform init); say which were left out.
+                ctx.notes["terraform_child_modules_skipped"] = [
+                    to_repo_relative(str(m), repo_path) for m in children
+                ]
+            found, warned = _scan_terraform(repo_path, modules, rules_include, rules_exclude)
+            findings.extend(found)
+            warnings.extend(warned)
     else:
         rules = _filter_rules(ALL_RULES, rules_include, rules_exclude, org=rules_org)
         with limit_to_files(repo_path, files):
