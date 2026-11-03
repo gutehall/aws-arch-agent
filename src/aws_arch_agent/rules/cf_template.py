@@ -2,9 +2,10 @@
 from __future__ import annotations
 import json
 from pathlib import Path
-from typing import List, Dict, Any
+from typing import List, Any
 
 from aws_arch_agent.models import Finding
+from aws_arch_agent.rules.resource_model import Resource, resources_from_cf_template
 from aws_arch_agent.tools.cdk_synth import list_cf_templates
 from aws_arch_agent.tools.cfn_yaml import parse_template_text
 from aws_arch_agent.tools.paths import to_repo_relative
@@ -31,18 +32,6 @@ def _is_large_instance_class(instance_class: Any) -> bool:
         or "12xlarge" in s or "16xlarge" in s or "24xlarge" in s
         or s.endswith("xlarge")
     )
-
-
-def _walk_resources(template: dict) -> Dict[str, dict]:
-    res = template.get("Resources", {}) or {}
-    if isinstance(res, dict):
-        return res
-    return {}
-
-
-def _get_prop(obj: dict, key: str) -> Any:
-    props = obj.get("Properties", {}) or {}
-    return props.get(key)
 
 
 def _is_intrinsic(value: dict) -> bool:
@@ -131,60 +120,71 @@ def _read_template(path: Path) -> tuple[dict, str | None]:
     return doc, None
 
 
-def _run_cf_rules_on_template(
+# Canonical types with per-resource checks (the rest only feed template-level counts).
+_PER_RESOURCE_TYPES = frozenset({
+    "s3_bucket", "db_instance", "rds_cluster", "instance", "lb", "cloudtrail", "kms_key",
+    "lambda_function", "dynamodb_table", "security_group", "security_group_ingress_rule",
+    "cloudwatch_log_group", "sqs_queue", "api_gateway_stage", "apigatewayv2_stage",
+    "autoscaling_group", "ecs_service", "eks_cluster",
+})
+
+
+def run_resource_checks(
+    resources: List[Resource],
     template_path: Path,
-    doc: dict,
     warnings: list[str] | None = None,
 ) -> List[Finding]:
-    """Run template-level checks on a single parsed CloudFormation template; return list of findings."""
+    """Run the CF-* checks on one file's resources; return list of findings."""
     if warnings is None:
         warnings = []
     findings: List[Finding] = []
-    resources = _walk_resources(doc)
-    typed = [r for r in resources.values() if isinstance(r, dict)]
 
-    vpc_count = sum(1 for r in typed if r.get("Type") == "AWS::EC2::VPC")
-    vpce_count = sum(1 for r in typed if r.get("Type") == "AWS::EC2::VPCEndpoint")
-    flow_log_count = sum(1 for r in typed if r.get("Type") == "AWS::EC2::FlowLog")
-    nat_count = sum(1 for r in typed if r.get("Type") == "AWS::EC2::NatGateway")
-    has_apigw = any(
-        r.get("Type") in ("AWS::ApiGateway::RestApi", "AWS::ApiGateway::Stage", "AWS::ApiGatewayV2::Api", "AWS::ApiGatewayV2::Stage")
-        for r in typed
-    )
-    has_lambda = any(r.get("Type") == "AWS::Lambda::Function" for r in typed)
-    has_cloudfront = any(r.get("Type") == "AWS::CloudFront::Distribution" for r in typed)
-    has_elasticache = any(
-        r.get("Type") in ("AWS::ElastiCache::CacheCluster", "AWS::ElastiCache::ReplicationGroup")
-        for r in typed
-    )
-    asg_count = sum(1 for r in typed if r.get("Type") == "AWS::AutoScaling::AutoScalingGroup")
+    def count(*types: str) -> int:
+        return sum(1 for r in resources if r.type in types)
+
+    vpc_count = count("vpc")
+    vpce_count = count("vpc_endpoint")
+    flow_log_count = count("flow_log")
+    nat_count = count("nat_gateway")
+    has_apigw = count(
+        "api_gateway_rest_api", "api_gateway_stage", "apigatewayv2_api", "apigatewayv2_stage"
+    ) > 0
+    has_lambda = count("lambda_function") > 0
+    has_cloudfront = count("cloudfront_distribution") > 0
+    has_elasticache = count("elasticache_cluster", "elasticache_replication_group") > 0
+    asg_count = count("autoscaling_group")
     launch_templates_without_spot = 0
-    for logical_id, r in resources.items():
-        if not isinstance(r, dict) or r.get("Type") != "AWS::EC2::LaunchTemplate":
+    for r in resources:
+        if r.type != "launch_template":
             continue
-        props = r.get("Properties") or {}
-        if not isinstance(props, dict):
-            warnings.append(
-                f"CF rules skipped resource {logical_id} in {template_path.name}: Properties is not an object"
-            )
+        if r.malformed:
+            warnings.append(f"CF rules skipped resource {r.name} in {template_path.name}: {r.malformed}")
             continue
-        ltd = props.get("LaunchTemplateData") or {}
+        ltd = r.properties.get("LaunchTemplateData") or {}
         if not isinstance(ltd, dict):
             warnings.append(
-                f"CF rules skipped resource {logical_id} in {template_path.name}: LaunchTemplateData is not an object"
+                f"CF rules skipped resource {r.name} in {template_path.name}: LaunchTemplateData is not an object"
             )
             continue
         inst_market = ltd.get("InstanceMarketOptions") or {}
         if isinstance(inst_market, dict) and inst_market.get("MarketType") != "spot":
             launch_templates_without_spot += 1
 
-    for logical_id, r in resources.items():
+    for res in resources:
+        logical_id = res.name
+        if res.malformed:
+            if res.type in _PER_RESOURCE_TYPES:
+                warnings.append(
+                    f"CF rules skipped resource {logical_id} in {template_path.name}: {res.malformed}"
+                )
+            continue
         try:
-                rtype = r.get("Type", "Unknown")
-                props = r.get("Properties", {}) or {}
+                rtype = res.source_type
+                ctype = res.type
+                props = res.properties
 
                 # --- S3 checks ---
-                if rtype == "AWS::S3::Bucket":
+                if ctype == "s3_bucket":
                     pab = props.get("PublicAccessBlockConfiguration")
                     if not pab or not all(pab.get(k) is True for k in [
                         "BlockPublicAcls", "IgnorePublicAcls", "BlockPublicPolicy", "RestrictPublicBuckets"
@@ -194,8 +194,8 @@ def _run_cf_rules_on_template(
                             title="S3 bucket may miss full PublicAccessBlock",
                             severity="High",
                             category="Security",
-                            file=str(template_path),
-                            line=None,
+                            file=res.file or str(template_path),
+                            line=res.line,
                             evidence=f"{logical_id} ({rtype})",
                             recommendation=(
                                 "Set PublicAccessBlockConfiguration with all four flags True for buckets that should not be public. "
@@ -210,8 +210,8 @@ def _run_cf_rules_on_template(
                             title="S3 bucket encryption explicitly disabled",
                             severity="Medium",
                             category="Security",
-                            file=str(template_path),
-                            line=None,
+                            file=res.file or str(template_path),
+                            line=res.line,
                             evidence=f"{logical_id} ({rtype})",
                             recommendation=(
                                 "S3 applies SSE-S3 when BucketEncryption is omitted. "
@@ -226,8 +226,8 @@ def _run_cf_rules_on_template(
                             title="S3 bucket versioning not enabled",
                             severity="Low",
                             category="Reliability",
-                            file=str(template_path),
-                            line=None,
+                            file=res.file or str(template_path),
+                            line=res.line,
                             evidence=f"{logical_id} ({rtype})",
                             recommendation="Consider enabling versioning for better recovery and protection against accidental deletion (especially for data buckets).",
                         ))
@@ -239,8 +239,8 @@ def _run_cf_rules_on_template(
                             title="S3 bucket server access logging not configured",
                             severity="Low",
                             category="Operational Excellence",
-                            file=str(template_path),
-                            line=None,
+                            file=res.file or str(template_path),
+                            line=res.line,
                             evidence=f"{logical_id} ({rtype})",
                             recommendation=(
                                 "Consider enabling server access logging (LoggingConfiguration with DestinationBucketName) "
@@ -249,9 +249,9 @@ def _run_cf_rules_on_template(
                         ))
 
                 # --- RDS checks ---
-                if rtype in ("AWS::RDS::DBInstance", "AWS::RDS::DBCluster"):
+                if ctype in ("db_instance", "rds_cluster"):
                     cluster_member = (
-                        rtype == "AWS::RDS::DBInstance" and "DBClusterIdentifier" in props
+                        ctype == "db_instance" and "DBClusterIdentifier" in props
                     )
                     if not cluster_member:
                         storage_enc = props.get("StorageEncrypted")
@@ -261,8 +261,8 @@ def _run_cf_rules_on_template(
                                 title="RDS storage encryption not enabled",
                                 severity="High",
                                 category="Security",
-                                file=str(template_path),
-                                line=None,
+                                file=res.file or str(template_path),
+                                line=res.line,
                                 evidence=f"{logical_id} ({rtype})",
                                 recommendation="Enable StorageEncrypted (and KMS CMK if required) for databases.",
                             ))
@@ -273,21 +273,21 @@ def _run_cf_rules_on_template(
                                 title="RDS backup retention not set",
                                 severity="Medium",
                                 category="Reliability",
-                                file=str(template_path),
-                                line=None,
+                                file=res.file or str(template_path),
+                                line=res.line,
                                 evidence=f"{logical_id} ({rtype})",
                                 recommendation="Set BackupRetentionPeriod per RPO/RTO (e.g. 7–35 days).",
                             ))
 
                         maz = props.get("MultiAZ")
-                        if rtype == "AWS::RDS::DBInstance" and maz is not True:
+                        if ctype == "db_instance" and maz is not True:
                             findings.append(Finding(
                                 id="CF-RDS-003",
                                 title="RDS Multi-AZ not enabled",
                                 severity="Medium",
                                 category="Reliability",
-                                file=str(template_path),
-                                line=None,
+                                file=res.file or str(template_path),
+                                line=res.line,
                                 evidence=f"{logical_id} ({rtype})",
                                 recommendation="Enable MultiAZ for production workloads where high availability is required.",
                             ))
@@ -298,8 +298,8 @@ def _run_cf_rules_on_template(
                                 title="RDS deletion protection not enabled",
                                 severity="Medium",
                                 category="Reliability",
-                                file=str(template_path),
-                                line=None,
+                                file=res.file or str(template_path),
+                                line=res.line,
                                 evidence=f"{logical_id} ({rtype})",
                                 recommendation="Enable DeletionProtection for production databases to prevent accidental deletion.",
                             ))
@@ -310,40 +310,40 @@ def _run_cf_rules_on_template(
                             title="RDS instance is publicly accessible",
                             severity="High",
                             category="Security",
-                            file=str(template_path),
-                            line=None,
+                            file=res.file or str(template_path),
+                            line=res.line,
                             evidence=f"{logical_id} ({rtype})",
                             recommendation="Set PubliclyAccessible to false unless the database must be reachable from the internet.",
                         ))
 
-                    if rtype == "AWS::RDS::DBInstance" and _is_large_instance_class(props.get("DBInstanceClass")):
+                    if ctype == "db_instance" and _is_large_instance_class(props.get("DBInstanceClass")):
                         findings.append(Finding(
                             id="CF-PERF-003",
                             title="RDS instance class is large — verify right-sizing",
                             severity="Low",
                             category="Performance Efficiency",
-                            file=str(template_path),
-                            line=None,
+                            file=res.file or str(template_path),
+                            line=res.line,
                             evidence=f"{logical_id} ({rtype})",
                             recommendation="Review DBInstanceClass against actual workload; consider right-sizing to reduce cost and improve efficiency.",
                         ))
 
                 # --- EC2 Instance: large instance right-sizing (Performance Efficiency) ---
-                if rtype == "AWS::EC2::Instance":
+                if ctype == "instance":
                     if _is_large_instance_class(props.get("InstanceType")):
                         findings.append(Finding(
                             id="CF-PERF-004",
                             title="EC2 instance type is large — verify right-sizing",
                             severity="Low",
                             category="Performance Efficiency",
-                            file=str(template_path),
-                            line=None,
+                            file=res.file or str(template_path),
+                            line=res.line,
                             evidence=f"{logical_id} ({rtype})",
                             recommendation="Review InstanceType against actual workload; consider right-sizing or autoscaling to match load.",
                         ))
 
                 # --- ALB access logs (heuristic) ---
-                if rtype == "AWS::ElasticLoadBalancingV2::LoadBalancer":
+                if ctype == "lb":
                     attrs = props.get("LoadBalancerAttributes")
                     # CDK may represent as list of {Key, Value}
                     has_logs = False
@@ -357,14 +357,14 @@ def _run_cf_rules_on_template(
                             title="ALB access logs not enabled (template-level)",
                             severity="Low",
                             category="Observability",
-                            file=str(template_path),
-                            line=None,
+                            file=res.file or str(template_path),
+                            line=res.line,
                             evidence=f"{logical_id} ({rtype})",
                             recommendation="Consider enabling ALB access logs to S3 for audit and incident analysis (balance against cost).",
                         ))
 
                 # --- CloudTrail ---
-                if rtype == "AWS::CloudTrail::Trail":
+                if ctype == "cloudtrail":
                     log = props.get("EnableLogFileValidation")
                     if log is not True:
                         findings.append(Finding(
@@ -372,8 +372,8 @@ def _run_cf_rules_on_template(
                             title="CloudTrail log file validation not enabled",
                             severity="Medium",
                             category="Operational Excellence",
-                            file=str(template_path),
-                            line=None,
+                            file=res.file or str(template_path),
+                            line=res.line,
                             evidence=f"{logical_id} ({rtype})",
                             recommendation="Enable log file validation for CloudTrail to detect tampering.",
                         ))
@@ -383,8 +383,8 @@ def _run_cf_rules_on_template(
                             title="CloudTrail is not multi-region",
                             severity="Low",
                             category="Operational Excellence",
-                            file=str(template_path),
-                            line=None,
+                            file=res.file or str(template_path),
+                            line=res.line,
                             evidence=f"{logical_id} ({rtype})",
                             recommendation="Consider enabling IsMultiRegionTrail for organization-wide audit coverage.",
                         ))
@@ -394,19 +394,19 @@ def _run_cf_rules_on_template(
                             title="CloudTrail log files not encrypted with KMS",
                             severity="Low",
                             category="Security",
-                            file=str(template_path),
-                            line=None,
+                            file=res.file or str(template_path),
+                            line=res.line,
                             evidence=f"{logical_id} ({rtype})",
                             recommendation="Use KmsKeyId to encrypt CloudTrail log files for integrity and compliance.",
                         ))
 
                 # --- VPC Flow Logs ---
-                if rtype == "AWS::EC2::FlowLog":
+                if ctype == "flow_log":
                     # Flow log exists; optional: check destination (CloudWatch Logs or S3)
                     pass  # Presence is good; no extra check for now
 
                 # --- KMS Key policy ---
-                if rtype == "AWS::KMS::Key":
+                if ctype == "kms_key":
                     policy = props.get("KeyPolicy")
                     if isinstance(policy, dict):
                         policy_str = json.dumps(policy)
@@ -418,22 +418,22 @@ def _run_cf_rules_on_template(
                             title="KMS key policy may allow wildcard principal",
                             severity="High",
                             category="Security",
-                            file=str(template_path),
-                            line=None,
+                            file=res.file or str(template_path),
+                            line=res.line,
                             evidence=f"{logical_id} ({rtype})",
                             recommendation="Restrict KMS key policy to specific principals. Avoid Principal '*' or AWS:*.",
                         ))
 
                 # --- Lambda ---
-                if rtype == "AWS::Lambda::Function":
+                if ctype == "lambda_function":
                     if not props.get("DeadLetterConfig", {}).get("TargetArn"):
                         findings.append(Finding(
                             id="CF-LAM-001",
                             title="Lambda function has no dead-letter configuration",
                             severity="Medium",
                             category="Reliability",
-                            file=str(template_path),
-                            line=None,
+                            file=res.file or str(template_path),
+                            line=res.line,
                             evidence=f"{logical_id} ({rtype})",
                             recommendation="Configure DeadLetterConfig (SQS or SNS) for async invocations to capture failed events.",
                         ))
@@ -444,8 +444,8 @@ def _run_cf_rules_on_template(
                             title="Lambda active tracing (X-Ray) not enabled",
                             severity="Low",
                             category="Observability",
-                            file=str(template_path),
-                            line=None,
+                            file=res.file or str(template_path),
+                            line=res.line,
                             evidence=f"{logical_id} ({rtype})",
                             recommendation="Set TracingConfig.Mode to Active for X-Ray tracing.",
                         ))
@@ -460,14 +460,14 @@ def _run_cf_rules_on_template(
                             title="Lambda function does not use ARM64 (Graviton)",
                             severity="Low",
                             category="Performance Efficiency",
-                            file=str(template_path),
-                            line=None,
+                            file=res.file or str(template_path),
+                            line=res.line,
                             evidence=f"{logical_id} ({rtype})",
                             recommendation="Consider Architectures: [arm64] for better price-performance. In CDK: architecture: lambda.Architecture.ARM_64.",
                         ))
 
                 # --- DynamoDB ---
-                if rtype == "AWS::DynamoDB::Table":
+                if ctype == "dynamodb_table":
                     pitr = props.get("PointInTimeRecoverySpecification", {}).get("PointInTimeRecoveryEnabled")
                     if pitr is not True:
                         findings.append(Finding(
@@ -475,8 +475,8 @@ def _run_cf_rules_on_template(
                             title="DynamoDB point-in-time recovery not enabled",
                             severity="Medium",
                             category="Reliability",
-                            file=str(template_path),
-                            line=None,
+                            file=res.file or str(template_path),
+                            line=res.line,
                             evidence=f"{logical_id} ({rtype})",
                             recommendation="Enable PointInTimeRecoverySpecification.PointInTimeRecoveryEnabled for backup.",
                         ))
@@ -487,14 +487,14 @@ def _run_cf_rules_on_template(
                             title="DynamoDB server-side encryption not explicitly enabled",
                             severity="Medium",
                             category="Security",
-                            file=str(template_path),
-                            line=None,
+                            file=res.file or str(template_path),
+                            line=res.line,
                             evidence=f"{logical_id} ({rtype})",
                             recommendation="Enable SSESpecification (SSEEnabled or SSEType: KMS) for encryption at rest.",
                         ))
 
                 # --- Security groups: open to 0.0.0.0/0 on sensitive ports ---
-                if rtype == "AWS::EC2::SecurityGroup":
+                if ctype == "security_group":
                     ingress = props.get("SecurityGroupIngress") or []
                     if isinstance(ingress, list):
                         for rule in ingress:
@@ -506,13 +506,13 @@ def _run_cf_rules_on_template(
                                     title="Security group allows 0.0.0.0/0 or ::/0 on sensitive port",
                                     severity="High",
                                     category="Security",
-                                    file=str(template_path),
-                                    line=None,
+                                    file=res.file or str(template_path),
+                                    line=res.line,
                                     evidence=f"{logical_id} ({rtype})",
                                     recommendation="Restrict ingress to specific CIDRs; avoid 0.0.0.0/0 on SSH (22), RDP (3389), DB ports.",
                                 ))
                                 break
-                if rtype == "AWS::EC2::SecurityGroupIngress":
+                if ctype == "security_group_ingress_rule":
                     cidr = (props.get("CidrIp") or "").strip()
                     cidr6 = (props.get("CidrIpv6") or "").strip()
                     if cidr == "0.0.0.0/0" or cidr6 == "::/0":
@@ -522,22 +522,22 @@ def _run_cf_rules_on_template(
                                 title="Security group ingress allows 0.0.0.0/0 or ::/0 on sensitive port",
                                 severity="High",
                                 category="Security",
-                                file=str(template_path),
-                                line=None,
+                                file=res.file or str(template_path),
+                                line=res.line,
                                 evidence=f"{logical_id} ({rtype})",
                                 recommendation="Restrict to specific CIDRs; avoid 0.0.0.0/0 on SSH, RDP, DB ports.",
                             ))
 
                 # --- CloudWatch Logs ---
-                if rtype == "AWS::Logs::LogGroup":
+                if ctype == "cloudwatch_log_group":
                     if props.get("RetentionInDays") is None:
                         findings.append(Finding(
                             id="CF-CW-001",
                             title="Log group has no retention period (infinite retention)",
                             severity="Low",
                             category="Cost Optimization",
-                            file=str(template_path),
-                            line=None,
+                            file=res.file or str(template_path),
+                            line=res.line,
                             evidence=f"{logical_id} ({rtype})",
                             recommendation="Set RetentionInDays to limit cost and meet compliance (e.g. 30–365 days).",
                         ))
@@ -547,22 +547,22 @@ def _run_cf_rules_on_template(
                             title="Log group not encrypted with KMS",
                             severity="Low",
                             category="Security",
-                            file=str(template_path),
-                            line=None,
+                            file=res.file or str(template_path),
+                            line=res.line,
                             evidence=f"{logical_id} ({rtype})",
                             recommendation="Set KmsKeyId for encryption at rest where required by compliance.",
                         ))
 
                 # --- SQS ---
-                if rtype == "AWS::SQS::Queue":
+                if ctype == "sqs_queue":
                     if props.get("SqsManagedSseEnabled") is not True and not props.get("KmsMasterKeyId"):
                         findings.append(Finding(
                             id="CF-SQS-001",
                             title="SQS queue server-side encryption not explicitly configured",
                             severity="Low",
                             category="Security",
-                            file=str(template_path),
-                            line=None,
+                            file=res.file or str(template_path),
+                            line=res.line,
                             evidence=f"{logical_id} ({rtype})",
                             recommendation="Enable SqsManagedSseEnabled or set KmsMasterKeyId for encryption.",
                         ))
@@ -574,22 +574,22 @@ def _run_cf_rules_on_template(
                             title="SQS queue has no redrive policy (dead-letter queue)",
                             severity="Low",
                             category="Reliability",
-                            file=str(template_path),
-                            line=None,
+                            file=res.file or str(template_path),
+                            line=res.line,
                             evidence=f"{logical_id} ({rtype})",
                             recommendation="Consider RedrivePolicy with deadLetterTargetArn for failed messages.",
                         ))
 
                 # --- API Gateway Stage (REST and V2) ---
-                if rtype == "AWS::ApiGateway::Stage":
+                if ctype == "api_gateway_stage":
                     if not props.get("AccessLogSetting", {}).get("DestinationArn"):
                         findings.append(Finding(
                             id="CF-APIGW-001",
                             title="API Gateway REST stage access logging not enabled",
                             severity="Low",
                             category="Observability",
-                            file=str(template_path),
-                            line=None,
+                            file=res.file or str(template_path),
+                            line=res.line,
                             evidence=f"{logical_id} ({rtype})",
                             recommendation="Set AccessLogSetting with DestinationArn (e.g. CloudWatch Logs) for audit.",
                         ))
@@ -599,20 +599,20 @@ def _run_cf_rules_on_template(
                             title="API Gateway stage X-Ray tracing not enabled",
                             severity="Low",
                             category="Observability",
-                            file=str(template_path),
-                            line=None,
+                            file=res.file or str(template_path),
+                            line=res.line,
                             evidence=f"{logical_id} ({rtype})",
                             recommendation="Set TracingEnabled to true for X-Ray. DataTraceEnabled logs full bodies and is not tracing.",
                         ))
-                if rtype == "AWS::ApiGatewayV2::Stage":
+                if ctype == "apigatewayv2_stage":
                     if not props.get("AccessLogSettings", {}).get("DestinationArn"):
                         findings.append(Finding(
                             id="CF-APIGW-V2-001",
                             title="API Gateway V2 stage access logging not enabled",
                             severity="Low",
                             category="Observability",
-                            file=str(template_path),
-                            line=None,
+                            file=res.file or str(template_path),
+                            line=res.line,
                             evidence=f"{logical_id} ({rtype})",
                             recommendation="Set AccessLogSettings.DestinationArn for access logs.",
                         ))
@@ -622,14 +622,14 @@ def _run_cf_rules_on_template(
                             title="API Gateway V2 stage X-Ray tracing not enabled",
                             severity="Low",
                             category="Observability",
-                            file=str(template_path),
-                            line=None,
+                            file=res.file or str(template_path),
+                            line=res.line,
                             evidence=f"{logical_id} ({rtype})",
                             recommendation="Set TracingEnabled to true for X-Ray. DataTraceEnabled logs full bodies and is not tracing.",
                         ))
 
                 # --- Auto Scaling Group: Spot / mixed instances (Sustainability) ---
-                if rtype == "AWS::AutoScaling::AutoScalingGroup":
+                if ctype == "autoscaling_group":
                     mixed = props.get("MixedInstancesPolicy") or {}
                     inst_dist = mixed.get("InstancesDistribution") or {}
                     spot_max = inst_dist.get("SpotMaxPrice")
@@ -641,8 +641,8 @@ def _run_cf_rules_on_template(
                             title="Auto Scaling Group does not use Spot or mixed instances",
                             severity="Low",
                             category="Sustainability",
-                            file=str(template_path),
-                            line=None,
+                            file=res.file or str(template_path),
+                            line=res.line,
                             evidence=f"{logical_id} ({rtype})",
                             recommendation=(
                                 "Consider MixedInstancesPolicy with Spot (InstancesDistribution.SpotMaxPrice or SpotAllocationStrategy) "
@@ -651,7 +651,7 @@ def _run_cf_rules_on_template(
                         ))
 
                 # --- ECS Service: Fargate Spot (Sustainability) ---
-                if rtype == "AWS::ECS::Service":
+                if ctype == "ecs_service":
                     strat = props.get("CapacityProviderStrategy") or []
                     if isinstance(strat, dict):
                         strat = [strat]
@@ -670,8 +670,8 @@ def _run_cf_rules_on_template(
                             title="ECS Fargate service does not use FARGATE_SPOT",
                             severity="Low",
                             category="Sustainability",
-                            file=str(template_path),
-                            line=None,
+                            file=res.file or str(template_path),
+                            line=res.line,
                             evidence=f"{logical_id} ({rtype})",
                             recommendation=(
                                 "Consider CapacityProviderStrategy including FARGATE_SPOT for interruptible tasks "
@@ -680,7 +680,7 @@ def _run_cf_rules_on_template(
                         ))
 
                 # --- EKS ---
-                if rtype == "AWS::EKS::Cluster":
+                if ctype == "eks_cluster":
                     logging = props.get("Logging", {})
                     cluster_logging = logging.get("ClusterLogging", []) if isinstance(logging.get("ClusterLogging"), list) else []
                     enabled = [c for c in cluster_logging if c.get("Enabled") is True]
@@ -690,8 +690,8 @@ def _run_cf_rules_on_template(
                             title="EKS cluster control plane logging not enabled",
                             severity="Low",
                             category="Operational Excellence",
-                            file=str(template_path),
-                            line=None,
+                            file=res.file or str(template_path),
+                            line=res.line,
                             evidence=f"{logical_id} ({rtype})",
                             recommendation="Enable Logging.ClusterLogging for api, audit, or authenticator log types.",
                         ))
@@ -778,6 +778,18 @@ def _run_cf_rules_on_template(
         key = (f.id, f.file, f.evidence)
         dedup[key] = f
     return list(dedup.values())
+
+
+def _run_cf_rules_on_template(
+    template_path: Path,
+    doc: dict,
+    warnings: list[str] | None = None,
+) -> List[Finding]:
+    """Parse one CloudFormation template into resources and run the CF-* checks on them."""
+    if warnings is None:
+        warnings = []
+    resources = resources_from_cf_template(template_path, doc, warnings)
+    return run_resource_checks(resources, template_path, warnings)
 
 
 def _store_repo_relative(findings: List[Finding], repo_path: Path | None) -> None:
