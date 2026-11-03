@@ -135,14 +135,19 @@ _CLOUDFORMATION: dict[str, str] = {
     "CF-SG-001": """$name:
   Type: AWS::EC2::SecurityGroup
   Properties:
+    # Replace the 0.0.0.0/0 (or ::/0) entry on the flagged port with a known range.
     SecurityGroupIngress:
       - IpProtocol: tcp
-        FromPort: 22
+        FromPort: 22  # the flagged port
         ToPort: 22
-        CidrIp: 10.0.0.0/16  # a known range, not 0.0.0.0/0 or ::/0""",
+        CidrIp: 10.0.0.0/16""",
     "CF-SG-001:AWS::EC2::SecurityGroupIngress": """$name:
   Type: AWS::EC2::SecurityGroupIngress
   Properties:
+    GroupId: !Ref SecurityGroup
+    IpProtocol: tcp
+    FromPort: 22  # the flagged port
+    ToPort: 22
     CidrIp: 10.0.0.0/16  # a known range, not 0.0.0.0/0 or ::/0""",
     "CF-CW-001": """$name:
   Type: AWS::Logs::LogGroup
@@ -151,6 +156,7 @@ _CLOUDFORMATION: dict[str, str] = {
     "CF-CW-002": """$name:
   Type: AWS::Logs::LogGroup
   Properties:
+    # The key policy must allow the logs.<region>.amazonaws.com service principal.
     KmsKeyId: !GetAtt LogsKey.Arn""",
     "CF-SQS-001": """$name:
   Type: AWS::SQS::Queue
@@ -180,12 +186,18 @@ _CLOUDFORMATION: dict[str, str] = {
     "CF-SUST-001": """$name:
   Type: AWS::AutoScaling::AutoScalingGroup
   Properties:
+    # Move the top-level LaunchTemplate into the policy.
     MixedInstancesPolicy:
+      LaunchTemplate:
+        LaunchTemplateSpecification:
+          LaunchTemplateId: !Ref LaunchTemplate
+          Version: !GetAtt LaunchTemplate.LatestVersionNumber
       InstancesDistribution:
         SpotAllocationStrategy: price-capacity-optimized""",
     "CF-SUST-002": """$name:
   Type: AWS::ECS::Service
   Properties:
+    # Drop LaunchType: it cannot be set together with CapacityProviderStrategy.
     CapacityProviderStrategy:
       - CapacityProvider: FARGATE_SPOT
         Weight: 1""",
@@ -202,7 +214,9 @@ _CLOUDFORMATION: dict[str, str] = {
   Properties:
     VpcId: !Ref Vpc
     ServiceName: !Sub com.amazonaws.$${AWS::Region}.s3
-    VpcEndpointType: Gateway""",
+    VpcEndpointType: Gateway
+    RouteTableIds:
+      - !Ref PrivateRouteTable""",
     "CF-FL-001": """VpcFlowLog:
   Type: AWS::EC2::FlowLog
   Properties:
@@ -284,13 +298,14 @@ _TERRAFORM: dict[str, str] = {
   kms_key_id = aws_kms_key.trail.arn
 }""",
     "CF-KMS-001": """data "aws_caller_identity" "current" {}
+data "aws_partition" "current" {}
 
 resource "aws_kms_key" "$tf_name" {
   policy = jsonencode({
     Version = "2012-10-17"
     Statement = [{
       Effect    = "Allow"
-      Principal = { AWS = "arn:aws:iam::$${data.aws_caller_identity.current.account_id}:root" }
+      Principal = { AWS = "arn:$${data.aws_partition.current.partition}:iam::$${data.aws_caller_identity.current.account_id}:root" }
       Action    = "kms:*"
       Resource  = "*"
     }]
@@ -319,25 +334,35 @@ resource "aws_kms_key" "$tf_name" {
     enabled = true
   }
 }""",
-    "CF-SG-001": """resource "aws_security_group" "$tf_name" {
+    "CF-SG-001": """# Replace the 0.0.0.0/0 (or ::/0) ingress on the flagged port with a known range.
+resource "aws_security_group" "$tf_name" {
   ingress {
     protocol    = "tcp"
-    from_port   = 22
+    from_port   = 22 # the flagged port
     to_port     = 22
-    cidr_blocks = ["10.0.0.0/16"] # a known range, not 0.0.0.0/0 or ::/0
+    cidr_blocks = ["10.0.0.0/16"]
   }
 }""",
     "CF-SG-001:aws_security_group_rule": """resource "aws_security_group_rule" "$tf_name" {
-  type        = "ingress"
-  cidr_blocks = ["10.0.0.0/16"] # a known range, not 0.0.0.0/0 or ::/0
+  type              = "ingress"
+  security_group_id = aws_security_group.example.id
+  protocol          = "tcp"
+  from_port         = 22 # the flagged port
+  to_port           = 22
+  cidr_blocks       = ["10.0.0.0/16"] # a known range, not 0.0.0.0/0 or ::/0
 }""",
     "CF-SG-001:aws_vpc_security_group_ingress_rule": """resource "aws_vpc_security_group_ingress_rule" "$tf_name" {
-  cidr_ipv4 = "10.0.0.0/16" # a known range, not 0.0.0.0/0 or ::/0
+  security_group_id = aws_security_group.example.id
+  ip_protocol       = "tcp"
+  from_port         = 22 # the flagged port
+  to_port           = 22
+  cidr_ipv4         = "10.0.0.0/16" # a known range, not 0.0.0.0/0 or ::/0
 }""",
     "CF-CW-001": """resource "aws_cloudwatch_log_group" "$tf_name" {
   retention_in_days = 30
 }""",
     "CF-CW-002": """resource "aws_cloudwatch_log_group" "$tf_name" {
+  # The key policy must allow the logs.<region>.amazonaws.com service principal.
   kms_key_id = aws_kms_key.logs.arn
 }""",
     "CF-SQS-001": """resource "aws_sqs_queue" "$tf_name" {
@@ -369,10 +394,17 @@ resource "aws_kms_key" "$tf_name" {
     instances_distribution {
       spot_allocation_strategy = "price-capacity-optimized"
     }
-    # launch_template { ... }
+    # Move the top-level launch_template block in here.
+    launch_template {
+      launch_template_specification {
+        launch_template_id = aws_launch_template.example.id
+        version            = "$$Latest"
+      }
+    }
   }
 }""",
     "CF-SUST-002": """resource "aws_ecs_service" "$tf_name" {
+  # Drop launch_type: it cannot be set together with capacity_provider_strategy.
   capacity_provider_strategy {
     capacity_provider = "FARGATE_SPOT"
     weight            = 1
@@ -387,6 +419,7 @@ resource "aws_vpc_endpoint" "s3" {
   vpc_id            = aws_vpc.$tf_name.id
   service_name      = "com.amazonaws.$${data.aws_region.current.name}.s3"
   vpc_endpoint_type = "Gateway"
+  route_table_ids   = [aws_route_table.private.id]
 }""",
     "CF-FL-001": """resource "aws_flow_log" "$tf_name" {
   vpc_id          = aws_vpc.$tf_name.id

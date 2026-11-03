@@ -174,6 +174,14 @@ CloudFormation synth summary:
     return result
 
 
+def _parts_under(path: Path, root: Path) -> tuple[str, ...]:
+    """Path parts below root (all parts when path is outside it)."""
+    try:
+        return path.resolve().relative_to(root.resolve()).parts
+    except ValueError:
+        return path.parts
+
+
 def node_collect(state: State) -> State:
     repo_path = Path(state["repo_path"])
     max_files = state.get("max_files") or 400
@@ -253,7 +261,7 @@ def node_synth(state: State) -> State:
                 template_paths, repo_path=repo_path, warnings=cf_warnings
             )
             # --templates points at templates the user edits; synth output (cdk.out) keeps CDK hints.
-            if not any("cdk.out" in p.parts for p in template_paths):
+            if not any("cdk.out" in _parts_under(p, repo_path) for p in template_paths):
                 attach_fixes(cf_findings, "cloudformation")
             out_findings.extend(cf_findings)
             out_findings = drop_static_covered_by_cf(out_findings)
