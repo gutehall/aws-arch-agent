@@ -1,0 +1,45 @@
+AWSTemplateFormatVersion: "2010-09-09"
+Description: Regression fixture for raw CloudFormation scans (DM3-517).
+Parameters:
+  Env:
+    Type: String
+  BackupDays:
+    Type: Number
+  UseArm:
+    Type: String
+Conditions:
+  Arm: !Equals [!Ref UseArm, "true"]
+Resources:
+  DataBucket:
+    Type: AWS::S3::Bucket
+    Properties:
+      BucketName: !Sub "${AWS::StackName}-${Env}-data"
+  Database:
+    Type: AWS::RDS::DBInstance
+    Properties:
+      DBInstanceClass: db.t3.micro
+      StorageEncrypted: true
+      MultiAZ: false
+      DeletionProtection: true
+      BackupRetentionPeriod: !Ref BackupDays
+  DeadLetters:
+    Type: AWS::SQS::Queue
+    Properties:
+      SqsManagedSseEnabled: true
+  Jobs:
+    Type: AWS::SQS::Queue
+    Properties:
+      SqsManagedSseEnabled: true
+      RedrivePolicy: !GetAtt DeadLetters.RedrivePolicy
+  Worker:
+    Type: AWS::Lambda::Function
+    Properties:
+      Architectures: !If [Arm, [arm64], [x86_64]]
+      TracingConfig:
+        Mode: Active
+      DeadLetterConfig:
+        TargetArn: !GetAtt DeadLetters.Arn
+  Network:
+    Type: AWS::EC2::VPC
+    Properties:
+      CidrBlock: 10.0.0.0/16
