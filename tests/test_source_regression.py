@@ -17,8 +17,10 @@ from pathlib import Path
 
 import pytest
 
-from aws_arch_agent.agent.v1 import analyze_v1
+from aws_arch_agent.agent.v1 import analyze_v1, detect_source
 from aws_arch_agent.models import Finding
+from aws_arch_agent.tools import cdk_synth
+from aws_arch_agent.tools.files import iter_files
 
 FIXTURES = Path(__file__).parent / "fixtures"
 SNAPSHOTS = FIXTURES / "snapshots"
@@ -40,6 +42,8 @@ def _scan(repo: Path) -> tuple[str, list[dict], list[str]]:
 
 def _check_snapshot(name: str, rows: list[dict]) -> None:
     path = SNAPSHOTS / f"{name}.json"
+    if os.environ.get("CI") and (UPDATE or not path.exists()):
+        pytest.fail(f"Snapshot {path.name} is missing or UPDATE_SNAPSHOTS is set in CI.")
     if UPDATE or not path.exists():
         path.write_text(json.dumps(rows, indent=2) + "\n", encoding="utf-8")
         if not UPDATE:
@@ -73,8 +77,9 @@ def _copy_cdk_app(dest: Path) -> Path:
     return dest
 
 
-def test_cdk_fixture_report_is_unchanged() -> None:
-    source, rows, warnings = _scan(FIXTURES / "minimal-cdk")
+def test_cdk_fixture_report_is_unchanged(tmp_path: Path) -> None:
+    # Scan a copy without the gitignored node_modules/cdk.out so local and CI agree.
+    source, rows, warnings = _scan(_copy_cdk_app(tmp_path / "app"))
     assert source == "cdk"
     assert warnings == []
     _check_snapshot("minimal-cdk", rows)
@@ -97,10 +102,16 @@ def test_workflow_yaml_does_not_switch_a_cdk_repo(tmp_path: Path) -> None:
     )
     source, rows, _warnings = _scan(repo)
     assert source == "cdk"
-    assert rows == _scan(FIXTURES / "minimal-cdk")[1]
+    assert rows == json.loads((SNAPSHOTS / "minimal-cdk.json").read_text(encoding="utf-8"))
 
 
-def test_cloudformation_fixture_runs_template_checks_without_synth(cf_repo: Path) -> None:
+def test_cloudformation_fixture_runs_template_checks_without_synth(
+    cf_repo: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    def no_synth(*_args: object, **_kwargs: object) -> None:
+        raise AssertionError("cdk synth must not run for a CloudFormation repo")
+
+    monkeypatch.setattr(cdk_synth, "run_cdk_synth", no_synth)
     source, rows, warnings = _scan(cf_repo)
     assert source == "cloudformation"
     assert warnings == []
@@ -138,7 +149,8 @@ def test_unresolved_values_are_not_findings(fixture: str, tmp_path: Path) -> Non
 
 
 def test_fixtures_are_invisible_to_a_scan_of_this_repo() -> None:
-    """Only .fixture files live there, so the repo's own source stays as detected before."""
+    """The committed fixtures do not make tests/fixtures (or the repo) look like CF/TF."""
     for name in ("cloudformation", "terraform"):
         files = [p for p in (FIXTURES / name).rglob("*") if p.is_file()]
         assert files and all(p.suffix == ".fixture" for p in files)
+    assert detect_source(FIXTURES, iter_files(FIXTURES, max_files=100_000)) == "cdk"
