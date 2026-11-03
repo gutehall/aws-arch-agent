@@ -6,7 +6,8 @@ import subprocess
 import json
 import os
 
-import yaml
+from aws_arch_agent.tools.cfn_yaml import is_cf_template, load_cfn_yaml
+from aws_arch_agent.tools.files import DEFAULT_EXCLUDES
 
 
 def _detect_python_app(repo_path: Path) -> str | None:
@@ -81,15 +82,50 @@ def list_cf_templates(cdk_out: Path) -> List[Path]:
     return sorted([p for p in cdk_out.rglob("*.template.json") if p.is_file()])
 
 
-def list_templates_from_path(path: Path, allow_yaml: bool = True) -> List[Path]:
-    """Return template files from path (file or directory). Supports .template.json, .yaml, .yml."""
+def _discover_real_templates(root: Path) -> List[Path]:
+    """Walk root like iter_files (skip excluded and dot dirs); keep real CloudFormation templates."""
+    out: List[Path] = []
+    stack = [root]
+    while stack:
+        current = stack.pop()
+        try:
+            entries = list(current.iterdir())
+        except (PermissionError, OSError):
+            continue
+        for entry in entries:
+            if entry.is_dir():
+                # Symlinked dirs are skipped: a link loop would never end.
+                if (
+                    not entry.is_symlink()
+                    and entry.name not in DEFAULT_EXCLUDES
+                    and not entry.name.startswith(".")
+                ):
+                    stack.append(entry)
+            elif entry.is_file() and is_cf_template(entry):
+                out.append(entry)
+    return sorted(out)
+
+
+def list_templates_from_path(
+    path: Path, allow_yaml: bool = True, real_only: bool = False
+) -> List[Path]:
+    """Return template files from path (file or directory). Supports .template.json, .yaml, .yml.
+
+    real_only: walk a repo for real CloudFormation templates (any .json, .yaml, .yml,
+    .template that has AWSTemplateFormatVersion or an AWS:: resource), skipping
+    node_modules, cdk.out, and dot dirs. Workflow YAML and package.json are left out.
+    """
     path = path.resolve()
     if not path.exists():
         return []
     if path.is_file():
+        if real_only:
+            return [path] if is_cf_template(path) else []
         if not _is_template_extension(path):
             return []
         return [path]
+    if real_only:
+        return _discover_real_templates(path)
     # Directory: collect matching files recursively
     exts = ["*.template.json"]
     if allow_yaml:
@@ -115,11 +151,12 @@ def load_template(path: Path) -> dict[Any, Any]:
     suf = path.suffix.lower()
     if suf == ".json" or path.name.endswith(".template.json"):
         return load_json(path)
-    if suf in (".yaml", ".yml"):
+    if suf in (".yaml", ".yml", ".template"):
         try:
-            return cast(dict[Any, Any], yaml.safe_load(path.read_text(encoding="utf-8")) or {})
+            doc = load_cfn_yaml(path.read_text(encoding="utf-8")) or {}
         except Exception:
             return {}
+        return cast(dict[Any, Any], doc) if isinstance(doc, dict) else {}
     return {}
 
 
