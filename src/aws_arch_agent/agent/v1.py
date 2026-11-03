@@ -10,6 +10,7 @@ from typing import Literal
 from aws_arch_agent.models import IacSource, RepoContext, Finding
 from aws_arch_agent.rules.registry import ALL_RULES
 from aws_arch_agent.rules.cf_template import run_cf_rules_from_paths, run_resource_checks
+from aws_arch_agent.rules.fix_snippets import attach_fixes
 from aws_arch_agent.rules.terraform_model import find_modules, resources_from_terraform
 from aws_arch_agent.rules.runner import filter_by_severity, run_all_rules
 from aws_arch_agent.report.markdown import render_markdown
@@ -261,6 +262,7 @@ def _scan_templates(
     """Run the shared template checks on raw CloudFormation. No synth, no CDK regex pass."""
     warnings: list[str] = []
     findings = run_cf_rules_from_paths(templates, repo_path=repo_path, warnings=warnings)
+    attach_fixes(findings, "cloudformation")
     return _filter_ids(findings, rules_include, rules_exclude), warnings
 
 
@@ -292,6 +294,7 @@ def _scan_terraform(
             if finding.file:
                 finding.file = to_repo_relative(finding.file, repo_path)
         findings.extend(module_findings)
+    attach_fixes(findings, "terraform")
     return _filter_ids(findings, rules_include, rules_exclude), warnings
 
 
