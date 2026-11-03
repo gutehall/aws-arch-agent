@@ -177,6 +177,12 @@
     },
     {
       "id": "SEC-001",
+      "file": "src/aws_arch_agent/rules/fix_snippets.py",
+      "evidence_hash": "1dd7d621c06936cf",
+      "logical_id": "Action    = \"kms:*\""
+    },
+    {
+      "id": "SEC-001",
       "file": "src/aws_arch_agent/rules/security_iam.py",
       "line": 15
     },
@@ -184,6 +190,12 @@
       "id": "SEC-001",
       "file": "tests/fixtures/rules/iam_wildcard.ts",
       "line": 1
+    },
+    {
+      "id": "SEC-002",
+      "file": "src/aws_arch_agent/rules/fix_snippets.py",
+      "evidence_hash": "4eef4d8c87a75b5c",
+      "logical_id": "Resource  = \"*\""
     },
     {
       "id": "SEC-002",
@@ -199,6 +211,24 @@
       "id": "SEC-003",
       "file": "src/aws_arch_agent/rules/cf_template.py",
       "line": 479
+    },
+    {
+      "id": "SEC-003",
+      "file": "src/aws_arch_agent/rules/fix_snippets.py",
+      "evidence_hash": "6260ef0ec7220cc6",
+      "logical_id": "FromPort: 22  # the flagged port"
+    },
+    {
+      "id": "SEC-003",
+      "file": "src/aws_arch_agent/rules/fix_snippets.py",
+      "evidence_hash": "9173a2419bd74b3b",
+      "logical_id": "from_port         = 22 # the flagged port"
+    },
+    {
+      "id": "SEC-003",
+      "file": "src/aws_arch_agent/rules/fix_snippets.py",
+      "evidence_hash": "45e71837f509d2f3",
+      "logical_id": "from_port   = 22 # the flagged port"
     },
     {
       "id": "SEC-003",
