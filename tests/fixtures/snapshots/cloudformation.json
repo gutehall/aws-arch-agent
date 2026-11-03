@@ -1,0 +1,58 @@
+[
+  {
+    "id": "CF-FL-001",
+    "severity": "Low",
+    "file": "stack.yaml",
+    "line": null,
+    "evidence": "Template has 1 VPC(s) and 0 FlowLog(s)"
+  },
+  {
+    "id": "CF-PERF-002",
+    "severity": "Low",
+    "file": "stack.yaml",
+    "line": null,
+    "evidence": "Template has API Gateway or Lambda but no CloudFront or ElastiCache"
+  },
+  {
+    "id": "CF-RDS-003",
+    "severity": "Medium",
+    "file": "stack.yaml",
+    "line": null,
+    "evidence": "Database (AWS::RDS::DBInstance)"
+  },
+  {
+    "id": "CF-S3-001",
+    "severity": "High",
+    "file": "stack.yaml",
+    "line": null,
+    "evidence": "DataBucket (AWS::S3::Bucket)"
+  },
+  {
+    "id": "CF-S3-003",
+    "severity": "Low",
+    "file": "stack.yaml",
+    "line": null,
+    "evidence": "DataBucket (AWS::S3::Bucket)"
+  },
+  {
+    "id": "CF-S3-004",
+    "severity": "Low",
+    "file": "stack.yaml",
+    "line": null,
+    "evidence": "DataBucket (AWS::S3::Bucket)"
+  },
+  {
+    "id": "CF-SQS-002",
+    "severity": "Low",
+    "file": "stack.yaml",
+    "line": null,
+    "evidence": "DeadLetters (AWS::SQS::Queue)"
+  },
+  {
+    "id": "CF-VPC-001",
+    "severity": "Low",
+    "file": "stack.yaml",
+    "line": null,
+    "evidence": "Template has 1 VPC(s) and 0 VPCEndpoint(s)"
+  }
+]
