@@ -14,7 +14,7 @@ DEFAULT_EXCLUDES = [
 
 
 def iter_files(repo_path: Path, max_files: int = 400) -> List[Path]:
-    """Yield paths to relevant files (TS, JS, PY, JSON, YAML, MD) under repo_path, up to max_files."""
+    """Yield paths to relevant files (TS, JS, PY, JSON, YAML, MD, CloudFormation, Terraform) under repo_path, up to max_files."""
     files: List[Path] = []
     
     def should_skip_dir(dir_path: Path) -> bool:
@@ -39,7 +39,7 @@ def iter_files(repo_path: Path, max_files: int = 400) -> List[Path]:
                     continue
                 
                 # Check file extension
-                if p.suffix.lower() in {".ts", ".js", ".py", ".json", ".yaml", ".yml", ".md"}:
+                if p.suffix.lower() in {".ts", ".js", ".py", ".json", ".yaml", ".yml", ".md", ".template", ".tf"}:
                     files.append(p)
         except (PermissionError, OSError):
             # Skip directories we can't read

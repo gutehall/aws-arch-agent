@@ -5,6 +5,7 @@ from typing import Literal, List, Dict, Any
 
 
 Severity = Literal["High", "Medium", "Low"]
+IacSource = Literal["cdk", "cloudformation", "terraform", "mixed"]
 
 
 class Finding(BaseModel):
@@ -26,6 +27,7 @@ class RepoContext(BaseModel):
 
     repo_path: str
     language: Literal["typescript", "python", "unknown"] = "unknown"
+    source: IacSource = "cdk"
     files_scanned: int = 0
     key_files: List[str] = Field(default_factory=list)
     notes: Dict[str, Any] = Field(default_factory=dict)

@@ -9,7 +9,12 @@ from pathlib import Path
 from typing import Literal, TypedDict, List
 
 from aws_arch_agent.models import Finding, RepoContext
-from aws_arch_agent.agent.v1 import detect_language, _languages_to_scan, _filter_rules
+from aws_arch_agent.agent.v1 import (
+    _filter_rules,
+    _languages_to_scan,
+    detect_language,
+    resolve_source,
+)
 from aws_arch_agent.tools.files import iter_files
 from aws_arch_agent.tools.llm import LLMClient
 from aws_arch_agent.rules.registry import ALL_RULES
@@ -55,6 +60,7 @@ class State(TypedDict, total=False):
     rag_use_embeddings: bool
     rag_embedding_provider: str
     rag_embedding_model: str
+    iac: str
     rag: object
     synth_ok: bool
     synth_stdout: str
@@ -171,9 +177,11 @@ def node_collect(state: State) -> State:
     repo_path = Path(state["repo_path"])
     max_files = state.get("max_files") or 400
     files = iter_files(repo_path, max_files=max_files)
+    source = resolve_source(repo_path, state.get("iac") or "auto", files)
     ctx = RepoContext(
         repo_path=str(repo_path),
         language=detect_language(repo_path),
+        source=source,
         files_scanned=len(files),
         key_files=[p.name for p in files if p.name in {"cdk.json", "package.json", "requirements.txt"}],
         notes={"top_level": [p.name for p in repo_path.iterdir() if p.is_dir()]},
@@ -510,6 +518,7 @@ def analyze_v2(
     rag_embedding_model: str | None = None,
     llm_mode: LLMMode = "full",
     rules_org: bool = False,
+    iac: str = "auto",
 ) -> tuple[str, RepoContext, List[Finding], List[str]]:
     """Run V2 graph; return (final_report_md, ctx, findings, warnings)."""
     graph = build_graph()
@@ -528,6 +537,7 @@ def analyze_v2(
         "rag_use_embeddings": rag_use_embeddings,
         "rag_embedding_provider": rag_embedding_provider or "",
         "rag_embedding_model": rag_embedding_model or "",
+        "iac": iac,
     }
     out = graph.invoke(initial)
     report = out.get("final_report") or "No report produced."
