@@ -172,3 +172,25 @@ def test_cli_json_includes_source(tmp_path: Path) -> None:
     )
     assert result.exit_code == 0, result.output
     assert json.loads(out.read_text())["context"]["source"] == "terraform"
+
+
+def test_minified_json_template_with_version_only(tmp_path: Path) -> None:
+    path = tmp_path / "min.json"
+    path.write_text('{"AWSTemplateFormatVersion":"2010-09-09","Resources":{}}', encoding="utf-8")
+    assert is_cf_template(path)
+
+
+def test_version_key_in_comment_is_not_template(tmp_path: Path) -> None:
+    path = tmp_path / "notes.yml"
+    path.write_text("# AWSTemplateFormatVersion: not here\nname: x\n", encoding="utf-8")
+    assert not is_cf_template(path)
+
+
+def test_explicit_cdk_needs_cdk_app_not_stray_script(tmp_path: Path) -> None:
+    (tmp_path / "stack.yaml").write_text(CF_YAML, encoding="utf-8")
+    (tmp_path / "scripts").mkdir()
+    (tmp_path / "scripts" / "helper.py").write_text("print('hi')\n", encoding="utf-8")
+    with pytest.raises(IacError, match="--iac cdk"):
+        resolve_source(tmp_path, "cdk")
+    (tmp_path / "app.py").write_text("app = App()\n", encoding="utf-8")
+    assert resolve_source(tmp_path, "cdk") == "cdk"

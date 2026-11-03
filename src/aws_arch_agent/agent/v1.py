@@ -21,7 +21,6 @@ logger = logging.getLogger(__name__)
 
 
 RepoLanguage = Literal["typescript", "python", "unknown"]
-IacChoice = Literal["auto", "cdk", "cloudformation", "terraform"]
 IAC_CHOICES: tuple[str, ...] = ("auto", "cdk", "cloudformation", "terraform")
 
 
@@ -137,6 +136,7 @@ def detect_language(repo_path: Path) -> RepoLanguage:
 
 _CF_VERSION_KEY = re.compile(r"""^\s*["']?AWSTemplateFormatVersion["']?\s*:""", re.MULTILINE)
 _TEMPLATE_SUFFIXES = {".json", ".yaml", ".yml", ".template"}
+_TEMPLATE_MAX_BYTES = 5_000_000
 _PY_CDK_PACKAGE = re.compile(r"\baws[-_]cdk(?:[-_.]lib|\.)", re.IGNORECASE)
 
 
@@ -178,20 +178,21 @@ def is_cf_template(path: Path) -> bool:
     """
     if path.suffix.lower() not in _TEMPLATE_SUFFIXES:
         return False
-    text = read_text_safe(path)
+    text = read_text_safe(path, max_bytes=_TEMPLATE_MAX_BYTES)
     if "AWSTemplateFormatVersion" not in text and "AWS::" not in text:
         return False
-    if _CF_VERSION_KEY.search(text):
-        return True
     try:
         if path.suffix.lower() == ".json":
             doc = json.loads(text)
         else:
             doc = yaml.load(text, Loader=_TagTolerantLoader)  # noqa: S506 - SafeLoader subclass
     except (ValueError, yaml.YAMLError):
-        return False
+        # Unparseable (e.g. truncated): fall back to a top-level version key.
+        return bool(_CF_VERSION_KEY.search(text))
     if not isinstance(doc, dict):
         return False
+    if "AWSTemplateFormatVersion" in doc:
+        return True
     resources = doc.get("Resources")
     if not isinstance(resources, dict):
         return False
@@ -206,8 +207,8 @@ def is_terraform_file(path: Path) -> bool:
     return name.endswith(".tf") or name.endswith(".tf.json")
 
 
-def _has_cdk_sources(files: list[Path]) -> bool:
-    return any(p.suffix.lower() in {".ts", ".py"} for p in files)
+def _has_cdk_entrypoint(repo_path: Path) -> bool:
+    return _has_bin_ts(repo_path) or (repo_path / "app.py").is_file()
 
 
 def detect_source(repo_path: Path, files: list[Path] | None = None) -> IacSource:
@@ -242,8 +243,8 @@ def resolve_source(repo_path: Path, iac: str, files: list[Path] | None = None) -
     if choice == "auto":
         return detect_source(repo_path, files)
     if choice == "cdk":
-        found = has_cdk_markers(repo_path) or _has_cdk_sources(files)
-        label = "CDK app (cdk.json, CDK package, .ts or .py)"
+        found = has_cdk_markers(repo_path) or _has_cdk_entrypoint(repo_path)
+        label = "CDK app (cdk.json, CDK package, bin/*.ts, or app.py)"
     elif choice == "cloudformation":
         found = any(is_cf_template(p) for p in files)
         label = "CloudFormation template"
