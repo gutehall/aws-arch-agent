@@ -1,4 +1,7 @@
-"""HTML report renderer: one self-contained page (inline CSS and tab script)."""
+"""HTML report renderer: one self-contained page (inline CSS and tab script).
+
+The page loads no external assets; its only external URLs are AWS documentation links.
+"""
 from __future__ import annotations
 
 from datetime import datetime
@@ -7,6 +10,7 @@ from pathlib import Path
 from jinja2.sandbox import SandboxedEnvironment
 
 from aws_arch_agent.models import Finding, RepoContext
+from aws_arch_agent.report.docs import doc_links
 
 SEVERITIES = ("High", "Medium", "Low")
 _SEVERITY_RANK = {s: i for i, s in enumerate(SEVERITIES)}
@@ -61,6 +65,7 @@ def render_html(
             "evidence": f.evidence or "",
             "recommendation": f.recommendation.strip(),
             "suggested_code": (f.suggested_code or "").strip(),
+            "docs": doc_links(f),
             "baseline": None if flag is None else ("accepted" if flag else "new"),
         }
         for f, flag in ordered

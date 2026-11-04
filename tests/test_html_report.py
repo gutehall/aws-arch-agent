@@ -1,4 +1,5 @@
 """HTML report: one self-contained page with counts, tabs, and escaped finding text."""
+import re
 from datetime import datetime
 
 import pytest
@@ -47,7 +48,11 @@ def test_page_is_self_contained() -> None:
     page = render_html(CTX, _findings())
     assert "<style>" in page and "<script>" in page
     assert "<link" not in page and "src=" not in page
-    assert "http://" not in page and "https://" not in page
+    assert "http://" not in page
+    # The only external URLs are AWS documentation links, opened by the reader.
+    urls = re.findall(r"https://[^\s\"'<>]+", page)
+    assert urls and all(u.startswith("https://docs.aws.amazon.com/") for u in urls)
+    assert all(f'href="{u}"' in page for u in urls)
     assert "Content-Security-Policy" in page and "default-src 'none'" in page
 
 
@@ -112,3 +117,18 @@ def test_every_finding_appears_once() -> None:
     assert page.count('<article class="finding"') == len(findings)
     for finding in findings:
         assert page.count(f'<span class="id">{finding.id}</span>') == 1
+
+
+def test_page_uses_dark_theme() -> None:
+    page = render_html(CTX, _findings())
+    assert "color-scheme: dark" in page and "--bg: #0d1117" in page
+    assert "prefers-color-scheme" not in page
+
+
+def test_findings_link_to_service_and_pillar_docs() -> None:
+    page = render_html(CTX, _findings())
+    assert "Learn more" in page
+    assert 'href="https://docs.aws.amazon.com/AmazonS3/latest/userguide/"' in page
+    assert ('href="https://docs.aws.amazon.com/wellarchitected/latest/security-pillar/welcome.html"'
+            in page)
+    assert 'target="_blank" rel="noopener noreferrer"' in page

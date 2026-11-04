@@ -7,14 +7,9 @@
 <title>AWS Architecture Review</title>
 <style>
   :root {
-    --bg: #ffffff; --fg: #1f2328; --muted: #59636e; --line: #d1d9e0; --panel: #f6f8fa;
-    --high: #c62828; --medium: #b26a00; --low: #2e6db4; --warn: #6e40c9;
-  }
-  @media (prefers-color-scheme: dark) {
-    :root {
-      --bg: #0d1117; --fg: #e6edf3; --muted: #9198a1; --line: #30363d; --panel: #161b22;
-      --high: #f47067; --medium: #e0a040; --low: #6cb6ff; --warn: #b083f0;
-    }
+    color-scheme: dark;
+    --bg: #0d1117; --fg: #e6edf3; --muted: #9198a1; --line: #30363d; --panel: #161b22;
+    --high: #f47067; --medium: #e0a040; --low: #6cb6ff; --warn: #b083f0; --link: #58a6ff;
   }
   * { box-sizing: border-box; }
   body { margin: 0; background: var(--bg); color: var(--fg);
@@ -53,6 +48,9 @@
   .finding p { margin: 0; white-space: pre-wrap; }
   pre { margin: 0; padding: 10px 12px; background: var(--panel); border: 1px solid var(--line); border-radius: 6px;
         overflow-x: auto; font: 13px/1.45 ui-monospace, SFMono-Regular, Menlo, monospace; white-space: pre; }
+  .docs { margin: 0; padding-left: 20px; }
+  .docs a { color: var(--link); text-decoration: none; }
+  .docs a:hover, .docs a:focus-visible { text-decoration: underline; }
   .empty { color: var(--muted); padding: 24px 0; }
   [hidden] { display: none !important; }
 </style>
@@ -122,6 +120,14 @@
       {% if f.suggested_code %}
       <h4>Suggested code</h4>
       <pre>{{ f.suggested_code }}</pre>
+      {% endif %}
+      {% if f.docs %}
+      <h4>Learn more</h4>
+      <ul class="docs">
+        {% for d in f.docs %}
+        <li><a href="{{ d.url }}" target="_blank" rel="noopener noreferrer">{{ d.label }}</a></li>
+        {% endfor %}
+      </ul>
       {% endif %}
     </article>
     {% endfor %}
