@@ -178,13 +178,15 @@ def _imds_finding(res: Resource, template_path: Path, options: Any, defers: bool
     settings from a launch template (that template is checked on its own).
     Only literal values are judged: an intrinsic or variable gives no finding.
     """
-    if options is not None and not isinstance(options, dict):
+    if options is not None and (not isinstance(options, dict) or _is_intrinsic(options)):
         return None
     options = options or {}
     tokens = options.get("HttpTokens")
     endpoint = options.get("HttpEndpoint")
     if endpoint == "disabled" or tokens == "required":
         return None
+    if endpoint is not None and type(endpoint) is not str:
+        return None  # endpoint from a variable or intrinsic: it may be disabled
     if tokens is None:
         if defers:
             return None
@@ -444,7 +446,7 @@ def run_resource_checks(
                         findings.append(imds)
                 if ctype == "launch_template":
                     ltd = props.get("LaunchTemplateData")
-                    if isinstance(ltd, dict):
+                    if isinstance(ltd, dict) and not _is_intrinsic(ltd):
                         imds = _imds_finding(res, template_path, ltd.get("MetadataOptions"), defers=False)
                         if imds is not None:
                             findings.append(imds)

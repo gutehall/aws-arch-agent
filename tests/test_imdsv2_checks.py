@@ -36,6 +36,12 @@ def test_cloudformation_instances_and_launch_templates(tmp_path: Path) -> None:
         "Required": _instance(MetadataOptions={"HttpTokens": "required"}),
         "Disabled": _instance(MetadataOptions={"HttpEndpoint": "disabled"}),
         "FromParam": _instance(MetadataOptions={"HttpTokens": {"Ref": "Tokens"}}),
+        "EndpointParam": _instance(MetadataOptions={"HttpEndpoint": {"Ref": "Endpoint"}}),
+        "LtRef": {"Type": "AWS::EC2::LaunchTemplate",
+                  "Properties": {"LaunchTemplateData": {"Ref": "Data"}}},
+        "WholeIf": _instance(MetadataOptions={"Fn::If": ["Prod", {"HttpTokens": "required"}, {}]}),
+        "LtWholeIf": {"Type": "AWS::EC2::LaunchTemplate",
+                      "Properties": {"LaunchTemplateData": {"Fn::If": ["Prod", {}, {}]}}},
         "UsesLt": _instance(LaunchTemplate={"LaunchTemplateId": {"Ref": "LtUnset"}, "Version": "1"}),
         "Overrides": _instance(
             LaunchTemplate={"LaunchTemplateId": {"Ref": "LtRequired"}, "Version": "1"},
@@ -115,6 +121,18 @@ resource "aws_instance" "uses_lt" {
 
 resource "aws_launch_template" "unset" {
   image_id = "ami-123"
+}
+
+resource "aws_instance" "endpoint_off" {
+  metadata_options {
+    http_endpoint = "disabled"
+  }
+}
+
+resource "aws_instance" "endpoint_var" {
+  metadata_options {
+    http_endpoint = var.endpoint
+  }
 }
 
 resource "aws_launch_template" "var_tokens" {
