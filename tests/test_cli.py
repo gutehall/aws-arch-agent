@@ -532,3 +532,90 @@ def test_raising_rule_keeps_other_findings_and_exits_2(tmp_path: Path, monkeypat
     data = json.loads(out_file.read_text(encoding="utf-8"))
     assert any(item["id"] == "SEC-001" for item in data["findings"])
     assert any("failed" in warning for warning in data["warnings"])
+
+
+def _cfn_repo(root: Path) -> None:
+    (root / "stack.yaml").write_text(
+        'AWSTemplateFormatVersion: "2010-09-09"\nResources:\n  B:\n    Type: AWS::S3::Bucket\n',
+        encoding="utf-8",
+    )
+
+
+def test_v2_rejects_iac_terraform(tmp_path: Path) -> None:
+    (tmp_path / "main.tf").write_text('resource "aws_s3_bucket" "b" {}\n', encoding="utf-8")
+    for extra in ([], ["--templates", str(tmp_path)]):
+        result = runner.invoke(
+            app, ["--repo", str(tmp_path), "--mode", "v2", "--no-llm", "--iac", "terraform", *extra]
+        )
+        assert result.exit_code == 1, result.output
+        assert "V1 only" in result.output
+
+
+def test_v2_rejects_iac_cloudformation_without_templates(tmp_path: Path) -> None:
+    _cfn_repo(tmp_path)
+    result = runner.invoke(
+        app, ["--repo", str(tmp_path), "--mode", "v2", "--no-llm", "--iac", "cloudformation"]
+    )
+    assert result.exit_code == 1, result.output
+    assert "needs --templates" in result.output
+
+
+def test_v2_iac_cloudformation_with_templates_runs(tmp_path: Path) -> None:
+    _cfn_repo(tmp_path)
+    out_file = tmp_path / "report.md"
+    result = runner.invoke(app, [
+        "--repo", str(tmp_path), "--mode", "v2", "--no-llm", "--iac", "cloudformation",
+        "--templates", str(tmp_path), "--out", str(out_file),
+    ])
+    assert result.exit_code == 0, result.output
+    assert "CF-S3-001" in out_file.read_text()
+
+
+def test_v2_iac_cloudformation_with_config_templates_runs(tmp_path: Path) -> None:
+    _cfn_repo(tmp_path)
+    (tmp_path / ".aws-arch-agent.json").write_text(
+        json.dumps({"templates": str(tmp_path)}), encoding="utf-8"
+    )
+    out_file = tmp_path / "report.md"
+    result = runner.invoke(app, [
+        "--repo", str(tmp_path), "--mode", "v2", "--no-llm", "--iac", "cloudformation",
+        "--out", str(out_file),
+    ])
+    assert result.exit_code == 0, result.output
+
+
+def test_v2_auto_non_cdk_prints_a_note_and_keeps_exit_code(tmp_path: Path) -> None:
+    _cfn_repo(tmp_path)
+    out_file = tmp_path / "report.md"
+    result = runner.invoke(app, [
+        "--repo", str(tmp_path), "--mode", "v2", "--no-llm", "--no-synth", "--out", str(out_file),
+    ])
+    assert result.exit_code == 0, result.output
+    assert "V2 scans CDK only" in result.output
+    assert out_file.exists()
+
+
+def test_v2_auto_cdk_has_no_note(tmp_path: Path) -> None:
+    _make_repo(tmp_path)
+    (tmp_path / "cdk.json").write_text('{"app": "npx ts-node bin/app.ts"}', encoding="utf-8")
+    result = runner.invoke(app, [
+        "--repo", str(tmp_path), "--mode", "v2", "--no-llm", "--no-synth",
+        "--out", str(tmp_path / "r.md"),
+    ])
+    assert result.exit_code == 0, result.output
+    assert "V2 scans CDK only" not in result.output
+
+
+def test_v2_iac_cloudformation_with_templates_outside_repo(tmp_path: Path) -> None:
+    repo, cfn = tmp_path / "repo", tmp_path / "cfn"
+    repo.mkdir()
+    cfn.mkdir()
+    (repo / "package.json").write_text("{}", encoding="utf-8")
+    _cfn_repo(cfn)
+    out_file = tmp_path / "report.md"
+    result = runner.invoke(app, [
+        "--repo", str(repo), "--mode", "v2", "--no-llm", "--iac", "cloudformation",
+        "--templates", str(cfn), "--out", str(out_file),
+    ])
+    assert result.exit_code == 0, result.output
+    assert "CF-S3-001" in out_file.read_text()
