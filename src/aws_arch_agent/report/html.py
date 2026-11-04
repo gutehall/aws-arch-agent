@@ -34,11 +34,21 @@ def render_html(
     findings: list[Finding],
     warnings: list[str] | None = None,
     generated: datetime | None = None,
+    baselined: list[bool] | None = None,
 ) -> str:
-    """Render context, findings, and warnings as one HTML page with no external assets."""
+    """Render context, findings, and warnings as one HTML page with no external assets.
+
+    baselined (one flag per finding, in order) labels each finding accepted or new, as
+    the markdown report does with --enforce-baseline. Every finding stays on the page.
+    """
+    if baselined is not None and len(baselined) != len(findings):
+        raise ValueError("baselined needs one flag per finding")
+    flags = baselined if baselined is not None else [None] * len(findings)
     ordered = sorted(
-        findings,
-        key=lambda f: (_SEVERITY_RANK.get(f.severity, len(SEVERITIES)), f.category, f.id),
+        zip(findings, flags),
+        key=lambda pair: (
+            _SEVERITY_RANK.get(pair[0].severity, len(SEVERITIES)), pair[0].category, pair[0].id
+        ),
     )
     counts = {s: sum(1 for f in findings if f.severity == s) for s in SEVERITIES}
     rows = [
@@ -51,8 +61,9 @@ def render_html(
             "evidence": f.evidence or "",
             "recommendation": f.recommendation.strip(),
             "suggested_code": (f.suggested_code or "").strip(),
+            "baseline": None if flag is None else ("accepted" if flag else "new"),
         }
-        for f in ordered
+        for f, flag in ordered
     ]
     template = _environment().from_string(_template_source())
     return template.render(
@@ -65,4 +76,8 @@ def render_html(
         total=len(findings),
         warnings=list(warnings or []),
         findings=rows,
+        baseline=None if baselined is None else {
+            "accepted": sum(1 for b in baselined if b),
+            "new": sum(1 for b in baselined if not b),
+        },
     )

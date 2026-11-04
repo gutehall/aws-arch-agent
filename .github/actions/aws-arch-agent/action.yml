@@ -14,7 +14,7 @@ inputs:
     required: false
     default: auto
   format:
-    description: Output format (markdown, json, or sarif)
+    description: Output format (markdown, json, sarif, or html)
     required: false
     default: markdown
   out:

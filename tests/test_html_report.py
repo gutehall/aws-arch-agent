@@ -1,6 +1,8 @@
 """HTML report: one self-contained page with counts, tabs, and escaped finding text."""
 from datetime import datetime
 
+import pytest
+
 from aws_arch_agent.models import Finding, RepoContext
 from aws_arch_agent.report.html import render_html
 
@@ -65,3 +67,16 @@ def test_no_findings_shows_empty_state() -> None:
     page = render_html(CTX, [])
     assert "All (0)" in page
     assert '<p class="empty">No findings.</p>' in page
+
+
+def test_baselined_flags_label_each_finding() -> None:
+    findings = _findings()  # LOW-1, CF-S3-001, MED-1
+    page = render_html(CTX, findings, baselined=[True, False, True])
+    assert "2 accepted, 1 new" in page
+    assert '<article class="finding" data-severity="High" data-baseline="new">' in page
+    assert page.count('data-baseline="accepted">') == 2
+
+
+def test_baselined_must_match_findings() -> None:
+    with pytest.raises(ValueError):
+        render_html(CTX, _findings(), baselined=[True])
