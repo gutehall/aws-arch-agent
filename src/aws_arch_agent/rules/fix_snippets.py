@@ -575,6 +575,102 @@ for _check in ("CF-IAM-001", "CF-IAM-002", "CF-IAM-003"):
     _TERRAFORM[_check] = _TF_IAM_POLICY
     _TERRAFORM[f"{_check}:aws_iam_role"] = _TF_IAM_ROLE
 
+# Role trust policies (CF-IAM-004..007).
+def _cf_trust(statement: str) -> str:
+    return """$name:
+  Type: AWS::IAM::Role
+  Properties:
+    AssumeRolePolicyDocument:
+      Version: "2012-10-17"
+      Statement:
+""" + statement
+
+
+def _tf_trust(statement: str) -> str:
+    return """data "aws_iam_policy_document" "${tf_name}_trust" {
+  statement {
+""" + statement + """
+  }
+}
+
+resource "aws_iam_role" "$tf_name" {
+  # keep the other arguments as they are
+  assume_role_policy = data.aws_iam_policy_document.${tf_name}_trust.json
+}"""
+
+
+_CLOUDFORMATION.update({
+    "CF-IAM-004": _cf_trust("""        - Effect: Allow
+          Principal:
+            AWS: arn:aws:iam::111122223333:role/caller  # only who needs it
+          Action: sts:AssumeRole"""),
+    "CF-IAM-005": _cf_trust("""        - Effect: Allow
+          Principal:
+            AWS: arn:aws:iam::111122223333:root
+          Action: sts:AssumeRole
+          Condition:
+            StringEquals:
+              sts:ExternalId: the-id-the-third-party-gave-you"""),
+    "CF-IAM-006": _cf_trust("""        - Effect: Allow
+          Principal:
+            Service: config.amazonaws.com
+          Action: sts:AssumeRole
+          Condition:
+            StringEquals:
+              aws:SourceAccount: !Ref AWS::AccountId"""),
+    "CF-IAM-007": _cf_trust("""        - Effect: Allow
+          Principal:
+            Federated: !Sub arn:aws:iam::$${AWS::AccountId}:oidc-provider/token.actions.githubusercontent.com
+          Action: sts:AssumeRoleWithWebIdentity
+          Condition:
+            StringEquals:
+              token.actions.githubusercontent.com:aud: sts.amazonaws.com
+            StringLike:
+              token.actions.githubusercontent.com:sub: repo:my-org/my-repo:ref:refs/heads/main"""),
+})
+_TERRAFORM.update({
+    "CF-IAM-004": _tf_trust("""    actions = ["sts:AssumeRole"]
+    principals {
+      type        = "AWS"
+      identifiers = ["arn:aws:iam::111122223333:role/caller"] # only who needs it
+    }"""),
+    "CF-IAM-005": _tf_trust("""    actions = ["sts:AssumeRole"]
+    principals {
+      type        = "AWS"
+      identifiers = ["arn:aws:iam::111122223333:root"]
+    }
+    condition {
+      test     = "StringEquals"
+      variable = "sts:ExternalId"
+      values   = ["the-id-the-third-party-gave-you"]
+    }"""),
+    "CF-IAM-006": _tf_trust("""    actions = ["sts:AssumeRole"]
+    principals {
+      type        = "Service"
+      identifiers = ["config.amazonaws.com"]
+    }
+    condition {
+      test     = "StringEquals"
+      variable = "aws:SourceAccount"
+      values   = [data.aws_caller_identity.current.account_id]
+    }"""),
+    "CF-IAM-007": _tf_trust("""    actions = ["sts:AssumeRoleWithWebIdentity"]
+    principals {
+      type        = "Federated"
+      identifiers = [aws_iam_openid_connect_provider.github.arn]
+    }
+    condition {
+      test     = "StringEquals"
+      variable = "token.actions.githubusercontent.com:aud"
+      values   = ["sts.amazonaws.com"]
+    }
+    condition {
+      test     = "StringLike"
+      variable = "token.actions.githubusercontent.com:sub"
+      values   = ["repo:my-org/my-repo:ref:refs/heads/main"]
+    }"""),
+})
+
 SNIPPETS: dict[FixLanguage, dict[str, str]] = {
     "cloudformation": _CLOUDFORMATION,
     "terraform": _TERRAFORM,

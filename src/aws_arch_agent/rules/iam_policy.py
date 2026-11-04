@@ -110,3 +110,91 @@ def broadest(doc: dict) -> list[Broad]:
             found.setdefault("write_on_all_resources", set()).update(writes)
     order = ("all_actions", "service_actions", "write_on_all_resources")
     return [Broad(kind, tuple(sorted(found[kind]))) for kind in order if kind in found]
+
+
+# --- role trust policies -------------------------------------------------------
+
+# Services that assume a role on behalf of other resources, possibly in other accounts,
+# so a trust without aws:SourceAccount or aws:SourceArn is open to the confused deputy.
+# Compute execution roles (lambda, ec2, ecs-tasks, ...) are not listed: they act for
+# one resource in the same account.
+CONFUSED_DEPUTY_SERVICES: frozenset[str] = frozenset({
+    "backup", "cloudtrail", "config", "datasync", "delivery.logs", "events", "firehose",
+    "logs", "s3", "scheduler", "sns", "ssm", "transfer",
+})
+_SOURCE_KEYS = frozenset({"aws:sourceaccount", "aws:sourcearn", "aws:sourceorgid", "aws:sourceorgpaths"})
+GITHUB_OIDC = "token.actions.githubusercontent.com"
+_ACCOUNT = re.compile(r"^(?:arn:aws[\w-]*:iam::)?(\d{12})(?::|$)")
+
+
+@dataclass(frozen=True)
+class Trust:
+    """One kind of over-open trust found in a role's trust policy."""
+
+    kind: str  # "anyone" | "cross_account" | "service" | "github_oidc"
+    principals: tuple[str, ...]
+
+
+def _assumes(stmt: dict) -> bool:
+    actions = [a.lower() for a in literals(stmt.get("Action"))]
+    return any(a in ("*", "sts:*") or a.startswith("sts:assumerole") for a in actions)
+
+
+def _condition_keys(stmt: dict) -> set[str] | None:
+    """Lowercased condition keys under any operator, or None when the Condition is unknown."""
+    condition = stmt.get("Condition")
+    if condition is None:
+        return set()
+    if not isinstance(condition, dict):
+        return None
+    keys: set[str] = set()
+    for operator, body in condition.items():
+        if type(operator) is not str or not isinstance(body, dict):
+            return None
+        keys.update(k.lower() for k in body if type(k) is str)
+    return keys
+
+
+def _principal_values(principal: Any, key: str) -> list[str]:
+    if isinstance(principal, dict):
+        return literals(principal.get(key))
+    return []
+
+
+def trust_problems(doc: dict) -> list[Trust]:
+    """Over-open Allow statements in a role trust policy, one Trust per kind.
+
+    anyone: Principal "*" or {"AWS": "*"} with no condition at all.
+    cross_account: a literal account principal without an sts:ExternalId condition. A
+    template rarely knows its own account, so a literal account id is taken as another.
+    service: a CONFUSED_DEPUTY_SERVICES principal without aws:SourceAccount/SourceArn.
+    github_oidc: GitHub Actions OIDC without a condition on the token's sub.
+    Unknown principals, actions or conditions give nothing.
+    """
+    found: dict[str, set[str]] = {}
+    for stmt in statements(doc):
+        if stmt.get("Effect") != "Allow" or "NotPrincipal" in stmt or not _assumes(stmt):
+            continue
+        keys = _condition_keys(stmt)
+        if keys is None:
+            continue
+        principal = stmt.get("Principal")
+        # {"*": ["*"]} is how data "aws_iam_policy_document" writes `type = "*"`.
+        aws = ["*"] if principal == "*" else (
+            _principal_values(principal, "AWS") + _principal_values(principal, "*")
+        )
+        if "*" in aws and not keys:
+            found.setdefault("anyone", set()).add("*")
+        if "sts:externalid" not in keys:
+            accounts = {m.group(1) for m in map(_ACCOUNT.match, aws) if m}
+            found.setdefault("cross_account", set()).update(accounts)
+        if not keys & _SOURCE_KEYS:
+            for service in _principal_values(principal, "Service"):
+                name = service.lower().removesuffix(".amazonaws.com")
+                if name in CONFUSED_DEPUTY_SERVICES:
+                    found.setdefault("service", set()).add(service)
+        federated = principal.get("Federated") if isinstance(principal, dict) else None
+        if GITHUB_OIDC in json.dumps(federated, default=str) and f"{GITHUB_OIDC}:sub" not in keys:
+            found.setdefault("github_oidc", set()).add(GITHUB_OIDC)
+    order = ("anyone", "github_oidc", "cross_account", "service")
+    return [Trust(kind, tuple(sorted(found[kind]))) for kind in order if found.get(kind)]
