@@ -22,6 +22,7 @@ def _finding(title: str, category: str = "Security") -> Finding:
         ("ALB/NLB not enforcing HTTPS redirect", "Application Load Balancers"),
         ("Aurora not using I/O-Optimized for high I/O workloads", "Amazon Aurora"),
         ("RDS Proxy not used for connection pooling", "Amazon RDS Proxy"),
+        ("S3 Storage Lens not enabled", "Amazon S3 Storage Lens"),
         ("Log group has no retention period (infinite retention)", "Amazon CloudWatch Logs"),
         ("Lambda not in VPC when accessing RDS/ElastiCache", "AWS Lambda"),
     ],
