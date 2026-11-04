@@ -241,6 +241,89 @@ resource "aws_s3_bucket_policy" "elsewhere" {
     }
 
 
+DATA_DOCS = """\
+data "aws_iam_policy_document" "tls_only" {
+  statement {
+    effect    = "Deny"
+    actions   = ["s3:*"]
+    resources = ["*"]
+    principals {
+      type        = "*"
+      identifiers = ["*"]
+    }
+    condition {
+      test     = "Bool"
+      variable = "aws:SecureTransport"
+      values   = ["false"]
+    }
+  }
+}
+
+data "aws_iam_policy_document" "read_only" {
+  statement {
+    actions   = ["s3:GetObject"]
+    resources = ["*"]
+  }
+}
+
+data "aws_iam_policy_document" "var_effect" {
+  statement {
+    effect    = var.effect
+    actions   = ["s3:*"]
+    resources = ["*"]
+  }
+}
+
+resource "aws_s3_bucket" "doc_tls" {
+  bucket = "doc-tls"
+}
+
+resource "aws_s3_bucket_policy" "doc_tls" {
+  bucket = aws_s3_bucket.doc_tls.id
+  policy = data.aws_iam_policy_document.tls_only.json
+}
+
+resource "aws_s3_bucket" "doc_read" {
+  bucket = "doc-read"
+}
+
+resource "aws_s3_bucket_policy" "doc_read" {
+  bucket = aws_s3_bucket.doc_read.id
+  policy = data.aws_iam_policy_document.read_only.json
+}
+
+resource "aws_s3_bucket" "doc_var" {
+  bucket = "doc-var"
+}
+
+resource "aws_s3_bucket_policy" "doc_var" {
+  bucket = aws_s3_bucket.doc_var.id
+  policy = data.aws_iam_policy_document.var_effect.json
+}
+"""
+
+
+def test_terraform_reads_policy_document_data_sources(tmp_path: Path) -> None:
+    assert _names(_tf(tmp_path, DATA_DOCS)) == {"aws_s3_bucket.doc_read"}
+
+
+def test_terraform_jsonencode_with_a_var_is_unknown(tmp_path: Path) -> None:
+    text = """\
+resource "aws_s3_bucket" "b" {
+  bucket = "b"
+}
+
+resource "aws_s3_bucket_policy" "b" {
+  bucket = aws_s3_bucket.b.id
+  policy = jsonencode({
+    Statement = [{ Effect = var.effect, Principal = "*", Action = "s3:*", Resource = "*",
+                   Condition = { Bool = { "aws:SecureTransport" = "false" } } }]
+  })
+}
+"""
+    assert _tf(tmp_path, text) == []
+
+
 def test_terraform_plan_fills_the_policy(tmp_path: Path) -> None:
     deny = {"Statement": [{"Effect": "Deny", "Principal": "*", "Action": "s3:*", "Resource": "*",
                            "Condition": {"Bool": {"aws:SecureTransport": "false"}}}]}

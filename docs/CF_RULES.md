@@ -283,6 +283,7 @@ CloudFormation template rules run when the agent has access to template files. T
 - **ALB**: CF-ALB-001 (access logs)
 - **CloudTrail**: CF-CT-001 (log file validation), CF-CT-002 (multi-region), CF-CT-003 (KMS encryption)
 - **KMS**: CF-KMS-001 (key policy wildcard principal)
+- **IAM**: CF-IAM-001 (Allow with Action `*`), CF-IAM-002 (Allow with `<service>:*`), CF-IAM-003 (Allow with write actions on Resource `*`). Read on: managed and inline policies, roles, users, and groups. Terraform: `jsonencode(...)`, heredoc JSON, JSON strings, and `data.aws_iam_policy_document`. Read-only actions and actions without resource-level permissions (X-Ray, `cloudwatch:PutMetricData`, Lambda VPC network interfaces) are not reported by CF-IAM-003. A field set from a variable or intrinsic is not guessed. Allow statements with `NotAction` or `NotResource` are not analyzed yet. In V2, CF-IAM-001/002 replace SEC-001 and CF-IAM-003 replaces SEC-002.
 - **VPC**: CF-VPC-001 (no VPC endpoints), CF-FL-001 (no flow logs)
 - **Lambda**: CF-LAM-001 (no DLQ), CF-LAM-002 (X-Ray not enabled), CF-PERF-001 (ARM64 not used)
 - **DynamoDB**: CF-DDB-001 (PITR not enabled), CF-DDB-002 (SSE not enabled)
@@ -302,7 +303,7 @@ CloudFormation template rules run when the agent has access to template files. T
 | Pillar | CF rule IDs |
 |--------|-------------|
 | Operational Excellence | CF-S3-004, CF-CT-001, CF-CT-002, CF-FL-001, CF-EKS-001 |
-| Security | CF-S3-001, CF-S3-002, CF-S3-005, CF-RDS-001, CF-RDS-004, CF-CT-003, CF-KMS-001, CF-EKS-002, CF-EKS-003, CF-SG-001, CF-CW-002, CF-SQS-001, CF-DDB-002 |
+| Security | CF-S3-001, CF-S3-002, CF-S3-005, CF-RDS-001, CF-RDS-004, CF-CT-003, CF-KMS-001, CF-EKS-002, CF-EKS-003, CF-IAM-001, CF-IAM-002, CF-IAM-003, CF-SG-001, CF-CW-002, CF-SQS-001, CF-DDB-002 |
 | Reliability | CF-S3-003, CF-RDS-002, CF-RDS-003, CF-RDS-005, CF-LAM-001, CF-DDB-001, CF-SQS-002 |
 | Performance Efficiency | CF-PERF-001, CF-PERF-002, CF-PERF-003, CF-PERF-004 |
 | Cost Optimization | CF-CW-001, CF-COST-002 |

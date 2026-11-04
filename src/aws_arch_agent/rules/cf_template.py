@@ -1,11 +1,11 @@
 """CloudFormation template-based rules (S3, RDS, ALB, CloudTrail, KMS, Lambda, DynamoDB, etc.) run after cdk synth."""
 from __future__ import annotations
 import json
-import re
 from pathlib import Path
 from typing import List, Any
 
-from aws_arch_agent.models import Finding
+from aws_arch_agent.models import Finding, Severity
+from aws_arch_agent.rules import iam_policy
 from aws_arch_agent.rules.resource_model import Resource, resources_from_cf_template
 from aws_arch_agent.tools.cdk_synth import list_cf_templates
 from aws_arch_agent.tools.cfn_yaml import parse_template_text
@@ -20,6 +20,9 @@ CF_COVERS_STATIC: dict[str, str] = {
     "CF-S3-002": "SEC-006",
     "CF-VPC-001": "SEC-022",
     "CF-FL-001": "OPS-002",
+    "CF-IAM-001": "SEC-001",
+    "CF-IAM-002": "SEC-001",
+    "CF-IAM-003": "SEC-002",
 }
 
 
@@ -127,6 +130,7 @@ _PER_RESOURCE_TYPES = frozenset({
     "lambda_function", "dynamodb_table", "security_group", "security_group_ingress_rule",
     "cloudwatch_log_group", "sqs_queue", "api_gateway_stage", "apigatewayv2_stage",
     "autoscaling_group", "ecs_service", "eks_cluster",
+    "iam_policy", "iam_role", "iam_user", "iam_group",
 })
 
 
@@ -167,12 +171,92 @@ CHECK_PROPERTIES: dict[str, frozenset[str]] = {
         "CF-SUST-001": {"MixedInstancesPolicy"},
         "CF-SUST-002": {"CapacityProviderStrategy", "LaunchType"},
         "CF-EKS-001": {"Logging"},
+        "CF-IAM-001": {"PolicyDocument", "Policies"},
+        "CF-IAM-002": {"PolicyDocument", "Policies"},
+        "CF-IAM-003": {"PolicyDocument", "Policies"},
         "CF-EKS-002": {"ResourcesVpcConfig"},
         "CF-EKS-003": {"EncryptionConfig"},
     }.items()
 }
 
 
+_IAM_TYPES = frozenset({"iam_policy", "iam_role", "iam_user", "iam_group"})
+
+_IAM_CDK_HINT = (
+    " In CDK: use grant methods such as bucket.grantRead(role), or a PolicyStatement "
+    "with specific actions and resources."
+)
+
+_IAM_FINDINGS: dict[str, tuple[str, Severity, str, str]] = {
+    # kind -> (id, severity, title, recommendation)
+    "all_actions": (
+        "CF-IAM-001",
+        "High",
+        "IAM policy allows all actions",
+        "Replace Action '*' with the specific actions this principal needs. "
+        "IAM Access Analyzer can generate a policy from CloudTrail activity.",
+    ),
+    "service_actions": (
+        "CF-IAM-002",
+        "Medium",
+        "IAM policy allows every action of a service",
+        "Replace '<service>:*' with the specific actions this principal needs, "
+        "and scope Resource to the ARNs it uses.",
+    ),
+    "write_on_all_resources": (
+        "CF-IAM-003",
+        "Medium",
+        "IAM policy allows write actions on all resources",
+        "Scope Resource to the specific ARNs instead of '*'. Read-only actions and "
+        "actions without resource-level permissions are not reported.",
+    ),
+}
+
+
+def _policy_documents(props: dict) -> list[tuple[str, dict]]:
+    """(label, document) pairs from PolicyDocument and inline Policies."""
+    out: list[tuple[str, dict]] = []
+    doc = iam_policy.as_document(props.get("PolicyDocument"))
+    if doc is not None:
+        out.append(("", doc))
+    inline = props.get("Policies")
+    for item in inline if isinstance(inline, list) else []:
+        if not isinstance(item, dict):
+            continue
+        doc = iam_policy.as_document(item.get("PolicyDocument"))
+        if doc is None:
+            continue
+        name = item.get("PolicyName")
+        out.append((f" policy {name}" if type(name) is str else " inline policy", doc))
+    return out
+
+
+def _iam_findings(res: Resource, template_path: Path) -> List[Finding]:
+    """One finding per kind per resource, naming the actions and the inline policy."""
+    by_kind: dict[str, tuple[set[str], list[str]]] = {}
+    for label, doc in _policy_documents(res.properties):
+        for broad in iam_policy.broadest(doc):
+            actions, labels = by_kind.setdefault(broad.kind, (set(), []))
+            actions.update(broad.actions)
+            if label and label not in labels:
+                labels.append(label)
+    out: List[Finding] = []
+    for kind, (actions, labels) in by_kind.items():
+        fid, severity, title, recommendation = _IAM_FINDINGS[kind]
+        shown = ", ".join(sorted(actions)[:5]) + (" ..." if len(actions) > 5 else "")
+        where = f" (in{','.join(labels)})" if labels else ""
+        out.append(Finding(
+            id=fid,
+            title=title,
+            severity=severity,
+            category="Security",
+            file=res.file or str(template_path),
+            line=res.line,
+            # Evidence stays "name (type)": fix snippets read the resource from it.
+            evidence=f"{res.name} ({res.source_type})",
+            recommendation=f"Flagged: {shown}{where}. {recommendation}{_IAM_CDK_HINT}",
+        ))
+    return out
 def _k8s_minor(version: Any) -> int | None:
     """Minor version of an EKS `Version` ("1.27" -> 27), or None when unknown.
 
@@ -270,8 +354,8 @@ def _denies_plain_http(statement: dict) -> bool:
     if not any(a in ("s3:*", "*") for a in actions):
         return False
     principal = statement.get("Principal")
-    if isinstance(principal, dict):
-        principal = principal.get("AWS")
+    if isinstance(principal, dict):  # {"AWS": "*"}, or {"*": ["*"]} from aws_iam_policy_document
+        principal = principal.get("AWS", principal.get("*"))
     if principal != "*" and principal != ["*"]:
         return False
     condition = statement.get("Condition")
@@ -285,8 +369,15 @@ def _denies_plain_http(statement: dict) -> bool:
     return False
 
 
-_TF_DENY = re.compile(r'\bEffect\s*=\s*"Deny"', re.IGNORECASE)
-_TF_PLAIN_HTTP = re.compile(r'"aws:SecureTransport"\s*=\s*"?false\b', re.IGNORECASE)
+def _has_unknown_leaf(value: Any) -> bool:
+    """True when a value holds a non-literal string (a Terraform reference or var)."""
+    if isinstance(value, str):
+        return type(value) is not str
+    if isinstance(value, list):
+        return any(_has_unknown_leaf(v) for v in value)
+    if isinstance(value, dict):
+        return any(_has_unknown_leaf(v) for v in value.values())
+    return False
 
 
 def _tls_enforced(document: Any) -> bool | None:
@@ -294,13 +385,8 @@ def _tls_enforced(document: Any) -> bool | None:
     if document is None:
         return False
     if isinstance(document, str):
-        if type(document) is not str:  # Terraform expression: only its text is known
-            text = str(document)
-            if _TF_DENY.search(text) and _TF_PLAIN_HTTP.search(text):
-                return True
-            # Only a jsonencode of a literal object is fully known; data sources may add the deny.
-            literal = text.startswith("jsonencode({") and "data." not in text
-            return False if literal else None
+        if type(document) is not str:  # an expression the scan could not read
+            return None
         try:
             return _tls_enforced(json.loads(document))
         except ValueError:
@@ -314,7 +400,9 @@ def _tls_enforced(document: Any) -> bool | None:
         return None
     unknown = False
     for statement in statements:
-        if not isinstance(statement, dict) or _is_intrinsic(statement):
+        if not isinstance(statement, dict) or _is_intrinsic(statement) or _has_unknown_leaf(
+            [statement.get(k) for k in ("Effect", "Action", "Principal", "Condition")]
+        ):
             unknown = True
         elif _denies_plain_http(statement):
             return True
@@ -641,6 +729,10 @@ def run_resource_checks(
                 if ctype == "flow_log":
                     # Flow log exists; optional: check destination (CloudWatch Logs or S3)
                     pass  # Presence is good; no extra check for now
+
+                # --- IAM policies (managed, inline, and on roles/users/groups) ---
+                if ctype in _IAM_TYPES:
+                    findings.extend(_iam_findings(res, template_path))
 
                 # --- KMS Key policy ---
                 if ctype == "kms_key":
