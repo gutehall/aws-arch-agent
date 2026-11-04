@@ -27,7 +27,7 @@ from aws_arch_agent.config import (
     SeverityThreshold,
     load_config,
 )
-from aws_arch_agent.models import Finding
+from aws_arch_agent.models import Finding, IacSource
 from aws_arch_agent.report.json_report import render_json
 from aws_arch_agent.report.sarif import render_sarif
 from aws_arch_agent.tools.files import iter_files
@@ -222,7 +222,13 @@ def analyze(
             )
 
     try:
-        source = resolve_source(repo_path, iac_value, iter_files(repo_path, max_files=max_files))
+        if mode_value == "v2" and iac_value == "cloudformation" and cfg.templates:
+            # The templates path may sit outside --repo; synth warns when it is missing or empty.
+            source: IacSource = "cloudformation"
+        else:
+            source = resolve_source(
+                repo_path, iac_value, iter_files(repo_path, max_files=max_files)
+            )
     except IacError as exc:
         _fail(str(exc))
 

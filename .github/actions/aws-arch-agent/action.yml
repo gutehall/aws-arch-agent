@@ -10,7 +10,7 @@ inputs:
     required: false
     default: v1
   iac:
-    description: IaC source (auto, cdk, cloudformation, or terraform). auto detects from the repo.
+    description: IaC source (auto, cdk, cloudformation, or terraform). auto detects from the repo. With mode v2, terraform exits 1, and cloudformation needs a templates path in the repo config file.
     required: false
     default: auto
   format:

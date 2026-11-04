@@ -128,7 +128,7 @@ aws-arch-agent --repo . --iac terraform --tf-plan infra/plan.json --no-llm
 
 Values unknown until apply stay unresolved. A missing or unreadable plan is a warning; the scan still runs.
 
-V2 synth stays the CDK path. For CloudFormation, use V1 or V2 with `--templates`. For Terraform, use V1. In V2, `--iac terraform` exits 1, and `--iac cloudformation` without `--templates` exits 1. When `--iac auto` detects a non-CDK repo in V2 without `--templates`, the console prints a note; the scan still runs the CDK path and the exit code does not change.
+V2 synth stays the CDK path. For CloudFormation, use V1 or V2 with `--templates`. For Terraform, use V1. In V2, `--iac terraform` exits 1, and `--iac cloudformation` without `--templates` (flag or config) exits 1. When `--iac auto` detects a non-CDK repo in V2 without `--templates`, the console prints a note; the scan still runs the CDK path and the exit code does not change.
 
 ### Two Modes
 

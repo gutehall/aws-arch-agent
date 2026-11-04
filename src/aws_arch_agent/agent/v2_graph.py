@@ -8,7 +8,7 @@ import subprocess
 from pathlib import Path
 from typing import Literal, TypedDict, List
 
-from aws_arch_agent.models import Finding, RepoContext
+from aws_arch_agent.models import Finding, IacSource, RepoContext
 from aws_arch_agent.agent.v1 import (
     _filter_rules,
     _languages_to_scan,
@@ -186,7 +186,11 @@ def node_collect(state: State) -> State:
     repo_path = Path(state["repo_path"])
     max_files = state.get("max_files") or 400
     files = iter_files(repo_path, max_files=max_files)
-    source = resolve_source(repo_path, state.get("iac") or "auto", files)
+    iac = state.get("iac") or "auto"
+    if iac == "cloudformation" and state.get("templates_path"):
+        source: IacSource = "cloudformation"  # templates may sit outside the repo
+    else:
+        source = resolve_source(repo_path, iac, files)
     ctx = RepoContext(
         repo_path=str(repo_path),
         language=detect_language(repo_path),

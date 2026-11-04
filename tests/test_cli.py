@@ -604,3 +604,18 @@ def test_v2_auto_cdk_has_no_note(tmp_path: Path) -> None:
     ])
     assert result.exit_code == 0, result.output
     assert "V2 scans CDK only" not in result.output
+
+
+def test_v2_iac_cloudformation_with_templates_outside_repo(tmp_path: Path) -> None:
+    repo, cfn = tmp_path / "repo", tmp_path / "cfn"
+    repo.mkdir()
+    cfn.mkdir()
+    (repo / "package.json").write_text("{}", encoding="utf-8")
+    _cfn_repo(cfn)
+    out_file = tmp_path / "report.md"
+    result = runner.invoke(app, [
+        "--repo", str(repo), "--mode", "v2", "--no-llm", "--iac", "cloudformation",
+        "--templates", str(cfn), "--out", str(out_file),
+    ])
+    assert result.exit_code == 0, result.output
+    assert "CF-S3-001" in out_file.read_text()
