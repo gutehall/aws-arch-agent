@@ -1,8 +1,8 @@
 # Version 2 – LangGraph / Multi-agent
 
-V2 uses a LangGraph StateGraph:
+V2 uses a LangGraph StateGraph. Synth is the CDK path. Raw CloudFormation and root-module Terraform are scanned by V1 (see `--iac` in [REFERENCE.md](REFERENCE.md)). For raw CloudFormation in V2, pass `--templates`. V2 has no Terraform path.
 
-- **collect**: walks the repo up to `--max-files`, runs the static rules on those files, and loads RAG once when `--rag` or `rag.path` is set.
+- **collect**: walks the repo up to `--max-files`, resolves `--iac` (an explicit source with no matching files exits 1), runs the CDK static rules on those files, and loads RAG once when `--rag` or `rag.path` is set.
 - **synth**: runs `npx cdk synth` and then the CloudFormation rules on `cdk.out/*.template.json`. `--templates` skips synth and reads the JSON or YAML templates you pass. `--no-synth` stays on the static rules.
 - **Six pillar reviewers** in parallel: Operational Excellence (observability), Security, Reliability, Performance Efficiency, Cost Optimization, Sustainability. Each sees the static findings, the synth summary, and up to three RAG chunks for that pillar.
 - **merge**: one review across the six pillars. It uses the same RAG instance and a broader query.

@@ -1,5 +1,5 @@
 name: AWS Arch Agent
-description: Run aws-arch-agent architecture review on a CDK repository. This action stays on Python 3.11. CI tests 3.11 and 3.12.
+description: Run aws-arch-agent architecture review on a CDK, CloudFormation, or Terraform repository. This action stays on Python 3.11. CI tests 3.11 and 3.12.
 inputs:
   repo:
     description: Path to the repository to scan
@@ -9,6 +9,10 @@ inputs:
     description: Analysis mode (v1 or v2)
     required: false
     default: v1
+  iac:
+    description: IaC source (auto, cdk, cloudformation, or terraform). auto detects from the repo.
+    required: false
+    default: auto
   format:
     description: Output format (markdown, json, or sarif)
     required: false
@@ -68,6 +72,7 @@ runs:
       env:
         REPO: ${{ inputs.repo }}
         MODE: ${{ inputs.mode }}
+        IAC: ${{ inputs.iac }}
         FORMAT: ${{ inputs.format }}
         OUT: ${{ inputs.out }}
         FAIL_ON: ${{ inputs.fail-on }}
@@ -80,6 +85,7 @@ runs:
         ARGS=(
           --repo "$REPO"
           --mode "$MODE"
+          --iac "$IAC"
           --format "$FORMAT"
           --out "$OUT"
           --fail-on "$FAIL_ON"
