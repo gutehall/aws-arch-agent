@@ -530,7 +530,10 @@ def _iam_role(body: dict) -> dict:
             # One unknown inline policy must not hide findings in the others.
             "PolicyDocument": None if _contains_unresolved(policy) else policy,
         })
-    return {"Policies": policies} if policies else {}
+    props: dict = {"Policies": policies} if policies else {}
+    # Raw value: resolve_policy_document turns it into a document in _resolve_iam.
+    _set(props, "AssumeRolePolicyDocument", body.get("assume_role_policy"))
+    return props
 
 
 def _lambda(body: dict) -> dict:
@@ -815,6 +818,12 @@ def _resolve_iam(resources: dict[str, Resource], blocks: list[_Block]) -> None:
                 res.properties["BucketPolicy"] = doc
         if res.type not in ("iam_policy", "iam_role"):
             continue
+        if "AssumeRolePolicyDocument" in res.properties:
+            trust = resolve_policy_document(res.properties["AssumeRolePolicyDocument"], data_docs)
+            if trust is None:  # unreadable: report nothing rather than guess
+                res.properties.pop("AssumeRolePolicyDocument")
+            else:
+                res.properties["AssumeRolePolicyDocument"] = trust
         if "PolicyDocument" in res.properties:
             doc = resolve_policy_document(res.properties["PolicyDocument"], data_docs)
             if doc is None:
