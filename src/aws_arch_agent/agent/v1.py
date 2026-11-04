@@ -11,7 +11,12 @@ from aws_arch_agent.models import IacSource, RepoContext, Finding
 from aws_arch_agent.rules.registry import ALL_RULES
 from aws_arch_agent.rules.cf_template import run_cf_rules_from_paths, run_resource_checks
 from aws_arch_agent.rules.fix_snippets import attach_fixes
-from aws_arch_agent.rules.terraform_model import find_modules, resources_from_terraform
+from aws_arch_agent.rules.terraform_model import (
+    TerraformError,
+    find_modules,
+    load_plan_values,
+    resources_from_terraform,
+)
 from aws_arch_agent.rules.runner import filter_by_severity, run_all_rules
 from aws_arch_agent.report.markdown import render_markdown
 from aws_arch_agent.tools.llm import LLMClient
@@ -278,17 +283,51 @@ def _filter_ids(
     return findings
 
 
+def _plan_module(
+    repo_path: Path, modules: list[Path], tf_plan: Path, warnings: list[str]
+) -> tuple[Path | None, dict[str, dict]]:
+    """Load --tf-plan and pick the root module it belongs to. Problems are warnings."""
+    try:
+        values = load_plan_values(tf_plan)
+    except TerraformError as exc:
+        warnings.append(str(exc))
+        return None, {}
+    if len(modules) == 1:
+        return modules[0], values
+    plan_dir = tf_plan.resolve().parent
+    if plan_dir in modules:
+        return plan_dir, values
+    warnings.append(
+        f"--tf-plan {to_repo_relative(str(tf_plan), repo_path)}: {len(modules)} root modules "
+        "and the plan file is in none of them; plan not applied"
+    )
+    return None, {}
+
+
 def _scan_terraform(
     repo_path: Path,
     modules: list[Path],
     rules_include: list[str] | None,
     rules_exclude: list[str] | None,
+    tf_plan: Path | None = None,
+    notes: dict | None = None,
 ) -> tuple[list[Finding], list[str]]:
-    """Run the CF-* checks on each Terraform root module. Findings point at the HCL file and line."""
+    """Run the CF-* checks on each Terraform root module. Findings point at the HCL file and line.
+
+    tf_plan (`terraform show -json` output) fills unresolved values in its root module.
+    """
     warnings: list[str] = []
     findings: list[Finding] = []
+    plan_target: Path | None = None
+    plan_values: dict[str, dict] = {}
+    if tf_plan is not None:
+        plan_target, plan_values = _plan_module(repo_path, modules, tf_plan, warnings)
+        if plan_target is not None and notes is not None:
+            notes["terraform_plan_module"] = to_repo_relative(str(plan_target), repo_path)
     for module in modules:
-        resources = resources_from_terraform(module, warnings)
+        resources = resources_from_terraform(
+            module, warnings, plan_values if module == plan_target else None
+        )
         module_findings = run_resource_checks(resources, module, warnings)
         for finding in module_findings:
             if finding.file:
@@ -306,6 +345,7 @@ def _collect_findings(
     severity_threshold: str | None,
     rules_org: bool = False,
     iac: str = "auto",
+    tf_plan: Path | None = None,
 ) -> tuple[RepoContext, list[Finding], list[str]]:
     files = iter_files(repo_path, max_files=max_files)
     source = resolve_source(repo_path, iac, files)
@@ -333,13 +373,17 @@ def _collect_findings(
                 ctx.notes["terraform_child_modules_skipped"] = [
                     to_repo_relative(str(m), repo_path) for m in children
                 ]
-            found, warned = _scan_terraform(repo_path, modules, rules_include, rules_exclude)
+            found, warned = _scan_terraform(
+                repo_path, modules, rules_include, rules_exclude, tf_plan, ctx.notes
+            )
             findings.extend(found)
             warnings.extend(warned)
     else:
         rules = _filter_rules(ALL_RULES, rules_include, rules_exclude, org=rules_org)
         with limit_to_files(repo_path, files):
             findings, warnings = run_all_rules(repo_path, rules, _languages_to_scan(language))
+    if tf_plan is not None and source not in TERRAFORM_SOURCES:
+        warnings.append(f"--tf-plan applies only to a Terraform scan (source is {source}); ignored")
     findings = filter_by_severity(findings, severity_threshold)
     return ctx, findings, warnings
 
@@ -353,10 +397,12 @@ def analyze_v1(
     severity_threshold: str | None = None,
     rules_org: bool = False,
     iac: str = "auto",
+    tf_plan: Path | None = None,
 ) -> tuple[str, RepoContext, list[Finding], list[str]]:
     """Run V1 pipeline: scan repo, run rules, optionally polish with LLM; return (report_md, ctx, findings, warnings)."""
     ctx, findings, warnings = _collect_findings(
-        repo_path, max_files, rules_include, rules_exclude, severity_threshold, rules_org, iac
+        repo_path, max_files, rules_include, rules_exclude, severity_threshold, rules_org, iac,
+        tf_plan,
     )
 
     draft = render_markdown(ctx, findings, warnings=warnings)
@@ -375,8 +421,10 @@ def collect_ctx_findings(
     severity_threshold: str | None = None,
     rules_org: bool = False,
     iac: str = "auto",
+    tf_plan: Path | None = None,
 ) -> tuple[RepoContext, list[Finding], list[str]]:
     """Run rules only and return context, findings, and warnings."""
     return _collect_findings(
-        repo_path, max_files, rules_include, rules_exclude, severity_threshold, rules_org, iac
+        repo_path, max_files, rules_include, rules_exclude, severity_threshold, rules_org, iac,
+        tf_plan,
     )

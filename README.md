@@ -111,12 +111,22 @@ aws-arch-agent --repo . --fail-on high
 
 An explicit `--iac` with no matching files exits 1.
 
-Terraform is read without `terraform init` or a plan: only root modules are scanned. Local child modules (used as `source = "./..."`) are skipped and listed under `terraform_child_modules_skipped` in the JSON report's `context.notes`. Remote modules are not fetched.
+Terraform is read without `terraform init`: only root modules are scanned. Local child modules (used as `source = "./..."`) are skipped and listed under `terraform_child_modules_skipped` in the JSON report's `context.notes`. Remote modules are not fetched.
 
 ```bash
 aws-arch-agent --repo ./infra --iac terraform --no-llm
 aws-arch-agent --repo ./templates --iac cloudformation --no-llm
 ```
+
+An argument set from `var.*` or `local.*` is unresolved, so no check reports on it. To check those values, pass a plan with `--tf-plan` (V1 only):
+
+```bash
+terraform -chdir=infra plan -out=tfplan
+terraform -chdir=infra show -json tfplan > infra/plan.json
+aws-arch-agent --repo . --iac terraform --tf-plan infra/plan.json --no-llm
+```
+
+Values unknown until apply stay unresolved. A missing or unreadable plan is a warning; the scan still runs.
 
 V2 synth stays the CDK path. For CloudFormation, use V1 or V2 with `--templates`. For Terraform, use V1. V2 accepts `--iac cloudformation` or `--iac terraform`, but without `--templates` it still runs the CDK static rules and `cdk synth`, so it does not scan the templates or the HCL.
 
@@ -200,8 +210,11 @@ aws-arch-agent --templates ./cloudformation --no-synth --mode v2
 
 ### Terraform Projects
 ```bash
-# Root modules only; no terraform init, no plan
+# Root modules only; no terraform init
 aws-arch-agent --repo ./infra --iac terraform --no-llm
+
+# Fill var/local values from a plan
+aws-arch-agent --repo ./infra --iac terraform --tf-plan ./infra/plan.json --no-llm
 ```
 
 ### With AI Recommendations

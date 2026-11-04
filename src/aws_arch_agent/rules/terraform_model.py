@@ -6,6 +6,9 @@ and their arguments are translated into the CloudFormation-shaped properties
 those checks read. A value that depends on `var.*` or `local.*` is unresolved:
 the property is left out and recorded in Resource.unresolved, so no check
 reports on it. Per-instance values (each.*, count.*, self.*) are treated the same.
+
+With a `terraform show -json` document (see load_plan_values), known planned values
+replace those unresolved arguments before the checks run.
 """
 from __future__ import annotations
 
@@ -648,8 +651,105 @@ def _merge_s3_parts(blocks: list[_Block], resources: dict[str, Resource]) -> Non
             bucket.unresolved = bucket.unresolved | missing
 
 
-def resources_from_terraform(module_dir: Path, warnings: list[str] | None = None) -> list[Resource]:
-    """Parse one root module directory (non-recursive) into Resource records."""
+# --- terraform show -json ------------------------------------------------------
+
+
+def load_plan_values(path: Path) -> dict[str, dict]:
+    """Root-module resource values from `terraform show -json`, keyed by address.
+
+    Reads a plan (`planned_values`) or a state (`values`). Data sources and indexed
+    instances (count / for_each) are left out: here one block is one Resource.
+    Child modules are left out, as they are when parsing HCL.
+    """
+    try:
+        doc = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, UnicodeError, ValueError) as exc:
+        raise TerraformError(f"Failed to read Terraform plan {path}: {exc}") from exc
+    section = None
+    if isinstance(doc, dict):
+        section = doc.get("planned_values") or doc.get("values")
+    root = section.get("root_module") if isinstance(section, dict) else None
+    if not isinstance(root, dict):
+        raise TerraformError(f"Terraform plan {path} has no planned_values.root_module")
+    out: dict[str, dict] = {}
+    for item in root.get("resources") or []:
+        if not isinstance(item, dict) or item.get("mode", "managed") != "managed":
+            continue
+        if "index" in item:
+            continue
+        address, values = item.get("address"), item.get("values")
+        if isinstance(address, str) and isinstance(values, dict):
+            out[address] = values
+    return out
+
+
+def _needs_plan(value: Any) -> bool:
+    return isinstance(value, _Expr) or _contains_unresolved(value)
+
+
+def _is_block_list(value: Any) -> bool:
+    return isinstance(value, list) and all(isinstance(v, dict) for v in value)
+
+
+def _fill_from_plan(body: dict, planned: dict, keep: frozenset[str] = frozenset()) -> dict:
+    """Replace unresolved arguments of a block body with known planned values.
+
+    Only arguments the block sets are filled: provider defaults stay with the adapters.
+    An unknown value is absent from the plan, so it stays unresolved. A `dynamic` block
+    the plan expanded becomes a plain block. Several blocks of one name are not paired
+    by position (set-typed blocks such as ingress are not in config order in the plan):
+    if any of them is unresolved, the planned list replaces them all.
+    """
+    out = dict(body)
+    expanded: set[str] = set()
+    for name in _dynamic_names(body):
+        if _is_block_list(planned.get(name)):
+            out[name] = planned[name]
+            expanded.add(name)
+    if expanded:
+        remaining = [
+            {k: v for k, v in item.items() if k not in expanded}
+            for item in _blocks(body, "dynamic")
+        ]
+        remaining = [item for item in remaining if item]
+        if remaining:
+            out["dynamic"] = remaining
+        else:
+            out.pop("dynamic", None)
+    for key, value in body.items():
+        if key == "dynamic" or key in keep or key in expanded or key not in planned:
+            continue
+        plan_value = planned[key]
+        single = _is_block_list(value) and len(value) == 1
+        if single and _is_block_list(plan_value) and len(plan_value) == 1:
+            out[key] = [_fill_from_plan(value[0], plan_value[0])]
+        elif isinstance(value, dict) and isinstance(plan_value, dict):
+            out[key] = _fill_from_plan(value, plan_value)
+        elif _needs_plan(value):
+            out[key] = plan_value
+    return out
+
+
+def _plan_keep(block: _Block) -> frozenset[str]:
+    """Arguments the plan must not replace. A split S3 resource links to its bucket
+    through `aws_s3_bucket.<name>` in `bucket`; the planned bucket name would lose that.
+    A `bucket` set from var/local is filled, and then links by the planned name."""
+    ref = block.body.get("bucket")
+    if block.type in _S3_PARTS and isinstance(ref, str) and _BUCKET_REF.search(ref):
+        return frozenset({"bucket"})
+    return frozenset()
+
+
+def resources_from_terraform(
+    module_dir: Path,
+    warnings: list[str] | None = None,
+    plan_values: dict[str, dict] | None = None,
+) -> list[Resource]:
+    """Parse one root module directory (non-recursive) into Resource records.
+
+    plan_values (from load_plan_values) fills arguments that depend on var/local or
+    other expressions, for blocks whose address is in the plan.
+    """
     if warnings is None:
         warnings = []
     blocks: list[_Block] = []
@@ -660,6 +760,11 @@ def resources_from_terraform(module_dir: Path, warnings: list[str] | None = None
             warnings.append(str(exc))
             continue
         blocks.extend(file_blocks)
+    if plan_values:
+        for block in blocks:
+            planned = plan_values.get(block.address)
+            if planned is not None:
+                block.body = _fill_from_plan(block.body, planned, _plan_keep(block))
     resources: dict[str, Resource] = {}
     for block in blocks:
         resource = _to_resource(block)

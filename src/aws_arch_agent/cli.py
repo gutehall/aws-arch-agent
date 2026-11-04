@@ -132,6 +132,11 @@ def analyze(
     iac: str = typer.Option(
         "auto", "--iac", help="IaC source: auto | cdk | cloudformation | terraform"
     ),
+    tf_plan: str | None = typer.Option(
+        None,
+        "--tf-plan",
+        help="`terraform show -json` output; fills var/local values in Terraform scans (V1 only)",
+    ),
     max_files: int = typer.Option(
         400, "--max-files", help="Max files to scan. Rules search only these files."
     ),
@@ -161,6 +166,9 @@ def analyze(
         repo_path = repo_path.parent
 
     mode_value = _require_choice(mode, _MODES, "--mode")
+    if tf_plan is not None and mode_value != "v1":
+        _fail("--tf-plan is V1 only")
+    tf_plan_path = Path(tf_plan).expanduser().resolve() if tf_plan is not None else None
     iac_value = _require_choice(iac, IAC_CHOICES, "--iac")
     if _passed(ctx, "format"):
         _require_choice(format, _FORMATS, "--format")
@@ -246,6 +254,7 @@ def analyze(
             rules_org=cfg.rules_org,
             severity_threshold=severity_threshold,
             iac=iac_value,
+            tf_plan=tf_plan_path,
         )
 
     if update_baseline:
