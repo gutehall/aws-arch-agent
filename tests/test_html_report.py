@@ -44,7 +44,9 @@ def test_findings_are_ordered_by_severity_with_all_fields() -> None:
 def test_page_is_self_contained() -> None:
     page = render_html(CTX, _findings())
     assert "<style>" in page and "<script>" in page
-    assert "<link" not in page and "src=" not in page and "http" not in page
+    assert "<link" not in page and "src=" not in page
+    assert "http://" not in page and "https://" not in page
+    assert "Content-Security-Policy" in page and "default-src 'none'" in page
 
 
 def test_evidence_and_code_are_escaped() -> None:

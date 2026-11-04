@@ -3,6 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
+<meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src 'unsafe-inline'; script-src 'unsafe-inline'">
 <title>AWS Architecture Review</title>
 <style>
   :root {
@@ -35,7 +36,7 @@
   .tabs { display: flex; gap: 4px; border-bottom: 1px solid var(--line); margin-bottom: 16px; }
   .tabs button { background: none; border: 0; border-bottom: 2px solid transparent; color: var(--muted);
                  padding: 8px 14px; font: inherit; cursor: pointer; }
-  .tabs button[aria-selected="true"] { color: var(--fg); border-bottom-color: var(--fg); font-weight: 600; }
+  .tabs button[aria-pressed="true"] { color: var(--fg); border-bottom-color: var(--fg); font-weight: 600; }
   .finding { border: 1px solid var(--line); border-radius: 8px; padding: 14px 16px; margin-bottom: 12px; }
   .finding header { display: flex; flex-wrap: wrap; align-items: baseline; gap: 6px 10px; }
   .finding h3 { font-size: 15px; margin: 0; }
@@ -45,7 +46,7 @@
   .facts { color: var(--muted); font-size: 13px; margin: 6px 0 0; display: flex; flex-wrap: wrap; gap: 4px 16px; }
   .facts code { color: var(--fg); }
   .finding h4 { font-size: 13px; margin: 12px 0 4px; color: var(--muted); text-transform: uppercase; letter-spacing: .04em; }
-  .finding p { margin: 0; }
+  .finding p { margin: 0; white-space: pre-wrap; }
   pre { margin: 0; padding: 10px 12px; background: var(--panel); border: 1px solid var(--line); border-radius: 6px;
         overflow-x: auto; font: 13px/1.45 ui-monospace, SFMono-Regular, Menlo, monospace; white-space: pre; }
   .empty { color: var(--muted); padding: 24px 0; }
@@ -80,14 +81,14 @@
   </section>
   {% endif %}
 
-  <nav class="tabs" role="tablist">
-    <button type="button" role="tab" data-tab="All" aria-selected="true">All ({{ total }})</button>
+  <nav class="tabs" aria-label="Filter by severity">
+    <button type="button" data-tab="All" aria-pressed="true" aria-controls="findings">All ({{ total }})</button>
     {% for sev in severities %}
-    <button type="button" role="tab" data-tab="{{ sev }}" aria-selected="false">{{ sev }} ({{ counts[sev] }})</button>
+    <button type="button" data-tab="{{ sev }}" aria-pressed="false" aria-controls="findings">{{ sev }} ({{ counts[sev] }})</button>
     {% endfor %}
   </nav>
 
-  <section id="findings">
+  <section id="findings" aria-live="polite">
     {% for f in findings %}
     <article class="finding" data-severity="{{ f.severity }}">
       <header>
@@ -123,7 +124,7 @@
     tab.addEventListener("click", function () {
       var want = tab.getAttribute("data-tab");
       var shown = 0;
-      tabs.forEach(function (t) { t.setAttribute("aria-selected", t === tab ? "true" : "false"); });
+      tabs.forEach(function (t) { t.setAttribute("aria-pressed", t === tab ? "true" : "false"); });
       items.forEach(function (item) {
         var show = want === "All" || item.getAttribute("data-severity") === want;
         item.hidden = !show;
