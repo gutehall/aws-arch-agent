@@ -462,3 +462,60 @@ def test_bad_plan_raises_terraform_error(tmp_path: Path, content: str) -> None:
 def test_missing_plan_raises_terraform_error(tmp_path: Path) -> None:
     with pytest.raises(TerraformError):
         load_plan_values(tmp_path / "nope.json")
+
+
+def test_plan_does_not_pair_set_blocks_by_position(tmp_path: Path) -> None:
+    (tmp_path / "sg.tf").write_text(
+        """resource "aws_security_group" "web" {
+  ingress {
+    from_port   = 443
+    to_port     = 443
+    protocol    = "tcp"
+    cidr_blocks = ["0.0.0.0/0"]
+  }
+  ingress {
+    from_port   = var.ssh_port
+    to_port     = var.ssh_port
+    protocol    = "tcp"
+    cidr_blocks = var.admin_cidrs
+  }
+}
+""",
+        encoding="utf-8",
+    )
+    # The plan lists the set in its own order, not config order.
+    plan = _plan(tmp_path, [_res("aws_security_group.web", {"ingress": [
+        {"from_port": 22, "to_port": 22, "protocol": "tcp", "cidr_blocks": ["10.0.0.0/8"]},
+        {"from_port": 443, "to_port": 443, "protocol": "tcp", "cidr_blocks": ["0.0.0.0/0"]},
+    ]})])
+    sg = resources_from_terraform(tmp_path, plan_values=load_plan_values(plan))[0]
+    assert sorted(sg.properties["SecurityGroupIngress"], key=lambda e: e["FromPort"]) == [
+        {"CidrIp": "10.0.0.0/8", "FromPort": 22, "ToPort": 22},
+        {"CidrIp": "0.0.0.0/0", "FromPort": 443, "ToPort": 443},
+    ]
+
+
+def test_plan_links_split_bucket_set_from_a_variable(tmp_path: Path) -> None:
+    (tmp_path / "main.tf").write_text(
+        """resource "aws_s3_bucket" "data" {
+  bucket = var.name
+}
+resource "aws_s3_bucket_versioning" "data" {
+  bucket = var.name
+  versioning_configuration {
+    status = "Enabled"
+  }
+}
+""",
+        encoding="utf-8",
+    )
+    without = resources_from_terraform(tmp_path)
+    assert "VersioningConfiguration" in without[0].unresolved
+    plan = _plan(tmp_path, [
+        _res("aws_s3_bucket.data", {"bucket": "my-data"}),
+        _res("aws_s3_bucket_versioning.data", {"bucket": "my-data"}),
+    ])
+    resources = resources_from_terraform(tmp_path, plan_values=load_plan_values(plan))
+    bucket = next(r for r in resources if r.name == "aws_s3_bucket.data")
+    assert bucket.properties["VersioningConfiguration"] == {"Status": "Enabled"}
+    assert "VersioningConfiguration" not in bucket.unresolved

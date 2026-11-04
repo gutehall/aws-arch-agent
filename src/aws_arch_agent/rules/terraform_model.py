@@ -696,7 +696,9 @@ def _fill_from_plan(body: dict, planned: dict, keep: frozenset[str] = frozenset(
 
     Only arguments the block sets are filled: provider defaults stay with the adapters.
     An unknown value is absent from the plan, so it stays unresolved. A `dynamic` block
-    the plan expanded becomes a plain block.
+    the plan expanded becomes a plain block. Several blocks of one name are not paired
+    by position (set-typed blocks such as ingress are not in config order in the plan):
+    if any of them is unresolved, the planned list replaces them all.
     """
     out = dict(body)
     expanded: set[str] = set()
@@ -706,7 +708,8 @@ def _fill_from_plan(body: dict, planned: dict, keep: frozenset[str] = frozenset(
             expanded.add(name)
     if expanded:
         remaining = [
-            {k: v for k, v in item.items() if k not in expanded} for item in _blocks(body, "dynamic")
+            {k: v for k, v in item.items() if k not in expanded}
+            for item in _blocks(body, "dynamic")
         ]
         remaining = [item for item in remaining if item]
         if remaining:
@@ -717,11 +720,9 @@ def _fill_from_plan(body: dict, planned: dict, keep: frozenset[str] = frozenset(
         if key == "dynamic" or key in keep or key in expanded or key not in planned:
             continue
         plan_value = planned[key]
-        if (
-            _is_block_list(value) and value
-            and _is_block_list(plan_value) and len(plan_value) == len(value)
-        ):
-            out[key] = [_fill_from_plan(v, p) for v, p in zip(value, plan_value)]
+        single = _is_block_list(value) and len(value) == 1
+        if single and _is_block_list(plan_value) and len(plan_value) == 1:
+            out[key] = [_fill_from_plan(value[0], plan_value[0])]
         elif isinstance(value, dict) and isinstance(plan_value, dict):
             out[key] = _fill_from_plan(value, plan_value)
         elif _needs_plan(value):
@@ -729,8 +730,14 @@ def _fill_from_plan(body: dict, planned: dict, keep: frozenset[str] = frozenset(
     return out
 
 
-# The split S3 resources link to their bucket through the reference text in `bucket`.
-_PLAN_KEEP: dict[str, frozenset[str]] = {t: frozenset({"bucket"}) for t in _S3_PARTS}
+def _plan_keep(block: _Block) -> frozenset[str]:
+    """Arguments the plan must not replace. A split S3 resource links to its bucket
+    through `aws_s3_bucket.<name>` in `bucket`; the planned bucket name would lose that.
+    A `bucket` set from var/local is filled, and then links by the planned name."""
+    ref = block.body.get("bucket")
+    if block.type in _S3_PARTS and isinstance(ref, str) and _BUCKET_REF.search(ref):
+        return frozenset({"bucket"})
+    return frozenset()
 
 
 def resources_from_terraform(
@@ -757,9 +764,7 @@ def resources_from_terraform(
         for block in blocks:
             planned = plan_values.get(block.address)
             if planned is not None:
-                block.body = _fill_from_plan(
-                    block.body, planned, _PLAN_KEEP.get(block.type, frozenset())
-                )
+                block.body = _fill_from_plan(block.body, planned, _plan_keep(block))
     resources: dict[str, Resource] = {}
     for block in blocks:
         resource = _to_resource(block)
