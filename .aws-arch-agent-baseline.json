@@ -183,6 +183,12 @@
     },
     {
       "id": "SEC-001",
+      "file": "src/aws_arch_agent/rules/fix_snippets.py",
+      "evidence_hash": "c45e987572241fc9",
+      "logical_id": "Action    = \"s3:*\""
+    },
+    {
+      "id": "SEC-001",
       "file": "src/aws_arch_agent/rules/security_iam.py",
       "line": 15
     },
@@ -269,6 +275,18 @@
       "id": "SEC-006",
       "file": "tests/fixtures/rules/s3_no_encryption.ts",
       "line": 1
+    },
+    {
+      "id": "SEC-007",
+      "file": "src/aws_arch_agent/rules/fix_snippets.py",
+      "evidence_hash": "4f150a4aa2998ea6",
+      "logical_id": "Principal: \"*\""
+    },
+    {
+      "id": "SEC-007",
+      "file": "src/aws_arch_agent/rules/fix_snippets.py",
+      "evidence_hash": "5bf2aea4fd35efd1",
+      "logical_id": "Principal = \"*\""
     },
     {
       "id": "SEC-007",

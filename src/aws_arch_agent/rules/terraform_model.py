@@ -58,6 +58,8 @@ _S3_PARTS: dict[str, str] = {
     "aws_s3_bucket_versioning": "VersioningConfiguration",
     "aws_s3_bucket_server_side_encryption_configuration": "BucketEncryption",
     "aws_s3_bucket_logging": "LoggingConfiguration",
+    # Not a CloudFormation bucket property: the policy document, read by CF-S3-005.
+    "aws_s3_bucket_policy": "BucketPolicy",
 }
 
 # var/local are module inputs; each/count/self differ per instance. None is known statically.
@@ -325,7 +327,26 @@ def _s3_part(part_type: str, body: dict) -> Any:
         return {"Status": status}
     if part_type == "aws_s3_bucket_server_side_encryption_configuration":
         return _s3_encryption(body)
+    if part_type == "aws_s3_bucket_policy":
+        return _policy_document(body.get("policy"))
     return {"DestinationBucketName": _ref(body, "target_bucket")}
+
+
+_HEREDOC = re.compile(r"\A<<-?(\w+)\n(.*)\n\s*\1\s*\Z", re.DOTALL)
+
+
+def _policy_document(policy: Any) -> Any:
+    """A policy argument: a parsed document when it is literal JSON (a heredoc, or the
+    planned value), the expression text otherwise (jsonencode, a data source)."""
+    if policy is None:
+        return UNRESOLVED
+    if type(policy) is str:
+        match = _HEREDOC.match(policy.strip())
+        try:
+            return json.loads(match.group(2) if match else policy)
+        except ValueError:
+            return _Expr(policy)
+    return policy
 
 
 def _db(body: dict) -> dict:
