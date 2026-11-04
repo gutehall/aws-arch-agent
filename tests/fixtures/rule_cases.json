@@ -688,6 +688,12 @@
     "negative_ts": "// clean compliant stack",
     "positive_ts": "new s3.Bucket(this, \"B\");"
   },
+  "SEC-066": {
+    "negative_py": "ec2.LaunchTemplate(self, 'Lt', http_tokens=ec2.LaunchTemplateHttpTokens.REQUIRED)",
+    "negative_ts": "new ec2.Instance(this, 'I', { vpc, instanceType, machineImage, requireImdsv2: true });",
+    "positive_py": "ec2.Instance(self, 'I', vpc=vpc, instance_type=t, machine_image=m)",
+    "positive_ts": "new ec2.Instance(this, 'I', { vpc, instanceType, machineImage });"
+  },
   "SUST-001": {
     "negative_ts": "capacityProviderStrategy",
     "positive_ts": "new ecs.FargateService(this, \"Svc\", { cluster, taskDefinition });"

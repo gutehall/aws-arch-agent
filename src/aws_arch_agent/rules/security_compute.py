@@ -353,3 +353,40 @@ class EcsTaskRunAsRoot(Rule):
         return out
 
 
+class Ec2Imdsv2NotRequired(Rule):
+    id = "SEC-066"
+    title = "EC2 instance may not require IMDSv2"
+    category = "Security"
+    severity = "Medium"
+
+    def run(self, repo_path: Path, language: str = "typescript") -> List[Finding]:
+        glob = code_glob(language)
+        # An aspect on the app covers every instance and launch template in it.
+        if rg(repo_path, r"(?:Instance|LaunchTemplate)RequireImdsv2Aspect", glob=glob):
+            return []
+        ec2_pat = (
+            r"new\s+ec2\.(?:Instance|LaunchTemplate)\("
+            if language == "typescript"
+            else r"ec2\.(?:Instance|LaunchTemplate)\("
+        )
+        resources = rg(repo_path, ec2_pat, glob=glob)
+        required = rg(
+            repo_path,
+            cdk_bool_prop("requireImdsv2")
+            + r"|(?:httpTokens|http_tokens)\s*[:=]\s*ec2\.LaunchTemplateHttpTokens\.REQUIRED",
+            glob=glob,
+        )
+        suggested = (
+            'new ec2.Instance(this, "I", { /* ... */ requireImdsv2: true });'
+            if language == "typescript"
+            else 'ec2.Instance(self, "I", require_imdsv2=True)  # plus the other arguments'
+        )
+        return findings_for_unmatched(
+            self,
+            resources,
+            required,
+            "Set requireImdsv2: true on ec2.Instance and ec2.LaunchTemplate, or apply "
+            "InstanceRequireImdsv2Aspect to the app. With IMDSv1, an SSRF bug in the workload "
+            "can read the instance role's credentials.",
+            suggested_code=suggested,
+        )
