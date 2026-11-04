@@ -532,11 +532,41 @@ def _ecs_service(body: dict) -> dict:
 
 
 def _eks(body: dict) -> dict:
+    props: dict = {}
     types = _v(body, "enabled_cluster_log_types")
     if types is UNRESOLVED:
-        return {"Logging": UNRESOLVED}
-    logs = [{"Type": t, "Enabled": True} for t in types] if isinstance(types, list) else []
-    return {"Logging": {"ClusterLogging": logs}}
+        props["Logging"] = UNRESOLVED
+    else:
+        logs = [{"Type": t, "Enabled": True} for t in types] if isinstance(types, list) else []
+        props["Logging"] = {"ClusterLogging": logs}
+    dynamic = _dynamic_names(body)
+    vpc = _first_block(body, "vpc_config")
+    if "vpc_config" in dynamic:
+        props["ResourcesVpcConfig"] = UNRESOLVED
+    else:
+        vpc_props: dict = {}
+        _set(vpc_props, "EndpointPublicAccess", _v(vpc, "endpoint_public_access"))
+        _set(vpc_props, "EndpointPrivateAccess", _v(vpc, "endpoint_private_access"))
+        _set(vpc_props, "PublicAccessCidrs", _v(vpc, "public_access_cidrs"))
+        props["ResourcesVpcConfig"] = vpc_props
+    if "encryption_config" in dynamic:
+        props["EncryptionConfig"] = UNRESOLVED
+    else:
+        configs = []
+        for item in _blocks(body, "encryption_config"):
+            provider = _first_block(item, "provider")
+            configs.append({
+                "Provider": {"KeyArn": _ref(provider, "key_arn")},
+                "Resources": _v(item, "resources"),
+            })
+        if configs:
+            props["EncryptionConfig"] = configs
+    version = _v(body, "version")
+    # Unknown version is not UNRESOLVED: it only chooses the severity, not whether to report.
+    props["Version"] = _Expr("<unresolved>") if version is UNRESOLVED else version
+    if props["Version"] is None:
+        del props["Version"]
+    return props
 
 
 _ADAPTERS: dict[str, Callable[[dict], dict]] = {

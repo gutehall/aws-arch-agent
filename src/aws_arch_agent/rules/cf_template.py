@@ -165,8 +165,64 @@ CHECK_PROPERTIES: dict[str, frozenset[str]] = {
         "CF-SUST-001": {"MixedInstancesPolicy"},
         "CF-SUST-002": {"CapacityProviderStrategy", "LaunchType"},
         "CF-EKS-001": {"Logging"},
+        "CF-EKS-002": {"ResourcesVpcConfig"},
+        "CF-EKS-003": {"EncryptionConfig"},
     }.items()
 }
+
+
+def _k8s_minor(version: Any) -> int | None:
+    """Minor version of an EKS `Version` ("1.27" -> 27), or None when unknown.
+
+    Unquoted YAML turns 1.30 into the float 1.3. EKS has no 1.3, so a one-digit
+    minor read from a number is a dropped trailing zero.
+    """
+    if isinstance(version, bool) or not isinstance(version, (str, int, float)):
+        return None
+    if isinstance(version, str) and type(version) is not str:
+        return None  # a Terraform expression, not a literal
+    major, _, minor = str(version).strip().partition(".")
+    if major != "1" or not minor.isdigit():
+        return None
+    if not isinstance(version, str) and len(minor) == 1:
+        return int(minor) * 10
+    return int(minor)
+
+
+def _eks_public_endpoint(vpc_config: Any) -> list[str] | None:
+    """Open CIDRs when the API endpoint is public to them, else None.
+
+    EndpointPublicAccess defaults to true and PublicAccessCidrs to 0.0.0.0/0.
+    """
+    if not isinstance(vpc_config, dict) or _is_intrinsic(vpc_config):
+        return None
+    public = vpc_config.get("EndpointPublicAccess", True)
+    if public is not True and public != "true":
+        return None
+    cidrs = vpc_config.get("PublicAccessCidrs")
+    if cidrs is None:
+        return ["0.0.0.0/0"]
+    if not isinstance(cidrs, list):
+        return None
+    open_cidrs = [c for c in cidrs if type(c) is str and c in ("0.0.0.0/0", "::/0")]
+    return open_cidrs or None
+
+
+def _eks_encrypts_secrets(encryption: Any) -> bool | None:
+    """True when a KMS key encrypts secrets, False when no EncryptionConfig, None when unknown."""
+    if encryption is None:
+        return False
+    if not isinstance(encryption, list):
+        return None
+    for item in encryption:
+        if not isinstance(item, dict) or _is_intrinsic(item):
+            return None
+        resources = item.get("Resources")
+        if not isinstance(resources, list):
+            return None
+        if "secrets" in resources:
+            return True
+    return False
 
 
 def run_resource_checks(
@@ -755,6 +811,50 @@ def run_resource_checks(
                             line=res.line,
                             evidence=f"{logical_id} ({rtype})",
                             recommendation="Enable Logging.ClusterLogging for api, audit, or authenticator log types.",
+                        ))
+                    open_cidrs = _eks_public_endpoint(props.get("ResourcesVpcConfig", {}))
+                    if open_cidrs:
+                        findings.append(Finding(
+                            id="CF-EKS-002",
+                            title="EKS cluster API endpoint is public to the internet",
+                            severity="High",
+                            category="Security",
+                            file=res.file or str(template_path),
+                            line=res.line,
+                            evidence=f"{logical_id} ({rtype})",
+                            recommendation=(
+                                f"The Kubernetes API endpoint accepts requests from {', '.join(open_cidrs)}. "
+                                "EndpointPublicAccess defaults to true and PublicAccessCidrs to 0.0.0.0/0. "
+                                "Set EndpointPrivateAccess: true and EndpointPublicAccess: false, or limit "
+                                "PublicAccessCidrs to known ranges. "
+                                "In CDK: set endpointAccess to eks.EndpointAccess.PRIVATE, or restrict PUBLIC_AND_PRIVATE with onlyFrom."
+                            ),
+                        ))
+                    encrypted = _eks_encrypts_secrets(props.get("EncryptionConfig"))
+                    if encrypted is False:
+                        minor = _k8s_minor(props.get("Version"))
+                        old = minor is not None and minor < 28
+                        version_note = (
+                            f"This cluster runs Kubernetes 1.{minor}, before the default envelope "
+                            "encryption of Kubernetes API data that EKS applies from 1.28. "
+                            if old else
+                            "From Kubernetes 1.28, EKS encrypts Kubernetes API data with an AWS-owned "
+                            "key by default. A customer-managed key adds key policy control, rotation, "
+                            "and CloudTrail records of its use. "
+                        )
+                        findings.append(Finding(
+                            id="CF-EKS-003",
+                            title="EKS secrets are not encrypted with a customer-managed KMS key",
+                            severity="Medium" if old else "Low",
+                            category="Security",
+                            file=res.file or str(template_path),
+                            line=res.line,
+                            evidence=f"{logical_id} ({rtype})",
+                            recommendation=(
+                                version_note
+                                + "Add EncryptionConfig with Provider.KeyArn set to a KMS key and Resources: [secrets]. "
+                                "In CDK: secretsEncryptionKey: kmsKey."
+                            ),
                         ))
 
         except Exception as exc:
