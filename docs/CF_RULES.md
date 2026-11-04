@@ -4,13 +4,13 @@ This document provides a comprehensive list of all rules checked by AWS Arch Age
 
 ## Overview
 
-AWS Arch Agent checks **169 static analysis rules** plus additional CloudFormation template rules across all 6 AWS Well-Architected Framework pillars.
+AWS Arch Agent checks **170 static analysis rules** plus additional CloudFormation template rules across all 6 AWS Well-Architected Framework pillars.
 
 ## Static Analysis Rules (V1 & V2 Modes)
 
 These rules run on your CDK TypeScript/Python code and execute in both V1 and V2 modes.
 
-### Security (65 rules)
+### Security (66 rules)
 
 **Encryption & Data Protection:**
 - SEC-006: S3 bucket encryption missing
@@ -88,7 +88,7 @@ These rules run on your CDK TypeScript/Python code and execute in both V1 and V2
 - SEC-022: VPC endpoints missing (S3/DynamoDB traffic via internet)
 - SEC-056: Stack termination protection not enabled
 
-**Additional Security (SEC-057 to SEC-065):**
+**Additional Security (SEC-057 to SEC-066):**
 - SEC-057: Lambda function URL without authentication
 - SEC-058: ECS task may run as root user
 - SEC-059: Redshift cluster encryption not enabled
@@ -98,6 +98,7 @@ These rules run on your CDK TypeScript/Python code and execute in both V1 and V2
 - SEC-063: Backup vault encryption not configured
 - SEC-064: RDS instance may be publicly accessible
 - SEC-065: Amazon Macie not enabled for sensitive data discovery
+- SEC-066: EC2 instance or launch template may not require IMDSv2
 
 ### Reliability (31 rules)
 
@@ -293,7 +294,7 @@ CloudFormation template rules run when the agent has access to template files. T
 - **API Gateway**: CF-APIGW-001 (REST access logging), CF-APIGW-002 (REST X-Ray), CF-APIGW-V2-001 (HTTP API access logging), CF-APIGW-V2-002 (HTTP API X-Ray)
 - **Auto Scaling**: CF-SUST-001 (no Spot / mixed instances)
 - **ECS**: CF-SUST-002 (Fargate without FARGATE_SPOT)
-- **EC2**: CF-PERF-004 (large instance right-sizing)
+- **EC2**: CF-EC2-001 (IMDSv2 not required on an instance or launch template: High when `HttpTokens: optional`, Medium when unset because the default then depends on the AMI), CF-PERF-004 (large instance right-sizing)
 - **Launch Template**: CF-SUST-003 (no Spot when no ASG in template)
 - **EKS**: CF-EKS-001 (control plane logging not enabled), CF-EKS-002 (API endpoint public to `0.0.0.0/0` or `::/0`; unset `EndpointPublicAccess` and `PublicAccessCidrs` count as public, the AWS default), CF-EKS-003 (no customer-managed KMS key for secrets: Medium below Kubernetes 1.28, Low from 1.28, where EKS already encrypts Kubernetes API data with an AWS-owned key)
 - **Template-level**: CF-PERF-002 (consider caching when API/Lambda, no CloudFront/ElastiCache), CF-COST-002 (NAT Gateway cost hint)
@@ -303,7 +304,7 @@ CloudFormation template rules run when the agent has access to template files. T
 | Pillar | CF rule IDs |
 |--------|-------------|
 | Operational Excellence | CF-S3-004, CF-CT-001, CF-CT-002, CF-FL-001, CF-EKS-001 |
-| Security | CF-S3-001, CF-S3-002, CF-S3-005, CF-RDS-001, CF-RDS-004, CF-CT-003, CF-KMS-001, CF-EKS-002, CF-EKS-003, CF-IAM-001, CF-IAM-002, CF-IAM-003, CF-SG-001, CF-CW-002, CF-SQS-001, CF-DDB-002 |
+| Security | CF-S3-001, CF-S3-002, CF-S3-005, CF-RDS-001, CF-RDS-004, CF-CT-003, CF-KMS-001, CF-EC2-001, CF-EKS-002, CF-EKS-003, CF-IAM-001, CF-IAM-002, CF-IAM-003, CF-SG-001, CF-CW-002, CF-SQS-001, CF-DDB-002 |
 | Reliability | CF-S3-003, CF-RDS-002, CF-RDS-003, CF-RDS-005, CF-LAM-001, CF-DDB-001, CF-SQS-002 |
 | Performance Efficiency | CF-PERF-001, CF-PERF-002, CF-PERF-003, CF-PERF-004 |
 | Cost Optimization | CF-CW-001, CF-COST-002 |
