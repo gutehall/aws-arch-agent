@@ -47,7 +47,11 @@ def test_malformed_resources(tmp_path: Path) -> None:
 
 def test_canonical_types_cover_every_checked_type() -> None:
     assert _PER_RESOURCE_TYPES <= CANONICAL_TYPES
-    assert len(set(CF_TYPE_TO_CANONICAL.values())) == len(CF_TYPE_TO_CANONICAL)
+    # One canonical type per CloudFormation type, except where several CloudFormation
+    # types carry the same thing on purpose (a policy document).
+    shared = {"iam_policy"}
+    values = [v for v in CF_TYPE_TO_CANONICAL.values() if v not in shared]
+    assert len(set(values)) == len(values)
 
 
 def test_checks_run_on_resources_without_a_template(tmp_path: Path) -> None:

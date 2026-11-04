@@ -434,6 +434,58 @@ resource "aws_vpc_endpoint" "s3" {
 }""",
 }
 
+# IAM (CF-IAM-001..003): the fix is the same shape whichever kind of wildcard was found.
+_CF_IAM_POLICY = """$name:
+  Type: $type
+  Properties:
+    PolicyDocument:
+      Version: "2012-10-17"
+      Statement:
+        - Effect: Allow
+          Action:
+            - s3:GetObject  # only the actions this principal calls
+          Resource:
+            - arn:aws:s3:::my-bucket/*  # only the resources it calls them on"""
+_CF_IAM_PRINCIPAL = """$name:
+  Type: $type
+  Properties:
+    Policies:
+      - PolicyName: least-privilege
+        PolicyDocument:
+          Version: "2012-10-17"
+          Statement:
+            - Effect: Allow
+              Action:
+                - s3:GetObject  # only the actions this principal calls
+              Resource:
+                - arn:aws:s3:::my-bucket/*  # only the resources it calls them on"""
+_TF_IAM_DOCUMENT = """data "aws_iam_policy_document" "$tf_name" {
+  statement {
+    actions   = ["s3:GetObject"]              # only the actions this principal calls
+    resources = ["arn:aws:s3:::my-bucket/*"]  # only the resources it calls them on
+  }
+}
+"""
+_TF_IAM_POLICY = _TF_IAM_DOCUMENT + """
+resource "$tf_type" "$tf_name" {
+  # keep the other arguments as they are
+  policy = data.aws_iam_policy_document.$tf_name.json
+}"""
+_TF_IAM_ROLE = _TF_IAM_DOCUMENT + """
+resource "aws_iam_role" "$tf_name" {
+  # keep the other arguments as they are
+  inline_policy {
+    name   = "least-privilege"
+    policy = data.aws_iam_policy_document.$tf_name.json
+  }
+}"""
+for _check in ("CF-IAM-001", "CF-IAM-002", "CF-IAM-003"):
+    _CLOUDFORMATION[_check] = _CF_IAM_POLICY
+    for _principal in ("AWS::IAM::Role", "AWS::IAM::User", "AWS::IAM::Group"):
+        _CLOUDFORMATION[f"{_check}:{_principal}"] = _CF_IAM_PRINCIPAL
+    _TERRAFORM[_check] = _TF_IAM_POLICY
+    _TERRAFORM[f"{_check}:aws_iam_role"] = _TF_IAM_ROLE
+
 SNIPPETS: dict[FixLanguage, dict[str, str]] = {
     "cloudformation": _CLOUDFORMATION,
     "terraform": _TERRAFORM,
