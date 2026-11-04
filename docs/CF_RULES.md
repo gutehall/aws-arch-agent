@@ -294,7 +294,7 @@ CloudFormation template rules run when the agent has access to template files. T
 - **ECS**: CF-SUST-002 (Fargate without FARGATE_SPOT)
 - **EC2**: CF-PERF-004 (large instance right-sizing)
 - **Launch Template**: CF-SUST-003 (no Spot when no ASG in template)
-- **EKS**: CF-EKS-001 (control plane logging not enabled)
+- **EKS**: CF-EKS-001 (control plane logging not enabled), CF-EKS-002 (API endpoint public to `0.0.0.0/0` or `::/0`; unset `EndpointPublicAccess` and `PublicAccessCidrs` count as public, the AWS default), CF-EKS-003 (no customer-managed KMS key for secrets: Medium below Kubernetes 1.28, Low from 1.28, where EKS already encrypts Kubernetes API data with an AWS-owned key)
 - **Template-level**: CF-PERF-002 (consider caching when API/Lambda, no CloudFront/ElastiCache), CF-COST-002 (NAT Gateway cost hint)
 
 ## By pillar (AWS Well-Architected 6 pillars)
@@ -302,7 +302,7 @@ CloudFormation template rules run when the agent has access to template files. T
 | Pillar | CF rule IDs |
 |--------|-------------|
 | Operational Excellence | CF-S3-004, CF-CT-001, CF-CT-002, CF-FL-001, CF-EKS-001 |
-| Security | CF-S3-001, CF-S3-002, CF-RDS-001, CF-RDS-004, CF-CT-003, CF-KMS-001, CF-SG-001, CF-CW-002, CF-SQS-001, CF-DDB-002 |
+| Security | CF-S3-001, CF-S3-002, CF-RDS-001, CF-RDS-004, CF-CT-003, CF-KMS-001, CF-EKS-002, CF-EKS-003, CF-SG-001, CF-CW-002, CF-SQS-001, CF-DDB-002 |
 | Reliability | CF-S3-003, CF-RDS-002, CF-RDS-003, CF-RDS-005, CF-LAM-001, CF-DDB-001, CF-SQS-002 |
 | Performance Efficiency | CF-PERF-001, CF-PERF-002, CF-PERF-003, CF-PERF-004 |
 | Cost Optimization | CF-CW-001, CF-COST-002 |

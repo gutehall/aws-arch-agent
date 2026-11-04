@@ -209,6 +209,20 @@ _CLOUDFORMATION: dict[str, str] = {
         EnabledTypes:
           - Type: api
           - Type: audit""",
+    "CF-EKS-002": """$name:
+  Type: AWS::EKS::Cluster
+  Properties:
+    ResourcesVpcConfig:
+      EndpointPrivateAccess: true
+      EndpointPublicAccess: false  # or true with PublicAccessCidrs limited to known ranges""",
+    "CF-EKS-003": """$name:
+  Type: AWS::EKS::Cluster
+  Properties:
+    EncryptionConfig:
+      - Provider:
+          KeyArn: !GetAtt EksSecretsKey.Arn
+        Resources:
+          - secrets""",
     "CF-VPC-001": """S3Endpoint:
   Type: AWS::EC2::VPCEndpoint
   Properties:
@@ -412,6 +426,22 @@ resource "aws_security_group" "$tf_name" {
 }""",
     "CF-EKS-001": """resource "aws_eks_cluster" "$tf_name" {
   enabled_cluster_log_types = ["api", "audit"]
+}""",
+    "CF-EKS-002": """resource "aws_eks_cluster" "$tf_name" {
+  # keep the other arguments as they are
+  vpc_config {
+    endpoint_private_access = true
+    endpoint_public_access  = false # or true with public_access_cidrs limited to known ranges
+  }
+}""",
+    "CF-EKS-003": """resource "aws_eks_cluster" "$tf_name" {
+  # keep the other arguments as they are
+  encryption_config {
+    provider {
+      key_arn = aws_kms_key.eks_secrets.arn
+    }
+    resources = ["secrets"]
+  }
 }""",
     "CF-VPC-001": """data "aws_region" "current" {}
 
