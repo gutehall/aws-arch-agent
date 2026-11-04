@@ -55,6 +55,8 @@ def test_cloudformation_secrets_encryption(tmp_path: Path) -> None:
         "Unset": _cluster(),
         "VersionParam": _cluster(Version={"Ref": "K8s"}),
         "FromIf": _cluster(EncryptionConfig=[{"Fn::If": ["C", KEY[0], {}]}]),
+        "EmptyList": _cluster(EncryptionConfig=[]),
+        "ResourcesParam": _cluster(EncryptionConfig=[{"Provider": {"KeyArn": "k"}, "Resources": {"Ref": "R"}}]),
     }), "CF-EKS-003")
     assert found == {
         "OtherResources": "Low",
@@ -64,6 +66,7 @@ def test_cloudformation_secrets_encryption(tmp_path: Path) -> None:
         "CurrentUnquotedYaml": "Low",
         "Unset": "Low",
         "VersionParam": "Low",
+        "EmptyList": "Low",
     }
 
 
@@ -127,6 +130,24 @@ resource "aws_eks_cluster" "from_vars" {
       }
       resources = ["secrets"]
     }
+  }
+}
+
+resource "aws_eks_cluster" "dynamic_vpc" {
+  name     = "e"
+  role_arn = "arn"
+  version  = "1.30"
+  dynamic "vpc_config" {
+    for_each = [1]
+    content {
+      subnet_ids = ["s-1"]
+    }
+  }
+  encryption_config {
+    provider {
+      key_arn = aws_kms_key.eks.arn
+    }
+    resources = ["secrets"]
   }
 }
 """
