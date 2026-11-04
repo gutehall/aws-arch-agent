@@ -42,6 +42,13 @@
     "evidence": "DataBucket (AWS::S3::Bucket)"
   },
   {
+    "id": "CF-S3-005",
+    "severity": "Medium",
+    "file": "stack.yaml",
+    "line": null,
+    "evidence": "DataBucket (AWS::S3::Bucket)"
+  },
+  {
     "id": "CF-SQS-002",
     "severity": "Low",
     "file": "stack.yaml",

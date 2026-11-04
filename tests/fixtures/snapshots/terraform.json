@@ -42,6 +42,13 @@
     "evidence": "aws_s3_bucket.data (aws_s3_bucket)"
   },
   {
+    "id": "CF-S3-005",
+    "severity": "Medium",
+    "file": "main.tf",
+    "line": 20,
+    "evidence": "aws_s3_bucket.data (aws_s3_bucket)"
+  },
+  {
     "id": "CF-SQS-002",
     "severity": "Low",
     "file": "main.tf",
