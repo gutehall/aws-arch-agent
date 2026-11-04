@@ -87,19 +87,22 @@ def _many() -> list[Finding]:
         return Finding(id=fid, title=f"title {fid}", severity=sev, category="Security",
                        recommendation="fix")
 
-    return [f("H-1", "High"), f("L-1", "Low"), f("H-2", "High"), f("H-3", "High"), f("L-2", "Low")]
+    return [
+        f("H-1", "High"), f("L-1", "Low"), f("M-1", "Medium"),
+        f("H-2", "High"), f("H-3", "High"), f("L-2", "Low"),
+    ]
 
 
 def test_counts_match_the_findings_passed_in() -> None:
     page = render_html(CTX, _many(), warnings=["w1", "w2"])
     assert '<div class="count High"><div class="n">3</div>' in page
-    assert '<div class="count Medium"><div class="n">0</div>' in page
+    assert '<div class="count Medium"><div class="n">1</div>' in page
     assert '<div class="count Low"><div class="n">2</div>' in page
     assert '<div class="n">2</div><div class="label">Warnings</div>' in page
-    for label in ("All (5)", "High (3)", "Medium (0)", "Low (2)"):
+    for label in ("All (6)", "High (3)", "Medium (1)", "Low (2)"):
         assert label in page
     assert page.count('data-severity="High"') == 3
-    assert page.count('data-severity="Medium"') == 0
+    assert page.count('data-severity="Medium"') == 1
     assert page.count('data-severity="Low"') == 2
 
 

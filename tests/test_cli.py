@@ -647,8 +647,11 @@ def test_config_format_html(tmp_path: Path) -> None:
 def test_config_unknown_format_fails(tmp_path: Path) -> None:
     _make_repo(tmp_path)
     (tmp_path / ".aws-arch-agent.json").write_text(json.dumps({"format": "pdf"}), encoding="utf-8")
-    result = runner.invoke(app, ["--repo", str(tmp_path), "--no-llm"])
+    out_file = tmp_path / "report.out"
+    result = runner.invoke(app, ["--repo", str(tmp_path), "--no-llm", "--out", str(out_file)])
     assert result.exit_code != 0
+    assert "format" in result.output
+    assert not out_file.exists()
 
 
 def test_html_marks_baselined_findings(tmp_path: Path) -> None:
@@ -683,3 +686,17 @@ def test_cli_html_escapes_scanned_source(tmp_path: Path) -> None:
     assert "<script>alert" not in page
     assert "&lt;script&gt;alert(1)&lt;/script&gt;" in page
     assert page.count("<script>") == 1
+
+
+def test_cli_html_with_no_findings_writes_a_page(tmp_path: Path) -> None:
+    (tmp_path / "main.tf").write_text('variable "x" {}\n', encoding="utf-8")
+    out_file = tmp_path / "report.html"
+    result = runner.invoke(app, [
+        "--repo", str(tmp_path), "--no-llm", "--iac", "terraform", "--format", "html",
+        "--out", str(out_file),
+    ])
+    assert result.exit_code == 0, result.output
+    page = out_file.read_text(encoding="utf-8")
+    assert page.startswith("<!DOCTYPE html>")
+    assert "All (0)" in page
+    assert '<p class="empty">No findings.</p>' in page
