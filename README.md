@@ -161,7 +161,7 @@ aws-arch-agent --repo . --mode v2
 | `--out`, `-o` | Output file path | `--out review.md` |
 | `--mode` | Analysis mode: `v1` or `v2` | `--mode v2` |
 | `--iac` | IaC source: `auto`, `cdk`, `cloudformation`, or `terraform` | `--iac terraform` |
-| `--format`, `-f` | Output format: `markdown`, `json`, or `sarif` | `--format sarif` |
+| `--format`, `-f` | Output format: `markdown` (default), `json`, `sarif`, or `html` | `--format html` |
 | `--no-llm` | Skip LLM-based recommendations | `--no-llm` |
 | `--fail-on` | Exit with error if findings ≥ severity | `--fail-on high` |
 | `--baseline` | Baseline suppressions file (default: `.aws-arch-agent-baseline.json`) | `--baseline baseline.json` |
@@ -304,6 +304,15 @@ aws-arch-agent --repo . --no-llm --fail-on high --enforce-baseline
 # Custom baseline path
 aws-arch-agent --repo . --no-llm --fail-on high --enforce-baseline --baseline baseline.json
 ```
+
+### HTML report
+
+```bash
+aws-arch-agent --repo . --no-llm --format html --out report.html
+open report.html   # or xdg-open / start
+```
+
+One self-contained file, meant to be opened in a browser. It has no external CSS, scripts, or fonts, so it works offline and as a CI artifact. The page shows the repo, source, and High/Medium/Low/warning counts, has All/High/Medium/Low tabs, and lists each finding with its file and line, evidence, recommendation, and suggested code. Evidence and code from the scanned repo are escaped, so they show as text. With `--enforce-baseline`, every finding stays on the page and is labeled Accepted or New. The default format is still `markdown`. Set `format: html` in the config file to make the page the default for a repo. `--out` still defaults to `report.md`, so pass `--out report.html` (or set `out: report.html` in the config).
 
 ### SARIF output (GitHub Code Scanning)
 

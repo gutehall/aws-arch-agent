@@ -14,7 +14,7 @@ inputs:
     required: false
     default: auto
   format:
-    description: Output format (markdown, json, sarif, or html)
+    description: Output format (markdown, json, sarif, or html). With html, set out to a .html path.
     required: false
     default: markdown
   out:

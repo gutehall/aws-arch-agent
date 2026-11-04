@@ -13,7 +13,7 @@ The agent covers all six AWS Well-Architected pillars. Static and CloudFormation
 | `--tf-plan` | — | `terraform show -json` output (a plan or a state). V1 Terraform scans only. Known planned values replace arguments that depend on `var`, `local`, or another expression, by resource address. Unknown values stay unresolved. Indexed instances (`count`, `for_each`), data sources, and child modules are not read. With one root module, the plan applies to it wherever the plan file is. With several, it applies to the one that holds the plan file. A missing or unreadable plan, or a plan that matches no root module, is a report warning (exit 2) and the scan runs without it. `--mode v2` with `--tf-plan` exits 1 |
 | `--max-files` | `400` | Cap on files walked. Rules search only these files |
 | `--config` | (auto-detect) | Path to config file |
-| `--format`, `-f` | `markdown` | `markdown`, `json`, or `sarif` |
+| `--format`, `-f` | `markdown` | `markdown`, `json`, `sarif`, or `html`. `html` writes one self-contained page (inline CSS and script, no external assets) to open in a browser. With `--enforce-baseline` it labels each finding Accepted or New. `--out` still defaults to `report.md`, so pass a `.html` path. An unknown format fails the run and writes no report |
 | `--fail-on` | `none` | Exit 1 if any finding at or above: `high`, `medium`, `low`, `none` |
 | `--no-llm` | `false` | Skip LLM polish / agent reasoning |
 | `--llm-mode` | `full` | V2 only: `full` (six pillar calls) or `compact` (single LLM call) |
