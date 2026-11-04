@@ -48,6 +48,23 @@ _CLOUDFORMATION: dict[str, str] = {
     LoggingConfiguration:
       DestinationBucketName: !Ref AccessLogBucket
       LogFilePrefix: $name/""",
+    "CF-S3-005": """${name}Policy:
+  Type: AWS::S3::BucketPolicy
+  Properties:
+    Bucket: !Ref $name
+    PolicyDocument:
+      Version: "2012-10-17"
+      Statement:
+        - Sid: DenyInsecureTransport
+          Effect: Deny
+          Principal: "*"
+          Action: s3:*
+          Resource:
+            - !GetAtt $name.Arn
+            - !Sub "$${$name.Arn}/*"
+          Condition:
+            Bool:
+              aws:SecureTransport: "false\"""",
     "CF-RDS-001": """$name:
   Type: $type
   Properties:
@@ -209,6 +226,20 @@ _CLOUDFORMATION: dict[str, str] = {
         EnabledTypes:
           - Type: api
           - Type: audit""",
+    "CF-EKS-002": """$name:
+  Type: AWS::EKS::Cluster
+  Properties:
+    ResourcesVpcConfig:
+      EndpointPrivateAccess: true
+      EndpointPublicAccess: false  # or true with PublicAccessCidrs limited to known ranges""",
+    "CF-EKS-003": """$name:
+  Type: AWS::EKS::Cluster
+  Properties:
+    EncryptionConfig:
+      - Provider:
+          KeyArn: !GetAtt EksSecretsKey.Arn
+        Resources:
+          - secrets""",
     "CF-VPC-001": """S3Endpoint:
   Type: AWS::EC2::VPCEndpoint
   Properties:
@@ -260,6 +291,21 @@ _TERRAFORM: dict[str, str] = {
   bucket        = aws_s3_bucket.$tf_name.id
   target_bucket = aws_s3_bucket.access_logs.id
   target_prefix = "$tf_name/"
+}""",
+    "CF-S3-005": """# merge into the bucket's existing policy: a bucket has only one
+resource "aws_s3_bucket_policy" "$tf_name" {
+  bucket = aws_s3_bucket.$tf_name.id
+  policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [{
+      Sid       = "DenyInsecureTransport"
+      Effect    = "Deny"
+      Principal = "*"
+      Action    = "s3:*"
+      Resource  = [aws_s3_bucket.$tf_name.arn, "$${aws_s3_bucket.$tf_name.arn}/*"]
+      Condition = { Bool = { "aws:SecureTransport" = "false" } }
+    }]
+  })
 }""",
     "CF-RDS-001": """resource "$tf_type" "$tf_name" {
   storage_encrypted = true
@@ -412,6 +458,22 @@ resource "aws_security_group" "$tf_name" {
 }""",
     "CF-EKS-001": """resource "aws_eks_cluster" "$tf_name" {
   enabled_cluster_log_types = ["api", "audit"]
+}""",
+    "CF-EKS-002": """resource "aws_eks_cluster" "$tf_name" {
+  # keep the other arguments as they are
+  vpc_config {
+    endpoint_private_access = true
+    endpoint_public_access  = false # or true with public_access_cidrs limited to known ranges
+  }
+}""",
+    "CF-EKS-003": """resource "aws_eks_cluster" "$tf_name" {
+  # keep the other arguments as they are
+  encryption_config {
+    provider {
+      key_arn = aws_kms_key.eks_secrets.arn
+    }
+    resources = ["secrets"]
+  }
 }""",
     "CF-VPC-001": """data "aws_region" "current" {}
 

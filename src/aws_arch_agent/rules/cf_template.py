@@ -141,6 +141,7 @@ CHECK_PROPERTIES: dict[str, frozenset[str]] = {
         "CF-S3-002": {"BucketEncryption"},
         "CF-S3-003": {"VersioningConfiguration"},
         "CF-S3-004": {"LoggingConfiguration"},
+        "CF-S3-005": {"BucketPolicy"},
         "CF-RDS-001": {"StorageEncrypted", "DBClusterIdentifier"},
         "CF-RDS-002": {"BackupRetentionPeriod", "DBClusterIdentifier"},
         "CF-RDS-003": {"MultiAZ", "DBClusterIdentifier"},
@@ -173,6 +174,8 @@ CHECK_PROPERTIES: dict[str, frozenset[str]] = {
         "CF-IAM-001": {"PolicyDocument", "Policies"},
         "CF-IAM-002": {"PolicyDocument", "Policies"},
         "CF-IAM-003": {"PolicyDocument", "Policies"},
+        "CF-EKS-002": {"ResourcesVpcConfig"},
+        "CF-EKS-003": {"EncryptionConfig"},
     }.items()
 }
 
@@ -254,6 +257,156 @@ def _iam_findings(res: Resource, template_path: Path) -> List[Finding]:
             recommendation=f"Flagged: {shown}{where}. {recommendation}{_IAM_CDK_HINT}",
         ))
     return out
+def _k8s_minor(version: Any) -> int | None:
+    """Minor version of an EKS `Version` ("1.27" -> 27), or None when unknown.
+
+    Unquoted YAML turns 1.30 into the float 1.3. EKS has no 1.3, so a one-digit
+    minor read from a number is a dropped trailing zero.
+    """
+    if isinstance(version, bool) or not isinstance(version, (str, int, float)):
+        return None
+    if isinstance(version, str) and type(version) is not str:
+        return None  # a Terraform expression, not a literal
+    major, _, minor = str(version).strip().partition(".")
+    if major != "1" or not minor.isdigit():
+        return None
+    if not isinstance(version, str) and len(minor) == 1:
+        return int(minor) * 10
+    return int(minor)
+
+
+def _eks_public_endpoint(vpc_config: Any) -> list[str] | None:
+    """Open CIDRs when the API endpoint is public to them, else None.
+
+    EndpointPublicAccess defaults to true and PublicAccessCidrs to 0.0.0.0/0.
+    """
+    if not isinstance(vpc_config, dict) or _is_intrinsic(vpc_config):
+        return None
+    public = vpc_config.get("EndpointPublicAccess", True)
+    if public is not True and public != "true":
+        return None
+    cidrs = vpc_config.get("PublicAccessCidrs")
+    if cidrs is None:
+        return ["0.0.0.0/0"]
+    if not isinstance(cidrs, list):
+        return None
+    open_cidrs = [c for c in cidrs if type(c) is str and c in ("0.0.0.0/0", "::/0")]
+    return open_cidrs or None
+
+
+def _eks_encrypts_secrets(encryption: Any) -> bool | None:
+    """True when a KMS key encrypts secrets, False when no EncryptionConfig, None when unknown."""
+    if encryption is None:
+        return False
+    if not isinstance(encryption, list):
+        return None
+    for item in encryption:
+        if not isinstance(item, dict) or _is_intrinsic(item):
+            return None
+        resources = item.get("Resources")
+        if not isinstance(resources, list):
+            return None
+        if "secrets" in resources:
+            return True
+    return False
+
+
+def _cf_bucket_policies(resources: List[Resource]) -> tuple[dict[str, Any], bool]:
+    """PolicyDocument of each AWS::S3::BucketPolicy, keyed by the bucket's logical id.
+
+    The second value is True when a policy names its bucket through an expression the
+    scan cannot follow: it may then belong to any bucket in the template.
+    """
+    by_name = {
+        r.properties.get("BucketName"): r.name
+        for r in resources
+        if r.source_type == "AWS::S3::Bucket" and type(r.properties.get("BucketName")) is str
+    }
+    policies: dict[str, Any] = {}
+    unlinked = False
+    for r in resources:
+        if r.source_type != "AWS::S3::BucketPolicy":
+            continue
+        if r.malformed:  # its bucket is unknown
+            unlinked = True
+            continue
+        bucket = r.properties.get("Bucket")
+        if isinstance(bucket, dict) and set(bucket) == {"Ref"} and isinstance(bucket["Ref"], str):
+            target: str | None = bucket["Ref"]
+        elif isinstance(bucket, str):
+            target = by_name.get(bucket)  # a name not in the template is another bucket
+            if target is None:
+                continue
+        else:
+            unlinked = True
+            continue
+        if target is not None:
+            policies[target] = r.properties.get("PolicyDocument", {})  # missing: unknown, not absent
+    return policies, unlinked
+
+
+def _denies_plain_http(statement: dict) -> bool:
+    """True for the TLS-only statement: Deny s3:* to everyone when aws:SecureTransport is false."""
+    if statement.get("Effect") != "Deny":
+        return False
+    actions = statement.get("Action")
+    actions = actions if isinstance(actions, list) else [actions]
+    if not any(a in ("s3:*", "*") for a in actions):
+        return False
+    principal = statement.get("Principal")
+    if isinstance(principal, dict):  # {"AWS": "*"}, or {"*": ["*"]} from aws_iam_policy_document
+        principal = principal.get("AWS", principal.get("*"))
+    if principal != "*" and principal != ["*"]:
+        return False
+    condition = statement.get("Condition")
+    bool_cond = condition.get("Bool") if isinstance(condition, dict) else None
+    if not isinstance(bool_cond, dict):
+        return False
+    for key, value in bool_cond.items():
+        if isinstance(key, str) and key.lower() == "aws:securetransport":
+            values = value if isinstance(value, list) else [value]
+            return any(v is False or (isinstance(v, str) and v.lower() == "false") for v in values)
+    return False
+
+
+def _has_unknown_leaf(value: Any) -> bool:
+    """True when a value holds a non-literal string (a Terraform reference or var)."""
+    if isinstance(value, str):
+        return type(value) is not str
+    if isinstance(value, list):
+        return any(_has_unknown_leaf(v) for v in value)
+    if isinstance(value, dict):
+        return any(_has_unknown_leaf(v) for v in value.values())
+    return False
+
+
+def _tls_enforced(document: Any) -> bool | None:
+    """True when a bucket policy denies plain HTTP, False when it does not, None when unknown."""
+    if document is None:
+        return False
+    if isinstance(document, str):
+        if type(document) is not str:  # an expression the scan could not read
+            return None
+        try:
+            return _tls_enforced(json.loads(document))
+        except ValueError:
+            return None
+    if not isinstance(document, dict) or _is_intrinsic(document):
+        return None
+    statements = document.get("Statement")
+    if isinstance(statements, dict):
+        statements = [statements]
+    if not isinstance(statements, list):
+        return None
+    unknown = False
+    for statement in statements:
+        if not isinstance(statement, dict) or _is_intrinsic(statement) or _has_unknown_leaf(
+            [statement.get(k) for k in ("Effect", "Action", "Principal", "Condition")]
+        ):
+            unknown = True
+        elif _denies_plain_http(statement):
+            return True
+    return None if unknown else False
 
 
 def run_resource_checks(
@@ -295,6 +448,7 @@ def run_resource_checks(
     has_cloudfront = count("cloudfront_distribution") > 0
     has_elasticache = count("elasticache_cluster", "elasticache_replication_group") > 0
     asg_count = count("autoscaling_group")
+    cf_policies, cf_policy_unlinked = _cf_bucket_policies(resources)
     launch_templates_without_spot = 0
     first_lt_without_spot: Resource | None = None
     for r in resources:
@@ -393,6 +547,29 @@ def run_resource_checks(
                             recommendation=(
                                 "Consider enabling server access logging (LoggingConfiguration with DestinationBucketName) "
                                 "for audit and security analysis. In CDK: bucket.addBucketLifecycleRule or use a logging bucket."
+                            ),
+                        ))
+
+                    if "BucketPolicy" in props:  # Terraform: aws_s3_bucket_policy merged in
+                        tls = _tls_enforced(props["BucketPolicy"])
+                    elif cf_policy_unlinked and logical_id not in cf_policies:
+                        tls = None
+                    else:
+                        tls = _tls_enforced(cf_policies.get(logical_id))
+                    if tls is False:
+                        findings.append(Finding(
+                            id="CF-S3-005",
+                            title="S3 bucket allows requests without TLS",
+                            severity="Medium",
+                            category="Security",
+                            file=res.file or str(template_path),
+                            line=res.line,
+                            evidence=f"{logical_id} ({rtype})",
+                            recommendation=(
+                                "No bucket policy in this template denies s3:* when aws:SecureTransport is false, "
+                                "so the bucket accepts plain HTTP (AWS Security Hub control S3.5). "
+                                "Add a bucket policy statement that denies those requests. "
+                                "In CDK: enforceSSL: true."
                             ),
                         ))
 
@@ -846,6 +1023,50 @@ def run_resource_checks(
                             line=res.line,
                             evidence=f"{logical_id} ({rtype})",
                             recommendation="Enable Logging.ClusterLogging for api, audit, or authenticator log types.",
+                        ))
+                    open_cidrs = _eks_public_endpoint(props.get("ResourcesVpcConfig", {}))
+                    if open_cidrs:
+                        findings.append(Finding(
+                            id="CF-EKS-002",
+                            title="EKS cluster API endpoint is public to the internet",
+                            severity="High",
+                            category="Security",
+                            file=res.file or str(template_path),
+                            line=res.line,
+                            evidence=f"{logical_id} ({rtype})",
+                            recommendation=(
+                                f"The Kubernetes API endpoint accepts requests from {', '.join(open_cidrs)}. "
+                                "EndpointPublicAccess defaults to true and PublicAccessCidrs to 0.0.0.0/0. "
+                                "Set EndpointPrivateAccess: true and EndpointPublicAccess: false, or limit "
+                                "PublicAccessCidrs to known ranges. "
+                                "In CDK: set endpointAccess to eks.EndpointAccess.PRIVATE, or restrict PUBLIC_AND_PRIVATE with onlyFrom."
+                            ),
+                        ))
+                    encrypted = _eks_encrypts_secrets(props.get("EncryptionConfig"))
+                    if encrypted is False:
+                        minor = _k8s_minor(props.get("Version"))
+                        old = minor is not None and minor < 28
+                        version_note = (
+                            f"This cluster runs Kubernetes 1.{minor}, before the default envelope "
+                            "encryption of Kubernetes API data that EKS applies from 1.28. "
+                            if old else
+                            "From Kubernetes 1.28, EKS encrypts Kubernetes API data with an AWS-owned "
+                            "key by default. A customer-managed key adds key policy control, rotation, "
+                            "and CloudTrail records of its use. "
+                        )
+                        findings.append(Finding(
+                            id="CF-EKS-003",
+                            title="EKS secrets are not encrypted with a customer-managed KMS key",
+                            severity="Medium" if old else "Low",
+                            category="Security",
+                            file=res.file or str(template_path),
+                            line=res.line,
+                            evidence=f"{logical_id} ({rtype})",
+                            recommendation=(
+                                version_note
+                                + "Add EncryptionConfig with Provider.KeyArn set to a KMS key and Resources: [secrets]. "
+                                "In CDK: secretsEncryptionKey: kmsKey."
+                            ),
                         ))
 
         except Exception as exc:

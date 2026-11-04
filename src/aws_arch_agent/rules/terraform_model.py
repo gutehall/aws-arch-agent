@@ -65,6 +65,8 @@ _S3_PARTS: dict[str, str] = {
     "aws_s3_bucket_versioning": "VersioningConfiguration",
     "aws_s3_bucket_server_side_encryption_configuration": "BucketEncryption",
     "aws_s3_bucket_logging": "LoggingConfiguration",
+    # Not a CloudFormation bucket property: the policy document, read by CF-S3-005.
+    "aws_s3_bucket_policy": "BucketPolicy",
 }
 
 # var/local are module inputs; each/count/self differ per instance. None is known statically.
@@ -369,6 +371,8 @@ def _s3_part(part_type: str, body: dict) -> Any:
         return {"Status": status}
     if part_type == "aws_s3_bucket_server_side_encryption_configuration":
         return _s3_encryption(body)
+    if part_type == "aws_s3_bucket_policy":
+        return body.get("policy", UNRESOLVED)  # a document once _resolve_iam has run
     return {"DestinationBucketName": _ref(body, "target_bucket")}
 
 
@@ -599,11 +603,41 @@ def _ecs_service(body: dict) -> dict:
 
 
 def _eks(body: dict) -> dict:
+    props: dict = {}
     types = _v(body, "enabled_cluster_log_types")
     if types is UNRESOLVED:
-        return {"Logging": UNRESOLVED}
-    logs = [{"Type": t, "Enabled": True} for t in types] if isinstance(types, list) else []
-    return {"Logging": {"ClusterLogging": logs}}
+        props["Logging"] = UNRESOLVED
+    else:
+        logs = [{"Type": t, "Enabled": True} for t in types] if isinstance(types, list) else []
+        props["Logging"] = {"ClusterLogging": logs}
+    dynamic = _dynamic_names(body)
+    vpc = _first_block(body, "vpc_config")
+    if "vpc_config" in dynamic:
+        props["ResourcesVpcConfig"] = UNRESOLVED
+    else:
+        vpc_props: dict = {}
+        _set(vpc_props, "EndpointPublicAccess", _v(vpc, "endpoint_public_access"))
+        _set(vpc_props, "EndpointPrivateAccess", _v(vpc, "endpoint_private_access"))
+        _set(vpc_props, "PublicAccessCidrs", _v(vpc, "public_access_cidrs"))
+        props["ResourcesVpcConfig"] = vpc_props
+    if "encryption_config" in dynamic:
+        props["EncryptionConfig"] = UNRESOLVED
+    else:
+        configs = []
+        for item in _blocks(body, "encryption_config"):
+            provider = _first_block(item, "provider")
+            configs.append({
+                "Provider": {"KeyArn": _ref(provider, "key_arn")},
+                "Resources": _v(item, "resources"),
+            })
+        if configs:
+            props["EncryptionConfig"] = configs
+    version = _v(body, "version")
+    # Unknown version is not UNRESOLVED: it only chooses the severity, not whether to report.
+    props["Version"] = _Expr("<unresolved>") if version is UNRESOLVED else version
+    if props["Version"] is None:
+        del props["Version"]
+    return props
 
 
 _ADAPTERS: dict[str, Callable[[dict], dict]] = {
@@ -741,12 +775,19 @@ def resolve_policy_document(value: Any, data_docs: dict[str, dict]) -> dict | No
 
 
 def _resolve_iam(resources: dict[str, Resource], blocks: list[_Block]) -> None:
-    """Turn raw policy arguments on IAM resources into documents."""
+    """Turn raw policy arguments on IAM resources and S3 bucket policies into documents."""
     data_docs = {
         b.name: _policy_document_block(b.body)
         for b in blocks if b.data and b.type == "aws_iam_policy_document"
     }
     for res in resources.values():
+        if res.type == "s3_bucket" and "BucketPolicy" in res.properties:
+            doc = resolve_policy_document(res.properties["BucketPolicy"], data_docs)
+            if doc is None:  # unreadable: the bucket's policy is unknown, not absent
+                res.properties.pop("BucketPolicy")
+                res.unresolved = res.unresolved | {"BucketPolicy"}
+            else:
+                res.properties["BucketPolicy"] = doc
         if res.type not in ("iam_policy", "iam_role"):
             continue
         if "PolicyDocument" in res.properties:
