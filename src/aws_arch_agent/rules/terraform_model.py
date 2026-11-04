@@ -50,6 +50,13 @@ TF_TYPE_TO_CANONICAL: dict[str, str] = {
     "aws_cloudfront_distribution": "cloudfront_distribution",
     "aws_elasticache_cluster": "elasticache_cluster",
     "aws_elasticache_replication_group": "elasticache_replication_group",
+    "aws_iam_policy": "iam_policy",
+    "aws_iam_role_policy": "iam_policy",
+    "aws_iam_user_policy": "iam_policy",
+    "aws_iam_group_policy": "iam_policy",
+    "aws_iam_role": "iam_role",
+    "aws_iam_user": "iam_user",
+    "aws_iam_group": "iam_group",
 }
 
 # S3 settings split into their own resources (AWS provider v4+) -> bucket property.
@@ -58,6 +65,8 @@ _S3_PARTS: dict[str, str] = {
     "aws_s3_bucket_versioning": "VersioningConfiguration",
     "aws_s3_bucket_server_side_encryption_configuration": "BucketEncryption",
     "aws_s3_bucket_logging": "LoggingConfiguration",
+    # Not a CloudFormation bucket property: the policy document, read by CF-S3-005.
+    "aws_s3_bucket_policy": "BucketPolicy",
 }
 
 # var/local are module inputs; each/count/self differ per instance. None is known statically.
@@ -82,6 +91,19 @@ class _Expr(str):
     Truthy, so presence checks (a KMS key or log target is set) see it as set. Arguments
     whose value is compared (bools, enums, ports, lists) read it as unresolved via _v().
     """
+
+
+class _JsonEncode(_Expr):
+    """`jsonencode({...})`. Kept as text even when it mentions var.* or local.*, so a
+    policy document can be decoded field by field (see decode_jsonencode)."""
+
+
+_JSONENCODE = re.compile(r"jsonencode\((.*)\)", re.DOTALL)
+_HEREDOC = re.compile(r"<<-?([A-Za-z_][A-Za-z0-9_]*)\n(.*)\n\s*\1\s*", re.DOTALL)
+_POLICY_DOC_REF = re.compile(r"data\.aws_iam_policy_document\.([A-Za-z0-9_-]+)\.(?:json|minified_json)")
+# Leaf of a decoded document whose value the scan cannot see. Not a plain str, so no
+# check compares it equal to a literal such as "*".
+UNKNOWN = "<unresolved>"
 
 
 class TerraformError(ValueError):
@@ -110,6 +132,8 @@ def _hcl_value(value: Any) -> Any:
         expr = value[2:-1] if value.startswith("${") and value.endswith("}") else value
         if expr in ("true", "false"):
             return expr == "true"
+        if _JSONENCODE.fullmatch(expr):
+            return _JsonEncode(expr)
         return UNRESOLVED if _UNRESOLVED_REF.search(expr) else _Expr(expr)
     if isinstance(value, list):
         return [_hcl_value(v) for v in value]
@@ -123,6 +147,9 @@ def _json_value(value: Any) -> Any:
     if isinstance(value, str):
         if value in ("true", "false"):
             return value == "true"
+        inner = value[2:-1] if value.startswith("${") and value.endswith("}") else ""
+        if inner and _JSONENCODE.fullmatch(inner):
+            return _JsonEncode(inner)
         if "${" in value and _UNRESOLVED_REF.search(value):
             return UNRESOLVED
         if value.startswith("${") and value.endswith("}") and value.count("${") == 1:
@@ -151,16 +178,20 @@ def _contains_unresolved(value: Any) -> bool:
 class _Block:
     """One `resource "type" "name"` block after normalization."""
 
-    def __init__(self, rtype: str, name: str, body: dict, file: Path, line: int | None):
+    def __init__(
+        self, rtype: str, name: str, body: dict, file: Path, line: int | None, data: bool = False
+    ):
         self.type = rtype
         self.name = name
         self.body = body
         self.file = file
         self.line = line
+        self.data = data  # a `data` block, not a managed resource
 
     @property
     def address(self) -> str:
-        return f"{self.type}.{self.name}"
+        prefix = "data." if self.data else ""
+        return f"{prefix}{self.type}.{self.name}"
 
 
 def _find_line(text: str, rtype: str, name: str, is_json: bool) -> int | None:
@@ -224,6 +255,21 @@ def parse_tf_file(path: Path) -> tuple[list[_Block], list[str]]:
                     blocks.append(
                         _Block(rtype, name, norm, path, _find_line(text, rtype, name, is_json))
                     )
+
+    # Data sources the checks read: only policy documents, so references resolve.
+    for type_map in _iter_type_maps(doc.get("data")):
+        for raw_type, by_name in type_map.items():
+            rtype = _unquote_key(raw_type)
+            if rtype != "aws_iam_policy_document":
+                continue
+            for name_map in _iter_type_maps(by_name):
+                for raw_name, body in name_map.items():
+                    if isinstance(body, list):
+                        body = body[0] if body and isinstance(body[0], dict) else {}
+                    if isinstance(body, dict):
+                        blocks.append(
+                            _Block(rtype, _unquote_key(raw_name), normalize(body), path, None, data=True)
+                        )
 
     sources: list[str] = []
     for module_map in _iter_type_maps(doc.get("module")):
@@ -325,6 +371,8 @@ def _s3_part(part_type: str, body: dict) -> Any:
         return {"Status": status}
     if part_type == "aws_s3_bucket_server_side_encryption_configuration":
         return _s3_encryption(body)
+    if part_type == "aws_s3_bucket_policy":
+        return body.get("policy", UNRESOLVED)  # a document once _resolve_iam has run
     return {"DestinationBucketName": _ref(body, "target_bucket")}
 
 
@@ -458,8 +506,31 @@ def _cloudtrail(body: dict) -> dict:
 
 def _kms_key(body: dict) -> dict:
     props: dict = {}
-    _set(props, "KeyPolicy", _ref(body, "policy"))
+    policy = _ref(body, "policy")
+    if isinstance(policy, _JsonEncode) and _UNRESOLVED_REF.search(policy):
+        policy = UNRESOLVED
+    _set(props, "KeyPolicy", policy)
     return props
+
+
+def _iam_policy(body: dict) -> dict:
+    """Raw `policy` value. resolve_policy_document turns it into a document later,
+    once data.aws_iam_policy_document blocks are known."""
+    props: dict = {}
+    _set(props, "PolicyDocument", body.get("policy"))
+    return props
+
+
+def _iam_role(body: dict) -> dict:
+    policies = []
+    for item in _blocks(body, "inline_policy"):
+        policy = item.get("policy")
+        policies.append({
+            "PolicyName": item.get("name") if type(item.get("name")) is str else None,
+            # One unknown inline policy must not hide findings in the others.
+            "PolicyDocument": None if _contains_unresolved(policy) else policy,
+        })
+    return {"Policies": policies} if policies else {}
 
 
 def _lambda(body: dict) -> dict:
@@ -555,11 +626,41 @@ def _ecs_service(body: dict) -> dict:
 
 
 def _eks(body: dict) -> dict:
+    props: dict = {}
     types = _v(body, "enabled_cluster_log_types")
     if types is UNRESOLVED:
-        return {"Logging": UNRESOLVED}
-    logs = [{"Type": t, "Enabled": True} for t in types] if isinstance(types, list) else []
-    return {"Logging": {"ClusterLogging": logs}}
+        props["Logging"] = UNRESOLVED
+    else:
+        logs = [{"Type": t, "Enabled": True} for t in types] if isinstance(types, list) else []
+        props["Logging"] = {"ClusterLogging": logs}
+    dynamic = _dynamic_names(body)
+    vpc = _first_block(body, "vpc_config")
+    if "vpc_config" in dynamic:
+        props["ResourcesVpcConfig"] = UNRESOLVED
+    else:
+        vpc_props: dict = {}
+        _set(vpc_props, "EndpointPublicAccess", _v(vpc, "endpoint_public_access"))
+        _set(vpc_props, "EndpointPrivateAccess", _v(vpc, "endpoint_private_access"))
+        _set(vpc_props, "PublicAccessCidrs", _v(vpc, "public_access_cidrs"))
+        props["ResourcesVpcConfig"] = vpc_props
+    if "encryption_config" in dynamic:
+        props["EncryptionConfig"] = UNRESOLVED
+    else:
+        configs = []
+        for item in _blocks(body, "encryption_config"):
+            provider = _first_block(item, "provider")
+            configs.append({
+                "Provider": {"KeyArn": _ref(provider, "key_arn")},
+                "Resources": _v(item, "resources"),
+            })
+        if configs:
+            props["EncryptionConfig"] = configs
+    version = _v(body, "version")
+    # Unknown version is not UNRESOLVED: it only chooses the severity, not whether to report.
+    props["Version"] = _Expr("<unresolved>") if version is UNRESOLVED else version
+    if props["Version"] is None:
+        del props["Version"]
+    return props
 
 
 _ADAPTERS: dict[str, Callable[[dict], dict]] = {
@@ -582,6 +683,11 @@ _ADAPTERS: dict[str, Callable[[dict], dict]] = {
     "aws_autoscaling_group": _asg,
     "aws_ecs_service": _ecs_service,
     "aws_eks_cluster": _eks,
+    "aws_iam_policy": _iam_policy,
+    "aws_iam_role_policy": _iam_policy,
+    "aws_iam_user_policy": _iam_policy,
+    "aws_iam_group_policy": _iam_policy,
+    "aws_iam_role": _iam_role,
 }
 
 
@@ -602,7 +708,122 @@ _BLOCK_PROPERTY: dict[str, str] = {
     "server_side_encryption": "SSESpecification",
     "mixed_instances_policy": "MixedInstancesPolicy",
     "capacity_provider_strategy": "CapacityProviderStrategy",
+    "inline_policy": "Policies",
 }
+
+
+# --- IAM policy documents -----------------------------------------------------
+
+
+def _mark_unknown(value: Any) -> Any:
+    """Replace UNRESOLVED leaves so a partly known document keeps its known fields."""
+    if value is UNRESOLVED:
+        return _Expr(UNKNOWN)
+    if isinstance(value, list):
+        return [_mark_unknown(v) for v in value]
+    if isinstance(value, dict):
+        return {k: _mark_unknown(v) for k, v in value.items()}
+    return value
+
+
+def decode_jsonencode(expr: str) -> Any:
+    """Decode the HCL object inside `jsonencode(...)` into JSON-shaped data.
+
+    Known literals keep their value; references and var/local become non-literal
+    leaves. Text python-hcl2 cannot parse returns UNRESOLVED.
+    """
+    match = _JSONENCODE.fullmatch(expr)
+    if not match:
+        return UNRESOLVED
+    import hcl2  # deferred: only Terraform scans need the parser
+
+    try:
+        doc = hcl2.loads(f"__v = {match.group(1)}\n")
+    except Exception:  # noqa: BLE001 - any parser error means "cannot read"
+        return UNRESOLVED
+    if not isinstance(doc, dict) or "__v" not in doc:
+        return UNRESOLVED
+    return _mark_unknown(_hcl_value(doc["__v"]))
+
+
+def _policy_document_block(body: dict) -> dict:
+    """data "aws_iam_policy_document" -> a policy document. `dynamic` statements and
+    source/override documents are not read; their statements are simply absent."""
+    statements = []
+    for stmt in _blocks(body, "statement"):
+        out: dict = {"Effect": stmt.get("effect", "Allow")}
+        for tf_key, cf_key in (
+            ("actions", "Action"), ("not_actions", "NotAction"),
+            ("resources", "Resource"), ("not_resources", "NotResource"),
+        ):
+            if tf_key in stmt:
+                out[cf_key] = stmt[tf_key]
+        for tf_key, cf_key in (("principals", "Principal"), ("not_principals", "NotPrincipal")):
+            blocks = _blocks(stmt, tf_key)
+            if blocks:
+                out[cf_key] = {b.get("type"): b.get("identifiers") for b in blocks}
+        conditions: dict = {}
+        for cond in _blocks(stmt, "condition"):
+            conditions.setdefault(cond.get("test"), {})[cond.get("variable")] = cond.get("values")
+        if conditions:
+            out["Condition"] = conditions
+        statements.append(out)
+    doc: dict = _mark_unknown({"Version": "2012-10-17", "Statement": statements})
+    return doc
+
+
+def resolve_policy_document(value: Any, data_docs: dict[str, dict]) -> dict | None:
+    """A policy argument -> document dict, or None when it cannot be read."""
+    if isinstance(value, _JsonEncode):
+        decoded = decode_jsonencode(value)
+        return decoded if isinstance(decoded, dict) else None
+    if isinstance(value, _Expr):
+        ref = _POLICY_DOC_REF.fullmatch(value.strip())
+        if ref:
+            return data_docs.get(ref.group(1))
+        heredoc = _HEREDOC.fullmatch(value)  # heredoc with ${...} interpolation
+        if heredoc and not _UNRESOLVED_REF.search(value):
+            value = heredoc.group(2)
+        else:
+            return None
+    if isinstance(value, dict):
+        return value
+    if isinstance(value, str):
+        heredoc = _HEREDOC.fullmatch(value)
+        text = heredoc.group(2) if heredoc else value
+        try:
+            doc = json.loads(text)
+        except ValueError:
+            return None
+        return doc if isinstance(doc, dict) else None
+    return None
+
+
+def _resolve_iam(resources: dict[str, Resource], blocks: list[_Block]) -> None:
+    """Turn raw policy arguments on IAM resources and S3 bucket policies into documents."""
+    data_docs = {
+        b.name: _policy_document_block(b.body)
+        for b in blocks if b.data and b.type == "aws_iam_policy_document"
+    }
+    for res in resources.values():
+        if res.type == "s3_bucket" and "BucketPolicy" in res.properties:
+            doc = resolve_policy_document(res.properties["BucketPolicy"], data_docs)
+            if doc is None:  # unreadable: the bucket's policy is unknown, not absent
+                res.properties.pop("BucketPolicy")
+                res.unresolved = res.unresolved | {"BucketPolicy"}
+            else:
+                res.properties["BucketPolicy"] = doc
+        if res.type not in ("iam_policy", "iam_role"):
+            continue
+        if "PolicyDocument" in res.properties:
+            doc = resolve_policy_document(res.properties["PolicyDocument"], data_docs)
+            if doc is None:
+                res.properties.pop("PolicyDocument")
+            else:
+                res.properties["PolicyDocument"] = doc
+        for item in res.properties.get("Policies") or []:
+            if isinstance(item, dict):
+                item["PolicyDocument"] = resolve_policy_document(item.get("PolicyDocument"), data_docs)
 
 
 def _split_unresolved(props: dict) -> tuple[dict, frozenset[str]]:
@@ -792,9 +1013,12 @@ def resources_from_terraform(
                 block.body = _fill_from_plan(block.body, planned, _plan_keep(block))
     resources: dict[str, Resource] = {}
     for block in blocks:
+        if block.data:
+            continue
         resource = _to_resource(block)
         resources[resource.name] = resource
     _merge_s3_parts(blocks, resources)
+    _resolve_iam(resources, blocks)
     return list(resources.values())
 
 

@@ -279,11 +279,12 @@ CloudFormation template rules run when the agent has access to template files. T
 
 ## Rules (by resource)
 
-- **S3**: CF-S3-001 (PublicAccessBlock), CF-S3-002 (encryption), CF-S3-003 (versioning), CF-S3-004 (server access logging)
+- **S3**: CF-S3-001 (PublicAccessBlock), CF-S3-002 (encryption), CF-S3-003 (versioning), CF-S3-004 (server access logging), CF-S3-005 (no bucket policy in the template denies `s3:*` when `aws:SecureTransport` is false; Terraform reads `aws_s3_bucket_policy`, CDK `enforceSSL: true` clears it)
 - **RDS**: CF-RDS-001 (StorageEncrypted), CF-RDS-002 (BackupRetentionPeriod), CF-RDS-003 (MultiAZ), CF-RDS-004 (PubliclyAccessible), CF-RDS-005 (DeletionProtection), CF-PERF-003 (large instance right-sizing)
 - **ALB**: CF-ALB-001 (access logs)
 - **CloudTrail**: CF-CT-001 (log file validation), CF-CT-002 (multi-region), CF-CT-003 (KMS encryption)
 - **KMS**: CF-KMS-001 (key policy wildcard principal)
+- **IAM**: CF-IAM-001 (Allow with Action `*`), CF-IAM-002 (Allow with `<service>:*`), CF-IAM-003 (Allow with write actions on Resource `*`). Read on: managed and inline policies, roles, users, and groups. Terraform: `jsonencode(...)`, heredoc JSON, JSON strings, and `data.aws_iam_policy_document`. Read-only actions and actions without resource-level permissions (X-Ray, `cloudwatch:PutMetricData`, Lambda VPC network interfaces) are not reported by CF-IAM-003. A field set from a variable or intrinsic is not guessed. Allow statements with `NotAction` or `NotResource` are not analyzed yet. In V2, CF-IAM-001/002 replace SEC-001 and CF-IAM-003 replaces SEC-002.
 - **VPC**: CF-VPC-001 (no VPC endpoints), CF-FL-001 (no flow logs)
 - **Lambda**: CF-LAM-001 (no DLQ), CF-LAM-002 (X-Ray not enabled), CF-PERF-001 (ARM64 not used)
 - **DynamoDB**: CF-DDB-001 (PITR not enabled), CF-DDB-002 (SSE not enabled)
@@ -295,7 +296,7 @@ CloudFormation template rules run when the agent has access to template files. T
 - **ECS**: CF-SUST-002 (Fargate without FARGATE_SPOT)
 - **EC2**: CF-EC2-001 (IMDSv2 not required on an instance or launch template: High when `HttpTokens: optional`, Medium when unset because the default then depends on the AMI), CF-PERF-004 (large instance right-sizing)
 - **Launch Template**: CF-SUST-003 (no Spot when no ASG in template)
-- **EKS**: CF-EKS-001 (control plane logging not enabled)
+- **EKS**: CF-EKS-001 (control plane logging not enabled), CF-EKS-002 (API endpoint public to `0.0.0.0/0` or `::/0`; unset `EndpointPublicAccess` and `PublicAccessCidrs` count as public, the AWS default), CF-EKS-003 (no customer-managed KMS key for secrets: Medium below Kubernetes 1.28, Low from 1.28, where EKS already encrypts Kubernetes API data with an AWS-owned key)
 - **Template-level**: CF-PERF-002 (consider caching when API/Lambda, no CloudFront/ElastiCache), CF-COST-002 (NAT Gateway cost hint)
 
 ## By pillar (AWS Well-Architected 6 pillars)
@@ -303,7 +304,7 @@ CloudFormation template rules run when the agent has access to template files. T
 | Pillar | CF rule IDs |
 |--------|-------------|
 | Operational Excellence | CF-S3-004, CF-CT-001, CF-CT-002, CF-FL-001, CF-EKS-001 |
-| Security | CF-S3-001, CF-S3-002, CF-RDS-001, CF-RDS-004, CF-CT-003, CF-KMS-001, CF-EC2-001, CF-SG-001, CF-CW-002, CF-SQS-001, CF-DDB-002 |
+| Security | CF-S3-001, CF-S3-002, CF-S3-005, CF-RDS-001, CF-RDS-004, CF-CT-003, CF-KMS-001, CF-EC2-001, CF-EKS-002, CF-EKS-003, CF-IAM-001, CF-IAM-002, CF-IAM-003, CF-SG-001, CF-CW-002, CF-SQS-001, CF-DDB-002 |
 | Reliability | CF-S3-003, CF-RDS-002, CF-RDS-003, CF-RDS-005, CF-LAM-001, CF-DDB-001, CF-SQS-002 |
 | Performance Efficiency | CF-PERF-001, CF-PERF-002, CF-PERF-003, CF-PERF-004 |
 | Cost Optimization | CF-CW-001, CF-COST-002 |
