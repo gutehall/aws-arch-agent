@@ -42,6 +42,10 @@
   .finding h3 { font-size: 15px; margin: 0; }
   .badge { font-size: 12px; font-weight: 600; padding: 1px 8px; border-radius: 999px; border: 1px solid currentColor; }
   .badge.High { color: var(--high); } .badge.Medium { color: var(--medium); } .badge.Low { color: var(--low); }
+  .baseline { font-size: 12px; padding: 1px 8px; border-radius: 999px; background: var(--panel);
+              border: 1px solid var(--line); color: var(--muted); }
+  .baseline.new { color: var(--fg); font-weight: 600; }
+  .finding[data-baseline="accepted"] { opacity: .75; }
   .id { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 13px; color: var(--muted); }
   .facts { color: var(--muted); font-size: 13px; margin: 6px 0 0; display: flex; flex-wrap: wrap; gap: 4px 16px; }
   .facts code { color: var(--fg); }
@@ -61,7 +65,13 @@
     <span>Source: <b>{{ source }}</b></span>
     <span>Files scanned: <b>{{ files_scanned }}</b></span>
     <span>Generated: <b>{{ generated }}</b></span>
+    {% if baseline %}
+    <span>Baseline: <b>{{ baseline.accepted }} accepted, {{ baseline.new }} new</b></span>
+    {% endif %}
   </p>
+  {% if baseline %}
+  <p class="meta">Accepted findings stay in the report and do not fail the build.</p>
+  {% endif %}
 
   <section class="counts" aria-label="Summary">
     {% for sev in severities %}
@@ -90,11 +100,14 @@
 
   <section id="findings" aria-live="polite">
     {% for f in findings %}
-    <article class="finding" data-severity="{{ f.severity }}">
+    <article class="finding" data-severity="{{ f.severity }}"{% if f.baseline %} data-baseline="{{ f.baseline }}"{% endif %}>
       <header>
         <span class="badge {{ f.severity }}">{{ f.severity }}</span>
         <span class="id">{{ f.id }}</span>
         <h3>{{ f.title }}</h3>
+        {% if f.baseline %}
+        <span class="baseline {{ f.baseline }}">{{ "Accepted" if f.baseline == "accepted" else "New" }}</span>
+        {% endif %}
       </header>
       <div class="facts">
         <span>Pillar: <b>{{ f.pillar }}</b></span>

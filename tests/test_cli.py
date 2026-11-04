@@ -246,7 +246,7 @@ def test_unknown_mode_format_and_fail_on_write_no_report(tmp_path: Path) -> None
     _make_repo(tmp_path)
     for args in (
         ["--mode", "v3"],
-        ["--format", "html"],
+        ["--format", "pdf"],
         ["--fail-on", "critical"],
     ):
         out_file = tmp_path / f"report-{args[-1]}.md"
@@ -619,3 +619,53 @@ def test_v2_iac_cloudformation_with_templates_outside_repo(tmp_path: Path) -> No
     ])
     assert result.exit_code == 0, result.output
     assert "CF-S3-001" in out_file.read_text()
+
+
+def test_analyze_html_format(tmp_path: Path) -> None:
+    _make_repo(tmp_path)
+    out_file = tmp_path / "report.html"
+    result = runner.invoke(
+        app, ["--repo", str(tmp_path), "--no-llm", "--format", "html", "--out", str(out_file)]
+    )
+    assert result.exit_code == 0, result.output
+    page = out_file.read_text(encoding="utf-8")
+    assert page.startswith("<!DOCTYPE html>")
+    assert "SEC-005" in page
+    assert "Baseline:" not in page
+
+
+def test_config_format_html(tmp_path: Path) -> None:
+    _make_repo(tmp_path)
+    (tmp_path / ".aws-arch-agent.json").write_text(
+        json.dumps({"format": "html", "out": str(tmp_path / "review.html")}), encoding="utf-8"
+    )
+    result = runner.invoke(app, ["--repo", str(tmp_path), "--no-llm"])
+    assert result.exit_code == 0, result.output
+    assert (tmp_path / "review.html").read_text(encoding="utf-8").startswith("<!DOCTYPE html>")
+
+
+def test_config_unknown_format_fails(tmp_path: Path) -> None:
+    _make_repo(tmp_path)
+    (tmp_path / ".aws-arch-agent.json").write_text(json.dumps({"format": "pdf"}), encoding="utf-8")
+    result = runner.invoke(app, ["--repo", str(tmp_path), "--no-llm"])
+    assert result.exit_code != 0
+
+
+def test_html_marks_baselined_findings(tmp_path: Path) -> None:
+    _high_finding_repo(tmp_path)
+    baseline = tmp_path / "baseline.json"
+    base_args = ["--repo", str(tmp_path), "--no-llm", "--baseline", str(baseline)]
+    first = runner.invoke(app, [*base_args, "--update-baseline", "--out", str(tmp_path / "a.md")])
+    assert first.exit_code == 0, first.output
+    # A new finding after the baseline was written.
+    (tmp_path / "lib" / "extra.ts").write_text('new sqs.Queue(this, "Q");', encoding="utf-8")
+    out_file = tmp_path / "report.html"
+    result = runner.invoke(app, [
+        *base_args, "--format", "html", "--enforce-baseline", "--out", str(out_file),
+    ])
+    assert result.exit_code == 0, result.output
+    page = out_file.read_text(encoding="utf-8")
+    assert 'data-baseline="accepted"' in page
+    assert 'data-baseline="new"' in page
+    assert "Accepted findings stay in the report" in page
+    assert "## Baseline" not in page  # the markdown appendix is not glued onto the page

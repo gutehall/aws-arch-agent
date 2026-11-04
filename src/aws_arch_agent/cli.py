@@ -29,6 +29,7 @@ from aws_arch_agent.config import (
 )
 from aws_arch_agent.models import Finding, IacSource
 from aws_arch_agent.report.json_report import render_json
+from aws_arch_agent.report.html import render_html
 from aws_arch_agent.report.sarif import render_sarif
 from aws_arch_agent.tools.files import iter_files
 
@@ -37,7 +38,7 @@ console = Console()
 
 SEVERITY_ORDER = ("Low", "Medium", "High")
 _MODES = ("v1", "v2")
-_FORMATS = ("markdown", "json", "sarif")
+_FORMATS = ("markdown", "json", "sarif", "html")
 _FAIL_ON = ("high", "medium", "low", "none")
 _LLM_MODES = ("full", "compact")
 
@@ -141,7 +142,7 @@ def analyze(
         400, "--max-files", help="Max files to scan. Rules search only these files."
     ),
     config: str | None = typer.Option(None, "--config", help="Path to config file (JSON or YAML)"),
-    format: str = typer.Option("markdown", "--format", "-f", help="Output format: markdown | json | sarif"),
+    format: str = typer.Option("markdown", "--format", "-f", help="Output format: markdown | json | sarif | html"),
     fail_on: str = typer.Option(
         "none", "--fail-on", help="Exit non-zero if any finding has this severity or higher (high|medium|low|none)"
     ),
@@ -297,10 +298,17 @@ def analyze(
         content = render_json(ctx_report, findings, warnings=warnings)
     elif cfg.format == "sarif":
         content = render_sarif(ctx_report, findings, warnings=warnings)
+    elif cfg.format == "html":
+        # The page labels accepted findings itself, so it skips _mark_baselined.
+        baselined = (
+            [is_baselined(f, accepted_before or set()) for f in findings]
+            if enforce_baseline else None
+        )
+        content = render_html(ctx_report, findings, warnings=warnings, baselined=baselined)
     else:
         content = report_md
 
-    if enforce_baseline:
+    if enforce_baseline and cfg.format != "html":
         content = _mark_baselined(content, cfg.format, findings, accepted_before or set())
 
     out_path.write_text(content, encoding="utf-8")
