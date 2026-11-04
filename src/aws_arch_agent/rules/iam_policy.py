@@ -123,8 +123,19 @@ CONFUSED_DEPUTY_SERVICES: frozenset[str] = frozenset({
     "logs", "s3", "scheduler", "sns", "ssm", "transfer",
 })
 _SOURCE_KEYS = frozenset({"aws:sourceaccount", "aws:sourcearn", "aws:sourceorgid", "aws:sourceorgpaths"})
+# Condition keys that limit who the caller is. Others (aws:SecureTransport, aws:SourceIp)
+# still leave a "*" trust open to every account.
+_CALLER_KEYS = _SOURCE_KEYS | frozenset({
+    "aws:principalorgid", "aws:principalorgpaths", "aws:principalaccount", "aws:principalarn",
+    "aws:userid", "sts:externalid",
+})
 GITHUB_OIDC = "token.actions.githubusercontent.com"
+_GITHUB_SUB = f"{GITHUB_OIDC}:sub"
 _ACCOUNT = re.compile(r"^(?:arn:aws[\w-]*:iam::)?(\d{12})(?::|$)")
+# The account inside an intrinsic, e.g. CDK AccountPrincipal: Fn::Join [..., ":iam::111122223333:root"].
+_ACCOUNT_IN_TEXT = re.compile(r":iam::(\d{12}):")
+# config.amazonaws.com, logs.us-east-1.amazonaws.com -> config, logs
+_SERVICE = re.compile(r"^(.+?)(?:\.[a-z]{2}(?:-[a-z]+)+-\d)?\.amazonaws\.com(?:\.cn)?$")
 
 
 @dataclass(frozen=True)
@@ -136,23 +147,26 @@ class Trust:
 
 
 def _assumes(stmt: dict) -> bool:
+    """Action grants sts:AssumeRole*. NotAction is not analyzed, as in broadest()."""
     actions = [a.lower() for a in literals(stmt.get("Action"))]
     return any(a in ("*", "sts:*") or a.startswith("sts:assumerole") for a in actions)
 
 
-def _condition_keys(stmt: dict) -> set[str] | None:
-    """Lowercased condition keys under any operator, or None when the Condition is unknown."""
+def _conditions(stmt: dict) -> dict[str, list[Any]] | None:
+    """Lowercased condition key -> its values under any operator, or None when unknown."""
     condition = stmt.get("Condition")
     if condition is None:
-        return set()
+        return {}
     if not isinstance(condition, dict):
         return None
-    keys: set[str] = set()
+    out: dict[str, list[Any]] = {}
     for operator, body in condition.items():
         if type(operator) is not str or not isinstance(body, dict):
             return None
-        keys.update(k.lower() for k in body if type(k) is str)
-    return keys
+        for key, value in body.items():
+            if type(key) is str:
+                out.setdefault(key.lower(), []).extend(value if isinstance(value, list) else [value])
+    return out
 
 
 def _principal_values(principal: Any, key: str) -> list[str]:
@@ -161,40 +175,68 @@ def _principal_values(principal: Any, key: str) -> list[str]:
     return []
 
 
+def _accounts(principal: Any) -> set[str]:
+    """Account ids named by AWS principals, literal or inside an intrinsic."""
+    if not isinstance(principal, dict):
+        return set()
+    raw = principal.get("AWS")
+    found: set[str] = set()
+    for value in raw if isinstance(raw, list) else [raw]:
+        if type(value) is str:
+            match = _ACCOUNT.match(value)
+            if match:
+                found.add(match.group(1))
+        elif isinstance(value, dict):
+            found.update(_ACCOUNT_IN_TEXT.findall(json.dumps(value, default=str)))
+    return found
+
+
+def _any_repository(values: list[Any]) -> bool:
+    """True when a GitHub sub condition still matches every repository."""
+    if not values or any(type(v) is not str for v in values):
+        return not values
+    return all(v == "*" or v.lower().startswith("repo:*") for v in values)
+
+
 def trust_problems(doc: dict) -> list[Trust]:
     """Over-open Allow statements in a role trust policy, one Trust per kind.
 
-    anyone: Principal "*" or {"AWS": "*"} with no condition at all.
-    cross_account: a literal account principal without an sts:ExternalId condition. A
-    template rarely knows its own account, so a literal account id is taken as another.
+    anyone: Principal "*" or {"AWS": "*"} with no condition that limits the caller
+    (aws:PrincipalOrgID, aws:PrincipalArn, aws:SourceAccount, sts:ExternalId, ...).
+    cross_account: an account principal without an sts:ExternalId condition. A template
+    rarely knows its own account, so a literal account id is taken as another.
     service: a CONFUSED_DEPUTY_SERVICES principal without aws:SourceAccount/SourceArn.
-    github_oidc: GitHub Actions OIDC without a condition on the token's sub.
+    github_oidc: GitHub Actions OIDC whose sub condition is missing or matches any repo.
     Unknown principals, actions or conditions give nothing.
     """
     found: dict[str, set[str]] = {}
     for stmt in statements(doc):
         if stmt.get("Effect") != "Allow" or "NotPrincipal" in stmt or not _assumes(stmt):
             continue
-        keys = _condition_keys(stmt)
-        if keys is None:
+        conditions = _conditions(stmt)
+        if conditions is None:
             continue
+        keys = set(conditions)
         principal = stmt.get("Principal")
         # {"*": ["*"]} is how data "aws_iam_policy_document" writes `type = "*"`.
         aws = ["*"] if principal == "*" else (
             _principal_values(principal, "AWS") + _principal_values(principal, "*")
         )
-        if "*" in aws and not keys:
+        if "*" in aws and not keys & _CALLER_KEYS:
             found.setdefault("anyone", set()).add("*")
         if "sts:externalid" not in keys:
-            accounts = {m.group(1) for m in map(_ACCOUNT.match, aws) if m}
-            found.setdefault("cross_account", set()).update(accounts)
+            found.setdefault("cross_account", set()).update(_accounts(principal))
         if not keys & _SOURCE_KEYS:
             for service in _principal_values(principal, "Service"):
-                name = service.lower().removesuffix(".amazonaws.com")
-                if name in CONFUSED_DEPUTY_SERVICES:
+                match = _SERVICE.match(service.lower())
+                if match and match.group(1) in CONFUSED_DEPUTY_SERVICES:
                     found.setdefault("service", set()).add(service)
         federated = principal.get("Federated") if isinstance(principal, dict) else None
-        if GITHUB_OIDC in json.dumps(federated, default=str) and f"{GITHUB_OIDC}:sub" not in keys:
+        github = federated is not None and (
+            GITHUB_OIDC in json.dumps(federated, default=str)
+            or any(k.startswith(f"{GITHUB_OIDC}:") for k in keys)
+        )
+        if github and _any_repository(conditions.get(_GITHUB_SUB, [])):
             found.setdefault("github_oidc", set()).add(GITHUB_OIDC)
     order = ("anyone", "github_oidc", "cross_account", "service")
     return [Trust(kind, tuple(sorted(found[kind]))) for kind in order if found.get(kind)]

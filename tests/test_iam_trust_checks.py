@@ -70,6 +70,37 @@ def test_cloudformation_trust_policies(tmp_path: Path) -> None:
     assert "Trusted: config.amazonaws.com." in by_name["ConfigRole"].recommendation
 
 
+def test_review_cases(tmp_path: Path) -> None:
+    oidc_aud = {"StringEquals": {"token.actions.githubusercontent.com:aud": "sts.amazonaws.com"}}
+    findings = _cf(tmp_path, {
+        # Conditions that do not limit the caller leave "*" open.
+        "AnyoneOverTls": _role("*", condition={"Bool": {"aws:SecureTransport": "true"}}),
+        "AnyoneFromIp": _role({"AWS": "*"}, condition={"IpAddress": {"aws:SourceIp": "203.0.113.0/24"}}),
+        "AnyoneByArn": _role("*", condition={"ArnLike": {"aws:PrincipalArn": "arn:aws:iam::*:role/ci"}}),
+        # CDK AccountPrincipal and a regional service principal.
+        "CdkAccountPrincipal": _role({"AWS": {"Fn::Join": ["", ["arn:", {"Ref": "AWS::Partition"},
+                                                                 ":iam::111122223333:root"]]}}),
+        "RegionalLogs": _role({"Service": "logs.eu-north-1.amazonaws.com"}),
+        # GitHub: a provider Ref is known by its condition keys; a wildcard sub is open.
+        "GitHubRefNoSub": _role({"Federated": {"Ref": "GitHubProvider"}},
+                                action="sts:AssumeRoleWithWebIdentity", condition=oidc_aud),
+        "GitHubAnyRepo": _role({"Federated": GITHUB}, action="sts:AssumeRoleWithWebIdentity",
+                               condition={"StringLike": {"token.actions.githubusercontent.com:sub": "repo:*"}}),
+        "GitHubSubFromParam": _role({"Federated": GITHUB}, action="sts:AssumeRoleWithWebIdentity",
+                                    condition={"StringLike": {"token.actions.githubusercontent.com:sub":
+                                                              {"Ref": "Sub"}}}),
+        "OtherOidcRef": _role({"Federated": {"Ref": "Provider"}}, action="sts:AssumeRoleWithWebIdentity"),
+    })
+    assert _found(findings) == {
+        "AnyoneOverTls": ("CF-IAM-004", "High"),
+        "AnyoneFromIp": ("CF-IAM-004", "High"),
+        "CdkAccountPrincipal": ("CF-IAM-005", "Medium"),
+        "RegionalLogs": ("CF-IAM-006", "Low"),
+        "GitHubRefNoSub": ("CF-IAM-007", "High"),
+        "GitHubAnyRepo": ("CF-IAM-007", "High"),
+    }
+
+
 def test_one_role_can_have_several_kinds(tmp_path: Path) -> None:
     role = {"Type": "AWS::IAM::Role", "Properties": {"AssumeRolePolicyDocument": {"Statement": [
         {"Effect": "Allow", "Principal": "*", "Action": "sts:AssumeRole"},
@@ -155,6 +186,13 @@ resource "aws_iam_role" "star_type" {
 resource "aws_iam_role" "from_var" {
   name               = "from_var"
   assume_role_policy = var.trust
+}
+
+resource "aws_iam_role" "heredoc_with_var" {
+  name               = "heredoc_with_var"
+  assume_role_policy = <<EOF
+{"Statement": [{"Effect": "Allow", "Principal": "*", "Action": "sts:AssumeRole", "Sid": "${var.sid}"}]}
+EOF
 }
 
 resource "aws_iam_role" "var_principal" {

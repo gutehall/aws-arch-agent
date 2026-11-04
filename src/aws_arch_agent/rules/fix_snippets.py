@@ -652,12 +652,12 @@ _TERRAFORM.update({
     condition {
       test     = "StringEquals"
       variable = "aws:SourceAccount"
-      values   = [data.aws_caller_identity.current.account_id]
+      values   = [data.aws_caller_identity.current.account_id] # data "aws_caller_identity" "current" {}
     }"""),
     "CF-IAM-007": _tf_trust("""    actions = ["sts:AssumeRoleWithWebIdentity"]
     principals {
       type        = "Federated"
-      identifiers = [aws_iam_openid_connect_provider.github.arn]
+      identifiers = [aws_iam_openid_connect_provider.github.arn] # your GitHub OIDC provider
     }
     condition {
       test     = "StringEquals"
