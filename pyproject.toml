@@ -11,12 +11,12 @@ packages = ["src/aws_arch_agent"]
 [project]
 name = "aws-arch-agent"
 version = "0.1.0"
-description = "Agentic AWS CDK reviewer (local-first)."
+description = "Local-first AWS Well-Architected review for CDK, CloudFormation, and Terraform code."
 readme = "README.md"
 requires-python = ">=3.11"
 authors = [{name="Mathias Gutehall"}]
 license = {text="MIT"}
-keywords = ["aws", "cdk", "well-architected", "architecture-review", "langgraph"]
+keywords = ["aws", "cdk", "cloudformation", "terraform", "well-architected", "architecture-review", "iac", "static-analysis"]
 classifiers = [
   "License :: OSI Approved :: MIT License",
   "Programming Language :: Python :: 3",
@@ -34,6 +34,10 @@ dependencies = [
   "python-hcl2>=8.1,<9",
   "jinja2>=3.1",
 ]
+
+[project.urls]
+Homepage = "https://github.com/gutehall/aws-arch-agent"
+Issues = "https://github.com/gutehall/aws-arch-agent/issues"
 
 [project.optional-dependencies]
 v2 = [

@@ -90,3 +90,4 @@ report.md
 report.json
 report.sarif
 *.sarif
+report.html

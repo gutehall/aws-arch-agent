@@ -29,9 +29,18 @@ def test_v2_doc_matches_shipped_rag_and_cloudformation() -> None:
     assert "SEC-005" in text
 
 
+def test_readme_pillar_counts_match_the_registry() -> None:
+    readme = (ROOT / "README.md").read_text(encoding="utf-8")
+    names = {"Cost": "Cost Optimization"}
+    categories = {rule.category for rule in ALL_RULES}
+    for category in categories:
+        count = sum(1 for rule in ALL_RULES if rule.category == category)
+        assert f"| **{names.get(category, category)}** | {count} |" in readme, category
+    assert f"{len(ALL_RULES)} static rules" in readme
+
+
 def test_operational_excellence_count_matches_the_registry() -> None:
     count = sum(1 for rule in ALL_RULES if rule.category == "Operational Excellence")
-    assert f"| **Operational Excellence** | {count} |" in (ROOT / "README.md").read_text(encoding="utf-8")
     assert f"### Operational Excellence ({count} rules)" in (ROOT / "docs" / "CF_RULES.md").read_text(
         encoding="utf-8"
     )
