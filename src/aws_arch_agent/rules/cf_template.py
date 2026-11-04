@@ -136,6 +136,7 @@ CHECK_PROPERTIES: dict[str, frozenset[str]] = {
         "CF-S3-002": {"BucketEncryption"},
         "CF-S3-003": {"VersioningConfiguration"},
         "CF-S3-004": {"LoggingConfiguration"},
+        "CF-S3-005": {"BucketPolicy"},
         "CF-RDS-001": {"StorageEncrypted", "DBClusterIdentifier"},
         "CF-RDS-002": {"BackupRetentionPeriod", "DBClusterIdentifier"},
         "CF-RDS-003": {"MultiAZ", "DBClusterIdentifier"},
@@ -225,6 +226,91 @@ def _eks_encrypts_secrets(encryption: Any) -> bool | None:
     return False
 
 
+def _cf_bucket_policies(resources: List[Resource]) -> tuple[dict[str, Any], bool]:
+    """PolicyDocument of each AWS::S3::BucketPolicy, keyed by the bucket's logical id.
+
+    The second value is True when a policy names its bucket through an expression the
+    scan cannot follow: it may then belong to any bucket in the template.
+    """
+    by_name = {
+        r.properties.get("BucketName"): r.name
+        for r in resources
+        if r.source_type == "AWS::S3::Bucket" and type(r.properties.get("BucketName")) is str
+    }
+    policies: dict[str, Any] = {}
+    unlinked = False
+    for r in resources:
+        if r.source_type != "AWS::S3::BucketPolicy" or r.malformed:
+            continue
+        bucket = r.properties.get("Bucket")
+        if isinstance(bucket, dict) and set(bucket) == {"Ref"} and isinstance(bucket["Ref"], str):
+            target: str | None = bucket["Ref"]
+        elif isinstance(bucket, str):
+            target = by_name.get(bucket)  # a name not in the template is another bucket
+            if target is None:
+                continue
+        else:
+            unlinked = True
+            continue
+        if target is not None:
+            policies[target] = r.properties.get("PolicyDocument")
+    return policies, unlinked
+
+
+def _denies_plain_http(statement: dict) -> bool:
+    """True for the TLS-only statement: Deny s3:* to everyone when aws:SecureTransport is false."""
+    if statement.get("Effect") != "Deny":
+        return False
+    actions = statement.get("Action")
+    actions = actions if isinstance(actions, list) else [actions]
+    if not any(a in ("s3:*", "*") for a in actions):
+        return False
+    principal = statement.get("Principal")
+    if isinstance(principal, dict):
+        principal = principal.get("AWS")
+    if principal != "*" and principal != ["*"]:
+        return False
+    condition = statement.get("Condition")
+    bool_cond = condition.get("Bool") if isinstance(condition, dict) else None
+    if not isinstance(bool_cond, dict):
+        return False
+    for key, value in bool_cond.items():
+        if isinstance(key, str) and key.lower() == "aws:securetransport":
+            values = value if isinstance(value, list) else [value]
+            return any(v is False or (isinstance(v, str) and v.lower() == "false") for v in values)
+    return False
+
+
+def _tls_enforced(document: Any) -> bool | None:
+    """True when a bucket policy denies plain HTTP, False when it does not, None when unknown."""
+    if document is None:
+        return False
+    if isinstance(document, str):
+        if type(document) is not str:  # Terraform expression: only its text is known
+            text = str(document)
+            if "SecureTransport" in text and "Deny" in text:
+                return True
+            return False if text.startswith("jsonencode(") else None
+        try:
+            return _tls_enforced(json.loads(document))
+        except ValueError:
+            return None
+    if not isinstance(document, dict) or _is_intrinsic(document):
+        return None
+    statements = document.get("Statement")
+    if isinstance(statements, dict):
+        statements = [statements]
+    if not isinstance(statements, list):
+        return None
+    unknown = False
+    for statement in statements:
+        if not isinstance(statement, dict) or _is_intrinsic(statement):
+            unknown = True
+        elif _denies_plain_http(statement):
+            return True
+    return None if unknown else False
+
+
 def run_resource_checks(
     resources: List[Resource],
     template_path: Path,
@@ -264,6 +350,7 @@ def run_resource_checks(
     has_cloudfront = count("cloudfront_distribution") > 0
     has_elasticache = count("elasticache_cluster", "elasticache_replication_group") > 0
     asg_count = count("autoscaling_group")
+    cf_policies, cf_policy_unlinked = _cf_bucket_policies(resources)
     launch_templates_without_spot = 0
     first_lt_without_spot: Resource | None = None
     for r in resources:
@@ -362,6 +449,29 @@ def run_resource_checks(
                             recommendation=(
                                 "Consider enabling server access logging (LoggingConfiguration with DestinationBucketName) "
                                 "for audit and security analysis. In CDK: bucket.addBucketLifecycleRule or use a logging bucket."
+                            ),
+                        ))
+
+                    if "BucketPolicy" in props:  # Terraform: aws_s3_bucket_policy merged in
+                        tls = _tls_enforced(props["BucketPolicy"])
+                    elif cf_policy_unlinked and logical_id not in cf_policies:
+                        tls = None
+                    else:
+                        tls = _tls_enforced(cf_policies.get(logical_id))
+                    if tls is False:
+                        findings.append(Finding(
+                            id="CF-S3-005",
+                            title="S3 bucket allows requests without TLS",
+                            severity="Medium",
+                            category="Security",
+                            file=res.file or str(template_path),
+                            line=res.line,
+                            evidence=f"{logical_id} ({rtype})",
+                            recommendation=(
+                                "No bucket policy in this template denies s3:* when aws:SecureTransport is false, "
+                                "so the bucket accepts plain HTTP (AWS Security Hub control S3.5). "
+                                "Add a bucket policy statement that denies those requests. "
+                                "In CDK: enforceSSL: true."
                             ),
                         ))
 

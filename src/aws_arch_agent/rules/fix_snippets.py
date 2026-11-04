@@ -48,6 +48,23 @@ _CLOUDFORMATION: dict[str, str] = {
     LoggingConfiguration:
       DestinationBucketName: !Ref AccessLogBucket
       LogFilePrefix: $name/""",
+    "CF-S3-005": """${name}Policy:
+  Type: AWS::S3::BucketPolicy
+  Properties:
+    Bucket: !Ref $name
+    PolicyDocument:
+      Version: "2012-10-17"
+      Statement:
+        - Sid: DenyInsecureTransport
+          Effect: Deny
+          Principal: "*"
+          Action: s3:*
+          Resource:
+            - !GetAtt $name.Arn
+            - !Sub "$${$name.Arn}/*"
+          Condition:
+            Bool:
+              aws:SecureTransport: "false\"""",
     "CF-RDS-001": """$name:
   Type: $type
   Properties:
@@ -274,6 +291,21 @@ _TERRAFORM: dict[str, str] = {
   bucket        = aws_s3_bucket.$tf_name.id
   target_bucket = aws_s3_bucket.access_logs.id
   target_prefix = "$tf_name/"
+}""",
+    "CF-S3-005": """# merge into the bucket's existing policy: a bucket has only one
+resource "aws_s3_bucket_policy" "$tf_name" {
+  bucket = aws_s3_bucket.$tf_name.id
+  policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [{
+      Sid       = "DenyInsecureTransport"
+      Effect    = "Deny"
+      Principal = "*"
+      Action    = "s3:*"
+      Resource  = [aws_s3_bucket.$tf_name.arn, "$${aws_s3_bucket.$tf_name.arn}/*"]
+      Condition = { Bool = { "aws:SecureTransport" = "false" } }
+    }]
+  })
 }""",
     "CF-RDS-001": """resource "$tf_type" "$tf_name" {
   storage_encrypted = true
