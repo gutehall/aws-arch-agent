@@ -1,6 +1,6 @@
 # Version 2 – LangGraph / Multi-agent
 
-V2 uses a LangGraph StateGraph. Synth is the CDK path. Raw CloudFormation and root-module Terraform are scanned by V1 (see `--iac` in [REFERENCE.md](REFERENCE.md)). For raw CloudFormation in V2, pass `--templates`. V2 has no Terraform path. With `--iac cloudformation` or `--iac terraform` and no `--templates`, V2 still runs the CDK static rules and `cdk synth`; the report shows the resolved source but the templates and HCL are not scanned.
+V2 uses a LangGraph StateGraph. Synth is the CDK path. Raw CloudFormation and root-module Terraform are scanned by V1 (see `--iac` in [REFERENCE.md](REFERENCE.md)). For raw CloudFormation in V2, pass `--templates`. V2 has no Terraform path. `--iac terraform` exits 1, and `--iac cloudformation` without `--templates` (flag or config) exits 1. When `--iac auto` detects CloudFormation, Terraform, or both and no `--templates` is set, the console prints a note that V2 will not read those files; the scan runs the CDK path and the exit code does not change.
 
 - **collect**: walks the repo up to `--max-files`, resolves `--iac` (from the CLI, an explicit source with no matching files exits 1), runs the CDK static rules on those files, and loads RAG once when `--rag` or `rag.path` is set.
 - **synth**: runs `npx cdk synth` and then the CloudFormation rules on `cdk.out/*.template.json`. `--templates` skips synth and reads the JSON or YAML templates you pass. `--no-synth` stays on the static rules.
