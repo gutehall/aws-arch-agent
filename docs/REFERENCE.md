@@ -10,6 +10,7 @@ The agent covers all six AWS Well-Architected pillars. Static and CloudFormation
 | `--out`, `-o` | `report.md` | Output report path |
 | `--mode` | `v1` | `v1` (rules + LLM) or `v2` (multi-agent + synth) |
 | `--iac` | `auto` | IaC source: `auto`, `cdk`, `cloudformation`, or `terraform`. `auto` detects it: CDK wins when `cdk.json` or a CDK package is present; otherwise CloudFormation templates (`AWSTemplateFormatVersion` or an `AWS::` resource) and Terraform (`*.tf`, `*.tf.json`) are detected, and both together are `mixed`. An explicit source with no matching files exits 1 (`cdk` needs `cdk.json`, a CDK package, `bin/*.ts`, or `app.py`) |
+| `--tf-plan` | — | `terraform show -json` output (a plan or a state). V1 Terraform scans only. Known planned values replace arguments that depend on `var`, `local`, or another expression, by resource address. Unknown values stay unresolved. Indexed instances (`count`, `for_each`), data sources, and child modules are not read. With several root modules, the plan applies to the one that holds the plan file. A missing or unreadable plan, or a plan that matches no root module, is a report warning (exit 2) and the scan runs without it. `--mode v2` with `--tf-plan` exits 1 |
 | `--max-files` | `400` | Cap on files walked. Rules search only these files |
 | `--config` | (auto-detect) | Path to config file |
 | `--format`, `-f` | `markdown` | `markdown`, `json`, or `sarif` |
