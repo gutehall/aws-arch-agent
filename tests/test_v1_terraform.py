@@ -150,3 +150,96 @@ resource "aws_launch_template" "ondemand" {
     sust = next(f for f in findings if f.id == "CF-SUST-003")
     assert (sust.file, sust.line) == ("lt.tf", 7)
     assert sust.evidence.endswith("(aws_launch_template.ondemand)")
+
+
+def _write_plan(path: Path, resources: list[dict]) -> Path:
+    path.write_text(
+        json.dumps({"planned_values": {"root_module": {"resources": resources}}}), encoding="utf-8"
+    )
+    return path
+
+
+DB_PLAN = [{
+    "address": "aws_db_instance.db", "mode": "managed", "type": "aws_db_instance", "name": "db",
+    "values": {"storage_encrypted": False},
+}]
+
+
+def test_tf_plan_fills_values_in_its_root_module(tmp_path: Path) -> None:
+    infra = _tf_repo(tmp_path)
+    plan = _write_plan(tmp_path / "plan.json", DB_PLAN)
+    _r, ctx, findings, warnings = analyze_v1(tmp_path, use_llm=False, tf_plan=plan)
+    assert warnings == []
+    assert ctx.notes["terraform_plan_module"] == "infra"
+    rds = next(f for f in findings if f.id == "CF-RDS-001")
+    assert (rds.file, rds.line) == ("infra/main.tf", 9)
+    assert infra.is_dir()
+
+
+def test_without_tf_plan_scan_is_unchanged(tmp_path: Path) -> None:
+    _tf_repo(tmp_path)
+    _r, ctx, findings, warnings = analyze_v1(tmp_path, use_llm=False)
+    assert "terraform_plan_module" not in ctx.notes
+    assert "CF-RDS-001" not in {f.id for f in findings}
+    assert warnings == []
+
+
+def test_tf_plan_with_several_root_modules_uses_the_plan_dir(tmp_path: Path) -> None:
+    infra = _tf_repo(tmp_path)
+    other = tmp_path / "other"
+    other.mkdir()
+    (other / "main.tf").write_text('resource "aws_vpc" "v" {}\n', encoding="utf-8")
+    _r, ctx, findings, warnings = analyze_v1(
+        tmp_path, use_llm=False, tf_plan=_write_plan(infra / "plan.json", DB_PLAN)
+    )
+    assert warnings == []
+    assert ctx.notes["terraform_plan_module"] == "infra"
+    assert "CF-RDS-001" in {f.id for f in findings}
+    # A plan outside every root module is not applied.
+    _r, ctx, findings, warnings = analyze_v1(
+        tmp_path, use_llm=False, tf_plan=_write_plan(tmp_path / "plan.json", DB_PLAN)
+    )
+    assert any("plan not applied" in w for w in warnings)
+    assert "CF-RDS-001" not in {f.id for f in findings}
+
+
+def test_missing_tf_plan_is_a_warning_and_the_scan_runs(tmp_path: Path) -> None:
+    _tf_repo(tmp_path)
+    out = tmp_path / "r.json"
+    result = runner.invoke(app, [
+        "--repo", str(tmp_path), "--no-llm", "--format", "json", "--out", str(out),
+        "--tf-plan", str(tmp_path / "missing.json"),
+    ])
+    assert result.exit_code == 2, result.output
+    report = json.loads(out.read_text())
+    assert any("missing.json" in w for w in report["warnings"])
+    assert any(f["id"] == "CF-S3-001" for f in report["findings"])
+
+
+def test_cli_tf_plan(tmp_path: Path) -> None:
+    _tf_repo(tmp_path)
+    plan = _write_plan(tmp_path / "plan.json", DB_PLAN)
+    out = tmp_path / "r.json"
+    result = runner.invoke(app, [
+        "--repo", str(tmp_path), "--no-llm", "--format", "json", "--out", str(out),
+        "--tf-plan", str(plan),
+    ])
+    assert result.exit_code == 0, result.output
+    assert any(f["id"] == "CF-RDS-001" for f in json.loads(out.read_text())["findings"])
+
+
+def test_cli_tf_plan_is_v1_only(tmp_path: Path) -> None:
+    _tf_repo(tmp_path)
+    result = runner.invoke(app, [
+        "--repo", str(tmp_path), "--no-llm", "--mode", "v2", "--tf-plan", "plan.json",
+    ])
+    assert result.exit_code == 1
+    assert "V1 only" in result.output
+
+
+def test_tf_plan_on_non_terraform_source_is_a_warning(tmp_path: Path) -> None:
+    (tmp_path / "cdk.json").write_text('{"app": "npx ts-node bin/app.ts"}', encoding="utf-8")
+    plan = _write_plan(tmp_path / "plan.json", DB_PLAN)
+    _r, ctx, _f, warnings = analyze_v1(tmp_path, use_llm=False, tf_plan=plan)
+    assert ctx.source == "cdk"
+    assert any("--tf-plan applies only" in w for w in warnings)

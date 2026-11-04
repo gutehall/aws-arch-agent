@@ -2,11 +2,15 @@
 import json
 from pathlib import Path
 
+import pytest
+
 from aws_arch_agent.rules.cf_template import run_resource_checks
 from aws_arch_agent.rules.resource_model import CANONICAL_TYPES
 from aws_arch_agent.rules.terraform_model import (
     TF_TYPE_TO_CANONICAL,
+    TerraformError,
     find_root_modules,
+    load_plan_values,
     resources_from_terraform,
 )
 from aws_arch_agent.tools.files import iter_files
@@ -340,3 +344,178 @@ resource "aws_sqs_queue" "none" {
         encoding="utf-8",
     )
     assert _checks(tmp_path)["CF-SQS-002"] == {"aws_sqs_queue.none (aws_sqs_queue)"}
+
+
+# --- terraform show -json ------------------------------------------------------
+
+def _plan(tmp_path: Path, resources: list[dict], key: str = "planned_values") -> Path:
+    path = tmp_path / "plan.json"
+    path.write_text(json.dumps({key: {"root_module": {"resources": resources}}}), encoding="utf-8")
+    return path
+
+
+def _res(address: str, values: dict, **extra: object) -> dict:
+    rtype, name = address.split(".", 1)
+    return {"address": address, "mode": "managed", "type": rtype, "name": name, "values": values, **extra}
+
+
+def test_plan_fills_var_and_local_values(tmp_path: Path) -> None:
+    (tmp_path / "main.tf").write_text(MAIN_TF, encoding="utf-8")
+    plan = _plan(tmp_path, [
+        _res("aws_db_instance.db", {"storage_encrypted": False, "backup_retention_period": 0}),
+    ])
+    resources = resources_from_terraform(tmp_path, plan_values=load_plan_values(plan))
+    db = next(r for r in resources if r.name == "aws_db_instance.db")
+    assert db.unresolved == frozenset()
+    assert db.properties["StorageEncrypted"] is False
+    findings = run_resource_checks(resources, tmp_path / "main.tf")
+    ids = {f.id for f in findings}
+    assert {"CF-RDS-001", "CF-RDS-002"} <= ids
+
+
+def test_plan_value_that_is_unknown_stays_unresolved(tmp_path: Path) -> None:
+    (tmp_path / "main.tf").write_text(MAIN_TF, encoding="utf-8")
+    # backup_retention_period is unknown until apply: terraform leaves it out of values.
+    plan = _plan(tmp_path, [_res("aws_db_instance.db", {"storage_encrypted": True})])
+    resources = resources_from_terraform(tmp_path, plan_values=load_plan_values(plan))
+    db = next(r for r in resources if r.name == "aws_db_instance.db")
+    assert db.unresolved == {"BackupRetentionPeriod"}
+    assert db.properties["StorageEncrypted"] is True
+
+
+def test_plan_expands_dynamic_ingress(tmp_path: Path) -> None:
+    (tmp_path / "sg.tf").write_text(
+        """resource "aws_security_group" "web" {
+  dynamic "ingress" {
+    for_each = var.rules
+    content {
+      from_port   = ingress.value.port
+      to_port     = ingress.value.port
+      protocol    = "tcp"
+      cidr_blocks = ingress.value.cidrs
+    }
+  }
+}
+""",
+        encoding="utf-8",
+    )
+    assert "CF-SG-001" not in _checks(tmp_path)
+    plan = _plan(tmp_path, [_res("aws_security_group.web", {"ingress": [
+        {"from_port": 22, "to_port": 22, "protocol": "tcp", "cidr_blocks": ["0.0.0.0/0"]},
+    ]})])
+    resources = resources_from_terraform(tmp_path, plan_values=load_plan_values(plan))
+    sg = resources[0]
+    assert sg.unresolved == frozenset()
+    assert sg.properties["SecurityGroupIngress"] == [
+        {"CidrIp": "0.0.0.0/0", "FromPort": 22, "ToPort": 22}
+    ]
+
+
+def test_plan_keeps_split_bucket_link(tmp_path: Path) -> None:
+    (tmp_path / "main.tf").write_text(
+        """resource "aws_s3_bucket" "data" {
+  bucket = var.name
+}
+resource "aws_s3_bucket_versioning" "data" {
+  bucket = aws_s3_bucket.data.id
+  versioning_configuration {
+    status = var.status
+  }
+}
+""",
+        encoding="utf-8",
+    )
+    plan = _plan(tmp_path, [
+        _res("aws_s3_bucket.data", {"bucket": "my-data"}),
+        _res("aws_s3_bucket_versioning.data", {
+            "bucket": "my-data", "versioning_configuration": [{"status": "Suspended"}],
+        }),
+    ])
+    resources = resources_from_terraform(tmp_path, plan_values=load_plan_values(plan))
+    bucket = next(r for r in resources if r.name == "aws_s3_bucket.data")
+    assert bucket.properties["VersioningConfiguration"] == {"Status": "Suspended"}
+    assert "VersioningConfiguration" not in bucket.unresolved
+
+
+def test_plan_skips_data_sources_and_indexed_instances(tmp_path: Path) -> None:
+    plan = _plan(tmp_path, [
+        _res("aws_s3_bucket.one", {"bucket": "a"}),
+        _res("aws_s3_bucket.many", {"bucket": "b"}, index=0),
+        {**_res("aws_s3_bucket.d", {"bucket": "c"}), "mode": "data"},
+    ])
+    assert load_plan_values(plan) == {"aws_s3_bucket.one": {"bucket": "a"}}
+
+
+def test_state_document_is_read_too(tmp_path: Path) -> None:
+    plan = _plan(tmp_path, [_res("aws_s3_bucket.one", {"bucket": "a"})], key="values")
+    assert load_plan_values(plan) == {"aws_s3_bucket.one": {"bucket": "a"}}
+
+
+@pytest.mark.parametrize("content", ["not json", "[]", '{"format_version": "1.2"}'])
+def test_bad_plan_raises_terraform_error(tmp_path: Path, content: str) -> None:
+    path = tmp_path / "plan.json"
+    path.write_text(content, encoding="utf-8")
+    with pytest.raises(TerraformError):
+        load_plan_values(path)
+
+
+def test_missing_plan_raises_terraform_error(tmp_path: Path) -> None:
+    with pytest.raises(TerraformError):
+        load_plan_values(tmp_path / "nope.json")
+
+
+def test_plan_does_not_pair_set_blocks_by_position(tmp_path: Path) -> None:
+    (tmp_path / "sg.tf").write_text(
+        """resource "aws_security_group" "web" {
+  ingress {
+    from_port   = 443
+    to_port     = 443
+    protocol    = "tcp"
+    cidr_blocks = ["0.0.0.0/0"]
+  }
+  ingress {
+    from_port   = var.ssh_port
+    to_port     = var.ssh_port
+    protocol    = "tcp"
+    cidr_blocks = var.admin_cidrs
+  }
+}
+""",
+        encoding="utf-8",
+    )
+    # The plan lists the set in its own order, not config order.
+    plan = _plan(tmp_path, [_res("aws_security_group.web", {"ingress": [
+        {"from_port": 22, "to_port": 22, "protocol": "tcp", "cidr_blocks": ["10.0.0.0/8"]},
+        {"from_port": 443, "to_port": 443, "protocol": "tcp", "cidr_blocks": ["0.0.0.0/0"]},
+    ]})])
+    sg = resources_from_terraform(tmp_path, plan_values=load_plan_values(plan))[0]
+    assert sorted(sg.properties["SecurityGroupIngress"], key=lambda e: e["FromPort"]) == [
+        {"CidrIp": "10.0.0.0/8", "FromPort": 22, "ToPort": 22},
+        {"CidrIp": "0.0.0.0/0", "FromPort": 443, "ToPort": 443},
+    ]
+
+
+def test_plan_links_split_bucket_set_from_a_variable(tmp_path: Path) -> None:
+    (tmp_path / "main.tf").write_text(
+        """resource "aws_s3_bucket" "data" {
+  bucket = var.name
+}
+resource "aws_s3_bucket_versioning" "data" {
+  bucket = var.name
+  versioning_configuration {
+    status = "Enabled"
+  }
+}
+""",
+        encoding="utf-8",
+    )
+    without = resources_from_terraform(tmp_path)
+    assert "VersioningConfiguration" in without[0].unresolved
+    plan = _plan(tmp_path, [
+        _res("aws_s3_bucket.data", {"bucket": "my-data"}),
+        _res("aws_s3_bucket_versioning.data", {"bucket": "my-data"}),
+    ])
+    resources = resources_from_terraform(tmp_path, plan_values=load_plan_values(plan))
+    bucket = next(r for r in resources if r.name == "aws_s3_bucket.data")
+    assert bucket.properties["VersioningConfiguration"] == {"Status": "Enabled"}
+    assert "VersioningConfiguration" not in bucket.unresolved
