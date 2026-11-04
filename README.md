@@ -312,7 +312,7 @@ aws-arch-agent --repo . --no-llm --format html --out report.html
 open report.html   # or xdg-open / start
 ```
 
-One self-contained file, meant to be opened in a browser. It has no external CSS, scripts, or fonts, so it works offline and as a CI artifact. The page shows the repo, source, and High/Medium/Low/warning counts, has All/High/Medium/Low tabs, and lists each finding with its file and line, evidence, recommendation, and suggested code. Evidence and code from the scanned repo are escaped, so they show as text. With `--enforce-baseline`, every finding stays on the page and is labeled Accepted or New. The default format is still `markdown`. Set `format: html` in the config file to make the page the default for a repo.
+One self-contained file, meant to be opened in a browser. It has no external CSS, scripts, or fonts, so it works offline and as a CI artifact. The page shows the repo, source, and High/Medium/Low/warning counts, has All/High/Medium/Low tabs, and lists each finding with its file and line, evidence, recommendation, and suggested code. Evidence and code from the scanned repo are escaped, so they show as text. With `--enforce-baseline`, every finding stays on the page and is labeled Accepted or New. The default format is still `markdown`. Set `format: html` in the config file to make the page the default for a repo. `--out` still defaults to `report.md`, so pass `--out report.html` (or set `out: report.html` in the config).
 
 ### SARIF output (GitHub Code Scanning)
 

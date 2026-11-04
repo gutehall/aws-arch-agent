@@ -48,7 +48,7 @@ rules:
     - BP-001
 ```
 
-- **format**: `markdown` (default) | `json` | `sarif` | `html`. `html` writes one self-contained page to open in a browser.
+- **format**: `markdown` (default) | `json` | `sarif` | `html`. `html` writes one self-contained page to open in a browser; set **out** to a `.html` path (the default is `report.md`).
 - **fail_on**: `high` | `medium` | `low` | `none` — exit code 1 if any finding at or above this severity
 - **no_llm**: skip LLM polish (V1) or agent reasoning (V2)
 - **llm_mode**: `full` (six pillar LLM calls in V2) or `compact` (single merged LLM call)
