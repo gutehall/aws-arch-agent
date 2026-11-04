@@ -176,6 +176,10 @@ CHECK_PROPERTIES: dict[str, frozenset[str]] = {
         "CF-IAM-001": {"PolicyDocument", "Policies"},
         "CF-IAM-002": {"PolicyDocument", "Policies"},
         "CF-IAM-003": {"PolicyDocument", "Policies"},
+        "CF-IAM-004": {"AssumeRolePolicyDocument"},
+        "CF-IAM-005": {"AssumeRolePolicyDocument"},
+        "CF-IAM-006": {"AssumeRolePolicyDocument"},
+        "CF-IAM-007": {"AssumeRolePolicyDocument"},
         "CF-EKS-002": {"ResourcesVpcConfig"},
         "CF-EKS-003": {"EncryptionConfig"},
     }.items()
@@ -273,6 +277,65 @@ def _policy_documents(props: dict) -> list[tuple[str, dict]]:
             continue
         name = item.get("PolicyName")
         out.append((f" policy {name}" if type(name) is str else " inline policy", doc))
+    return out
+
+
+_TRUST_FINDINGS: dict[str, tuple[str, Severity, str, str]] = {
+    # kind -> (id, severity, title, recommendation)
+    "anyone": (
+        "CF-IAM-004",
+        "High",
+        "IAM role can be assumed by any AWS account",
+        "The trust policy allows sts:AssumeRole to Principal '*' with no condition. "
+        "Name the accounts or roles that need it, or add a condition such as aws:PrincipalOrgID. "
+        "In CDK: use iam.AccountPrincipal or iam.ArnPrincipal instead of iam.AnyPrincipal.",
+    ),
+    "github_oidc": (
+        "CF-IAM-007",
+        "High",
+        "IAM role trusts GitHub Actions OIDC without restricting the repository",
+        "With no condition on token.actions.githubusercontent.com:sub, a workflow in any "
+        "GitHub repository can assume this role. Add a StringLike condition on sub, "
+        "for example repo:<org>/<repo>:ref:refs/heads/main. "
+        "In CDK: give the OpenIdConnectPrincipal a StringLike condition on the sub key.",
+    ),
+    "cross_account": (
+        "CF-IAM-005",
+        "Medium",
+        "IAM role trusts another account without an external ID",
+        "If this account is a third party, require an sts:ExternalId condition so it cannot "
+        "be tricked into acting for someone else (the confused deputy problem). "
+        "In CDK: pass externalIds to the Role.",
+    ),
+    "service": (
+        "CF-IAM-006",
+        "Low",
+        "IAM service role trust has no aws:SourceAccount or aws:SourceArn",
+        "Add an aws:SourceAccount or aws:SourceArn condition so the service can only "
+        "assume this role for your resources (cross-service confused deputy). "
+        "In CDK: add the condition with principal.withConditions on the ServicePrincipal.",
+    ),
+}
+
+
+def _trust_findings(res: Resource, template_path: Path) -> List[Finding]:
+    doc = iam_policy.as_document(res.properties.get("AssumeRolePolicyDocument"))
+    if doc is None:
+        return []
+    out: List[Finding] = []
+    for trust in iam_policy.trust_problems(doc):
+        fid, severity, title, recommendation = _TRUST_FINDINGS[trust.kind]
+        shown = ", ".join(trust.principals[:5]) + (" ..." if len(trust.principals) > 5 else "")
+        out.append(Finding(
+            id=fid,
+            title=title,
+            severity=severity,
+            category="Security",
+            file=res.file or str(template_path),
+            line=res.line,
+            evidence=f"{res.name} ({res.source_type})",
+            recommendation=f"Trusted: {shown}. {recommendation}",
+        ))
     return out
 
 
@@ -793,6 +856,8 @@ def run_resource_checks(
                 # --- IAM policies (managed, inline, and on roles/users/groups) ---
                 if ctype in _IAM_TYPES:
                     findings.extend(_iam_findings(res, template_path))
+                if ctype == "iam_role":
+                    findings.extend(_trust_findings(res, template_path))
 
                 # --- KMS Key policy ---
                 if ctype == "kms_key":
