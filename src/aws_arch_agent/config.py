@@ -8,10 +8,10 @@ from typing import Any, Literal, cast
 import yaml
 
 SeverityThreshold = Literal["high", "medium", "low", "none"]
-OutputFormat = Literal["markdown", "json", "sarif"]
+OutputFormat = Literal["markdown", "json", "sarif", "html"]
 LLMMode = Literal["full", "compact"]
 
-_FORMATS = ("markdown", "json", "sarif")
+_FORMATS = ("markdown", "json", "sarif", "html")
 _FAIL_ON = ("high", "medium", "low", "none")
 _LLM_MODES = ("full", "compact")
 _SEVERITY = {"high": "High", "medium": "Medium", "low": "Low"}
