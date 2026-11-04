@@ -1,8 +1,11 @@
 """Read IAM policy documents in CloudFormation shape and find over-broad Allow statements.
 
 A document is a dict with a `Statement` (one statement or a list). Values the scan
-cannot know (CloudFormation intrinsics, Terraform references and variables) are dicts,
-so they never compare equal to "*" and a statement is never flagged on a guess.
+cannot know are not plain `str`: CloudFormation intrinsics are dicts, and Terraform
+references and variables are str subclasses or markers. `literals` skips them, so they
+never compare equal to "*" and a statement is never flagged on a guess.
+
+Allow statements with NotAction or NotResource are not analyzed yet.
 """
 from __future__ import annotations
 
@@ -14,7 +17,8 @@ from typing import Any
 # Action verbs that only read. "s3:Get*" is a read wildcard; "s3:*" is not.
 _READ_VERB = re.compile(
     r"^(Get|List|Describe|Head|Lookup|Search|View|BatchGet|Query|Scan|Select|Check|"
-    r"Validate|Simulate|Estimate|Preview|Test|Read|Discover)"
+    r"Validate|Simulate|Estimate|Preview|Test|Read|Discover)",
+    re.IGNORECASE,  # IAM action names are case-insensitive
 )
 
 # Write actions that have no resource-level permissions, so Resource "*" is the only

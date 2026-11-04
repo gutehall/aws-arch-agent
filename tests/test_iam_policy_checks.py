@@ -43,6 +43,9 @@ def _allow(action, resource="*") -> dict:
         (_doc(_allow("*"), _allow("s3:*"), _allow("sns:Publish")),
          ["all_actions", "service_actions", "write_on_all_resources"]),
         ({"Statement": _allow("*")}, ["all_actions"]),  # single statement, not a list
+        (_doc(_allow(["s3:getobject", "S3:LIST*"])), []),  # action names ignore case
+        (_doc(_allow(["sqs:sendmessage"])), ["write_on_all_resources"]),
+        (_doc({"Effect": {"Ref": "E"}, "Action": "*", "Resource": "*"}), []),  # unknown Effect
     ],
 )
 def test_broadest_kinds(doc: dict, kinds: list[str]) -> None:
@@ -249,3 +252,35 @@ def test_synth_output_keeps_the_cdk_hint_and_raw_templates_drop_it() -> None:
     from aws_arch_agent.rules.cf_template import _IAM_CDK_HINT
 
     assert strip_cdk_hint("Scope it." + _IAM_CDK_HINT) == "Scope it."
+
+
+def test_terraform_heredoc_with_interpolation_and_minified_json(tmp_path: Path) -> None:
+    (tmp_path / "main.tf").write_text("""\
+resource "aws_iam_role_policy" "interp" {
+  role   = "r"
+  policy = <<-EOT
+    {"Statement": [{"Effect": "Allow", "Action": "*", "Resource": "${aws_s3_bucket.b.arn}"}]}
+  EOT
+}
+
+data "aws_iam_policy_document" "mixed" {
+  statement {
+    actions   = ["kms:*"]
+    resources = ["*"]
+  }
+  dynamic "statement" {
+    for_each = var.extra
+    content {
+      actions = statement.value
+    }
+  }
+}
+
+resource "aws_iam_policy" "minified" {
+  policy = data.aws_iam_policy_document.mixed.minified_json
+}
+""", encoding="utf-8")
+    assert _tf_findings(tmp_path) == {
+        "aws_iam_role_policy.interp": "CF-IAM-001",
+        "aws_iam_policy.minified": "CF-IAM-002",
+    }
