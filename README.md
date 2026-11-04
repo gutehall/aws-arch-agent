@@ -1,391 +1,88 @@
 # AWS Arch Agent
 
-**Note:** Early-stage project — **169 static rules** are implemented and tested, but expect occasional false positives/negatives and API changes.
+Local-first AWS architecture review for infrastructure code. It scans **CDK** (TypeScript and Python), **CloudFormation**, and **Terraform**, and reports security, reliability, performance, cost, and sustainability issues mapped to the AWS Well-Architected Framework.
 
-> **Automated AWS architecture review tool** that scans your infrastructure code and finds security, reliability, performance, and cost issues.
+No AWS credentials. No cloud calls. LLM output is optional.
 
-Runs locally. No AWS credentials needed. Supports three sources:
+> Early-stage: 169 static rules are implemented and tested. Expect some false positives and negatives, and API changes.
 
-- **CDK** (TypeScript and Python)
-- **CloudFormation** (raw JSON or YAML templates)
-- **Terraform** (root-module `*.tf` and `*.tf.json`)
+## Install
 
-
+Requires Python 3.11+ and [ripgrep](https://github.com/BurntSushi/ripgrep#installation) (`brew install ripgrep`).
 
 ```bash
-# Quick start - scan your CDK project
+git clone https://github.com/gutehall/aws-arch-agent.git
+cd aws-arch-agent
+python3 -m venv .venv && source .venv/bin/activate
 pip install -e .
-aws-arch-agent --repo ./my-cdk-project --no-llm
 ```
 
-## What It Does
+## Usage
 
-AWS Arch Agent reviews your CDK code against **169 rules** across the six AWS Well-Architected Framework pillars, plus CDK best-practice checks:
+```bash
+aws-arch-agent --repo ./my-project --no-llm                          # report.md
+aws-arch-agent --repo . --no-llm --format html --out report.html     # browser report
+aws-arch-agent --repo . --no-llm --format sarif --out results.sarif  # GitHub Code Scanning
+aws-arch-agent --repo . --no-llm --fail-on high                      # fail CI on High findings
+```
+
+The source is detected automatically. Use `--iac cdk|cloudformation|terraform` to force one.
+
+Each finding has a severity, a pillar, a file and line, evidence, a recommendation, and often suggested code. The HTML report is one self-contained dark-theme page with severity tabs and links to the relevant AWS documentation for each finding.
+
+## What it checks
 
 | Pillar | Rules | Examples |
-|--------|-------|----------|
-| **Security** | 65 | Encryption missing, public access, hardcoded secrets, MFA not enabled |
-| **Reliability** | 31 | Missing DLQs, no backups, single-AZ deployments, no health checks |
-| **Operational Excellence** | 24 | No logging, missing alarms, no monitoring, no observability |
-| **Performance Efficiency** | 19 | No caching, wrong instance sizes, ARM not used, no CDN |
-| **Cost Optimization** | 18 | No autoscaling, oversized resources, NAT costs, no lifecycle policies |
-| **Sustainability** | 7 | Spot instances not used, right-sizing opportunities |
-| **Best Practices** | 5 | Missing tags, Secrets Manager, CDK Aspects, naming conventions |
+|--------|------:|----------|
+| **Security** | 65 | Missing encryption, public access, hardcoded secrets, no MFA |
+| **Reliability** | 31 | Missing DLQs, no backups, single-AZ, no health checks |
+| **Operational Excellence** | 24 | No logging, alarms, or tracing |
+| **Performance Efficiency** | 19 | No caching, oversized instances, no Graviton |
+| **Cost Optimization** | 18 | No autoscaling, NAT costs, no lifecycle policies |
+| **Sustainability** | 7 | No Spot, right-sizing |
+| **Best Practices** | 5 | Tags, Secrets Manager, CDK Aspects |
 
-**See complete rule list:** [docs/CF_RULES.md](docs/CF_RULES.md)
+CloudFormation and Terraform run the template checks (`CF-*`). Full list: [docs/CF_RULES.md](docs/CF_RULES.md).
 
-CloudFormation templates and Terraform root modules run the template checks (`CF-*`) instead. See [IaC sources](#iac-sources).
+## CI
 
-## Quick Start
-
-### 1. Install
+Record existing findings once, then fail only on new ones:
 
 ```bash
-# Clone or download the repo
-cd aws-arch-agent
-
-# Create virtual environment
-python3 -m venv .venv
-source .venv/bin/activate  # On Windows: .venv\Scripts\activate
-
-# Install
-pip install -U pip
-pip install -e .
-
-# Verify installation
-aws-arch-agent --help
-```
-
-**Requirements:**
-- Python 3.11+
-- [ripgrep](https://github.com/BurntSushi/ripgrep#installation) (`brew install ripgrep` on Mac)
-
-### 2. Run Your First Scan
-
-```bash
-# Scan a CDK project (fast, no AWS access needed)
-aws-arch-agent --repo /path/to/your/cdk-project --no-llm
-
-# Or scan the current directory
-aws-arch-agent --repo . --no-llm
-```
-
-This creates a `report.md` file with all findings.
-
-### 3. Review the Report
-
-Open `report.md` to see:
-- **High/Medium/Low priority findings** organized by severity
-- **Specific file and line numbers** for each issue
-- **Actionable recommendations** with CDK code examples
-- **AWS Well-Architected pillar** for each finding
-
-## Usage Guide
-
-### Basic Commands
-
-```bash
-# Fast scan with static rules only (recommended for first run)
-aws-arch-agent --repo . --no-llm
-
-# Advanced scan with CloudFormation template analysis
-aws-arch-agent --repo . --mode v2
-
-# JSON output for CI/CD pipelines
-aws-arch-agent --repo . --format json --out report.json
-
-# Fail build if high-severity issues found
-aws-arch-agent --repo . --fail-on high
-```
-
-### IaC Sources
-
-`--iac` picks the source. The default, `auto`, detects it from the repo:
-
-| `--iac` | What V1 scans |
-|---------|---------------|
-| `cdk` | CDK TypeScript/Python source with the static rules. Needs `cdk.json`, a CDK package, `bin/*.ts`, or `app.py`. |
-| `cloudformation` | Raw templates in the repo (JSON or YAML with `AWSTemplateFormatVersion` or an `AWS::` resource) with the `CF-*` checks. No synth. |
-| `terraform` | Root-module `*.tf` / `*.tf.json` with the `CF-*` checks. Findings point at the HCL file and line (approximate for `*.tf.json`). |
-| `auto` | CDK when its markers exist; otherwise CloudFormation, Terraform, or both (`mixed`). A repo with none of these falls back to `cdk`. |
-
-An explicit `--iac` with no matching files exits 1.
-
-Terraform is read without `terraform init`: only root modules are scanned. Local child modules (used as `source = "./..."`) are skipped and listed under `terraform_child_modules_skipped` in the JSON report's `context.notes`. Remote modules are not fetched.
-
-```bash
-aws-arch-agent --repo ./infra --iac terraform --no-llm
-aws-arch-agent --repo ./templates --iac cloudformation --no-llm
-```
-
-An argument set from `var.*` or `local.*` is unresolved, so no check reports on it. To check those values, pass a plan with `--tf-plan` (V1 only):
-
-```bash
-terraform -chdir=infra plan -out=tfplan
-terraform -chdir=infra show -json tfplan > infra/plan.json
-aws-arch-agent --repo . --iac terraform --tf-plan infra/plan.json --no-llm
-```
-
-Values unknown until apply stay unresolved. A missing or unreadable plan is a warning; the scan still runs.
-
-V2 synth stays the CDK path. For CloudFormation, use V1 or V2 with `--templates`. For Terraform, use V1. In V2, `--iac terraform` exits 1, and `--iac cloudformation` without `--templates` (flag or config) exits 1. When `--iac auto` detects a non-CDK repo in V2 without `--templates`, the console prints a note; the scan still runs the CDK path and the exit code does not change.
-
-### Two Modes
-
-**V1 Mode (Default - Fast):**
-- Scans CDK TypeScript/Python code with static rules, or raw CloudFormation templates and root-module Terraform with the `CF-*` checks
-- No `cdk synth` required
-- Completes in seconds
-- Best for: Quick checks, CI/CD, local development
-
-**V2 Mode (Advanced):**
-- Runs `cdk synth` and analyzes CloudFormation templates
-- Multi-agent LangGraph pipeline with 6 specialized reviewers
-- Catches resource-level issues (encryption, settings, etc.)
-- Best for: Comprehensive reviews, production deployments
-- Install with `pip install -e ".[v2]"`. A V1 `--no-llm` scan does not need LangGraph.
-
-```bash
-# V1 - Fast static analysis
-aws-arch-agent --repo . --no-llm
-
-# V2 - Comprehensive analysis with CloudFormation
-aws-arch-agent --repo . --mode v2
-```
-
-### Common Options
-
-| Option | Description | Example |
-|--------|-------------|---------|
-| `--repo`, `-r` | Path to your project | `--repo ./my-project` |
-| `--out`, `-o` | Output file path | `--out review.md` |
-| `--mode` | Analysis mode: `v1` or `v2` | `--mode v2` |
-| `--iac` | IaC source: `auto`, `cdk`, `cloudformation`, or `terraform` | `--iac terraform` |
-| `--format`, `-f` | Output format: `markdown` (default), `json`, `sarif`, or `html` | `--format html` |
-| `--no-llm` | Skip LLM-based recommendations | `--no-llm` |
-| `--fail-on` | Exit with error if findings ≥ severity | `--fail-on high` |
-| `--baseline` | Baseline suppressions file (default: `.aws-arch-agent-baseline.json`) | `--baseline baseline.json` |
-| `--enforce-baseline` | Only fail on findings not in baseline | `--enforce-baseline` |
-| `--update-baseline` | Record current findings into baseline | `--update-baseline` |
-| `--config` | JSON or YAML config file | `--config aws-arch-agent.yaml` |
-
-See all options: `aws-arch-agent --help`
-
-## Use Cases
-
-### Local Development
-```bash
-# Quick check before committing
-aws-arch-agent --repo . --no-llm
-
-# Optional: install pre-commit hook (see CONTRIBUTING.md)
-pip install pre-commit && pre-commit install
-```
-
-### CI/CD Pipeline
-```yaml
-# GitHub Actions example (gradual adoption with baseline)
-- name: CDK Architecture Review
-  run: |
-    pip install -e .
-    aws-arch-agent --repo . \
-      --no-llm \
-      --format json \
-      --out report.json \
-      --fail-on high \
-      --enforce-baseline \
-      --baseline .aws-arch-agent-baseline.json
-```
-
-Or use the composite action (see [GitHub Action](#github-action) below).
-
-### CloudFormation-Only Projects
-```bash
-# If you have raw CloudFormation templates (no CDK)
-aws-arch-agent --repo . --iac cloudformation --no-llm
-
-# Or through the V2 pipeline
-aws-arch-agent --templates ./cloudformation --no-synth --mode v2
-```
-
-### Terraform Projects
-```bash
-# Root modules only; no terraform init
-aws-arch-agent --repo ./infra --iac terraform --no-llm
-
-# Fill var/local values from a plan
-aws-arch-agent --repo ./infra --iac terraform --tf-plan ./infra/plan.json --no-llm
-```
-
-### With AI Recommendations
-```bash
-# Install Ollama first: https://ollama.ai
-ollama serve &
-export OLLAMA_MODEL=llama3:8b
-
-# Run with AI-powered recommendations
-aws-arch-agent --repo . --mode v2
-```
-
-
-## Advanced Features
-
-### CloudFormation Analysis (V2 Mode)
-
-V2 mode runs `cdk synth` and analyzes the generated CloudFormation templates:
-
-```bash
-aws-arch-agent --repo . --mode v2
-```
-
-This catches issues like:
-- RDS encryption disabled
-- DynamoDB point-in-time recovery not enabled
-- Lambda without VPC configuration
-- Security Group rules allowing 0.0.0.0/0
-
-### LLM Integration
-
-Add AI-powered recommendations (optional):
-
-```bash
-# Option 1: Ollama (local, free)
-ollama serve &
-export OLLAMA_MODEL=llama3:8b
-export LLM_PROVIDER=ollama
-
-# Option 2: OpenAI
-pip install -e ".[cloud]"
-export LLM_PROVIDER=openai
-export OPENAI_API_KEY=sk-...
-
-# Option 3: Anthropic
-pip install -e ".[cloud]"
-export LLM_PROVIDER=anthropic
-export ANTHROPIC_API_KEY=sk-ant-...
-
-# Run with LLM
-aws-arch-agent --repo . --mode v2
-```
-
-### Configuration File
-
-Create `aws-arch-agent.yaml` in your project:
-
-```yaml
-format: markdown
-fail_on: high
-no_llm: true
-llm_mode: compact
-rules:
-  exclude:
-    - BP-001  # Skip tagging rule
-severity_threshold: medium
-```
-
-Use it:
-```bash
-aws-arch-agent --repo . --config aws-arch-agent.yaml
-```
-
-JSON config is also supported (see [docs/example-config.json](docs/example-config.json)).
-
-### Baseline (gradual CI adoption)
-
-Baseline suppressions live in `.aws-arch-agent-baseline.json` by default (override with `--baseline`).
-
-```bash
-# Record current findings as accepted (writes .aws-arch-agent-baseline.json)
 aws-arch-agent --repo . --no-llm --update-baseline
-
-# Fail only on new high-severity findings
 aws-arch-agent --repo . --no-llm --fail-on high --enforce-baseline
-
-# Custom baseline path
-aws-arch-agent --repo . --no-llm --fail-on high --enforce-baseline --baseline baseline.json
 ```
 
-### HTML report
-
-```bash
-aws-arch-agent --repo . --no-llm --format html --out report.html
-open report.html   # or xdg-open / start
-```
-
-One self-contained file, meant to be opened in a browser. It has no external CSS, scripts, or fonts, so it works offline and as a CI artifact. The page shows the repo, source, and High/Medium/Low/warning counts, has All/High/Medium/Low tabs, and lists each finding with its file and line, evidence, recommendation, and suggested code. Evidence and code from the scanned repo are escaped, so they show as text. With `--enforce-baseline`, every finding stays on the page and is labeled Accepted or New. The default format is still `markdown`. Set `format: html` in the config file to make the page the default for a repo. `--out` still defaults to `report.md`, so pass `--out report.html` (or set `out: report.html` in the config).
-
-### SARIF output (GitHub Code Scanning)
-
-```bash
-aws-arch-agent --repo . --no-llm --format sarif --out results.sarif
-```
-
-### V2 LLM modes
-
-- **`--llm-mode full`** (default): six pillar reviewers + merge (best narrative, more API calls)
-- **`--llm-mode compact`**: single LLM call for the merged review (faster, lower cost)
-
-### RAG (V2)
-
-Index Well-Architected or team conventions and inject citations into V2 pillar/merge LLM prompts:
-
-```bash
-pip install -e ".[rag]"   # optional, for embedding-based retrieval
-aws-arch-agent --repo . --mode v2 --rag ./docs/waf-snippets.md
-```
-
-Set `rag.use_embeddings: true` in config for semantic retrieval (requires `sentence-transformers` or OpenAI embeddings). See [docs/CONFIG.md](docs/CONFIG.md).
-
-### GitHub Action
+Or use the composite GitHub Action:
 
 ```yaml
-- uses: ./.github/actions/aws-arch-agent
+- uses: gutehall/aws-arch-agent/.github/actions/aws-arch-agent@main
   with:
     repo: .
     fail-on: high
-    format: json
+    format: sarif
     no-llm: "true"
     enforce-baseline: "true"
-    baseline: .aws-arch-agent-baseline.json
 ```
 
-Set `iac` (`auto`, `cdk`, `cloudformation`, or `terraform`) to force the source. The default is `auto`:
+## Modes
 
-```yaml
-- uses: ./.github/actions/aws-arch-agent
-  with:
-    repo: ./infra
-    iac: terraform
-    fail-on: high
+- **V1** (default): static rules. No synth, finishes in seconds.
+- **V2** (`--mode v2`): runs `cdk synth`, then six LangGraph pillar reviewers check the CloudFormation output. Install with `pip install -e ".[v2]"`. Optional LLM via Ollama, OpenAI, or Anthropic, and optional RAG over your own docs:
+
+```bash
+aws-arch-agent --repo . --mode v2 --rag ./docs/waf-snippets.md
 ```
-
-For SARIF upload to GitHub Code Scanning, set `format: sarif` and use `github/codeql-action/upload-sarif`.
 
 ## Documentation
 
-- **[docs/CF_RULES.md](docs/CF_RULES.md)** - Complete list of all static rules + CloudFormation rules
-- **[docs/REFERENCE.md](docs/REFERENCE.md)** - Complete CLI reference
-- **[docs/CONFIG.md](docs/CONFIG.md)** - Configuration file options
-- **[docs/V2_LANGGRAPH.md](docs/V2_LANGGRAPH.md)** - V2 multi-agent pipeline architecture
-- **[docs/report-schema.json](docs/report-schema.json)** - JSON report schema
-- **[CONTRIBUTING.md](CONTRIBUTING.md)** - Development setup and contributing guide
-
-## Contributing
-
-Contributions welcome! See [CONTRIBUTING.md](CONTRIBUTING.md) for development setup.
-
-```bash
-# Development setup
-pip install -e ".[dev]"
-pytest tests/ -v              # Run tests (70% coverage gate)
-ruff check src tests          # Lint
-mypy src                      # Type check
-```
+- [docs/REFERENCE.md](docs/REFERENCE.md): CLI options, IaC sources, Terraform plans, modes, LLM providers, HTML report
+- [docs/CONFIG.md](docs/CONFIG.md): config file (`aws-arch-agent.yaml` or JSON)
+- [docs/CF_RULES.md](docs/CF_RULES.md): all rules
+- [docs/V2_LANGGRAPH.md](docs/V2_LANGGRAPH.md): V2 pipeline
+- [docs/report-schema.json](docs/report-schema.json): JSON report schema
+- [CONTRIBUTING.md](CONTRIBUTING.md): development setup
 
 ## License
 
-MIT License - see [LICENSE](LICENSE) file for details.
-
-
-
-
+MIT. See [LICENSE](LICENSE).

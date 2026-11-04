@@ -13,7 +13,7 @@ The agent covers all six AWS Well-Architected pillars. Static and CloudFormation
 | `--tf-plan` | — | `terraform show -json` output (a plan or a state). V1 Terraform scans only. Known planned values replace arguments that depend on `var`, `local`, or another expression, by resource address. Unknown values stay unresolved. Indexed instances (`count`, `for_each`), data sources, and child modules are not read. With one root module, the plan applies to it wherever the plan file is. With several, it applies to the one that holds the plan file. A missing or unreadable plan, or a plan that matches no root module, is a report warning (exit 2) and the scan runs without it. `--mode v2` with `--tf-plan` exits 1 |
 | `--max-files` | `400` | Cap on files walked. Rules search only these files |
 | `--config` | (auto-detect) | Path to config file |
-| `--format`, `-f` | `markdown` | `markdown`, `json`, `sarif`, or `html`. `html` writes one self-contained page (inline CSS and script, no external assets) to open in a browser. With `--enforce-baseline` it labels each finding Accepted or New. `--out` still defaults to `report.md`, so pass a `.html` path. An unknown format fails the run and writes no report |
+| `--format`, `-f` | `markdown` | `markdown`, `json`, `sarif`, or `html`. `html` writes one self-contained page (inline CSS and script, no external assets, dark theme) to open in a browser. Each finding links to AWS documentation. With `--enforce-baseline` it labels each finding Accepted or New. `--out` still defaults to `report.md`, so pass a `.html` path. An unknown format fails the run and writes no report |
 | `--fail-on` | `none` | Exit 1 if any finding at or above: `high`, `medium`, `low`, `none` |
 | `--no-llm` | `false` | Skip LLM polish / agent reasoning |
 | `--llm-mode` | `full` | V2 only: `full` (six pillar calls) or `compact` (single LLM call) |
@@ -24,6 +24,45 @@ The agent covers all six AWS Well-Architected pillars. Static and CloudFormation
 | `--baseline` | `.aws-arch-agent-baseline.json` | Path to baseline suppressions file |
 | `--enforce-baseline` | `false` | Only fail on findings not in baseline |
 | `--update-baseline` | `false` | Add current findings to baseline file |
+
+## IaC sources
+
+| `--iac` | What V1 scans |
+|---------|---------------|
+| `cdk` | CDK TypeScript/Python source with the static rules. Needs `cdk.json`, a CDK package, `bin/*.ts`, or `app.py`. |
+| `cloudformation` | Raw templates in the repo (JSON or YAML with `AWSTemplateFormatVersion` or an `AWS::` resource) with the `CF-*` checks. No synth. |
+| `terraform` | Root-module `*.tf` / `*.tf.json` with the `CF-*` checks. Findings point at the HCL file and line (approximate for `*.tf.json`). |
+| `auto` | CDK when its markers exist; otherwise CloudFormation, Terraform, or both (`mixed`). A repo with none of these falls back to `cdk`. |
+
+**Terraform** is read without `terraform init`, and only root modules are scanned. Local child modules (`source = "./..."`) are skipped and listed under `terraform_child_modules_skipped` in the JSON report's `context.notes`. Remote modules are not fetched. An argument set from `var.*` or `local.*` is unresolved, so no check reports on it. To resolve those values, pass a plan with `--tf-plan`:
+
+```bash
+terraform -chdir=infra plan -out=tfplan
+terraform -chdir=infra show -json tfplan > infra/plan.json
+aws-arch-agent --repo . --iac terraform --tf-plan infra/plan.json --no-llm
+```
+
+**V2** synth stays the CDK path. For CloudFormation, use V1, or V2 with `--templates`. For Terraform, use V1. When `--iac auto` detects a non-CDK repo in V2 without `--templates`, the console prints a note. The scan still runs the CDK path, and the exit code does not change.
+
+## Modes
+
+- **V1** (default): static rules over CDK source, or `CF-*` checks over CloudFormation and Terraform. No synth, finishes in seconds.
+- **V2**: runs `cdk synth`, then a LangGraph pipeline with six pillar reviewers checks the CloudFormation output. Install with `pip install -e ".[v2]"`. `--llm-mode full` (default) makes six pillar calls plus a merge. `--llm-mode compact` makes one call.
+
+## LLM providers
+
+LLM output is optional. `--no-llm` skips it.
+
+| Variable | Purpose |
+|----------|---------|
+| `LLM_PROVIDER` | `ollama`, `openai`, or `anthropic` |
+| `OLLAMA_HOST`, `OLLAMA_MODEL` | Local Ollama server and model (e.g. `llama3:8b`) |
+| `OPENAI_API_KEY`, `OPENAI_MODEL` | OpenAI. Needs `pip install -e ".[cloud]"` |
+| `ANTHROPIC_API_KEY`, `ANTHROPIC_MODEL` | Anthropic. Needs `pip install -e ".[cloud]"` |
+
+## HTML report
+
+`--format html` writes one file to open in a browser. CSS and script are inline and nothing external loads, so it works offline and as a CI artifact. The page has a dark theme, severity counts, All/High/Medium/Low tabs, and each finding's file and line, evidence, recommendation, and suggested code. Each finding links to the AWS documentation for its service and its Well-Architected pillar. These links are the only external URLs on the page, and they load only when clicked. Evidence and code from the scanned repo are escaped. With `--enforce-baseline`, each finding is labeled Accepted or New.
 
 ## Config file (JSON or YAML)
 
