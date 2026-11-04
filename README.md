@@ -2,9 +2,13 @@
 
 **Note:** Early-stage project — **169 static rules** are implemented and tested, but expect occasional false positives/negatives and API changes.
 
-> **Automated AWS CDK architecture review tool** that scans your infrastructure code and finds security, reliability, performance, and cost issues.
+> **Automated AWS architecture review tool** that scans your infrastructure code and finds security, reliability, performance, and cost issues.
 
-Runs locally. No AWS credentials needed. Supports TypeScript and Python CDK.
+Runs locally. No AWS credentials needed. Supports three sources:
+
+- **CDK** (TypeScript and Python)
+- **CloudFormation** (raw JSON or YAML templates)
+- **Terraform** (root-module `*.tf` and `*.tf.json`)
 
 
 
@@ -29,6 +33,8 @@ AWS Arch Agent reviews your CDK code against **169 rules** across the six AWS We
 | **Best Practices** | 5 | Missing tags, Secrets Manager, CDK Aspects, naming conventions |
 
 **See complete rule list:** [docs/CF_RULES.md](docs/CF_RULES.md)
+
+CloudFormation templates and Terraform root modules run the template checks (`CF-*`) instead. See [IaC sources](#iac-sources).
 
 ## Quick Start
 
@@ -92,10 +98,32 @@ aws-arch-agent --repo . --format json --out report.json
 aws-arch-agent --repo . --fail-on high
 ```
 
+### IaC Sources
+
+`--iac` picks the source. The default, `auto`, detects it from the repo:
+
+| `--iac` | What V1 scans |
+|---------|---------------|
+| `cdk` | CDK TypeScript/Python source with the static rules. Needs `cdk.json`, a CDK package, `bin/*.ts`, or `app.py`. |
+| `cloudformation` | Raw templates in the repo (JSON or YAML with `AWSTemplateFormatVersion` or an `AWS::` resource) with the `CF-*` checks. No synth. |
+| `terraform` | Root-module `*.tf` / `*.tf.json` with the `CF-*` checks. Findings point at the HCL file and line (approximate for `*.tf.json`). |
+| `auto` | CDK when its markers exist; otherwise CloudFormation, Terraform, or both (`mixed`). A repo with none of these falls back to `cdk`. |
+
+An explicit `--iac` with no matching files exits 1.
+
+Terraform is read without `terraform init` or a plan: only root modules are scanned. Local child modules (used as `source = "./..."`) are skipped and listed under `terraform_child_modules_skipped` in the JSON report's `context.notes`. Remote modules are not fetched.
+
+```bash
+aws-arch-agent --repo ./infra --iac terraform --no-llm
+aws-arch-agent --repo ./templates --iac cloudformation --no-llm
+```
+
+V2 synth stays the CDK path. For CloudFormation, use V1 or V2 with `--templates`. For Terraform, use V1. V2 accepts `--iac cloudformation` or `--iac terraform`, but without `--templates` it still runs the CDK static rules and `cdk synth`, so it does not scan the templates or the HCL.
+
 ### Two Modes
 
 **V1 Mode (Default - Fast):**
-- Scans CDK TypeScript/Python code with static rules
+- Scans CDK TypeScript/Python code with static rules, or raw CloudFormation templates and root-module Terraform with the `CF-*` checks
 - No `cdk synth` required
 - Completes in seconds
 - Best for: Quick checks, CI/CD, local development
@@ -119,9 +147,10 @@ aws-arch-agent --repo . --mode v2
 
 | Option | Description | Example |
 |--------|-------------|---------|
-| `--repo`, `-r` | Path to your CDK project | `--repo ./my-project` |
+| `--repo`, `-r` | Path to your project | `--repo ./my-project` |
 | `--out`, `-o` | Output file path | `--out review.md` |
 | `--mode` | Analysis mode: `v1` or `v2` | `--mode v2` |
+| `--iac` | IaC source: `auto`, `cdk`, `cloudformation`, or `terraform` | `--iac terraform` |
 | `--format`, `-f` | Output format: `markdown`, `json`, or `sarif` | `--format sarif` |
 | `--no-llm` | Skip LLM-based recommendations | `--no-llm` |
 | `--fail-on` | Exit with error if findings ≥ severity | `--fail-on high` |
@@ -163,7 +192,16 @@ Or use the composite action (see [GitHub Action](#github-action) below).
 ### CloudFormation-Only Projects
 ```bash
 # If you have raw CloudFormation templates (no CDK)
+aws-arch-agent --repo . --iac cloudformation --no-llm
+
+# Or through the V2 pipeline
 aws-arch-agent --templates ./cloudformation --no-synth --mode v2
+```
+
+### Terraform Projects
+```bash
+# Root modules only; no terraform init, no plan
+aws-arch-agent --repo ./infra --iac terraform --no-llm
 ```
 
 ### With AI Recommendations
@@ -287,6 +325,16 @@ Set `rag.use_embeddings: true` in config for semantic retrieval (requires `sente
     no-llm: "true"
     enforce-baseline: "true"
     baseline: .aws-arch-agent-baseline.json
+```
+
+Set `iac` (`auto`, `cdk`, `cloudformation`, or `terraform`) to force the source. The default is `auto`:
+
+```yaml
+- uses: ./.github/actions/aws-arch-agent
+  with:
+    repo: ./infra
+    iac: terraform
+    fail-on: high
 ```
 
 For SARIF upload to GitHub Code Scanning, set `format: sarif` and use `github/codeql-action/upload-sarif`.

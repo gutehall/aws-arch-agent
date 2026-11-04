@@ -1,5 +1,7 @@
 # Config file
 
+The IaC source is a CLI flag, not a config key: `--iac auto|cdk|cloudformation|terraform` (see [REFERENCE.md](REFERENCE.md)). V1 scans CDK source, raw CloudFormation templates, and root-module Terraform. V2 synth stays the CDK path.
+
 Optional config file in the repo root. A same-named file in the current directory is not used. A missing `--config` path, or a config file that is not valid JSON or YAML, fails the run.
 
 - `.aws-arch-agent.json` / `aws-arch-agent.json`
