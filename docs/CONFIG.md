@@ -48,7 +48,7 @@ rules:
     - BP-001
 ```
 
-- **format**: `markdown` | `json` | `sarif`
+- **format**: `markdown` (default) | `json` | `sarif` | `html`. `html` writes one self-contained page to open in a browser.
 - **fail_on**: `high` | `medium` | `low` | `none` — exit code 1 if any finding at or above this severity
 - **no_llm**: skip LLM polish (V1) or agent reasoning (V2)
 - **llm_mode**: `full` (six pillar LLM calls in V2) or `compact` (single merged LLM call)
@@ -82,4 +82,4 @@ A corrupt baseline with `--enforce-baseline` or `--update-baseline` fails the ru
 
 CloudFormation findings have no source line. Their baseline key is the rule id, the template path relative to the repo, and `logical_id` (the finding evidence, such as `BucketA (AWS::S3::Bucket)`). Two resources of the same rule in one template stay distinct. A baseline written before `logical_id` was stored does not suppress those findings; regenerate it with `--update-baseline`. An older entry that already has `logical_id` and an absolute path still matches when that path ends with the repo-relative path.
 
-A rule exception, a CloudFormation resource that cannot be checked, a missing or empty template path, or a failed or timed-out `cdk synth` is listed in the JSON and SARIF report warnings. The process exits 2. That exit is separate from `--fail-on`.
+A rule exception, a CloudFormation resource that cannot be checked, a missing or empty template path, or a failed or timed-out `cdk synth` is listed in the report warnings (JSON, SARIF, HTML, and the markdown "Analysis Warnings" section). The process exits 2. That exit is separate from `--fail-on`.
