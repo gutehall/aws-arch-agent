@@ -27,7 +27,7 @@ from aws_arch_agent.config import (
     SeverityThreshold,
     load_config,
 )
-from aws_arch_agent.models import Finding
+from aws_arch_agent.models import Finding, IacSource
 from aws_arch_agent.report.json_report import render_json
 from aws_arch_agent.report.sarif import render_sarif
 from aws_arch_agent.tools.files import iter_files
@@ -211,10 +211,34 @@ def analyze(
                 f"({exc})"
             )
 
+    if mode_value == "v2":
+        # V2 synth is the CDK path. Only raw CloudFormation passed with --templates is scanned.
+        if iac_value == "terraform":
+            _fail("--iac terraform is V1 only: V2 has no Terraform path. Use --mode v1.")
+        if iac_value == "cloudformation" and not cfg.templates:
+            _fail(
+                "--iac cloudformation in V2 needs --templates: V2 synth is the CDK path. "
+                "Use --mode v1, or pass --templates."
+            )
+
     try:
-        source = resolve_source(repo_path, iac_value, iter_files(repo_path, max_files=max_files))
+        if mode_value == "v2" and iac_value == "cloudformation" and cfg.templates:
+            # The templates path may sit outside --repo; synth warns when it is missing or empty.
+            source: IacSource = "cloudformation"
+        else:
+            source = resolve_source(
+                repo_path, iac_value, iter_files(repo_path, max_files=max_files)
+            )
     except IacError as exc:
         _fail(str(exc))
+
+    if mode_value == "v2" and iac_value == "auto" and source != "cdk" and not cfg.templates:
+        console.print(
+            f"Detected {source}, but V2 scans CDK only and will not read these files. "
+            "Use --mode v1 to scan them, or --templates for CloudFormation.",
+            style="yellow",
+            markup=False,
+        )
 
     console.print(Panel.fit(
         f"[bold]Analyzing[/bold] {repo_path}\nMode: {mode_value} | Source: {source} | Format: {cfg.format} | LLM: {'off' if cfg.no_llm else 'on'}",
