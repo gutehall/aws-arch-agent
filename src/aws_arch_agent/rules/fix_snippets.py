@@ -72,6 +72,19 @@ _CLOUDFORMATION: dict[str, str] = {
   Type: AWS::RDS::DBInstance
   Properties:
     DBInstanceClass: db.m6g.large  # size to measured load""",
+    "CF-EC2-001": """$name:
+  Type: AWS::EC2::Instance
+  Properties:
+    MetadataOptions:
+      HttpTokens: required
+      HttpEndpoint: enabled""",
+    "CF-EC2-001:AWS::EC2::LaunchTemplate": """$name:
+  Type: AWS::EC2::LaunchTemplate
+  Properties:
+    LaunchTemplateData:
+      MetadataOptions:
+        HttpTokens: required
+        HttpEndpoint: enabled""",
     "CF-PERF-004": """$name:
   Type: AWS::EC2::Instance
   Properties:
@@ -278,6 +291,20 @@ _TERRAFORM: dict[str, str] = {
 }""",
     "CF-PERF-003": """resource "aws_db_instance" "$tf_name" {
   instance_class = "db.m6g.large" # size to measured load
+}""",
+    "CF-EC2-001": """resource "aws_instance" "$tf_name" {
+  # keep the other arguments as they are
+  metadata_options {
+    http_tokens   = "required"
+    http_endpoint = "enabled"
+  }
+}""",
+    "CF-EC2-001:aws_launch_template": """resource "aws_launch_template" "$tf_name" {
+  # keep the other arguments as they are
+  metadata_options {
+    http_tokens   = "required"
+    http_endpoint = "enabled"
+  }
 }""",
     "CF-PERF-004": """resource "aws_instance" "$tf_name" {
   instance_type = "m7g.large" # size to measured load

@@ -343,9 +343,31 @@ def _db(body: dict) -> dict:
     return props
 
 
+def _metadata_options(body: dict) -> dict | None:
+    """metadata_options -> MetadataOptions. A value from var/local stays a non-literal
+    marker instead of UNRESOLVED, so it does not hide the block's other checks."""
+    block = _first_block(body, "metadata_options")
+    if not block:
+        return None
+    out: dict = {}
+    for tf_key, cf_key in (("http_tokens", "HttpTokens"), ("http_endpoint", "HttpEndpoint")):
+        value = _v(block, tf_key)
+        if value is UNRESOLVED:
+            value = _Expr("<unresolved>")
+        _set(out, cf_key, value)
+    return out
+
+
 def _instance(body: dict) -> dict:
     props: dict = {}
     _set(props, "InstanceType", _v(body, "instance_type"))
+    _set(props, "MetadataOptions", _metadata_options(body))
+    template = _first_block(body, "launch_template")
+    if template:
+        props["LaunchTemplate"] = {
+            "LaunchTemplateId": _ref(template, "id"),
+            "LaunchTemplateName": _ref(template, "name"),
+        }
     return props
 
 
@@ -354,6 +376,7 @@ def _launch_template(body: dict) -> dict:
     data: dict = {}
     if market:
         data["InstanceMarketOptions"] = {"MarketType": _v(market, "market_type")}
+    _set(data, "MetadataOptions", _metadata_options(body))
     return {"LaunchTemplateData": data}
 
 
@@ -569,6 +592,8 @@ _BLOCK_PROPERTY: dict[str, str] = {
     "server_side_encryption_configuration": "BucketEncryption",
     "logging": "LoggingConfiguration",
     "instance_market_options": "LaunchTemplateData",
+    # Not LaunchTemplateData: an unknown metadata block must not hide the Spot check.
+    "metadata_options": "MetadataOptions",
     "ingress": "SecurityGroupIngress",
     "access_logs": "LoadBalancerAttributes",
     "dead_letter_config": "DeadLetterConfig",

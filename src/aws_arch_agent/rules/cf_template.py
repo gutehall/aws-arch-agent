@@ -4,7 +4,7 @@ import json
 from pathlib import Path
 from typing import List, Any
 
-from aws_arch_agent.models import Finding
+from aws_arch_agent.models import Finding, Severity
 from aws_arch_agent.rules.resource_model import Resource, resources_from_cf_template
 from aws_arch_agent.tools.cdk_synth import list_cf_templates
 from aws_arch_agent.tools.cfn_yaml import parse_template_text
@@ -19,6 +19,7 @@ CF_COVERS_STATIC: dict[str, str] = {
     "CF-S3-002": "SEC-006",
     "CF-VPC-001": "SEC-022",
     "CF-FL-001": "OPS-002",
+    "CF-EC2-001": "SEC-066",
 }
 
 
@@ -143,6 +144,7 @@ CHECK_PROPERTIES: dict[str, frozenset[str]] = {
         "CF-RDS-004": {"PubliclyAccessible"},
         "CF-PERF-003": {"DBInstanceClass"},
         "CF-PERF-004": {"InstanceType"},
+        "CF-EC2-001": {"MetadataOptions", "LaunchTemplate", "LaunchTemplateData"},
         "CF-ALB-001": {"LoadBalancerAttributes"},
         "CF-CT-001": {"EnableLogFileValidation"},
         "CF-CT-002": {"IsMultiRegionTrail"},
@@ -167,6 +169,49 @@ CHECK_PROPERTIES: dict[str, frozenset[str]] = {
         "CF-EKS-001": {"Logging"},
     }.items()
 }
+
+
+def _imds_finding(res: Resource, template_path: Path, options: Any, defers: bool) -> Finding | None:
+    """CF-EC2-001 for one instance or launch template.
+
+    options: the MetadataOptions object. defers: an instance that takes its metadata
+    settings from a launch template (that template is checked on its own).
+    Only literal values are judged: an intrinsic or variable gives no finding.
+    """
+    if options is not None and not isinstance(options, dict):
+        return None
+    options = options or {}
+    tokens = options.get("HttpTokens")
+    endpoint = options.get("HttpEndpoint")
+    if endpoint == "disabled" or tokens == "required":
+        return None
+    if tokens is None:
+        if defers:
+            return None
+        severity: Severity = "Medium"
+        detail = (
+            "MetadataOptions.HttpTokens is not set. The instance then requires IMDSv2 only "
+            "if its AMI declares ImdsSupport v2.0 or the account default requires it."
+        )
+    elif type(tokens) is str and tokens == "optional":
+        severity = "High"
+        detail = "MetadataOptions.HttpTokens is optional, so IMDSv1 requests are accepted."
+    else:
+        return None
+    return Finding(
+        id="CF-EC2-001",
+        title="EC2 instance metadata does not require IMDSv2",
+        severity=severity,
+        category="Security",
+        file=res.file or str(template_path),
+        line=res.line,
+        evidence=f"{res.name} ({res.source_type})",
+        recommendation=(
+            f"{detail} With IMDSv1, an SSRF bug in the workload can read the instance role's "
+            "credentials. Set HttpTokens: required. "
+            "In CDK: set requireImdsv2: true, or apply InstanceRequireImdsv2Aspect to the app."
+        ),
+    )
 
 
 def run_resource_checks(
@@ -388,6 +433,21 @@ def run_resource_checks(
                             evidence=f"{logical_id} ({rtype})",
                             recommendation="Review DBInstanceClass against actual workload; consider right-sizing to reduce cost and improve efficiency.",
                         ))
+
+                # --- EC2 instance metadata: IMDSv2 required ---
+                if ctype == "instance":
+                    imds = _imds_finding(
+                        res, template_path, props.get("MetadataOptions"),
+                        defers="LaunchTemplate" in props,
+                    )
+                    if imds is not None:
+                        findings.append(imds)
+                if ctype == "launch_template":
+                    ltd = props.get("LaunchTemplateData")
+                    if isinstance(ltd, dict):
+                        imds = _imds_finding(res, template_path, ltd.get("MetadataOptions"), defers=False)
+                        if imds is not None:
+                            findings.append(imds)
 
                 # --- EC2 Instance: large instance right-sizing (Performance Efficiency) ---
                 if ctype == "instance":
