@@ -1,6 +1,7 @@
 """CloudFormation template-based rules (S3, RDS, ALB, CloudTrail, KMS, Lambda, DynamoDB, etc.) run after cdk synth."""
 from __future__ import annotations
 import json
+import re
 from pathlib import Path
 from typing import List, Any
 
@@ -240,7 +241,10 @@ def _cf_bucket_policies(resources: List[Resource]) -> tuple[dict[str, Any], bool
     policies: dict[str, Any] = {}
     unlinked = False
     for r in resources:
-        if r.source_type != "AWS::S3::BucketPolicy" or r.malformed:
+        if r.source_type != "AWS::S3::BucketPolicy":
+            continue
+        if r.malformed:  # its bucket is unknown
+            unlinked = True
             continue
         bucket = r.properties.get("Bucket")
         if isinstance(bucket, dict) and set(bucket) == {"Ref"} and isinstance(bucket["Ref"], str):
@@ -253,7 +257,7 @@ def _cf_bucket_policies(resources: List[Resource]) -> tuple[dict[str, Any], bool
             unlinked = True
             continue
         if target is not None:
-            policies[target] = r.properties.get("PolicyDocument")
+            policies[target] = r.properties.get("PolicyDocument", {})  # missing: unknown, not absent
     return policies, unlinked
 
 
@@ -281,6 +285,10 @@ def _denies_plain_http(statement: dict) -> bool:
     return False
 
 
+_TF_DENY = re.compile(r'\bEffect\s*=\s*"Deny"', re.IGNORECASE)
+_TF_PLAIN_HTTP = re.compile(r'"aws:SecureTransport"\s*=\s*"?false\b', re.IGNORECASE)
+
+
 def _tls_enforced(document: Any) -> bool | None:
     """True when a bucket policy denies plain HTTP, False when it does not, None when unknown."""
     if document is None:
@@ -288,9 +296,11 @@ def _tls_enforced(document: Any) -> bool | None:
     if isinstance(document, str):
         if type(document) is not str:  # Terraform expression: only its text is known
             text = str(document)
-            if "SecureTransport" in text and "Deny" in text:
+            if _TF_DENY.search(text) and _TF_PLAIN_HTTP.search(text):
                 return True
-            return False if text.startswith("jsonencode(") else None
+            # Only a jsonencode of a literal object is fully known; data sources may add the deny.
+            literal = text.startswith("jsonencode({") and "data." not in text
+            return False if literal else None
         try:
             return _tls_enforced(json.loads(document))
         except ValueError:

@@ -67,6 +67,17 @@ def test_cloudformation_buckets(tmp_path: Path) -> None:
     assert all("in this template" in f.recommendation for f in findings)
 
 
+def test_malformed_or_incomplete_policies_are_unknown(tmp_path: Path) -> None:
+    assert _cf(tmp_path, {
+        "Data": _bucket(),
+        "Broken": {"Type": "AWS::S3::BucketPolicy", "Properties": ["not", "an", "object"]},
+    }) == []
+    assert _cf(tmp_path, {
+        "Data": _bucket(),
+        "NoDocument": {"Type": "AWS::S3::BucketPolicy", "Properties": {"Bucket": {"Ref": "Data"}}},
+    }) == []
+
+
 def test_policy_on_an_unknown_bucket_could_be_any_bucket(tmp_path: Path) -> None:
     findings = _cf(tmp_path, {
         "Data": _bucket(),
@@ -133,6 +144,53 @@ resource "aws_s3_bucket_policy" "heredoc" {
 EOF
 }
 
+resource "aws_s3_bucket" "heredoc_read_only" {
+  bucket = "heredoc-read-only"
+}
+
+resource "aws_s3_bucket_policy" "heredoc_read_only" {
+  bucket = aws_s3_bucket.heredoc_read_only.id
+  policy = <<-EOF
+    {"Statement": [{"Effect": "Allow", "Principal": "*", "Action": "s3:GetObject", "Resource": "*"}]}
+    EOF
+}
+
+resource "aws_s3_bucket" "allows_tls_only" {
+  bucket = "allows-tls-only"
+}
+
+resource "aws_s3_bucket_policy" "allows_tls_only" {
+  bucket = aws_s3_bucket.allows_tls_only.id
+  policy = jsonencode({
+    Statement = [
+      { Effect = "Deny", Principal = "*", Action = "s3:DeleteBucket", Resource = "*" },
+      { Effect = "Allow", Principal = "*", Action = "s3:GetObject", Resource = "*",
+        Condition = { Bool = { "aws:SecureTransport" = "true" } } },
+    ]
+  })
+}
+
+resource "aws_s3_bucket" "lowercase_key" {
+  bucket = "lowercase-key"
+}
+
+resource "aws_s3_bucket_policy" "lowercase_key" {
+  bucket = aws_s3_bucket.lowercase_key.id
+  policy = jsonencode({
+    Statement = [{ Effect = "Deny", Principal = "*", Action = "s3:*", Resource = "*",
+                   Condition = { Bool = { "aws:securetransport" = false } } }]
+  })
+}
+
+resource "aws_s3_bucket" "merged_with_data" {
+  bucket = "merged-with-data"
+}
+
+resource "aws_s3_bucket_policy" "merged_with_data" {
+  bucket = aws_s3_bucket.merged_with_data.id
+  policy = jsonencode(merge(jsondecode(data.aws_iam_policy_document.base.json), { Version = "2012-10-17" }))
+}
+
 resource "aws_s3_bucket" "from_data" {
   bucket = "from-data"
 }
@@ -164,7 +222,10 @@ def _tf(tmp_path: Path, text: str = TF, plan: dict | None = None) -> list[Findin
 
 
 def test_terraform_buckets(tmp_path: Path) -> None:
-    assert _names(_tf(tmp_path)) == {"aws_s3_bucket.none", "aws_s3_bucket.read_only"}
+    assert _names(_tf(tmp_path)) == {
+        "aws_s3_bucket.none", "aws_s3_bucket.read_only",
+        "aws_s3_bucket.heredoc_read_only", "aws_s3_bucket.allows_tls_only",
+    }
 
 
 def test_terraform_policy_on_a_bucket_outside_the_module(tmp_path: Path) -> None:
@@ -175,7 +236,9 @@ resource "aws_s3_bucket_policy" "elsewhere" {
 }
 """
     # It may be the policy of "none". read_only has its own, and a bucket has only one.
-    assert _names(_tf(tmp_path, text)) == {"aws_s3_bucket.read_only"}
+    assert _names(_tf(tmp_path, text)) == {
+        "aws_s3_bucket.read_only", "aws_s3_bucket.heredoc_read_only", "aws_s3_bucket.allows_tls_only",
+    }
 
 
 def test_terraform_plan_fills_the_policy(tmp_path: Path) -> None:
@@ -189,6 +252,7 @@ def test_terraform_plan_fills_the_policy(tmp_path: Path) -> None:
     ]}}}
     assert _names(_tf(tmp_path, plan=plan)) == {
         "aws_s3_bucket.none", "aws_s3_bucket.read_only", "aws_s3_bucket.from_data",
+        "aws_s3_bucket.heredoc_read_only", "aws_s3_bucket.allows_tls_only",
     }
 
 
