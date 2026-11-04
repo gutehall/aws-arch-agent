@@ -669,3 +669,17 @@ def test_html_marks_baselined_findings(tmp_path: Path) -> None:
     assert 'data-baseline="new"' in page
     assert "Accepted findings stay in the report" in page
     assert "## Baseline" not in page  # the markdown appendix is not glued onto the page
+
+
+def test_cli_html_escapes_scanned_source(tmp_path: Path) -> None:
+    _make_repo(tmp_path, 'new s3.Bucket(this, "B"); // </pre><script>alert(1)</script>')
+    out_file = tmp_path / "report.html"
+    result = runner.invoke(
+        app, ["--repo", str(tmp_path), "--no-llm", "--format", "html", "--out", str(out_file)]
+    )
+    assert result.exit_code == 0, result.output
+    page = out_file.read_text(encoding="utf-8")
+    assert "SEC-005" in page
+    assert "<script>alert" not in page
+    assert "&lt;script&gt;alert(1)&lt;/script&gt;" in page
+    assert page.count("<script>") == 1
