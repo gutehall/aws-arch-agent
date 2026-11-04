@@ -85,7 +85,7 @@ runs:
         ARGS=(
           --repo "$REPO"
           --mode "$MODE"
-          --iac "$IAC"
+          --iac "${IAC:-auto}"
           --format "$FORMAT"
           --out "$OUT"
           --fail-on "$FAIL_ON"

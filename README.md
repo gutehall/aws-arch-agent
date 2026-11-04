@@ -106,7 +106,7 @@ aws-arch-agent --repo . --fail-on high
 |---------|---------------|
 | `cdk` | CDK TypeScript/Python source with the static rules. Needs `cdk.json`, a CDK package, `bin/*.ts`, or `app.py`. |
 | `cloudformation` | Raw templates in the repo (JSON or YAML with `AWSTemplateFormatVersion` or an `AWS::` resource) with the `CF-*` checks. No synth. |
-| `terraform` | Root-module `*.tf` / `*.tf.json` with the `CF-*` checks. Findings point at the HCL file and line. |
+| `terraform` | Root-module `*.tf` / `*.tf.json` with the `CF-*` checks. Findings point at the HCL file and line (approximate for `*.tf.json`). |
 | `auto` | CDK when its markers exist; otherwise CloudFormation, Terraform, or both (`mixed`). A repo with none of these falls back to `cdk`. |
 
 An explicit `--iac` with no matching files exits 1.
@@ -118,7 +118,7 @@ aws-arch-agent --repo ./infra --iac terraform --no-llm
 aws-arch-agent --repo ./templates --iac cloudformation --no-llm
 ```
 
-V2 synth stays the CDK path. For CloudFormation, use V1 or V2 with `--templates`. For Terraform, use V1.
+V2 synth stays the CDK path. For CloudFormation, use V1 or V2 with `--templates`. For Terraform, use V1. V2 accepts `--iac cloudformation` or `--iac terraform`, but without `--templates` it still runs the CDK static rules and `cdk synth`, so it does not scan the templates or the HCL.
 
 ### Two Modes
 
