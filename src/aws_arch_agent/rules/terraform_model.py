@@ -54,6 +54,12 @@ TF_TYPE_TO_CANONICAL: dict[str, str] = {
     "aws_iam_role_policy": "iam_policy",
     "aws_iam_user_policy": "iam_policy",
     "aws_iam_group_policy": "iam_policy",
+    # Attachments carry a managed policy ARN (ManagedPolicyArns), read by CF-IAM-008.
+    "aws_iam_role_policy_attachment": "iam_policy",
+    "aws_iam_user_policy_attachment": "iam_policy",
+    "aws_iam_group_policy_attachment": "iam_policy",
+    "aws_iam_policy_attachment": "iam_policy",
+    "aws_iam_role_policy_attachments_exclusive": "iam_policy",
     "aws_iam_role": "iam_role",
     "aws_iam_user": "iam_user",
     "aws_iam_group": "iam_group",
@@ -100,6 +106,7 @@ class _JsonEncode(_Expr):
 
 _JSONENCODE = re.compile(r"jsonencode\((.*)\)", re.DOTALL)
 _HEREDOC = re.compile(r"<<-?([A-Za-z_][A-Za-z0-9_]*)\n(.*)\n\s*\1\s*", re.DOTALL)
+_MANAGED_POLICY_REF = re.compile(r"data\.aws_iam_policy\.([A-Za-z0-9_-]+)\.arn")
 _POLICY_DOC_REF = re.compile(r"data\.aws_iam_policy_document\.([A-Za-z0-9_-]+)\.(?:json|minified_json)")
 # Leaf of a decoded document whose value the scan cannot see. Not a plain str, so no
 # check compares it equal to a literal such as "*".
@@ -256,11 +263,12 @@ def parse_tf_file(path: Path) -> tuple[list[_Block], list[str]]:
                         _Block(rtype, name, norm, path, _find_line(text, rtype, name, is_json))
                     )
 
-    # Data sources the checks read: only policy documents, so references resolve.
+    # Data sources the checks read: policy documents and managed policy lookups, so
+    # references to them resolve.
     for type_map in _iter_type_maps(doc.get("data")):
         for raw_type, by_name in type_map.items():
             rtype = _unquote_key(raw_type)
-            if rtype != "aws_iam_policy_document":
+            if rtype not in ("aws_iam_policy_document", "aws_iam_policy"):
                 continue
             for name_map in _iter_type_maps(by_name):
                 for raw_name, body in name_map.items():
@@ -533,6 +541,17 @@ def _iam_role(body: dict) -> dict:
     props: dict = {"Policies": policies} if policies else {}
     # Raw value: resolve_policy_document turns it into a document in _resolve_iam.
     _set(props, "AssumeRolePolicyDocument", body.get("assume_role_policy"))
+    _set(props, "ManagedPolicyArns", body.get("managed_policy_arns"))
+    return props
+
+
+def _policy_attachment(body: dict) -> dict:
+    """aws_iam_*_policy_attachment: the attached ARN as a one-item ManagedPolicyArns."""
+    arns = body.get("policy_arns")  # aws_iam_role_policy_attachments_exclusive
+    if arns is None and body.get("policy_arn") is not None:
+        arns = [body.get("policy_arn")]
+    props: dict = {}
+    _set(props, "ManagedPolicyArns", arns)
     return props
 
 
@@ -691,6 +710,11 @@ _ADAPTERS: dict[str, Callable[[dict], dict]] = {
     "aws_iam_user_policy": _iam_policy,
     "aws_iam_group_policy": _iam_policy,
     "aws_iam_role": _iam_role,
+    "aws_iam_role_policy_attachment": _policy_attachment,
+    "aws_iam_user_policy_attachment": _policy_attachment,
+    "aws_iam_group_policy_attachment": _policy_attachment,
+    "aws_iam_policy_attachment": _policy_attachment,
+    "aws_iam_role_policy_attachments_exclusive": _policy_attachment,
 }
 
 
@@ -802,13 +826,39 @@ def resolve_policy_document(value: Any, data_docs: dict[str, dict]) -> dict | No
     return None
 
 
+def _managed_policy_arn(body: dict) -> str | None:
+    """ARN a `data "aws_iam_policy"` looks up, when its arn or AWS managed name is literal."""
+    arn, name = body.get("arn"), body.get("name")
+    if type(arn) is str:
+        return arn
+    if type(name) is str and body.get("path_prefix") in (None, "/"):
+        return f"arn:aws:iam::aws:policy/{name}"  # a name lookup is read as the AWS managed policy
+    return None
+
+
+def _resolve_managed_arn(value: Any, managed_arns: dict[str, str | None]) -> Any:
+    """`data.aws_iam_policy.<name>.arn` -> the ARN it looks up, else the value unchanged."""
+    if isinstance(value, _Expr):
+        ref = _MANAGED_POLICY_REF.fullmatch(value.strip())
+        if ref and managed_arns.get(ref.group(1)):
+            return managed_arns[ref.group(1)]
+    return value
+
+
 def _resolve_iam(resources: dict[str, Resource], blocks: list[_Block]) -> None:
     """Turn raw policy arguments on IAM resources and S3 bucket policies into documents."""
     data_docs = {
         b.name: _policy_document_block(b.body)
         for b in blocks if b.data and b.type == "aws_iam_policy_document"
     }
+    managed_arns = {
+        b.name: _managed_policy_arn(b.body)
+        for b in blocks if b.data and b.type == "aws_iam_policy"
+    }
     for res in resources.values():
+        arns = res.properties.get("ManagedPolicyArns")
+        if isinstance(arns, list):
+            res.properties["ManagedPolicyArns"] = [_resolve_managed_arn(a, managed_arns) for a in arns]
         if res.type == "s3_bucket" and "BucketPolicy" in res.properties:
             doc = resolve_policy_document(res.properties["BucketPolicy"], data_docs)
             if doc is None:  # unreadable: the bucket's policy is unknown, not absent

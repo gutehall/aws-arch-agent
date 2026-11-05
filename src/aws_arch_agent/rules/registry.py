@@ -17,7 +17,7 @@ from aws_arch_agent.rules.security import (
     NaclMissing, StackTerminationProtection,
     LambdaFunctionUrlAuth, EcsTaskRunAsRoot, RedshiftEncryptionMissing, DocumentDbEncryptionMissing,
     NeptuneEncryptionMissing, CloudWatchLogsKmsEncryption, BackupVaultEncryption,
-    RdsPubliclyAccessible, MacieNotEnabled, Ec2Imdsv2NotRequired,
+    RdsPubliclyAccessible, MacieNotEnabled, Ec2Imdsv2NotRequired, IamAdministratorAccess,
 )
 from aws_arch_agent.rules.reliability import (
     RdsMultiAzMissing, BackupRetentionMissing, LambdaDlqMissing,
@@ -68,7 +68,7 @@ from aws_arch_agent.rules.sustainability import (
 )
 
 ALL_RULES = [
-    # Security (66 rules)
+    # Security (67 rules)
     IamWildcardAction(),
     IamWildcardResource(),
     OpenSshToWorld(),
@@ -135,6 +135,7 @@ ALL_RULES = [
     RdsPubliclyAccessible(),
     MacieNotEnabled(),
     Ec2Imdsv2NotRequired(),
+    IamAdministratorAccess(),
     # Reliability (31 rules)
     RdsMultiAzMissing(),
     BackupRetentionMissing(),

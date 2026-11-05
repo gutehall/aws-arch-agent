@@ -22,6 +22,7 @@ from aws_arch_agent.rules.security_compute import CodePipelineEncryption
 from aws_arch_agent.rules.security_compute import CodeBuildPrivilegedMode
 from aws_arch_agent.rules.security_compute import EcsTaskRunAsRoot
 from aws_arch_agent.rules.security_compute import Ec2Imdsv2NotRequired
+from aws_arch_agent.rules.security_iam import IamAdministratorAccess
 from aws_arch_agent.rules.security_iam import IamWildcardAction
 from aws_arch_agent.rules.security_iam import IamWildcardResource
 from aws_arch_agent.rules.security_iam import KmsKeyPolicyWildcard
@@ -98,6 +99,7 @@ __all__ = [
     "GlueEncryption",
     "GuardDutyNotEnabled",
     "HardcodedSecrets",
+    "IamAdministratorAccess",
     "IamWildcardAction",
     "IamWildcardResource",
     "KinesisEncryption",
