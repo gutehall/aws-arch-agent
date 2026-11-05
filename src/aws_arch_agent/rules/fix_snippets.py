@@ -630,6 +630,12 @@ _CLOUDFORMATION["CF-RP-001"] = """$name:
           Condition:
             ArnEquals:
               aws:SourceArn: !GetAtt MyRule.Arn  # only for this caller"""
+for _type, _action, _resource in (
+    ("AWS::SNS::TopicPolicy", "sns:Publish", "!Ref MyTopic"),
+    ("AWS::S3::BucketPolicy", "s3:GetObject", '!Sub "$${MyBucket.Arn}/*"'),
+):
+    _CLOUDFORMATION[f"CF-RP-001:{_type}"] = _CLOUDFORMATION["CF-RP-001"].replace(
+        "sqs:SendMessage", _action).replace("!GetAtt MyQueue.Arn", _resource)
 _CLOUDFORMATION["CF-RP-001:AWS::ECR::Repository"] = """$name:
   Type: AWS::ECR::Repository
   Properties:
@@ -669,6 +675,19 @@ resource "$tf_type" "$tf_name" {
   # keep the other arguments as they are
   policy = data.aws_iam_policy_document.$tf_name.json
 }"""
+for _type, _action, _resource in (
+    ("aws_sns_topic_policy", "sns:Publish", "aws_sns_topic.my_topic.arn"),
+    ("aws_s3_bucket_policy", "s3:GetObject", '"$${aws_s3_bucket.my_bucket.arn}/*"'),
+):
+    _TERRAFORM[f"CF-RP-001:{_type}"] = _TERRAFORM["CF-RP-001"].replace(
+        '"sqs:SendMessage"]         ', f'"{_action}"]').replace("aws_sqs_queue.my_queue.arn", _resource)
+# A repository policy has no Resource: the policy is on the repository.
+_TERRAFORM["CF-RP-001:aws_ecr_repository_policy"] = "\n".join(
+    line for line in _TERRAFORM["CF-RP-001"].replace(
+        '"sqs:SendMessage"]         ', '"ecr:BatchGetImage"]').splitlines()
+    if "aws_sqs_queue.my_queue.arn" not in line
+).replace("events.amazonaws.com", "codebuild.amazonaws.com").replace(
+    "aws_cloudwatch_event_rule.my_rule.arn", "aws_codebuild_project.my_project.arn")
 _TERRAFORM["CF-RP-001:aws_lambda_permission"] = """resource "aws_lambda_permission" "$tf_name" {
   # keep the other arguments as they are
   principal      = "s3.amazonaws.com"            # the service or account that invokes

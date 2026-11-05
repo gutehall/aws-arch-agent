@@ -287,11 +287,36 @@ def _is_anyone(principal: Any) -> bool:
     return "*" in _principal_values(principal, "AWS") + _principal_values(principal, "*")
 
 
+def _limiting_keys(condition: Any) -> set[str] | None:
+    """Lowercased keys a condition requires to match a value, or None when unknown.
+
+    Only positive operators limit the caller: StringNotEquals, ArnNotLike and the like
+    allow everyone else, ...IfExists passes when the key is absent, Null only tests
+    presence, and a "*" value matches anything.
+    """
+    if condition is None:
+        return set()
+    if not isinstance(condition, dict):
+        return None
+    keys: set[str] = set()
+    for operator, body in condition.items():
+        if type(operator) is not str or not isinstance(body, dict):
+            return None
+        op = operator.lower().split(":", 1)[-1]  # ForAnyValue:StringEquals -> stringequals
+        if "not" in op or op.endswith("ifexists") or op == "null":
+            continue
+        for key, value in body.items():
+            values = value if isinstance(value, list) else [value]
+            if type(key) is str and values and not all(v == "*" for v in values):
+                keys.add(key.lower())
+    return keys
+
+
 def public_actions(doc: dict) -> list[str] | None:
     """Actions any principal is allowed, or None when no statement is open to everyone.
 
-    An Allow with Principal "*" counts unless a condition limits the caller (aws:SourceArn,
-    aws:SourceAccount, aws:PrincipalOrgID, aws:SourceVpce, ...). Unknown conditions and
+    An Allow with Principal "*" counts unless a positive condition limits the caller
+    (aws:SourceArn, aws:SourceAccount, aws:PrincipalOrgID, aws:SourceVpce, ...). Unknown conditions and
     NotPrincipal statements give nothing. Actions the scan cannot read are left out of the
     list; the statement is still open.
     """
@@ -301,8 +326,8 @@ def public_actions(doc: dict) -> list[str] | None:
             continue
         if not _is_anyone(stmt.get("Principal")):
             continue
-        conditions = _conditions(stmt)
-        if conditions is None or set(conditions) & _RESOURCE_LIMIT_KEYS:
+        limits = _limiting_keys(stmt.get("Condition"))
+        if limits is None or limits & _RESOURCE_LIMIT_KEYS:
             continue
         found = (found or set()) | set(literals(stmt.get("Action")))
     return None if found is None else sorted(found)

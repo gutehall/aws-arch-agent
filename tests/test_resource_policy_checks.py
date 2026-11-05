@@ -47,6 +47,13 @@ SOURCE_ARN = {"ArnEquals": {"aws:SourceArn": "arn:aws:events:eu-north-1:11112222
         (_doc(_open(condition={"Bool": {"aws:SecureTransport": "true"}})), ["sqs:SendMessage"]),
         (_doc(_open(condition={"IpAddress": {"aws:SourceIp": "10.0.0.0/8"}})), ["sqs:SendMessage"]),
         (_doc(_open(condition={"Fn::If": ["C", {}, {}]})), None),  # unknown condition
+        # Negated, IfExists, Null and "*" conditions leave the statement open.
+        (_doc(_open(condition={"StringNotEquals": {"aws:SourceAccount": "1"}})), ["sqs:SendMessage"]),
+        (_doc(_open(condition={"ArnNotLike": {"aws:SourceArn": "arn:x"}})), ["sqs:SendMessage"]),
+        (_doc(_open(condition={"ArnEqualsIfExists": {"aws:SourceArn": "arn:x"}})), ["sqs:SendMessage"]),
+        (_doc(_open(condition={"Null": {"aws:SourceArn": "false"}})), ["sqs:SendMessage"]),
+        (_doc(_open(condition={"StringLike": {"aws:SourceArn": "*"}})), ["sqs:SendMessage"]),
+        (_doc(_open(condition={"ForAnyValue:StringEquals": {"aws:PrincipalOrgID": ["o-1"]}})), None),
         (_doc(_open(principal={"AWS": "arn:aws:iam::111122223333:root"})), None),
         (_doc(_open(principal={"Service": "events.amazonaws.com"})), None),
         (_doc(_open(principal={"Ref": "P"})), None),
@@ -154,6 +161,18 @@ def test_cloudformation_fixes_match_the_resource(tmp_path: Path) -> None:
     assert "Type: AWS::SQS::QueuePolicy" in code["Queue"] and "aws:SourceArn" in code["Queue"]
     assert "RepositoryPolicyText:" in code["Repo"]
     assert "SourceArn:" in code["Open"]
+
+
+def test_snippets_fit_each_policy_type(tmp_path: Path) -> None:
+    findings = _cf(tmp_path, {
+        "Topic": _policy("AWS::SNS::TopicPolicy", _doc(_open("sns:Publish"))),
+        "Bucket": {"Type": "AWS::S3::BucketPolicy", "Properties": {
+            "Bucket": {"Ref": "B"}, "PolicyDocument": _doc(_open("s3:GetObject"))}},
+    })
+    attach_fixes(findings, "cloudformation")
+    code = {f.evidence.split(" ")[0]: f.suggested_code or "" for f in findings}
+    assert "sns:Publish" in code["Topic"] and "sqs:" not in code["Topic"]
+    assert '!Sub "${MyBucket.Arn}/*"' in code["Bucket"]
 
 
 # --- Terraform ------------------------------------------------------------------
