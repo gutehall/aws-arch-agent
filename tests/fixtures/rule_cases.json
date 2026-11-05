@@ -721,5 +721,11 @@
   "SUST-007": {
     "negative_ts": "instanceType: 't3.medium'",
     "positive_ts": "instanceType: 't2.medium'"
+  },
+  "SEC-067": {
+    "negative_py": "iam.ManagedPolicy.from_aws_managed_policy_name('AdministratorAccess-Amplify')",
+    "negative_ts": "iam.ManagedPolicy.fromAwsManagedPolicyName('ReadOnlyAccess')",
+    "positive_py": "iam.ManagedPolicy.from_aws_managed_policy_name('AdministratorAccess')",
+    "positive_ts": "iam.ManagedPolicy.fromAwsManagedPolicyName('AdministratorAccess')"
   }
 }

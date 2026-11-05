@@ -38,8 +38,32 @@ NO_RESOURCE_LEVEL: frozenset[str] = frozenset({
 class Broad:
     """The broadest problem found in one policy document."""
 
-    kind: str  # "all_actions" | "service_actions" | "write_on_all_resources"
+    kind: str  # "admin" | "all_actions" | "service_actions" | "write_on_all_resources"
     actions: tuple[str, ...]
+
+
+# The AWS managed policy that grants Action "*" on Resource "*". Exact name only:
+# AdministratorAccess-Amplify and AdministratorAccess-AWSElasticBeanstalk are scoped.
+ADMIN_POLICY = "AdministratorAccess"
+_ADMIN_ARN = re.compile(r"^arn:(?:aws[\w-]*|\$\{[^}]+\}):iam::aws:policy/AdministratorAccess$")
+# The ARN inside an intrinsic, e.g. CDK's Fn::Join ["", ["arn:", Ref Partition, ":iam::aws:policy/..."]]
+# or Fn::Sub "arn:${AWS::Partition}:iam::aws:policy/...".
+_ADMIN_ARN_IN_TEXT = re.compile(r':iam::aws:policy/AdministratorAccess(?=")')
+
+
+def is_admin_policy_arn(value: Any) -> bool:
+    """True when a managed policy ARN, literal or inside an intrinsic, is AdministratorAccess.
+
+    A Terraform template string ("arn:${data.aws_partition.current.partition}:...") is a
+    str subclass and is read as text; only the partition may vary. An intrinsic with a
+    Fn::If is not guessed: the admin ARN may be only one branch.
+    """
+    if isinstance(value, str):
+        return bool(_ADMIN_ARN.match(value))
+    if isinstance(value, dict):
+        text = json.dumps(value, default=str)
+        return '"Fn::If"' not in text and bool(_ADMIN_ARN_IN_TEXT.search(text))
+    return False
 
 
 def as_document(value: Any) -> dict | None:
@@ -82,6 +106,8 @@ def is_read_action(action: str) -> bool:
 def broadest(doc: dict) -> list[Broad]:
     """Return one Broad per kind found, broadest kinds only once.
 
+    admin: an Allow with Action "*" and Resource "*" (full admin access). A document with
+    one is not also reported as all_actions.
     all_actions: an Allow with Action "*".
     service_actions: an Allow with "<service>:*".
     write_on_all_resources: an Allow with Resource "*" and a write action that supports
@@ -94,7 +120,8 @@ def broadest(doc: dict) -> list[Broad]:
             continue
         actions = literals(stmt.get("Action"))
         if "*" in actions:
-            found.setdefault("all_actions", set()).add("*")
+            kind = "admin" if "*" in literals(stmt.get("Resource")) else "all_actions"
+            found.setdefault(kind, set()).add("*")
             continue
         service_wide = sorted(a for a in actions if a.endswith(":*"))
         if service_wide:
@@ -108,7 +135,9 @@ def broadest(doc: dict) -> list[Broad]:
         )
         if writes:
             found.setdefault("write_on_all_resources", set()).update(writes)
-    order = ("all_actions", "service_actions", "write_on_all_resources")
+    if "admin" in found:
+        found.pop("all_actions", None)
+    order = ("admin", "all_actions", "service_actions", "write_on_all_resources")
     return [Broad(kind, tuple(sorted(found[kind]))) for kind in order if kind in found]
 
 

@@ -1,4 +1,7 @@
-"""CF-IAM-001..003: over-broad IAM policies in CloudFormation and Terraform."""
+"""CF-IAM-001..003: over-broad IAM policies in CloudFormation and Terraform.
+
+Action "*" on Resource "*" is CF-IAM-008 (full admin access, tests/test_iam_admin_checks.py).
+"""
 import json
 from pathlib import Path
 
@@ -14,7 +17,7 @@ from aws_arch_agent.rules.cf_template import (
 from aws_arch_agent.rules.fix_snippets import attach_fixes
 from aws_arch_agent.rules.terraform_model import load_plan_values, resources_from_terraform
 
-IAM_IDS = {"CF-IAM-001", "CF-IAM-002", "CF-IAM-003"}
+IAM_IDS = {"CF-IAM-001", "CF-IAM-002", "CF-IAM-003", "CF-IAM-008"}
 
 
 def _doc(*statements: dict) -> dict:
@@ -31,7 +34,7 @@ def _allow(action, resource="*") -> dict:
 @pytest.mark.parametrize(
     ("doc", "kinds"),
     [
-        (_doc(_allow("*")), ["all_actions"]),
+        (_doc(_allow("*")), ["admin"]),
         (_doc(_allow("*", "arn:aws:s3:::b")), ["all_actions"]),
         (_doc(_allow(["s3:*", "sqs:SendMessage"])), ["service_actions"]),
         (_doc(_allow(["sqs:SendMessage"])), ["write_on_all_resources"]),
@@ -41,8 +44,8 @@ def _allow(action, resource="*") -> dict:
         (_doc({"Effect": "Deny", "Action": "*", "Resource": "*"}), []),
         (_doc(_allow({"Ref": "Actions"})), []),
         (_doc(_allow("*"), _allow("s3:*"), _allow("sns:Publish")),
-         ["all_actions", "service_actions", "write_on_all_resources"]),
-        ({"Statement": _allow("*")}, ["all_actions"]),  # single statement, not a list
+         ["admin", "service_actions", "write_on_all_resources"]),
+        ({"Statement": _allow("*")}, ["admin"]),  # single statement, not a list
         (_doc(_allow(["s3:getobject", "S3:LIST*"])), []),  # action names ignore case
         (_doc(_allow(["sqs:sendmessage"])), ["write_on_all_resources"]),
         (_doc({"Effect": {"Ref": "E"}, "Action": "*", "Resource": "*"}), []),  # unknown Effect
@@ -70,7 +73,7 @@ def _cf_findings(tmp_path: Path, resources: dict) -> list[Finding]:
 def test_cloudformation_policy_types(tmp_path: Path) -> None:
     findings = _cf_findings(tmp_path, {
         "Managed": {"Type": "AWS::IAM::ManagedPolicy",
-                    "Properties": {"PolicyDocument": _doc(_allow("*"))}},
+                    "Properties": {"PolicyDocument": _doc(_allow("*", "arn:aws:s3:::b"))}},
         "Inline": {"Type": "AWS::IAM::Policy",
                    "Properties": {"PolicyName": "p", "PolicyDocument": _doc(_allow("dynamodb:*"))}},
         "Role": {"Type": "AWS::IAM::Role", "Properties": {
@@ -90,7 +93,7 @@ def test_cloudformation_policy_types(tmp_path: Path) -> None:
         ("CF-IAM-001", "Managed"),
         ("CF-IAM-002", "Inline"),
         ("CF-IAM-003", "Role"),
-        ("CF-IAM-001", "User"),
+        ("CF-IAM-008", "User"),
     }
     role = next(f for f in findings if f.evidence.startswith("Role"))
     assert role.evidence == "Role (AWS::IAM::Role)"
@@ -101,7 +104,7 @@ def test_cloudformation_policy_types(tmp_path: Path) -> None:
     managed = next(f for f in findings if f.evidence.startswith("Managed"))
     assert "PolicyDocument:" in (managed.suggested_code or "")
     assert all(f.category == "Security" and f.file == "t.json" for f in findings)
-    assert {f.severity for f in findings if f.id == "CF-IAM-001"} == {"High"}
+    assert {f.severity for f in findings if f.id in ("CF-IAM-001", "CF-IAM-008")} == {"High"}
 
 
 def test_cloudformation_intrinsic_values_are_not_guessed(tmp_path: Path) -> None:
@@ -191,7 +194,7 @@ def _tf_findings(module: Path, plan: dict | None = None) -> dict[str, str]:
 def test_terraform_policy_forms(tmp_path: Path) -> None:
     (tmp_path / "main.tf").write_text(POLICIES_TF, encoding="utf-8")
     assert _tf_findings(tmp_path) == {
-        "aws_iam_policy.all": "CF-IAM-001",
+        "aws_iam_policy.all": "CF-IAM-008",
         "aws_iam_role_policy.heredoc": "CF-IAM-002",
         "aws_iam_user_policy.from_data": "CF-IAM-003",
         "aws_iam_role.app": "CF-IAM-001",
@@ -221,7 +224,7 @@ def test_terraform_json_policy_string(tmp_path: Path) -> None:
     }}}
     (tmp_path / "main.tf.json").write_text(json.dumps(body), encoding="utf-8")
     assert _tf_findings(tmp_path) == {
-        "aws_iam_policy.literal": "CF-IAM-001",
+        "aws_iam_policy.literal": "CF-IAM-008",
         "aws_iam_policy.encoded": "CF-IAM-002",
     }
 
@@ -234,7 +237,7 @@ def test_terraform_plan_fills_a_policy_from_var(tmp_path: Path) -> None:
         "name": "from_var", "values": {"policy": json.dumps(_doc(_allow("*")))},
     }]}}}), encoding="utf-8")
     found = _tf_findings(tmp_path, load_plan_values(plan_path))
-    assert found["aws_iam_policy.from_var"] == "CF-IAM-001"
+    assert found["aws_iam_policy.from_var"] == "CF-IAM-008"
 
 
 def test_terraform_fix_matches_the_resource_shape(tmp_path: Path) -> None:

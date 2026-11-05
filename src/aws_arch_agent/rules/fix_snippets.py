@@ -575,6 +575,45 @@ for _check in ("CF-IAM-001", "CF-IAM-002", "CF-IAM-003"):
     _TERRAFORM[_check] = _TF_IAM_POLICY
     _TERRAFORM[f"{_check}:aws_iam_role"] = _TF_IAM_ROLE
 
+# Full admin access (CF-IAM-008): drop AdministratorAccess and grant a scoped policy.
+_NO_ADMIN_CF = "    # remove arn:aws:iam::aws:policy/AdministratorAccess from ManagedPolicyArns\n"
+_CLOUDFORMATION["CF-IAM-008"] = _CF_IAM_POLICY
+for _principal in ("AWS::IAM::Role", "AWS::IAM::User", "AWS::IAM::Group"):
+    _CLOUDFORMATION[f"CF-IAM-008:{_principal}"] = _CF_IAM_PRINCIPAL.replace(
+        "  Properties:\n", "  Properties:\n" + _NO_ADMIN_CF, 1
+    )
+_TERRAFORM["CF-IAM-008"] = _TF_IAM_POLICY
+_TERRAFORM["CF-IAM-008:aws_iam_role"] = _TF_IAM_ROLE.replace(
+    "  # keep the other arguments as they are\n",
+    "  # keep the other arguments as they are; drop AdministratorAccess from managed_policy_arns\n",
+    1,
+)
+_TF_IAM_ATTACHMENT = _TF_IAM_DOCUMENT + """
+resource "aws_iam_policy" "$tf_name" {
+  policy = data.aws_iam_policy_document.$tf_name.json
+}
+
+resource "$tf_type" "$tf_name" {
+  # keep the other arguments as they are
+  policy_arn = aws_iam_policy.$tf_name.arn # instead of AdministratorAccess
+}"""
+for _attachment in (
+    "aws_iam_role_policy_attachment", "aws_iam_user_policy_attachment",
+    "aws_iam_group_policy_attachment", "aws_iam_policy_attachment",
+):
+    _TERRAFORM[f"CF-IAM-008:{_attachment}"] = _TF_IAM_ATTACHMENT
+_TF_IAM_EXCLUSIVE = _TF_IAM_DOCUMENT + """
+resource "aws_iam_policy" "$tf_name" {
+  policy = data.aws_iam_policy_document.$tf_name.json
+}
+
+resource "$tf_type" "$tf_name" {
+  # keep the other arguments as they are
+  policy_arns = [aws_iam_policy.$tf_name.arn] # instead of AdministratorAccess
+}"""
+for _principal in ("role", "user", "group"):
+    _TERRAFORM[f"CF-IAM-008:aws_iam_{_principal}_policy_attachments_exclusive"] = _TF_IAM_EXCLUSIVE
+
 # Role trust policies (CF-IAM-004..007).
 def _cf_trust(statement: str) -> str:
     return """$name:
