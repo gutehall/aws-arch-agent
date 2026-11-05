@@ -285,6 +285,7 @@ CF_RESOURCES_2 = {
     "RedshiftDefault": _r("AWS::Redshift::Cluster", NodeType="ra3.xlplus"),  # encrypted by default
     "RedshiftOff": _r("AWS::Redshift::Cluster", Encrypted=False),
     "RedshiftOn": _r("AWS::Redshift::Cluster", Encrypted=True),
+    "RedshiftRestore": _r("AWS::Redshift::Cluster", Encrypted=False, SnapshotIdentifier="snap"),
     "DocPlain": _r("AWS::DocDB::DBCluster"),
     "DocOk": _r("AWS::DocDB::DBCluster", StorageEncrypted=True),
     "DocSnapshot": _r("AWS::DocDB::DBCluster", SnapshotIdentifier="snap"),  # inherits
@@ -392,6 +393,34 @@ resource "aws_msk_cluster" "plaintext" {
   }
 }
 
+resource "aws_msk_cluster" "var_broker" {
+  cluster_name = "v"
+  encryption_info {
+    encryption_in_transit {
+      client_broker = var.broker
+      in_cluster    = false
+    }
+  }
+}
+
+resource "aws_msk_cluster" "dynamic_transit" {
+  cluster_name = "dt"
+  encryption_info {
+    dynamic "encryption_in_transit" {
+      for_each = var.transit
+      content {
+        client_broker = "PLAINTEXT"
+      }
+    }
+  }
+}
+
+resource "aws_redshift_cluster" "restored" {
+  cluster_identifier  = "r"
+  encrypted           = false
+  snapshot_identifier = "snap"
+}
+
 resource "aws_msk_cluster" "tls" {
   cluster_name = "t"
   encryption_info {
@@ -415,6 +444,7 @@ def test_terraform_encryption_part_2(tmp_path: Path) -> None:
         ("aws_docdb_cluster.plain", "CF-DOCDB-001"),
         ("aws_neptune_cluster.plain", "CF-NEP-001"),
         ("aws_msk_cluster.plaintext", "CF-MSK-001"),
+        ("aws_msk_cluster.var_broker", "CF-MSK-001"),  # in_cluster = false is still known
     }
     attach_fixes(findings, "terraform")
     code = {(f.evidence.split(" ")[0], f.id): f.suggested_code or "" for f in findings}

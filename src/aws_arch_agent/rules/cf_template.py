@@ -182,7 +182,7 @@ CHECK_PROPERTIES: dict[str, frozenset[str]] = {
         "CF-EC-002": {"TransitEncryptionEnabled"},
         "CF-OS-001": {"EncryptionAtRestOptions"},
         "CF-OS-002": {"NodeToNodeEncryptionOptions"},
-        "CF-RS-001": {"Encrypted"},
+        "CF-RS-001": {"Encrypted", "SnapshotIdentifier"},
         "CF-DOCDB-001": {"StorageEncrypted", "SnapshotIdentifier"},
         "CF-NEP-001": {"StorageEncrypted", "SnapshotIdentifier", "SourceDBClusterIdentifier"},
         "CF-MSK-001": {"EncryptionInfo"},
@@ -481,7 +481,8 @@ def _encryption_findings(res: Resource, template_path: Path) -> List[Finding]:
                     failed.append((fid, ""))
     elif ctype == "redshift_cluster":
         encrypted = props.get("Encrypted")
-        if encrypted is not None and _flag(encrypted) is False:  # unset: encrypted by default
+        restored = props.get("SnapshotIdentifier") is not None  # inherits the snapshot's setting
+        if not restored and encrypted is not None and _flag(encrypted) is False:  # unset: encrypted
             failed.append(("CF-RS-001", ""))
     elif ctype in ("docdb_cluster", "neptune_cluster"):
         # A cluster restored from a snapshot or another cluster inherits its encryption.

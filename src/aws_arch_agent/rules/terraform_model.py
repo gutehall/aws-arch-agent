@@ -512,6 +512,7 @@ def _opensearch_domain(body: dict) -> dict:
 def _redshift_cluster(body: dict) -> dict:
     props: dict = {}
     _set(props, "Encrypted", _v(body, "encrypted"))
+    _set(props, "SnapshotIdentifier", _ref(body, "snapshot_identifier"))
     return props
 
 
@@ -525,13 +526,16 @@ def _storage_encrypted_cluster(body: dict) -> dict:
 
 
 def _msk_cluster(body: dict) -> dict:
-    transit = _first_block(_first_block(body, "encryption_info"), "encryption_in_transit")
+    info = _first_block(body, "encryption_info")
+    if "encryption_in_transit" in _dynamic_names(info):
+        return {"EncryptionInfo": UNRESOLVED}
+    transit = _first_block(info, "encryption_in_transit")
     if not transit:
         return {}
-    return {"EncryptionInfo": {"EncryptionInTransit": {
-        "ClientBroker": _v(transit, "client_broker"),
-        "InCluster": _v(transit, "in_cluster"),
-    }}}
+    # Each field on its own: an unknown client_broker must not hide in_cluster = false.
+    fields = {"ClientBroker": _v(transit, "client_broker"), "InCluster": _v(transit, "in_cluster")}
+    known = {k: v for k, v in fields.items() if v is not None and v is not UNRESOLVED}
+    return {"EncryptionInfo": {"EncryptionInTransit": known}}
 
 
 def _elasticache_replication_group(body: dict) -> dict:
