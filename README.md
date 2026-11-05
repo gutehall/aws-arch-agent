@@ -4,7 +4,7 @@ Local-first AWS architecture review for infrastructure code. It scans **CDK** (T
 
 No AWS credentials. No cloud calls. LLM output is optional.
 
-> Early-stage: 171 static rules are implemented and tested. Expect some false positives and negatives, and API changes.
+> Early-stage: 172 static rules are implemented and tested. Expect some false positives and negatives, and API changes.
 
 ## Install
 
@@ -34,7 +34,7 @@ Each finding has a severity, a pillar, a file and line, evidence, a recommendati
 
 | Pillar | Rules | Examples |
 |--------|------:|----------|
-| **Security** | 67 | Missing encryption, public access, hardcoded secrets, no MFA |
+| **Security** | 68 | Missing encryption, public access, hardcoded secrets, no MFA |
 | **Reliability** | 31 | Missing DLQs, no backups, single-AZ, no health checks |
 | **Operational Excellence** | 24 | No logging, alarms, or tracing |
 | **Performance Efficiency** | 19 | No caching, oversized instances, no Graviton |
