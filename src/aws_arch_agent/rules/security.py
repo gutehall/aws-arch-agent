@@ -22,6 +22,7 @@ from aws_arch_agent.rules.security_compute import CodePipelineEncryption
 from aws_arch_agent.rules.security_compute import CodeBuildPrivilegedMode
 from aws_arch_agent.rules.security_compute import EcsTaskRunAsRoot
 from aws_arch_agent.rules.security_compute import Ec2Imdsv2NotRequired
+from aws_arch_agent.rules.security_compute import LambdaDeprecatedRuntime
 from aws_arch_agent.rules.security_iam import IamAdministratorAccess
 from aws_arch_agent.rules.security_iam import IamWildcardAction
 from aws_arch_agent.rules.security_iam import IamWildcardResource
@@ -93,6 +94,7 @@ __all__ = [
     "EcsReadonlyRootFs",
     "EcsTaskRunAsRoot",
     "Ec2Imdsv2NotRequired",
+    "LambdaDeprecatedRuntime",
     "EfsEncryptionMissing",
     "ElastiCacheEncryption",
     "FsxEncryption",

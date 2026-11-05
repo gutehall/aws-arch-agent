@@ -1,7 +1,9 @@
 from __future__ import annotations
+import re
 from pathlib import Path
 from typing import List
 from aws_arch_agent.models import Finding
+from aws_arch_agent.rules import lambda_runtimes
 from aws_arch_agent.rules.base import Rule, cdk_bool_prop, code_glob
 from aws_arch_agent.rules.scope import findings_for_unmatched
 from aws_arch_agent.tools.rg import rg
@@ -350,6 +352,43 @@ class EcsTaskRunAsRoot(Rule):
                 evidence=txt,
                 recommendation="Run ECS containers as non-root user. Set runAsNonRoot: true and specify user in container definition.",
             ))
+        return out
+
+
+class LambdaDeprecatedRuntime(Rule):
+    id = "SEC-068"
+    title = "Lambda function uses a deprecated runtime"
+    category = "Security"
+    severity = "High"
+
+    def run(self, repo_path: Path, language: str = "typescript") -> List[Finding]:
+        out: List[Finding] = []
+        for f, ln, txt in rg(repo_path, r"\bRuntime\.([A-Z][A-Z0-9_]*)\b", glob=code_glob(language)):
+            for constant in re.findall(r"\bRuntime\.([A-Z][A-Z0-9_]*)\b", txt):
+                runtime = lambda_runtimes.cdk_runtime_id(constant)
+                found = lambda_runtimes.status(runtime) if runtime else None
+                if runtime is None or found is None:
+                    continue
+                state, when = found
+                target = lambda_runtimes.replacement(runtime)
+                move = f" Move to {target}." if target else ""
+                out.append(Finding(
+                    id=self.id,
+                    title=self.title if state == "deprecated"
+                    else "Lambda function runtime is deprecated within 6 months",
+                    severity="High" if state == "deprecated" else "Low",
+                    category=self.category,
+                    file=f,
+                    line=ln,
+                    evidence=txt,
+                    recommendation=(
+                        f"Runtime.{constant} ({runtime}) "
+                        + ("was deprecated" if state == "deprecated" else "is deprecated")
+                        + f" on {when.isoformat()}. Deprecated runtimes get no security patches, "
+                        "and AWS then blocks creating and updating functions on them "
+                        f"(Security Hub Lambda.2).{move}"
+                    ),
+                ))
         return out
 
 

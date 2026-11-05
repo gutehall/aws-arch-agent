@@ -645,6 +645,8 @@ def _lambda(body: dict) -> dict:
     if tracing:
         props["TracingConfig"] = {"Mode": _v(tracing, "mode")}
     _set(props, "Architectures", _v(body, "architectures"))
+    _set(props, "Runtime", _v(body, "runtime"))
+    _set(props, "PackageType", _v(body, "package_type"))
     return props
 
 
