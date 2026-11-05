@@ -55,12 +55,14 @@ def is_admin_policy_arn(value: Any) -> bool:
     """True when a managed policy ARN, literal or inside an intrinsic, is AdministratorAccess.
 
     A Terraform template string ("arn:${data.aws_partition.current.partition}:...") is a
-    str subclass and is read as text; only the partition may vary.
+    str subclass and is read as text; only the partition may vary. An intrinsic with a
+    Fn::If is not guessed: the admin ARN may be only one branch.
     """
     if isinstance(value, str):
         return bool(_ADMIN_ARN.match(value))
     if isinstance(value, dict):
-        return bool(_ADMIN_ARN_IN_TEXT.search(json.dumps(value, default=str)))
+        text = json.dumps(value, default=str)
+        return '"Fn::If"' not in text and bool(_ADMIN_ARN_IN_TEXT.search(text))
     return False
 
 

@@ -60,6 +60,8 @@ TF_TYPE_TO_CANONICAL: dict[str, str] = {
     "aws_iam_group_policy_attachment": "iam_policy",
     "aws_iam_policy_attachment": "iam_policy",
     "aws_iam_role_policy_attachments_exclusive": "iam_policy",
+    "aws_iam_user_policy_attachments_exclusive": "iam_policy",
+    "aws_iam_group_policy_attachments_exclusive": "iam_policy",
     "aws_iam_role": "iam_role",
     "aws_iam_user": "iam_user",
     "aws_iam_group": "iam_group",
@@ -547,7 +549,7 @@ def _iam_role(body: dict) -> dict:
 
 def _policy_attachment(body: dict) -> dict:
     """aws_iam_*_policy_attachment: the attached ARN as a one-item ManagedPolicyArns."""
-    arns = body.get("policy_arns")  # aws_iam_role_policy_attachments_exclusive
+    arns = body.get("policy_arns")  # aws_iam_*_policy_attachments_exclusive
     if arns is None and body.get("policy_arn") is not None:
         arns = [body.get("policy_arn")]
     props: dict = {}
@@ -715,6 +717,8 @@ _ADAPTERS: dict[str, Callable[[dict], dict]] = {
     "aws_iam_group_policy_attachment": _policy_attachment,
     "aws_iam_policy_attachment": _policy_attachment,
     "aws_iam_role_policy_attachments_exclusive": _policy_attachment,
+    "aws_iam_user_policy_attachments_exclusive": _policy_attachment,
+    "aws_iam_group_policy_attachments_exclusive": _policy_attachment,
 }
 
 

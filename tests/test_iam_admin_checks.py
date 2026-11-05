@@ -48,6 +48,7 @@ def _allow(action, resource="*") -> dict:
         ({"Fn::Join": ["", ["arn:", {"Ref": "AWS::Partition"},
                             ":iam::aws:policy/AdministratorAccess-AWSElasticBeanstalk"]]}, False),
         ({"Ref": "PolicyArn"}, False),
+        ({"Fn::If": ["IsDev", CDK_ADMIN, {"Ref": "AWS::NoValue"}]}, False),  # not guessed
         (None, False),
     ],
 )
@@ -208,6 +209,16 @@ resource "aws_iam_role_policy_attachments_exclusive" "exclusive" {
   policy_arns = ["arn:aws:iam::aws:policy/AdministratorAccess"]
 }
 
+resource "aws_iam_user_policy_attachments_exclusive" "user_exclusive" {
+  user_name   = "ci"
+  policy_arns = ["arn:aws:iam::aws:policy/AdministratorAccess"]
+}
+
+resource "aws_iam_group_policy_attachments_exclusive" "group_exclusive" {
+  group_name  = "admins"
+  policy_arns = ["arn:aws:iam::aws:policy/AdministratorAccess"]
+}
+
 resource "aws_iam_role_policy_attachment" "readonly" {
   role       = "app"
   policy_arn = data.aws_iam_policy.readonly.arn
@@ -240,6 +251,8 @@ def test_terraform_admin_forms(tmp_path: Path) -> None:
         "aws_iam_group_policy_attachment.group": "CF-IAM-008",
         "aws_iam_policy_attachment.shared": "CF-IAM-008",
         "aws_iam_role_policy_attachments_exclusive.exclusive": "CF-IAM-008",
+        "aws_iam_user_policy_attachments_exclusive.user_exclusive": "CF-IAM-008",
+        "aws_iam_group_policy_attachments_exclusive.group_exclusive": "CF-IAM-008",
     }
 
 
@@ -273,6 +286,8 @@ def test_terraform_fix_matches_the_resource_shape(tmp_path: Path) -> None:
     assert "drop AdministratorAccess from managed_policy_arns" in by_name["aws_iam_role.managed"]
     assert "policy_arns = [aws_iam_policy.exclusive.arn]" in by_name[
         "aws_iam_role_policy_attachments_exclusive.exclusive"]
+    assert 'resource "aws_iam_group_policy_attachments_exclusive" "group_exclusive"' in by_name[
+        "aws_iam_group_policy_attachments_exclusive.group_exclusive"]
     assert all("In CDK" not in f.recommendation for f in findings)
 
 

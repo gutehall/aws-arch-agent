@@ -602,15 +602,17 @@ for _attachment in (
     "aws_iam_group_policy_attachment", "aws_iam_policy_attachment",
 ):
     _TERRAFORM[f"CF-IAM-008:{_attachment}"] = _TF_IAM_ATTACHMENT
-_TERRAFORM["CF-IAM-008:aws_iam_role_policy_attachments_exclusive"] = _TF_IAM_DOCUMENT + """
+_TF_IAM_EXCLUSIVE = _TF_IAM_DOCUMENT + """
 resource "aws_iam_policy" "$tf_name" {
   policy = data.aws_iam_policy_document.$tf_name.json
 }
 
-resource "aws_iam_role_policy_attachments_exclusive" "$tf_name" {
+resource "$tf_type" "$tf_name" {
   # keep the other arguments as they are
   policy_arns = [aws_iam_policy.$tf_name.arn] # instead of AdministratorAccess
 }"""
+for _principal in ("role", "user", "group"):
+    _TERRAFORM[f"CF-IAM-008:aws_iam_{_principal}_policy_attachments_exclusive"] = _TF_IAM_EXCLUSIVE
 
 # Role trust policies (CF-IAM-004..007).
 def _cf_trust(statement: str) -> str:
