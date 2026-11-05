@@ -134,6 +134,7 @@ _PER_RESOURCE_TYPES = frozenset({
     "cloudwatch_log_group", "sqs_queue", "api_gateway_stage", "apigatewayv2_stage",
     "autoscaling_group", "ecs_service", "eks_cluster",
     "iam_policy", "iam_role", "iam_user", "iam_group",
+    "resource_policy", "ecr_repository", "lambda_permission",
 })
 
 
@@ -158,6 +159,10 @@ CHECK_PROPERTIES: dict[str, frozenset[str]] = {
         "CF-CT-002": {"IsMultiRegionTrail"},
         "CF-CT-003": {"KmsKeyId"},
         "CF-KMS-001": {"KeyPolicy"},
+        "CF-RP-001": {
+            "PolicyDocument", "RepositoryPolicyText",
+            "Principal", "SourceArn", "SourceAccount", "PrincipalOrgID", "FunctionUrlAuthType",
+        },
         "CF-LAM-001": {"DeadLetterConfig"},
         "CF-LAM-002": {"TracingConfig"},
         "CF-PERF-001": {"Architectures"},
@@ -234,6 +239,66 @@ def _imds_finding(res: Resource, template_path: Path, options: Any, defers: bool
         ),
     )
 _IAM_TYPES = frozenset({"iam_policy", "iam_role", "iam_user", "iam_group"})
+
+_RP_RECOMMENDATION = (
+    "Name the accounts, roles or services that need access, or add a condition such as "
+    "aws:SourceArn, aws:SourceAccount, aws:PrincipalOrgID or aws:SourceVpce."
+)
+
+
+def _public_policy_finding(res: Resource, template_path: Path) -> Finding | None:
+    """CF-RP-001 for a queue, topic, bucket or ECR repository policy, or CF-KMS-001 for a key
+    policy, when an Allow statement is open to Principal "*" with no limiting condition."""
+    key = {"ecr_repository": "RepositoryPolicyText", "kms_key": "KeyPolicy"}.get(
+        res.type or "", "PolicyDocument")
+    doc = iam_policy.as_document(res.properties.get(key))
+    actions = iam_policy.public_actions(doc) if doc is not None else None
+    if actions is None:
+        return None
+    shown = ", ".join(actions[:5]) + (" ..." if len(actions) > 5 else "")
+    allowed = f"Allowed to anyone: {shown}. " if shown else ""
+    kms = res.type == "kms_key"
+    return Finding(
+        id="CF-KMS-001" if kms else "CF-RP-001",
+        title="KMS key policy allows any principal" if kms else "Resource policy allows any principal",
+        severity="High",
+        category="Security",
+        file=res.file or str(template_path),
+        line=res.line,
+        evidence=f"{res.name} ({res.source_type})",
+        recommendation=(
+            f"{allowed}A statement allows Principal '*' with no condition that limits the "
+            f"caller, so anyone can use this resource. {_RP_RECOMMENDATION}"
+            + (" In CDK: grant to a specific principal with key.grantDecrypt(role)." if kms else "")
+        ),
+    )
+
+
+def _public_lambda_permission(res: Resource, template_path: Path) -> Finding | None:
+    """CF-RP-001 for AWS::Lambda::Permission with Principal "*" and no source condition.
+
+    A function URL permission with FunctionUrlAuthType AWS_IAM still needs IAM auth.
+    """
+    props = res.properties
+    if props.get("Principal") != "*" or props.get("FunctionUrlAuthType") == "AWS_IAM":
+        return None
+    if any(props.get(k) is not None for k in ("SourceArn", "SourceAccount", "PrincipalOrgID")):
+        return None
+    return Finding(
+        id="CF-RP-001",
+        title="Lambda permission allows any principal",
+        severity="High",
+        category="Security",
+        file=res.file or str(template_path),
+        line=res.line,
+        evidence=f"{res.name} ({res.source_type})",
+        recommendation=(
+            "Principal '*' with no SourceArn, SourceAccount or PrincipalOrgID lets anyone "
+            "invoke the function. Set SourceArn to the calling resource (an API, bucket or "
+            "rule), or name the principal. In CDK: fn.grantInvoke with a specific principal, "
+            "or addPermission with sourceArn."
+        ),
+    )
 
 _IAM_CDK_HINT = (
     " In CDK: use grant methods such as bucket.grantRead(role), or a PolicyStatement "
@@ -882,24 +947,15 @@ def run_resource_checks(
                 if ctype == "iam_role":
                     findings.extend(_trust_findings(res, template_path))
 
-                # --- KMS Key policy ---
-                if ctype == "kms_key":
-                    policy = props.get("KeyPolicy")
-                    if isinstance(policy, dict):
-                        policy_str = json.dumps(policy)
-                    else:
-                        policy_str = str(policy) if policy else ""
-                    if policy_str and ("*" in policy_str or '"AWS":"*"' in policy_str):
-                        findings.append(Finding(
-                            id="CF-KMS-001",
-                            title="KMS key policy may allow wildcard principal",
-                            severity="High",
-                            category="Security",
-                            file=res.file or str(template_path),
-                            line=res.line,
-                            evidence=f"{logical_id} ({rtype})",
-                            recommendation="Restrict KMS key policy to specific principals. Avoid Principal '*' or AWS:*.",
-                        ))
+                # --- Resource policies open to any principal (and KMS key policies) ---
+                if ctype in ("resource_policy", "ecr_repository", "kms_key"):
+                    public = _public_policy_finding(res, template_path)
+                    if public is not None:
+                        findings.append(public)
+                if ctype == "lambda_permission":
+                    public = _public_lambda_permission(res, template_path)
+                    if public is not None:
+                        findings.append(public)
 
                 # --- Lambda ---
                 if ctype == "lambda_function":

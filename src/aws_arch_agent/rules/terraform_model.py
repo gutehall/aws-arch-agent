@@ -63,6 +63,12 @@ TF_TYPE_TO_CANONICAL: dict[str, str] = {
     "aws_iam_user_policy_attachments_exclusive": "iam_policy",
     "aws_iam_group_policy_attachments_exclusive": "iam_policy",
     "aws_iam_role": "iam_role",
+    # Resource policies (CF-RP-001). aws_s3_bucket_policy is also merged into its bucket.
+    "aws_sqs_queue_policy": "resource_policy",
+    "aws_sns_topic_policy": "resource_policy",
+    "aws_s3_bucket_policy": "resource_policy",
+    "aws_ecr_repository_policy": "resource_policy",
+    "aws_lambda_permission": "lambda_permission",
     "aws_iam_user": "iam_user",
     "aws_iam_group": "iam_group",
 }
@@ -516,10 +522,8 @@ def _cloudtrail(body: dict) -> dict:
 
 def _kms_key(body: dict) -> dict:
     props: dict = {}
-    policy = _ref(body, "policy")
-    if isinstance(policy, _JsonEncode) and _UNRESOLVED_REF.search(policy):
-        policy = UNRESOLVED
-    _set(props, "KeyPolicy", policy)
+    # Raw value: resolve_policy_document reads it field by field in _resolve_iam.
+    _set(props, "KeyPolicy", _ref(body, "policy"))
     return props
 
 
@@ -544,6 +548,23 @@ def _iam_role(body: dict) -> dict:
     # Raw value: resolve_policy_document turns it into a document in _resolve_iam.
     _set(props, "AssumeRolePolicyDocument", body.get("assume_role_policy"))
     _set(props, "ManagedPolicyArns", body.get("managed_policy_arns"))
+    return props
+
+
+def _resource_policy(body: dict) -> dict:
+    """Raw `policy` value, resolved into a document in _resolve_iam."""
+    props: dict = {}
+    _set(props, "PolicyDocument", body.get("policy"))
+    return props
+
+
+def _lambda_permission(body: dict) -> dict:
+    props: dict = {}
+    _set(props, "Principal", _v(body, "principal"))
+    _set(props, "SourceArn", _ref(body, "source_arn"))
+    _set(props, "SourceAccount", _ref(body, "source_account"))
+    _set(props, "PrincipalOrgID", _ref(body, "principal_org_id"))
+    _set(props, "FunctionUrlAuthType", _v(body, "function_url_auth_type"))
     return props
 
 
@@ -712,6 +733,11 @@ _ADAPTERS: dict[str, Callable[[dict], dict]] = {
     "aws_iam_user_policy": _iam_policy,
     "aws_iam_group_policy": _iam_policy,
     "aws_iam_role": _iam_role,
+    "aws_sqs_queue_policy": _resource_policy,
+    "aws_sns_topic_policy": _resource_policy,
+    "aws_s3_bucket_policy": _resource_policy,
+    "aws_ecr_repository_policy": _resource_policy,
+    "aws_lambda_permission": _lambda_permission,
     "aws_iam_role_policy_attachment": _policy_attachment,
     "aws_iam_user_policy_attachment": _policy_attachment,
     "aws_iam_group_policy_attachment": _policy_attachment,
@@ -870,7 +896,14 @@ def _resolve_iam(resources: dict[str, Resource], blocks: list[_Block]) -> None:
                 res.unresolved = res.unresolved | {"BucketPolicy"}
             else:
                 res.properties["BucketPolicy"] = doc
-        if res.type not in ("iam_policy", "iam_role"):
+        if res.type == "kms_key" and isinstance(res.properties.get("KeyPolicy"), str):
+            doc = resolve_policy_document(res.properties["KeyPolicy"], data_docs)
+            if doc is None:  # unreadable: the key policy is unknown, not absent
+                res.properties.pop("KeyPolicy")
+                res.unresolved = res.unresolved | {"KeyPolicy"}
+            else:
+                res.properties["KeyPolicy"] = doc
+        if res.type not in ("iam_policy", "iam_role", "resource_policy"):
             continue
         if "AssumeRolePolicyDocument" in res.properties:
             trust = resolve_policy_document(res.properties["AssumeRolePolicyDocument"], data_docs)
