@@ -167,7 +167,7 @@ CHECK_PROPERTIES: dict[str, frozenset[str]] = {
         "CF-CT-003": {"KmsKeyId"},
         "CF-KMS-001": {"KeyPolicy"},
         "CF-SNS-001": {"KmsMasterKeyId"},
-        "CF-EBS-001": {"Encrypted", "SnapshotId", "BlockDeviceMappings", "LaunchTemplateData"},
+        "CF-EBS-001": {"Encrypted", "SnapshotId", "BlockDeviceMappings"},
         "CF-EFS-001": {"Encrypted"},
         "CF-KIN-001": {"StreamEncryption"},
         "CF-EC-001": {"AtRestEncryptionEnabled", "Engine"},

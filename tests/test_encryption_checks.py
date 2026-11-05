@@ -161,6 +161,12 @@ resource "aws_launch_template" "unknown_device" {
       encrypted = var.encrypted
     }
   }
+  block_device_mappings {
+    device_name = var.data_device
+    ebs {
+      volume_size = 100
+    }
+  }
 }
 
 resource "aws_efs_file_system" "plain" {}
@@ -213,6 +219,7 @@ def test_terraform_encryption(tmp_path: Path) -> None:
         ("aws_sns_topic.plain", "CF-SNS-001"),
         ("aws_ebs_volume.plain", "CF-EBS-001"),
         ("aws_launch_template.plain", "CF-EBS-001"),
+        ("aws_launch_template.unknown_device", "CF-EBS-001"),
         ("aws_efs_file_system.plain", "CF-EFS-001"),
         ("aws_kinesis_stream.plain", "CF-KIN-001"),
         ("aws_elasticache_replication_group.redis", "CF-EC-001"),
@@ -220,12 +227,15 @@ def test_terraform_encryption(tmp_path: Path) -> None:
     }
 
 
-def test_terraform_unknown_block_device_keeps_other_launch_template_checks(tmp_path: Path) -> None:
+def test_terraform_unknown_block_device_does_not_hide_the_others(tmp_path: Path) -> None:
+    """A device with unknown encryption is skipped; the plain one beside it is still reported."""
     (tmp_path / "main.tf").write_text(ENCRYPTION_TF, encoding="utf-8")
     resources = {r.name: r for r in resources_from_terraform(tmp_path)}
     unknown = resources["aws_launch_template.unknown_device"]
-    assert "BlockDeviceMappings" in unknown.unresolved
+    assert "BlockDeviceMappings" not in unknown.unresolved
     assert "LaunchTemplateData" in unknown.properties
+    finding = next(f for f in _tf(tmp_path) if f.evidence.startswith("aws_launch_template.unknown_device"))
+    assert finding.recommendation.startswith("Unencrypted: a block device.")
 
 
 def test_terraform_plan_fills_encrypted_from_var(tmp_path: Path) -> None:

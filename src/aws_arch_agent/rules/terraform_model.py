@@ -447,13 +447,19 @@ def _launch_template(body: dict) -> dict:
     _set(data, "MetadataOptions", _metadata_options(body))
     props: dict = {"LaunchTemplateData": data}
     # Its own property, so an unknown block device does not hide the Spot or IMDS checks.
-    devices = [
-        {"DeviceName": _ref(item, "device_name"), "Ebs": {
-            "Encrypted": _v(ebs, "encrypted"), "SnapshotId": _ref(ebs, "snapshot_id"),
-        }}
-        for item in _blocks(body, "block_device_mappings")
-        for ebs in _blocks(item, "ebs")
-    ]
+    # A device whose encryption or snapshot is unknown is left out on its own, so it does
+    # not hide the other devices either.
+    devices = []
+    for item in _blocks(body, "block_device_mappings"):
+        name = item.get("device_name")
+        for ebs in _blocks(item, "ebs"):
+            encrypted, snapshot = _v(ebs, "encrypted"), _ref(ebs, "snapshot_id")
+            if encrypted is UNRESOLVED or _contains_unresolved(snapshot):
+                continue
+            devices.append({
+                "DeviceName": name if type(name) is str else None,
+                "Ebs": {"Encrypted": encrypted, "SnapshotId": snapshot},
+            })
     if devices:
         props["BlockDeviceMappings"] = devices
     return props
