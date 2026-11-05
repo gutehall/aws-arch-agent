@@ -768,6 +768,17 @@ _TERRAFORM.update({
 }""",
 })
 
+# Lambda runtime (CF-LAM-003): the recommendation names the runtime to move to.
+_CLOUDFORMATION["CF-LAM-003"] = """$name:
+  Type: AWS::Lambda::Function
+  Properties:
+    # keep the other properties as they are
+    Runtime: python3.14  # the runtime named in the recommendation"""
+_TERRAFORM["CF-LAM-003"] = """resource "aws_lambda_function" "$tf_name" {
+  # keep the other arguments as they are
+  runtime = "python3.14" # the runtime named in the recommendation
+}"""
+
 # Role trust policies (CF-IAM-004..007).
 def _cf_trust(statement: str) -> str:
     return """$name:

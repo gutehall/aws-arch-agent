@@ -5,7 +5,7 @@ from pathlib import Path
 from typing import List, Any
 
 from aws_arch_agent.models import Finding, Severity
-from aws_arch_agent.rules import iam_policy
+from aws_arch_agent.rules import iam_policy, lambda_runtimes
 from aws_arch_agent.rules.resource_model import Resource, resources_from_cf_template
 from aws_arch_agent.tools.cdk_synth import list_cf_templates
 from aws_arch_agent.tools.cfn_yaml import parse_template_text
@@ -22,6 +22,7 @@ CF_COVERS_STATIC: dict[str, tuple[str, ...]] = {
     "CF-FL-001": ("OPS-002",),
     "CF-EC2-001": ("SEC-066",),
     "CF-SNS-001": ("SEC-014",),
+    "CF-LAM-003": ("SEC-068",),
     "CF-EFS-001": ("SEC-037",),
     "CF-KIN-001": ("SEC-038",),
     "CF-EC-001": ("SEC-025",),
@@ -178,6 +179,7 @@ CHECK_PROPERTIES: dict[str, frozenset[str]] = {
         },
         "CF-LAM-001": {"DeadLetterConfig"},
         "CF-LAM-002": {"TracingConfig"},
+        "CF-LAM-003": {"Runtime", "PackageType"},
         "CF-PERF-001": {"Architectures"},
         "CF-DDB-001": {"PointInTimeRecoverySpecification"},
         "CF-DDB-002": {"SSESpecification"},
@@ -252,6 +254,41 @@ def _imds_finding(res: Resource, template_path: Path, options: Any, defers: bool
         ),
     )
 _IAM_TYPES = frozenset({"iam_policy", "iam_role", "iam_user", "iam_group"})
+
+def _runtime_finding(res: Resource, template_path: Path) -> Finding | None:
+    """CF-LAM-003: a deprecated (High) or soon-deprecated (Low) Lambda runtime.
+
+    Container-image functions have no runtime. Only a literal identifier is judged.
+    """
+    runtime = res.properties.get("Runtime")
+    if res.properties.get("PackageType") == "Image" or type(runtime) is not str:
+        return None
+    found = lambda_runtimes.status(runtime)
+    if found is None:
+        return None
+    state, when = found
+    target = lambda_runtimes.replacement(runtime)
+    move = f" Move to {target}." if target else ""
+    if state == "deprecated":
+        severity: Severity = "High"
+        title = "Lambda function uses a deprecated runtime"
+        detail = (f"{runtime} was deprecated on {when.isoformat()}: it gets no security patches, "
+                  "and AWS then blocks creating and updating functions on it (Security Hub Lambda.2).")
+    else:
+        severity = "Low"
+        title = "Lambda function runtime is deprecated within 6 months"
+        detail = f"{runtime} is deprecated on {when.isoformat()}. Plan the upgrade now."
+    return Finding(
+        id="CF-LAM-003",
+        title=title,
+        severity=severity,
+        category="Security",
+        file=res.file or str(template_path),
+        line=res.line,
+        evidence=f"{res.name} ({res.source_type})",
+        recommendation=f"{detail}{move} In CDK: set runtime to the current lambda.Runtime constant.",
+    )
+
 
 def _flag(value: Any) -> bool | None:
     """A literal boolean setting: True, False when unset or false, None when unknown."""
@@ -1101,6 +1138,9 @@ def run_resource_checks(
 
                 # --- Lambda ---
                 if ctype == "lambda_function":
+                    deprecated = _runtime_finding(res, template_path)
+                    if deprecated is not None:
+                        findings.append(deprecated)
                     if not props.get("DeadLetterConfig", {}).get("TargetArn"):
                         findings.append(Finding(
                             id="CF-LAM-001",

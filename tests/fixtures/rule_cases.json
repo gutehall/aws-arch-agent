@@ -727,5 +727,11 @@
     "negative_ts": "iam.ManagedPolicy.fromAwsManagedPolicyName('ReadOnlyAccess')",
     "positive_py": "iam.ManagedPolicy.from_aws_managed_policy_name('AdministratorAccess')",
     "positive_ts": "iam.ManagedPolicy.fromAwsManagedPolicyName('AdministratorAccess')"
+  },
+  "SEC-068": {
+    "negative_py": "runtime=_lambda.Runtime.PYTHON_3_14",
+    "negative_ts": "runtime: lambda.Runtime.NODEJS_24_X,",
+    "positive_py": "runtime=_lambda.Runtime.PYTHON_3_8",
+    "positive_ts": "runtime: lambda.Runtime.NODEJS_16_X,"
   }
 }
