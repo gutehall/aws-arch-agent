@@ -695,6 +695,79 @@ _TERRAFORM["CF-RP-001:aws_lambda_permission"] = """resource "aws_lambda_permissi
   source_account = data.aws_caller_identity.current.account_id
 }"""
 
+# Encryption at rest / in transit (DM3-525).
+_CLOUDFORMATION.update({
+    "CF-SNS-001": """$name:
+  Type: AWS::SNS::Topic
+  Properties:
+    KmsMasterKeyId: alias/aws/sns  # or a customer managed key""",
+    "CF-EBS-001": """$name:
+  Type: AWS::EC2::Volume
+  Properties:
+    Encrypted: true
+    KmsKeyId: alias/aws/ebs  # optional: a customer managed key""",
+    "CF-EBS-001:AWS::EC2::LaunchTemplate": """$name:
+  Type: AWS::EC2::LaunchTemplate
+  Properties:
+    LaunchTemplateData:
+      BlockDeviceMappings:
+        - DeviceName: /dev/xvda
+          Ebs:
+            Encrypted: true""",
+    "CF-EFS-001": """$name:
+  Type: AWS::EFS::FileSystem
+  Properties:
+    Encrypted: true  # set at creation; it cannot be changed later""",
+    "CF-KIN-001": """$name:
+  Type: AWS::Kinesis::Stream
+  Properties:
+    StreamEncryption:
+      EncryptionType: KMS
+      KeyId: alias/aws/kinesis  # or a customer managed key""",
+    "CF-EC-001": """$name:
+  Type: AWS::ElastiCache::ReplicationGroup
+  Properties:
+    AtRestEncryptionEnabled: true  # set at creation; it cannot be changed later""",
+    "CF-EC-002": """$name:
+  Type: AWS::ElastiCache::ReplicationGroup
+  Properties:
+    TransitEncryptionEnabled: true""",
+})
+_TERRAFORM.update({
+    "CF-SNS-001": """resource "aws_sns_topic" "$tf_name" {
+  kms_master_key_id = "alias/aws/sns" # or a customer managed key
+}""",
+    "CF-EBS-001": """resource "aws_ebs_volume" "$tf_name" {
+  # keep the other arguments as they are
+  encrypted = true
+}""",
+    "CF-EBS-001:aws_launch_template": """resource "aws_launch_template" "$tf_name" {
+  # keep the other arguments as they are
+  block_device_mappings {
+    device_name = "/dev/xvda"
+    ebs {
+      encrypted = true
+    }
+  }
+}""",
+    "CF-EFS-001": """resource "aws_efs_file_system" "$tf_name" {
+  encrypted = true # set at creation; it cannot be changed later
+}""",
+    "CF-KIN-001": """resource "aws_kinesis_stream" "$tf_name" {
+  # keep the other arguments as they are
+  encryption_type = "KMS"
+  kms_key_id      = "alias/aws/kinesis" # or a customer managed key
+}""",
+    "CF-EC-001": """resource "aws_elasticache_replication_group" "$tf_name" {
+  # keep the other arguments as they are
+  at_rest_encryption_enabled = true # set at creation; it cannot be changed later
+}""",
+    "CF-EC-002": """resource "aws_elasticache_replication_group" "$tf_name" {
+  # keep the other arguments as they are
+  transit_encryption_enabled = true
+}""",
+})
+
 # Role trust policies (CF-IAM-004..007).
 def _cf_trust(statement: str) -> str:
     return """$name:

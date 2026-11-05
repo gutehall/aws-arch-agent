@@ -40,6 +40,10 @@ TF_TYPE_TO_CANONICAL: dict[str, str] = {
     "aws_dynamodb_table": "dynamodb_table",
     "aws_cloudwatch_log_group": "cloudwatch_log_group",
     "aws_sqs_queue": "sqs_queue",
+    "aws_sns_topic": "sns_topic",
+    "aws_ebs_volume": "ebs_volume",
+    "aws_efs_file_system": "efs_file_system",
+    "aws_kinesis_stream": "kinesis_stream",
     "aws_api_gateway_rest_api": "api_gateway_rest_api",
     "aws_api_gateway_stage": "api_gateway_stage",
     "aws_apigatewayv2_api": "apigatewayv2_api",
@@ -441,7 +445,61 @@ def _launch_template(body: dict) -> dict:
     if market:
         data["InstanceMarketOptions"] = {"MarketType": _v(market, "market_type")}
     _set(data, "MetadataOptions", _metadata_options(body))
-    return {"LaunchTemplateData": data}
+    props: dict = {"LaunchTemplateData": data}
+    # Its own property, so an unknown block device does not hide the Spot or IMDS checks.
+    # A device whose encryption or snapshot is unknown is left out on its own, so it does
+    # not hide the other devices either.
+    devices = []
+    for item in _blocks(body, "block_device_mappings"):
+        name = item.get("device_name")
+        for ebs in _blocks(item, "ebs"):
+            encrypted, snapshot = _v(ebs, "encrypted"), _ref(ebs, "snapshot_id")
+            if encrypted is UNRESOLVED or _contains_unresolved(snapshot):
+                continue
+            devices.append({
+                "DeviceName": name if type(name) is str else None,
+                "Ebs": {"Encrypted": encrypted, "SnapshotId": snapshot},
+            })
+    if devices:
+        props["BlockDeviceMappings"] = devices
+    return props
+
+
+def _sns_topic(body: dict) -> dict:
+    props: dict = {}
+    _set(props, "KmsMasterKeyId", _ref(body, "kms_master_key_id"))
+    return props
+
+
+def _ebs_volume(body: dict) -> dict:
+    props: dict = {}
+    _set(props, "Encrypted", _v(body, "encrypted"))
+    _set(props, "SnapshotId", _ref(body, "snapshot_id"))
+    return props
+
+
+def _efs_file_system(body: dict) -> dict:
+    props: dict = {}
+    _set(props, "Encrypted", _v(body, "encrypted"))
+    return props
+
+
+def _kinesis_stream(body: dict) -> dict:
+    """encryption_type defaults to NONE; KMS maps to StreamEncryption."""
+    encryption = _v(body, "encryption_type", "NONE")
+    if encryption is UNRESOLVED:
+        return {"StreamEncryption": UNRESOLVED}
+    if type(encryption) is str and encryption.upper() == "KMS":
+        return {"StreamEncryption": {"EncryptionType": "KMS", "KeyId": _ref(body, "kms_key_id")}}
+    return {}
+
+
+def _elasticache_replication_group(body: dict) -> dict:
+    props: dict = {}
+    _set(props, "AtRestEncryptionEnabled", _v(body, "at_rest_encryption_enabled"))
+    _set(props, "TransitEncryptionEnabled", _v(body, "transit_encryption_enabled"))
+    _set(props, "Engine", _v(body, "engine"))
+    return props
 
 
 def _ingress_entries(rule: dict) -> Any:
@@ -733,6 +791,11 @@ _ADAPTERS: dict[str, Callable[[dict], dict]] = {
     "aws_iam_user_policy": _iam_policy,
     "aws_iam_group_policy": _iam_policy,
     "aws_iam_role": _iam_role,
+    "aws_sns_topic": _sns_topic,
+    "aws_ebs_volume": _ebs_volume,
+    "aws_efs_file_system": _efs_file_system,
+    "aws_kinesis_stream": _kinesis_stream,
+    "aws_elasticache_replication_group": _elasticache_replication_group,
     "aws_sqs_queue_policy": _resource_policy,
     "aws_sns_topic_policy": _resource_policy,
     "aws_s3_bucket_policy": _resource_policy,
@@ -766,6 +829,7 @@ _BLOCK_PROPERTY: dict[str, str] = {
     "mixed_instances_policy": "MixedInstancesPolicy",
     "capacity_provider_strategy": "CapacityProviderStrategy",
     "inline_policy": "Policies",
+    "block_device_mappings": "BlockDeviceMappings",
 }
 
 
