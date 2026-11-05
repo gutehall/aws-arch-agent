@@ -44,6 +44,11 @@ TF_TYPE_TO_CANONICAL: dict[str, str] = {
     "aws_ebs_volume": "ebs_volume",
     "aws_efs_file_system": "efs_file_system",
     "aws_kinesis_stream": "kinesis_stream",
+    "aws_opensearch_domain": "opensearch_domain",
+    "aws_redshift_cluster": "redshift_cluster",
+    "aws_docdb_cluster": "docdb_cluster",
+    "aws_neptune_cluster": "neptune_cluster",
+    "aws_msk_cluster": "msk_cluster",
     "aws_api_gateway_rest_api": "api_gateway_rest_api",
     "aws_api_gateway_stage": "api_gateway_stage",
     "aws_apigatewayv2_api": "apigatewayv2_api",
@@ -494,6 +499,41 @@ def _kinesis_stream(body: dict) -> dict:
     return {}
 
 
+def _opensearch_domain(body: dict) -> dict:
+    props: dict = {}
+    for block, key in (("encrypt_at_rest", "EncryptionAtRestOptions"),
+                       ("node_to_node_encryption", "NodeToNodeEncryptionOptions")):
+        found = _first_block(body, block)
+        if found:
+            props[key] = {"Enabled": _v(found, "enabled")}
+    return props
+
+
+def _redshift_cluster(body: dict) -> dict:
+    props: dict = {}
+    _set(props, "Encrypted", _v(body, "encrypted"))
+    return props
+
+
+def _storage_encrypted_cluster(body: dict) -> dict:
+    """aws_docdb_cluster / aws_neptune_cluster."""
+    props: dict = {}
+    _set(props, "StorageEncrypted", _v(body, "storage_encrypted"))
+    _set(props, "SnapshotIdentifier", _ref(body, "snapshot_identifier"))
+    _set(props, "SourceDBClusterIdentifier", _ref(body, "replication_source_identifier"))
+    return props
+
+
+def _msk_cluster(body: dict) -> dict:
+    transit = _first_block(_first_block(body, "encryption_info"), "encryption_in_transit")
+    if not transit:
+        return {}
+    return {"EncryptionInfo": {"EncryptionInTransit": {
+        "ClientBroker": _v(transit, "client_broker"),
+        "InCluster": _v(transit, "in_cluster"),
+    }}}
+
+
 def _elasticache_replication_group(body: dict) -> dict:
     props: dict = {}
     _set(props, "AtRestEncryptionEnabled", _v(body, "at_rest_encryption_enabled"))
@@ -798,6 +838,11 @@ _ADAPTERS: dict[str, Callable[[dict], dict]] = {
     "aws_efs_file_system": _efs_file_system,
     "aws_kinesis_stream": _kinesis_stream,
     "aws_elasticache_replication_group": _elasticache_replication_group,
+    "aws_opensearch_domain": _opensearch_domain,
+    "aws_redshift_cluster": _redshift_cluster,
+    "aws_docdb_cluster": _storage_encrypted_cluster,
+    "aws_neptune_cluster": _storage_encrypted_cluster,
+    "aws_msk_cluster": _msk_cluster,
     "aws_sqs_queue_policy": _resource_policy,
     "aws_sns_topic_policy": _resource_policy,
     "aws_s3_bucket_policy": _resource_policy,
@@ -832,6 +877,9 @@ _BLOCK_PROPERTY: dict[str, str] = {
     "capacity_provider_strategy": "CapacityProviderStrategy",
     "inline_policy": "Policies",
     "block_device_mappings": "BlockDeviceMappings",
+    "encrypt_at_rest": "EncryptionAtRestOptions",
+    "node_to_node_encryption": "NodeToNodeEncryptionOptions",
+    "encryption_info": "EncryptionInfo",
 }
 
 
