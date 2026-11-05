@@ -21,6 +21,11 @@ CF_COVERS_STATIC: dict[str, tuple[str, ...]] = {
     "CF-VPC-001": ("SEC-022",),
     "CF-FL-001": ("OPS-002",),
     "CF-EC2-001": ("SEC-066",),
+    "CF-SNS-001": ("SEC-014",),
+    "CF-EFS-001": ("SEC-037",),
+    "CF-KIN-001": ("SEC-038",),
+    "CF-EC-001": ("SEC-025",),
+    "CF-EC-002": ("SEC-025",),
     "CF-IAM-001": ("SEC-001",),
     "CF-IAM-002": ("SEC-001",),
     "CF-IAM-003": ("SEC-002",),
@@ -135,6 +140,8 @@ _PER_RESOURCE_TYPES = frozenset({
     "autoscaling_group", "ecs_service", "eks_cluster",
     "iam_policy", "iam_role", "iam_user", "iam_group",
     "resource_policy", "ecr_repository", "lambda_permission",
+    "sns_topic", "ebs_volume", "efs_file_system", "kinesis_stream",
+    "elasticache_replication_group", "launch_template",
 })
 
 
@@ -159,6 +166,12 @@ CHECK_PROPERTIES: dict[str, frozenset[str]] = {
         "CF-CT-002": {"IsMultiRegionTrail"},
         "CF-CT-003": {"KmsKeyId"},
         "CF-KMS-001": {"KeyPolicy"},
+        "CF-SNS-001": {"KmsMasterKeyId"},
+        "CF-EBS-001": {"Encrypted", "SnapshotId", "BlockDeviceMappings", "LaunchTemplateData"},
+        "CF-EFS-001": {"Encrypted"},
+        "CF-KIN-001": {"StreamEncryption"},
+        "CF-EC-001": {"AtRestEncryptionEnabled", "Engine"},
+        "CF-EC-002": {"TransitEncryptionEnabled"},
         "CF-RP-001": {
             "PolicyDocument", "RepositoryPolicyText",
             "Principal", "SourceArn", "SourceAccount", "PrincipalOrgID", "FunctionUrlAuthType",
@@ -239,6 +252,132 @@ def _imds_finding(res: Resource, template_path: Path, options: Any, defers: bool
         ),
     )
 _IAM_TYPES = frozenset({"iam_policy", "iam_role", "iam_user", "iam_group"})
+
+def _flag(value: Any) -> bool | None:
+    """A literal boolean setting: True, False when unset or false, None when unknown."""
+    if value is None or value is False:
+        return False
+    if value is True:
+        return True
+    if type(value) is str and value.lower() in ("true", "false"):
+        return value.lower() == "true"
+    return None  # an intrinsic or a Terraform expression
+
+
+# check id -> (severity, title, recommendation)
+_ENCRYPTION: dict[str, tuple[Severity, str, str]] = {
+    "CF-SNS-001": (
+        "Low",
+        "SNS topic has no KMS server-side encryption",
+        "Set KmsMasterKeyId (alias/aws/sns or a customer managed key). Without it SNS keeps "
+        "messages with its own disk encryption only (Security Hub SNS.1). "
+        "In CDK: pass masterKey to sns.Topic.",
+    ),
+    "CF-EBS-001": (
+        "Medium",
+        "EBS volume is not encrypted",
+        "Set Encrypted: true. The volume is then encrypted only if EBS encryption by default "
+        "is turned on in the account and Region (Security Hub EC2.3, EC2.7). "
+        "In CDK: set encrypted: true on the volume or block device.",
+    ),
+    "CF-EFS-001": (
+        "Medium",
+        "EFS file system is not encrypted at rest",
+        "Set Encrypted: true. Encryption cannot be turned on for an existing file system "
+        "(Security Hub EFS.1). In CDK: efs.FileSystem encrypts by default; do not set encrypted: false.",
+    ),
+    "CF-KIN-001": (
+        "Medium",
+        "Kinesis stream is not encrypted at rest",
+        "Set StreamEncryption with EncryptionType KMS (alias/aws/kinesis or a customer managed "
+        "key) (Security Hub Kinesis.1). In CDK: kinesis.Stream encrypts by default; do not set "
+        "encryption: StreamEncryption.UNENCRYPTED.",
+    ),
+    "CF-EC-001": (
+        "Medium",
+        "ElastiCache replication group is not encrypted at rest",
+        "Set AtRestEncryptionEnabled: true. Redis OSS defaults to false (Valkey to true), and "
+        "the setting cannot be changed after the group is created (Security Hub ElastiCache.4).",
+    ),
+    "CF-EC-002": (
+        "Medium",
+        "ElastiCache replication group is not encrypted in transit",
+        "Set TransitEncryptionEnabled: true so clients connect with TLS (Security Hub ElastiCache.5).",
+    ),
+}
+
+
+def _unencrypted_block_devices(mappings: Any) -> list[str] | None:
+    """Device names of launch template EBS mappings without Encrypted, or None when unknown.
+
+    A mapping from a snapshot takes the snapshot's encryption, so it is not judged.
+    """
+    if mappings is None:
+        return []
+    if not isinstance(mappings, list):
+        return None
+    names: list[str] = []
+    for item in mappings:
+        ebs = item.get("Ebs") if isinstance(item, dict) else None
+        if not isinstance(ebs, dict) or ebs.get("SnapshotId") is not None:
+            continue
+        encrypted = _flag(ebs.get("Encrypted"))
+        if encrypted is False:
+            name = item.get("DeviceName")
+            names.append(name if type(name) is str else "a block device")
+    return names
+
+
+def _encryption_findings(res: Resource, template_path: Path) -> List[Finding]:
+    """CF-SNS-001, CF-EBS-001, CF-EFS-001, CF-KIN-001, CF-EC-001/002 for one resource.
+
+    Only literal settings are judged: an intrinsic or variable gives no finding.
+    """
+    props = res.properties
+    ctype = res.type
+    failed: list[tuple[str, str]] = []  # (check id, detail)
+    if ctype == "sns_topic" and not props.get("KmsMasterKeyId"):
+        failed.append(("CF-SNS-001", ""))
+    elif ctype == "ebs_volume" and props.get("SnapshotId") is None:
+        if _flag(props.get("Encrypted")) is False:
+            failed.append(("CF-EBS-001", ""))
+    elif ctype == "launch_template":
+        data = props.get("LaunchTemplateData")
+        mappings = props.get("BlockDeviceMappings")  # Terraform keeps them out of the data
+        if mappings is None and isinstance(data, dict):
+            mappings = data.get("BlockDeviceMappings")
+        devices = _unencrypted_block_devices(mappings)
+        if devices:
+            failed.append(("CF-EBS-001", f"Unencrypted: {', '.join(devices)}. "))
+    elif ctype == "efs_file_system" and _flag(props.get("Encrypted")) is False:
+        failed.append(("CF-EFS-001", ""))
+    elif ctype == "kinesis_stream" and props.get("StreamEncryption") is None:
+        failed.append(("CF-KIN-001", ""))
+    elif ctype == "elasticache_replication_group":
+        at_rest = props.get("AtRestEncryptionEnabled")
+        engine = props.get("Engine", "redis")
+        if at_rest is not None:
+            if _flag(at_rest) is False:
+                failed.append(("CF-EC-001", ""))
+        elif type(engine) is str and engine.lower() != "valkey":  # Valkey encrypts by default
+            failed.append(("CF-EC-001", ""))
+        if _flag(props.get("TransitEncryptionEnabled")) is False:
+            failed.append(("CF-EC-002", ""))
+    out: List[Finding] = []
+    for fid, detail in failed:
+        severity, title, recommendation = _ENCRYPTION[fid]
+        out.append(Finding(
+            id=fid,
+            title=title,
+            severity=severity,
+            category="Security",
+            file=res.file or str(template_path),
+            line=res.line,
+            evidence=f"{res.name} ({res.source_type})",
+            recommendation=detail + recommendation,
+        ))
+    return out
+
 
 _RP_RECOMMENDATION = (
     "Name the accounts, roles or services that need access, or add a condition such as "
@@ -946,6 +1085,9 @@ def run_resource_checks(
                     findings.extend(_iam_findings(res, template_path))
                 if ctype == "iam_role":
                     findings.extend(_trust_findings(res, template_path))
+
+                # --- Encryption at rest / in transit for more data stores ---
+                findings.extend(_encryption_findings(res, template_path))
 
                 # --- Resource policies open to any principal (and KMS key policies) ---
                 if ctype in ("resource_policy", "ecr_repository", "kms_key"):

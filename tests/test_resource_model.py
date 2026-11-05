@@ -22,7 +22,7 @@ def test_cf_template_parses_into_resources(tmp_path: Path) -> None:
     doc = {
         "Resources": {
             "Data": {"Type": "AWS::S3::Bucket", "Properties": {"VersioningConfiguration": {}}},
-            "Topic": {"Type": "AWS::SNS::Topic"},
+            "Topic": {"Type": "AWS::SNS::Subscription"},
         }
     }
     resources = resources_from_cf_template(path, doc)
