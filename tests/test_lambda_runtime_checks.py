@@ -68,6 +68,7 @@ def test_replacement_is_the_current_version_of_the_language(runtime: str, curren
      ("JAVA_11", "java11"), ("DOTNET_CORE_3_1", "dotnetcore3.1"), ("DOTNET_8", "dotnet8"),
      ("RUBY_3_2", "ruby3.2"), ("GO_1_X", "go1.x"), ("PROVIDED_AL2", "provided.al2"),
      ("PROVIDED_AL2023", "provided.al2023"), ("PROVIDED", "provided"), ("NODEJS_LATEST", None),
+     ("NODEJS_4_3_EDGE", "nodejs4.3-edge"), ("NODEJS_8_10", "nodejs8.10"),
      ("FROM_IMAGE", None)],
 )
 def test_cdk_runtime_id(constant: str, runtime: str | None) -> None:
@@ -90,6 +91,7 @@ def _cf(tmp_path: Path, resources: dict) -> list[Finding]:
 def test_cloudformation_runtimes(tmp_path: Path) -> None:
     findings = _cf(tmp_path, {
         "Old": _fn(Runtime="python3.10"),
+        "OldNode": _fn(Runtime="nodejs16.x"),
         "Soon": _fn(Runtime="dotnet8"),
         "Current": _fn(Runtime="python3.14"),
         "Image": _fn(PackageType="Image", Runtime="python3.10"),
@@ -97,12 +99,15 @@ def test_cloudformation_runtimes(tmp_path: Path) -> None:
         "NoRuntime": _fn(),
     })
     got = {f.evidence.split(" ")[0]: f.severity for f in findings}
-    assert got == {"Old": "High", "Soon": "Low"}
+    assert got == {"Old": "High", "OldNode": "High", "Soon": "Low"}
     old = next(f for f in findings if f.evidence.startswith("Old"))
     assert "python3.10 was deprecated on 2026-10-31" in old.recommendation
     assert "Move to python3.14." in old.recommendation
     attach_fixes(findings, "cloudformation")
-    assert "Runtime: python3.14" in (old.suggested_code or "")
+    code = {f.evidence.split(" ")[0]: f.suggested_code or "" for f in findings}
+    assert "Runtime: python3.14" in code["Old"]
+    assert "Runtime: nodejs24.x" in code["OldNode"]  # the fix follows the language
+    assert "Runtime: dotnet10" in code["Soon"]
 
 
 def test_static_rule_is_dropped_when_cf_reports_it() -> None:
@@ -162,6 +167,7 @@ def test_terraform_runtimes(tmp_path: Path) -> None:
     attach_fixes(findings, "terraform")
     old = next(f for f in findings if f.evidence.startswith("aws_lambda_function.old"))
     assert 'resource "aws_lambda_function" "old"' in (old.suggested_code or "")
+    assert 'runtime = "nodejs24.x"' in (old.suggested_code or "")
     assert "Move to nodejs24.x." in old.recommendation and "In CDK" not in old.recommendation
 
 

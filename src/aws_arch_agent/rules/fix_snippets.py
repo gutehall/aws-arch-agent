@@ -18,6 +18,8 @@ FixLanguage = Literal["cloudformation", "terraform"]
 # "Logical (AWS::Type)" or "aws_type.name (aws_type)"; template-level evidence ends "(aws_type.name)".
 _RESOURCE_EVIDENCE = re.compile(r"^(?P<name>\S+) \((?P<type>[^)]+)\)$")
 _ANCHOR_EVIDENCE = re.compile(r"\((?P<address>aws_[a-z0-9_]+\.[A-Za-z0-9_-]+)\)$")
+# CF-LAM-003 names the runtime to move to in its recommendation ("Move to nodejs24.x.").
+_MOVE_TO = re.compile(r"Move to (?P<runtime>[a-z0-9.-]+)\.")
 _CDK_HINT = re.compile(r"\s*In CDK:[^.]*(?:\.[A-Za-z_][^.]*)*\.?\s*$")
 
 # $name: CloudFormation logical id; $tf_type / $tf_name: Terraform resource address parts.
@@ -773,10 +775,10 @@ _CLOUDFORMATION["CF-LAM-003"] = """$name:
   Type: AWS::Lambda::Function
   Properties:
     # keep the other properties as they are
-    Runtime: python3.14  # the runtime named in the recommendation"""
+    Runtime: $runtime  # the current runtime of the same language"""
 _TERRAFORM["CF-LAM-003"] = """resource "aws_lambda_function" "$tf_name" {
   # keep the other arguments as they are
-  runtime = "python3.14" # the runtime named in the recommendation
+  runtime = "$runtime" # the current runtime of the same language
 }"""
 
 # Role trust policies (CF-IAM-004..007).
@@ -913,6 +915,8 @@ def attach_fixes(findings: list[Finding], language: FixLanguage) -> list[Finding
         # A "<id>:<source type>" entry fits a resource shape the plain entry does not.
         snippet = table.get(f"{finding.id}:{names['type']}") or table.get(finding.id)
         if snippet is not None:
+            move = _MOVE_TO.search(finding.recommendation or "")
+            names["runtime"] = move.group("runtime") if move else "<a supported runtime>"
             finding.suggested_code = Template(snippet).substitute(names)
         finding.recommendation = strip_cdk_hint(finding.recommendation)
     return findings

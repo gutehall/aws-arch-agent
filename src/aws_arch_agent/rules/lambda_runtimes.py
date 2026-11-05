@@ -109,6 +109,7 @@ def cdk_runtime_id(constant: str) -> str | None:
     """CDK Runtime constant name -> runtime identifier ("NODEJS_18_X" -> "nodejs18.x")."""
     patterns = (
         (r"NODEJS_(\d+)_X", lambda m: f"nodejs{m[1]}.x"),
+        (r"NODEJS_(\d+)_(\d+)_EDGE", lambda m: f"nodejs{m[1]}.{m[2]}-edge"),
         (r"NODEJS_(\d+)_(\d+)", lambda m: f"nodejs{m[1]}.{m[2]}"),
         (r"PYTHON_(\d+)_(\d+)", lambda m: f"python{m[1]}.{m[2]}"),
         (r"JAVA_8_CORRETTO", lambda m: "java8.al2"),
