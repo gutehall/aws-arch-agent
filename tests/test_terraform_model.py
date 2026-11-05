@@ -244,7 +244,7 @@ def test_bad_file_is_a_warning(tmp_path: Path) -> None:
 
 def test_unknown_and_non_aws_types_have_no_canonical_type(tmp_path: Path) -> None:
     (tmp_path / "main.tf").write_text(
-        'resource "aws_sns_topic" "t" {}\nresource "random_id" "r" {\n  byte_length = 4\n}\n',
+        'resource "aws_sns_topic_subscription" "t" {}\nresource "random_id" "r" {\n  byte_length = 4\n}\n',
         encoding="utf-8",
     )
     resources = resources_from_terraform(tmp_path)
