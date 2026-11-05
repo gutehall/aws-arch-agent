@@ -11,6 +11,12 @@ _WILDCARD_ACTION = (
     r"""(?i)(?:\bactions?\b|["']Action["'])\s*[:=]\s*\[?\s*["'](?:\*|[A-Za-z0-9-]+:\*)["']"""
 )
 _WILDCARD_RESOURCE = r"""(?i)(?:\bresources?\b|["']Resources?["'])\s*[:=]\s*\[?\s*["']\*["']"""
+# ManagedPolicy.fromAwsManagedPolicyName with AdministratorAccess (Python: from_aws_managed_policy_name),
+# or its ARN in fromManagedPolicyArn. AdministratorAccess-Amplify and similar are scoped.
+_ADMIN_POLICY = (
+    r"""(?:fromAwsManagedPolicyName|from_aws_managed_policy_name)\(\s*["']AdministratorAccess["']\s*\)"""
+    r"""|:iam::aws:policy/AdministratorAccess["'`]"""
+)
 
 
 class IamWildcardAction(Rule):
@@ -58,6 +64,46 @@ class IamWildcardResource(Rule):
                 recommendation="Restrict IAM resources to specific ARNs. Avoid '*' for resources where possible.",
             ))
         return out
+
+
+
+class IamAdministratorAccess(Rule):
+    id = "SEC-067"
+    title = "IAM principal has full admin access"
+    category = "Security"
+    severity = "High"
+
+    def run(self, repo_path: Path, language: str = "typescript") -> List[Finding]:
+        suggested = (
+            "role.addToPolicy(new iam.PolicyStatement({\n"
+            "  actions: ['s3:GetObject'],\n"
+            "  resources: [bucket.arnForObjects('*')],\n"
+            "}));  // or bucket.grantRead(role)"
+            if language == "typescript"
+            else "role.add_to_policy(iam.PolicyStatement(\n"
+            "    actions=['s3:GetObject'],\n"
+            "    resources=[bucket.arn_for_objects('*')],\n"
+            "))  # or bucket.grant_read(role)"
+        )
+        return [
+            Finding(
+                id=self.id,
+                title=self.title,
+                severity="High",
+                category=self.category,
+                file=f,
+                line=ln,
+                evidence=txt,
+                recommendation=(
+                    "AdministratorAccess lets this principal do anything in the account, so a "
+                    "leaked credential or a bug has no limit (Security Hub IAM.1). Grant only the "
+                    "actions and resources it needs, for example with grant methods such as "
+                    "bucket.grantRead(role)."
+                ),
+                suggested_code=suggested,
+            )
+            for f, ln, txt in rg(repo_path, _ADMIN_POLICY, glob=code_glob(language))
+        ]
 
 
 

@@ -15,15 +15,17 @@ from aws_arch_agent.tools.paths import to_repo_relative
 SENSITIVE_PORTS = {22, 3389, 3306, 5432, 27017}
 
 # Static rule dropped when the CF rule already reported that control.
-CF_COVERS_STATIC: dict[str, str] = {
-    "CF-S3-001": "SEC-005",
-    "CF-S3-002": "SEC-006",
-    "CF-VPC-001": "SEC-022",
-    "CF-FL-001": "OPS-002",
-    "CF-EC2-001": "SEC-066",
-    "CF-IAM-001": "SEC-001",
-    "CF-IAM-002": "SEC-001",
-    "CF-IAM-003": "SEC-002",
+CF_COVERS_STATIC: dict[str, tuple[str, ...]] = {
+    "CF-S3-001": ("SEC-005",),
+    "CF-S3-002": ("SEC-006",),
+    "CF-VPC-001": ("SEC-022",),
+    "CF-FL-001": ("OPS-002",),
+    "CF-EC2-001": ("SEC-066",),
+    "CF-IAM-001": ("SEC-001",),
+    "CF-IAM-002": ("SEC-001",),
+    "CF-IAM-003": ("SEC-002",),
+    # Action "*" on Resource "*" is reported once, as admin, so it covers both wildcards.
+    "CF-IAM-008": ("SEC-067", "SEC-001", "SEC-002"),
 }
 
 
@@ -176,6 +178,8 @@ CHECK_PROPERTIES: dict[str, frozenset[str]] = {
         "CF-IAM-001": {"PolicyDocument", "Policies"},
         "CF-IAM-002": {"PolicyDocument", "Policies"},
         "CF-IAM-003": {"PolicyDocument", "Policies"},
+        # Known admin access stays admin whatever else is unknown, so nothing drops it.
+        "CF-IAM-008": set(),
         "CF-IAM-004": {"AssumeRolePolicyDocument"},
         "CF-IAM-005": {"AssumeRolePolicyDocument"},
         "CF-IAM-006": {"AssumeRolePolicyDocument"},
@@ -238,6 +242,15 @@ _IAM_CDK_HINT = (
 
 _IAM_FINDINGS: dict[str, tuple[str, Severity, str, str]] = {
     # kind -> (id, severity, title, recommendation)
+    "admin": (
+        "CF-IAM-008",
+        "High",
+        "IAM principal has full admin access",
+        "AdministratorAccess, or Allow with Action '*' on Resource '*', lets this principal "
+        "do anything in the account, so a leaked credential or a bug has no limit "
+        "(Security Hub IAM.1). Grant only the actions and resources it needs. "
+        "IAM Access Analyzer can generate a policy from CloudTrail activity.",
+    ),
     "all_actions": (
         "CF-IAM-001",
         "High",
@@ -339,15 +352,25 @@ def _trust_findings(res: Resource, template_path: Path) -> List[Finding]:
     return out
 
 
+def _managed_admin(props: dict) -> bool:
+    """ManagedPolicyArns (roles, users, groups; Terraform attachments) holds AdministratorAccess."""
+    arns = props.get("ManagedPolicyArns")
+    return isinstance(arns, list) and any(iam_policy.is_admin_policy_arn(a) for a in arns)
+
+
 def _iam_findings(res: Resource, template_path: Path) -> List[Finding]:
     """One finding per kind per resource, naming the actions and the inline policy."""
     by_kind: dict[str, tuple[set[str], list[str]]] = {}
+    if _managed_admin(res.properties):
+        by_kind["admin"] = ({"*"}, [f" managed policy {iam_policy.ADMIN_POLICY}"])
     for label, doc in _policy_documents(res.properties):
         for broad in iam_policy.broadest(doc):
             actions, labels = by_kind.setdefault(broad.kind, (set(), []))
             actions.update(broad.actions)
             if label and label not in labels:
                 labels.append(label)
+    if "admin" in by_kind:  # Action "*" is reported once per resource, as admin
+        by_kind.pop("all_actions", None)
     out: List[Finding] = []
     for kind, (actions, labels) in by_kind.items():
         fid, severity, title, recommendation = _IAM_FINDINGS[kind]
@@ -1305,7 +1328,7 @@ def _store_repo_relative(findings: List[Finding], repo_path: Path | None) -> Non
 
 def drop_static_covered_by_cf(findings: List[Finding]) -> List[Finding]:
     """Drop a static finding when a CloudFormation finding already covers that control."""
-    covered = {CF_COVERS_STATIC[f.id] for f in findings if f.id in CF_COVERS_STATIC}
+    covered = {sid for f in findings for sid in CF_COVERS_STATIC.get(f.id, ())}
     if not covered:
         return findings
     return [f for f in findings if f.id not in covered]
