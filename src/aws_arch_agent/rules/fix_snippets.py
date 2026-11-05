@@ -614,6 +614,68 @@ resource "$tf_type" "$tf_name" {
 for _principal in ("role", "user", "group"):
     _TERRAFORM[f"CF-IAM-008:aws_iam_{_principal}_policy_attachments_exclusive"] = _TF_IAM_EXCLUSIVE
 
+# Resource policies open to any principal (CF-RP-001).
+_CLOUDFORMATION["CF-RP-001"] = """$name:
+  Type: $type
+  Properties:
+    # keep the other properties as they are
+    PolicyDocument:
+      Version: "2012-10-17"
+      Statement:
+        - Effect: Allow
+          Principal:
+            Service: events.amazonaws.com  # or AWS: the account or role that needs it
+          Action: sqs:SendMessage  # the actions it needs
+          Resource: !GetAtt MyQueue.Arn  # the resource this policy is on
+          Condition:
+            ArnEquals:
+              aws:SourceArn: !GetAtt MyRule.Arn  # only for this caller"""
+_CLOUDFORMATION["CF-RP-001:AWS::ECR::Repository"] = """$name:
+  Type: AWS::ECR::Repository
+  Properties:
+    RepositoryPolicyText:
+      Version: "2012-10-17"
+      Statement:
+        - Effect: Allow
+          Principal:
+            AWS: arn:aws:iam::111122223333:root  # the account that pulls
+          Action:
+            - ecr:BatchGetImage
+            - ecr:GetDownloadUrlForLayer"""
+_CLOUDFORMATION["CF-RP-001:AWS::Lambda::Permission"] = """$name:
+  Type: AWS::Lambda::Permission
+  Properties:
+    # keep the other properties as they are
+    Principal: s3.amazonaws.com  # the service or account that invokes
+    SourceArn: !GetAtt MyBucket.Arn  # only this caller
+    SourceAccount: !Ref AWS::AccountId"""
+_TERRAFORM["CF-RP-001"] = """data "aws_iam_policy_document" "$tf_name" {
+  statement {
+    actions   = ["sqs:SendMessage"]          # the actions it needs
+    resources = [aws_sqs_queue.my_queue.arn] # the resource this policy is on
+    principals {
+      type        = "Service"
+      identifiers = ["events.amazonaws.com"] # or "AWS" with the account or role
+    }
+    condition {
+      test     = "ArnEquals"
+      variable = "aws:SourceArn"
+      values   = [aws_cloudwatch_event_rule.my_rule.arn] # only for this caller
+    }
+  }
+}
+
+resource "$tf_type" "$tf_name" {
+  # keep the other arguments as they are
+  policy = data.aws_iam_policy_document.$tf_name.json
+}"""
+_TERRAFORM["CF-RP-001:aws_lambda_permission"] = """resource "aws_lambda_permission" "$tf_name" {
+  # keep the other arguments as they are
+  principal      = "s3.amazonaws.com"            # the service or account that invokes
+  source_arn     = aws_s3_bucket.my_bucket.arn   # only this caller
+  source_account = data.aws_caller_identity.current.account_id
+}"""
+
 # Role trust policies (CF-IAM-004..007).
 def _cf_trust(statement: str) -> str:
     return """$name:

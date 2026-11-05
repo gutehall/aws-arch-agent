@@ -50,6 +50,12 @@ CF_TYPE_TO_CANONICAL: dict[str, str] = {
     "AWS::IAM::Role": "iam_role",
     "AWS::IAM::User": "iam_user",
     "AWS::IAM::Group": "iam_group",
+    # Resource policies: a PolicyDocument on its own resource, read by CF-RP-001.
+    "AWS::SQS::QueuePolicy": "resource_policy",
+    "AWS::SNS::TopicPolicy": "resource_policy",
+    "AWS::S3::BucketPolicy": "resource_policy",
+    "AWS::ECR::Repository": "ecr_repository",
+    "AWS::Lambda::Permission": "lambda_permission",
 }
 
 CANONICAL_TYPES: frozenset[str] = frozenset(CF_TYPE_TO_CANONICAL.values())

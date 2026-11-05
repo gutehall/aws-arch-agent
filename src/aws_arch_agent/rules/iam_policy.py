@@ -269,3 +269,40 @@ def trust_problems(doc: dict) -> list[Trust]:
             found.setdefault("github_oidc", set()).add(GITHUB_OIDC)
     order = ("anyone", "github_oidc", "cross_account", "service")
     return [Trust(kind, tuple(sorted(found[kind]))) for kind in order if found.get(kind)]
+
+
+# --- resource policies -----------------------------------------------------------
+
+# Condition keys that limit who can use a resource policy statement with Principal "*".
+# aws:SourceIp is not one: the resource stays open to anyone on that network.
+_RESOURCE_LIMIT_KEYS = _CALLER_KEYS | frozenset({
+    "aws:sourcevpce", "aws:sourcevpc", "kms:calleraccount", "kms:viaservice",
+})
+
+
+def _is_anyone(principal: Any) -> bool:
+    """Principal "*", {"AWS": "*"}, or {"*": ["*"]} (data "aws_iam_policy_document" type "*")."""
+    if principal == "*":
+        return True
+    return "*" in _principal_values(principal, "AWS") + _principal_values(principal, "*")
+
+
+def public_actions(doc: dict) -> list[str] | None:
+    """Actions any principal is allowed, or None when no statement is open to everyone.
+
+    An Allow with Principal "*" counts unless a condition limits the caller (aws:SourceArn,
+    aws:SourceAccount, aws:PrincipalOrgID, aws:SourceVpce, ...). Unknown conditions and
+    NotPrincipal statements give nothing. Actions the scan cannot read are left out of the
+    list; the statement is still open.
+    """
+    found: set[str] | None = None
+    for stmt in statements(doc):
+        if stmt.get("Effect") != "Allow" or "NotPrincipal" in stmt:
+            continue
+        if not _is_anyone(stmt.get("Principal")):
+            continue
+        conditions = _conditions(stmt)
+        if conditions is None or set(conditions) & _RESOURCE_LIMIT_KEYS:
+            continue
+        found = (found or set()) | set(literals(stmt.get("Action")))
+    return None if found is None else sorted(found)

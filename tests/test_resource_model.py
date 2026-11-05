@@ -49,7 +49,7 @@ def test_canonical_types_cover_every_checked_type() -> None:
     assert _PER_RESOURCE_TYPES <= CANONICAL_TYPES
     # One canonical type per CloudFormation type, except where several CloudFormation
     # types carry the same thing on purpose (a policy document).
-    shared = {"iam_policy"}
+    shared = {"iam_policy", "resource_policy"}
     values = [v for v in CF_TYPE_TO_CANONICAL.values() if v not in shared]
     assert len(set(values)) == len(values)
 
