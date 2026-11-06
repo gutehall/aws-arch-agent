@@ -109,7 +109,13 @@ def environments_from(value: Any) -> dict[str, str] | None:
             raise ConfigError(f"environments keys must be path globs or tag:<value>, got {key!r}")
         if env not in ("prod", "staging", "dev"):
             raise ConfigError(f"environments.{key} must be prod, staging or dev, got {env!r}")
-        out[key.strip()] = env
+        match = key.strip()
+        if not match.startswith("tag:"):
+            # Globs match repo-relative paths: ./infra/** and /infra/** mean infra/**.
+            while match.startswith("./"):
+                match = match[2:]
+            match = match.lstrip("/")
+        out[match] = env
     return out
 
 

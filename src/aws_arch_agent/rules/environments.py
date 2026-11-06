@@ -3,20 +3,20 @@
 A stack is one CloudFormation template (cdk synth output included) or one Terraform root
 module. Its environment is, in order:
 
-1. config `environments`: the first key that matches. A key is a glob matched against the
-   stack's repo-relative path and its name (`infra/dev/**`, `*-prod*`), or `tag:<value>`
-   for an Environment tag value. Values are prod, staging or dev.
-2. the stack's Environment tag, when every tagged resource in it agrees on one value.
-3. common words in the path, file or stack name: prod, production, prd; staging, stage,
-   stg, uat; dev, development, test, qa, sandbox, sbx. If words for more than one
-   environment appear, prod wins over staging over dev.
+1. config `environments`: the first key that matches decides. A key is a glob matched
+   against the stack's repo-relative path and its name (`infra/dev/**`, `*-prod*`; `*`
+   stays in one segment, `**` spans them), or `tag:<value>` for an Environment tag value.
+   Values are prod, staging or dev.
+2. otherwise the most-prod of the stack's signals: its Environment tag values, and common
+   words in the path, file or stack name (prod, production, prd, live; staging, stage,
+   stg, uat, preprod; dev, development, test, testing, qa, sandbox, sbx). An Environment
+   tag the scan cannot read, or does not recognise, counts as prod.
 
-Otherwise it is unknown, which is judged as prod: a missed prod finding is worse than an
-extra dev one. Terraform workspaces exist only at run time; match the directory instead.
+With no signal it is unknown, which is judged as prod: a missed prod finding is worse than
+an extra dev one. Terraform workspaces exist only at run time; match the directory instead.
 """
 from __future__ import annotations
 
-import fnmatch
 import re
 from collections.abc import Iterable, Iterator, Mapping
 from contextlib import contextmanager
@@ -95,38 +95,87 @@ def _relative(template_path: Path) -> str:
     return template_path.name
 
 
-def _tag_value(resources: Iterable[Resource]) -> str | None:
-    """The Environment tag every tagged resource in the stack agrees on, if any."""
+_RANK: dict[Environment, int] = {"prod": 0, "staging": 1, "dev": 2}
+
+
+def _most_prod(candidates: Iterable[Environment]) -> Environment | None:
+    found: list[Environment] = list(candidates)
+    if not found:
+        return None
+    return sorted(found, key=lambda env: _RANK[env])[0]
+
+
+def _tag_values(resources: Iterable[Resource]) -> tuple[set[str], bool]:
+    """Literal Environment tag values in the stack, and whether any was unreadable."""
     values: set[str] = set()
+    unreadable = False
     for res in resources:
+        if "Tags" in res.unresolved or res.inherited_tags is None:
+            unreadable = True  # tags from a variable: Environment may be anything
+            continue
         tags = res.properties.get("Tags")
         pairs: dict[Any, Any] = {}
         if isinstance(tags, dict):
+            if tags and all(k == "Ref" or str(k).startswith("Fn::") for k in tags):
+                unreadable = True
+                continue
             pairs = tags
         elif isinstance(tags, list):
             pairs = {t.get("Key"): t.get("Value") for t in tags if isinstance(t, dict)}
         merged = {**(res.inherited_tags or {}), **pairs}
-        value = merged.get("Environment")
-        if isinstance(value, str):
-            values.add(value)
-    return values.pop() if len(values) == 1 else None
+        if "Environment" in merged:
+            value = merged["Environment"]
+            if type(value) is str:
+                values.add(value)
+            else:
+                unreadable = True  # a Ref, Fn::If, var.env: not judged as anything but prod
+    return values, unreadable
+
+
+def _glob(pattern: str) -> re.Pattern[str]:
+    """A path glob where * and ? stay inside one segment and ** spans segments."""
+    out, i = [], 0
+    while i < len(pattern):
+        if pattern.startswith("**/", i):
+            out.append("(?:.*/)?")
+            i += 3
+        elif pattern.startswith("**", i):
+            out.append(".*")
+            i += 2
+        elif pattern[i] == "*":
+            out.append("[^/]*")
+            i += 1
+        elif pattern[i] == "?":
+            out.append("[^/]")
+            i += 1
+        else:
+            out.append(re.escape(pattern[i]))
+            i += 1
+    return re.compile("".join(out) + r"\Z")
 
 
 def resolve(template_path: Path, resources: Iterable[Resource]) -> Judged:
+    """Config wins outright. Otherwise the most-prod signal among tags and names wins,
+    and an Environment tag the scan cannot read counts as prod."""
     resources = list(resources)
     path, name = _relative(template_path), _stack_name(template_path)
-    tag = _tag_value(resources)
+    values, unreadable = _tag_values(resources)
     for key, env in _config.items():
         if key.startswith("tag:"):
-            if tag is not None and tag == key[4:]:
+            if key[4:] in values:
                 return env
-        elif fnmatch.fnmatchcase(path, key) or fnmatch.fnmatchcase(name, key):
+        elif _glob(key).match(path) or _glob(key).match(name):
             return env
-    if tag is not None:
-        by_tag = from_words(tag)
-        if by_tag is not None:
-            return by_tag
-    return from_words(path, name) or "unknown"
+    signals: list[Environment] = []
+    if unreadable:
+        signals.append("prod")
+    for value in values:
+        by_tag = from_words(value)
+        signals.append(by_tag if by_tag is not None else "prod")  # an unrecognised value: prod
+    by_name = from_words(path, name)
+    if by_name is not None:
+        signals.append(by_name)
+    return _most_prod(signals) or "unknown"
 
 
 def apply(findings: List[Finding], template_path: Path, resources: Iterable[Resource]) -> List[Finding]:

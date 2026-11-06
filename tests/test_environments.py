@@ -94,8 +94,10 @@ def test_resolve_order(tmp_path: Path) -> None:
         assert resolve(template, tagged) == "dev"   # the tag, with no word in the path
         assert resolve(template, [_res()]) == "unknown"
         mixed = [_res({"Environment": "prod"}), _res({"Environment": "dev"})]
-        assert resolve(template, mixed) == "unknown"  # tags disagree: not used
-        assert resolve(tmp_path / "prod.json", [_res(inherited={"Environment": "dev"})]) == "dev"
+        assert resolve(template, mixed) == "prod"  # tags disagree: the most-prod one wins
+        # Inherited (default_tags) count; a prod file name still wins over a dev tag.
+        assert resolve(template, [_res(inherited={"Environment": "dev"})]) == "dev"
+        assert resolve(tmp_path / "prod.json", [_res(inherited={"Environment": "dev"})]) == "prod"
     with use_environments({"tag:Development": "staging", "*.json": "prod"}, tmp_path):
         assert resolve(template, tagged) == "staging"  # first matching key wins
         assert resolve(template, [_res()]) == "prod"
@@ -153,3 +155,46 @@ def test_terraform_module_directory(tmp_path: Path) -> None:
     envs = {(f["file"].split("/")[1], f["id"]): f["environment"] for f in findings}
     assert envs[("staging", "CF-PAR-001")] == "staging"  # variable findings too
     assert {e for (d, _), e in envs.items() if d == "prod"} == {"prod"}
+
+
+def test_signals_never_make_a_prod_stack_dev(tmp_path: Path) -> None:
+    """Unknown must lean prod: any prod signal, or a tag the scan cannot read, wins."""
+    dev_dir = tmp_path / "infra" / "dev"
+    template = dev_dir / "stack.json"
+    with use_environments(None, tmp_path):
+        assert resolve(template, [_res()]) == "dev"
+        assert resolve(template, [_res({"Environment": "production"})]) == "prod"  # prod tag in a dev dir
+        assert resolve(tmp_path / "prod" / "s.json", [_res({"Environment": "dev"})]) == "prod"  # stray dev tag
+        ref = [_res([{"Key": "Environment", "Value": {"Ref": "Env"}}]), _res({"Environment": "dev"})]
+        assert resolve(template, ref) == "prod"  # one tag from a parameter: could be prod
+        if_tags = [_res({"Fn::If": ["IsProd", {"Environment": "prod"}, {"Environment": "dev"}]})]
+        assert resolve(template, if_tags) == "prod"
+        unresolved = Resource(type="s3_bucket", name="aws_s3_bucket.b", properties={}, source_type="aws_s3_bucket",
+                              unresolved=frozenset({"Tags"}))
+        assert resolve(template, [unresolved]) == "prod"  # tags = var.tags
+        assert resolve(template, [_res({"Environment": "blue"})]) == "prod"  # unrecognised value
+
+
+def test_globs_stay_inside_a_segment(tmp_path: Path) -> None:
+    nested = tmp_path / "infra" / "prod" / "team" / "app.template.json"
+    with use_environments({"infra/*": "dev"}, tmp_path):
+        assert resolve(nested, []) == "prod"  # infra/* does not reach infra/prod/team/...
+    with use_environments({"infra/**": "dev"}, tmp_path):
+        assert resolve(nested, []) == "dev"
+    with use_environments({"**/team/*.template.json": "staging"}, tmp_path):
+        assert resolve(nested, []) == "staging"
+
+
+def test_config_globs_are_repo_relative(tmp_path: Path) -> None:
+    (tmp_path / ".aws-arch-agent.yaml").write_text(
+        "environments:\n  './infra/dev/**': dev\n  '/infra/qa/**': staging\n  'tag:Live': prod\n",
+        encoding="utf-8")
+    assert load_config(tmp_path).environments == {"infra/dev/**": "dev", "infra/qa/**": "staging", "tag:Live": "prod"}
+
+
+def test_cdk_source_findings_are_unknown(tmp_path: Path) -> None:
+    (tmp_path / "package.json").write_text("{}", encoding="utf-8")
+    (tmp_path / "lib").mkdir()
+    (tmp_path / "lib" / "stack.ts").write_text('new s3.Bucket(this, "B");', encoding="utf-8")
+    findings = _scan(tmp_path)
+    assert findings and {f["environment"] for f in findings} == {"unknown"}

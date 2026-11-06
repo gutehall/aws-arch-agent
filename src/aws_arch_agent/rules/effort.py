@@ -39,6 +39,10 @@ def effort_of(rule_id: str) -> Effort:
 
 
 def annotate(findings: Iterable[Finding]) -> None:
-    """Set each finding's effort from its rule id. Mutates the findings."""
+    """Set each finding's effort from its rule id, and mark findings with no stack
+    environment as unknown. Mutates the findings."""
     for finding in findings:
         finding.effort = effort_of(finding.id)
+        if finding.environment is None:
+            # Not from a template (CDK source rules): the stack is not known, judged as prod.
+            finding.environment = "unknown"
