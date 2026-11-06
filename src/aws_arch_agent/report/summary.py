@@ -15,8 +15,13 @@ _SEVERITY_RANK = {"High": 0, "Medium": 1, "Low": 2}
 _EFFORT_RANK = {"low": 0, "medium": 1, "high": 2}
 
 
+def _cents(f: Finding) -> int:
+    return round((f.monthly_savings_usd or 0.0) * 100)
+
+
 def _savings(findings: List[Finding]) -> float:
-    return round(sum(f.monthly_savings_usd or 0.0 for f in findings), 2)
+    """Summed in whole cents, so pillar and fix savings add up exactly to the total."""
+    return sum(_cents(f) for f in findings) / 100
 
 
 def _location(f: Finding) -> str | None:
@@ -32,7 +37,8 @@ def _fixes(findings: List[Finding]) -> list[dict[str, Any]]:
     fixes = []
     for rule_id, items in by_rule.items():
         worst = min(items, key=lambda f: _SEVERITY_RANK[f.severity])
-        first = sorted(items, key=lambda f: (_location(f) or "", f.evidence or ""))[0]
+        # Prefer a finding with a file to point at; then the first by location.
+        first = sorted(items, key=lambda f: (f.file is None, _location(f) or "", f.evidence or ""))[0]
         fixes.append({
             "id": rule_id,
             "title": worst.title,

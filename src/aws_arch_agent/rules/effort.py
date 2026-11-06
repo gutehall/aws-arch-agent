@@ -2,8 +2,10 @@
 
 low: one property or attribute, changed in place without replacing the resource or
 breaking callers (versioning, retention, tracing, gp2 -> gp3, NoEcho, a tag).
-high: the fix replaces the resource or changes its design (encrypting an existing
-database or volume, which CloudFormation does by replacement).
+high: the fix replaces the resource, changes its design, or needs work outside the
+template (encrypting an existing database or volume, which CloudFormation does by
+replacement; a private EKS endpoint, which needs a VPN or bastion; non-root containers,
+which need image changes).
 """
 from __future__ import annotations
 

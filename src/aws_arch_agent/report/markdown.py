@@ -80,7 +80,28 @@ def cost_section(ctx: RepoContext) -> List[str]:
     return out
 
 
-def render_markdown(ctx: RepoContext, findings: List[Finding], warnings: List[str] | None = None) -> str:
+def insert_summary(report: str, findings: List[Finding]) -> str:
+    """Put the rule-built summary into a report the LLM polished without it.
+
+    It goes before "## Executive Summary" when that heading survived polishing, otherwise
+    after the first heading, so its counts and savings are never rewritten.
+    """
+    block = "\n".join(markdown_lines(build_summary(findings)))
+    if not block:
+        return report
+    marker = "## Executive Summary"
+    if marker in report:
+        return report.replace(marker, block + "\n" + marker, 1)
+    head, sep, rest = report.partition("\n")
+    return f"{head}\n\n{block}\n{rest}" if sep else f"{report}\n\n{block}"
+
+
+def render_markdown(
+    ctx: RepoContext,
+    findings: List[Finding],
+    warnings: List[str] | None = None,
+    include_summary: bool = True,
+) -> str:
     """Build a full Markdown report (title, repo info, findings by severity, next actions)."""
     groups = _group(findings)
     now = datetime.now().strftime("%Y-%m-%d %H:%M")
@@ -97,7 +118,8 @@ def render_markdown(ctx: RepoContext, findings: List[Finding], warnings: List[st
         lines.append(f"- Prices: {prices}")
     lines.append(f"- Generated: {now}")
     lines.append("")
-    lines.extend(markdown_lines(build_summary(findings)))
+    if include_summary:
+        lines.extend(markdown_lines(build_summary(findings)))
     lines.append("## Executive Summary")
     lines.append("This is an automated first-pass review. Always validate findings manually.")
     lines.append("")

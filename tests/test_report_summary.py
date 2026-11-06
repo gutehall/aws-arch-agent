@@ -130,3 +130,64 @@ def test_scan_summary_matches_its_findings_every_run(tmp_path: Path) -> None:
     gp2 = next(f for f in findings if f["id"] == "CF-EBS-002")
     assert gp2["effort"] == "low"
     assert any(x["id"] == "CF-EBS-002" for x in summary["quick_wins"])
+
+
+def test_fractional_cents_still_add_up() -> None:
+    items = [_f("CF-A", "Low", "Cost Optimization", saving=0.015, evidence="a"),
+             _f("CF-B", "Low", "Reliability", saving=0.015, evidence="b"),
+             _f("CF-C", "Low", "Reliability", saving=1 / 3, evidence="c")]
+    summary = build_summary(items)
+    pillars = sum(round(row["monthly_savings_usd"] * 100) for row in summary["pillars"])
+    assert pillars == round(summary["monthly_savings_usd"] * 100)
+    fixes = sum(round(x["monthly_savings_usd"] * 100) for x in summary["top_fixes"])
+    assert fixes == round(summary["monthly_savings_usd"] * 100)
+
+
+def test_first_location_prefers_a_finding_with_a_file() -> None:
+    items = [_f("CF-A", "Low", "X", file=None, evidence="no file"), _f("CF-A", "Low", "X", file="b.tf")]
+    items[1].line = 3
+    assert build_summary(items)["top_fixes"][0]["first_location"] == "b.tf:3"
+
+
+def test_llm_polish_never_rewrites_the_summary(tmp_path: Path, monkeypatch) -> None:
+    from aws_arch_agent.agent import v1
+
+    seen: list[str] = []
+
+    class FakeLLM:
+        def polish(self, text: str) -> str:
+            seen.append(text)
+            return text.replace("## Executive Summary", "## Executive Summary (polished)")
+
+    monkeypatch.setattr(v1, "LLMClient", FakeLLM)
+    (tmp_path / "stack.json").write_text(json.dumps({"AWSTemplateFormatVersion": "2010-09-09",
+                                                     "Resources": STACK}), encoding="utf-8")
+    report, _ctx, findings, _w = v1.analyze_v1(tmp_path, use_llm=True)
+    assert "## Summary" not in seen[0]  # the LLM never saw it
+    assert report.count("## Summary") == 1
+    assert report.index("## Summary") < report.index("## Executive Summary (polished)")
+    assert f"{len(findings)} findings:" in report
+
+
+def test_effort_is_set_on_terraform_and_v2_paths(tmp_path: Path) -> None:
+    from aws_arch_agent.agent.v1 import analyze_v1
+    from aws_arch_agent.agent.v2_graph import analyze_v2
+
+    tf = tmp_path / "tf"
+    tf.mkdir()
+    (tf / "main.tf").write_text('resource "aws_ebs_volume" "v" {\n  availability_zone = "a"\n'
+                                '  size = 10\n  encrypted = true\n}\n', encoding="utf-8")
+    _r, _c, findings, _w = analyze_v1(tf, use_llm=False)
+    assert next(f for f in findings if f.id == "CF-EBS-002").effort == "low"
+
+    (tmp_path / "templates").mkdir()
+    (tmp_path / "templates" / "s.template.json").write_text(json.dumps({"Resources": STACK}), encoding="utf-8")
+    report, _c, findings, _w = analyze_v2(tmp_path, use_llm=False, templates_path=str(tmp_path / "templates"))
+    assert next(f for f in findings if f.id == "CF-EBS-002").effort == "low"
+    assert "## Summary" in report
+
+
+def test_html_escapes_finding_text() -> None:
+    bad = Finding(id="CF-X", title="<script>x</script>", severity="High", category="Security", recommendation="r")
+    html = render_html(RepoContext(repo_path="/r"), [bad])
+    assert "<script>x</script>" not in html and "&lt;script&gt;" in html
