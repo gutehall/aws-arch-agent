@@ -9,6 +9,7 @@ from aws_arch_agent.models import Finding, Severity
 from aws_arch_agent.rules import (
     environments,
     estimates,
+    generations,
     iam_policy,
     lambda_runtimes,
     nonprod,
@@ -48,6 +49,7 @@ CF_COVERS_STATIC: dict[str, tuple[str, ...]] = {
     "CF-NEP-001": ("SEC-061",),
     "CF-MSK-001": ("SEC-044",),
     "CF-EBS-002": ("COST-008",),
+    "CF-GEN-001": ("SUST-007",),
     "CF-EIP-001": ("COST-012",),
     "CF-SM-001": ("SEC-015",),
     "CF-COG-001": ("SEC-034",),
@@ -176,7 +178,8 @@ _PER_RESOURCE_TYPES = frozenset({
     "elasticache_replication_group", "launch_template",
     "opensearch_domain", "redshift_cluster", "docdb_cluster", "neptune_cluster", "msk_cluster",
     "cloudfront_distribution", "subnet", "ecs_task_definition",
-    "secretsmanager_secret", "cognito_user_pool", "eip",
+    "secretsmanager_secret", "cognito_user_pool", "eip", "launch_configuration",
+    "elasticache_cluster",
 })
 
 
@@ -230,6 +233,7 @@ CHECK_PROPERTIES: dict[str, frozenset[str]] = {
         "CF-EBS-002": {"VolumeType"},  # Size only feeds the estimate
         "CF-EIP-001": {"InstanceId", "NetworkInterfaceId", "PublicIpv4Pool"},
         "CF-TAG-001": set(),  # tag_policy reads Tags and skips unreadable ones itself
+        "CF-GEN-001": set(),  # reads only literal types; an unknown one is absent, not judged
         "CF-COG-001": {"MfaConfiguration"},
         "CF-COG-002": {"Policies"},
         "CF-COG-003": {"UserPoolAddOns", "UserPoolTier"},
@@ -1546,6 +1550,21 @@ def _tls_enforced(document: Any) -> bool | None:
     return None if unknown else False
 
 
+def _one_saving_per_instance(resource_findings: List[Finding]) -> None:
+    """Moving to a current generation (CF-GEN-001) and one size smaller (CF-PERF-003/004)
+    are alternative fixes for one instance: their savings do not add up. Keep the
+    generation saving and say so on the right-sizing finding."""
+    if not any(f.id == "CF-GEN-001" and f.monthly_savings_usd for f in resource_findings):
+        return
+    for f in resource_findings:
+        if f.id in ("CF-PERF-003", "CF-PERF-004") and f.monthly_savings_usd:
+            f.monthly_savings_usd = None
+            f.estimate_basis = (
+                estimates._without_saving(f.estimate_basis or "")
+                + " The saving is counted on CF-GEN-001 for this instance (the fixes do not add up)."
+            ).strip()
+
+
 def run_resource_checks(
     resources: List[Resource],
     template_path: Path,
@@ -1915,6 +1934,9 @@ def run_resource_checks(
                 if ctype == "ecs_task_definition":
                     findings.extend(_ecs_findings(res, template_path))
 
+                # --- Previous-generation instance families (DM3-547) ---
+                findings.extend(generations.findings(res, template_path))
+
                 # --- Stateful resources deleted with the stack ---
                 if ctype in _STATEFUL_TYPES:
                     deletion = _deletion_finding(res, template_path)
@@ -2274,6 +2296,7 @@ def run_resource_checks(
                 f for f in findings[first_new:]
                 if not (CHECK_PROPERTIES.get(f.id, frozenset()) & res.unresolved)
             ]
+        _one_saving_per_instance(findings[first_new:])
 
     # --- Required tag policy (config tags.required; off without one) ---
     findings.extend(tag_policy.findings(resources, template_path))

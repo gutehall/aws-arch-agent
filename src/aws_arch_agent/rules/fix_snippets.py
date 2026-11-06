@@ -900,6 +900,39 @@ _TERRAFORM["CF-TAG-001"] = """resource "$tf_type" "$tf_name" {
 
 # Or once for every resource: provider "aws" { default_tags { tags = { CostCenter = "1234" } } }"""
 
+# Previous-generation instance families (DM3-547). The finding names the type to use.
+_CLOUDFORMATION.update({
+    "CF-GEN-001": """$name:
+  Type: $type
+  Properties:
+    # keep the other properties as they are
+    InstanceType: m7i.large # the type the finding suggests""",
+    "CF-GEN-001:AWS::RDS::DBInstance": """$name:
+  Type: AWS::RDS::DBInstance
+  Properties:
+    # keep the other properties as they are
+    DBInstanceClass: db.m6i.large # the class the finding suggests""",
+    "CF-GEN-001:AWS::ElastiCache::ReplicationGroup": """$name:
+  Type: AWS::ElastiCache::ReplicationGroup
+  Properties:
+    # keep the other properties as they are
+    CacheNodeType: cache.m7g.large # the type the finding suggests""",
+})
+_TERRAFORM.update({
+    "CF-GEN-001": """resource "$tf_type" "$tf_name" {
+  # keep the other arguments as they are
+  instance_type = "m7i.large" # the type the finding suggests
+}""",
+    "CF-GEN-001:aws_db_instance": """resource "aws_db_instance" "$tf_name" {
+  # keep the other arguments as they are
+  instance_class = "db.m6i.large" # the class the finding suggests
+}""",
+    "CF-GEN-001:aws_elasticache_replication_group": """resource "aws_elasticache_replication_group" "$tf_name" {
+  # keep the other arguments as they are
+  node_type = "cache.m7g.large" # the type the finding suggests
+}""",
+})
+
 # Production-grade spend in non-production stacks (DM3-545).
 _CLOUDFORMATION.update({
     "CF-ENV-001": """$name:
