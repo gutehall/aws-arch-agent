@@ -55,7 +55,8 @@ def cost_section(ctx: RepoContext) -> List[str]:
         "|---|---:|---:|",
     ]
     for stack in cost["stacks"]:
-        out.append(f"| `{stack['name']}` | {stack['resources_priced']} | {_usd(stack['monthly_usd'])} |")
+        name = str(stack["name"]).replace("|", "\\|")
+        out.append(f"| `{name}` | {stack['resources_priced']} | {_usd(stack['monthly_usd'])} |")
     priced = sum(s["resources_priced"] for s in cost["stacks"])
     out.append(f"| **Total** | {priced} | **{_usd(cost['total_monthly_usd'])}** |")
     out.append("")
@@ -67,7 +68,7 @@ def cost_section(ctx: RepoContext) -> List[str]:
         out.append("")
     if cost.get("savings_findings"):
         out.append(
-            f"Possible savings from {cost['savings_findings']} finding(s): "
+            f"Possible savings from {cost['savings_findings']} finding(s) in this report: "
             f"**{_usd(cost['savings_monthly_usd'])}/month** (estimate; not subtracted from the total)."
         )
         out.append("")

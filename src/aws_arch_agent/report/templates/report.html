@@ -94,7 +94,7 @@
     </ol>
     {% endif %}
     {% if cost.savings_findings %}
-    <p>Possible savings from {{ cost.savings_findings }} finding(s): <b>${{ "{:,.2f}".format(cost.savings_monthly_usd) }}/month</b> (estimate; not subtracted from the total).</p>
+    <p>Possible savings from {{ cost.savings_findings }} finding(s) in this report: <b>${{ "{:,.2f}".format(cost.savings_monthly_usd) }}/month</b> (estimate; not subtracted from the total).</p>
     {% endif %}
     {% if cost.not_priced %}
     <p class="meta">Not priced (usage-based, or not in the price snapshot): {% for t, n in cost.not_priced.items() %}{{ t }} ×{{ n }}{% if not loop.last %}, {% endif %}{% endfor %}.</p>

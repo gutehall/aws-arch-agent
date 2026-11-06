@@ -37,7 +37,8 @@ _FREE_CF = re.compile(
     r"ApiGateway::(?:Resource|Method|Deployment|Account)|WAFv2::WebACLAssociation)$"
 )
 _FREE_TF = re.compile(
-    r"^aws_(?:iam_\w+|security_group\w*|vpc_security_group_\w+|vpc|subnet|route\w*|"
+    r"^aws_(?:iam_\w+|security_group\w*|vpc_security_group_\w+|vpc|subnet|"
+    r"route|route_table|route_table_association|main_route_table_association|"
     r"internet_gateway\w*|network_acl\w*|launch_template|default_\w+|kms_alias|"
     r"lambda_permission|lambda_event_source_mapping|lambda_alias|appautoscaling_\w+|"
     r"cloudwatch_event_\w+|s3_bucket_(?!object)\w+|sqs_queue_policy|sns_topic_\w+|"
@@ -76,9 +77,11 @@ def record(template_path: Path, resources: List[Resource]) -> None:
     """Price one template's (or root module's) resources. A no-op outside collect()."""
     if _stacks is None:
         return
-    stack = _Stack(path=str(template_path))
+    # One entry per file however the scan reached it (relative, absolute, listed twice).
+    stack = _Stack(path=str(Path(template_path).resolve()))
     for res in resources:
         if res.malformed:
+            stack.not_priced[res.source_type] += 1
             continue
         cost = estimates.resource_cost(res)
         if cost is not None:

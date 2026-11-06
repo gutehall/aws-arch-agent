@@ -197,3 +197,77 @@ def test_resource_cost_drops_the_saving() -> None:
 
     cost = estimates.resource_cost(R())
     assert cost is not None and cost.monthly_savings_usd is None and "Saving if" not in cost.basis
+
+
+def test_free_types_are_not_listed_but_billable_ones_are(tmp_path: Path) -> None:
+    (tmp_path / "main.tf").write_text("""\
+resource "aws_route_table" "rt" {
+  vpc_id = "vpc-1"
+}
+
+resource "aws_route" "r" {
+  route_table_id = aws_route_table.rt.id
+}
+
+resource "aws_route53_zone" "zone" {
+  name = "example.com"
+}
+
+resource "aws_route53_health_check" "hc" {
+  type = "HTTP"
+}
+
+resource "aws_eip" "byoip" {
+  domain           = "vpc"
+  public_ipv4_pool = "ipv4pool-ec2-1"
+}
+
+resource "aws_dynamodb_table" "from_var" {
+  name          = "t"
+  hash_key      = "id"
+  read_capacity = var.rcu
+  write_capacity = 1
+}
+""", encoding="utf-8")
+    with stack_cost.collect():
+        findings = run_resource_checks(resources_from_terraform(tmp_path), tmp_path)
+        cost = stack_cost.summary(findings, tmp_path.parent)
+    assert cost is not None
+    # Route 53 costs money and is not in the snapshot: listed. Routes are free: not listed.
+    assert cost["not_priced"] == {"aws_dynamodb_table": 1, "aws_route53_health_check": 1, "aws_route53_zone": 1}
+    assert cost["stacks"][0]["resources_priced"] == 1  # the BYOIP address, at $0
+    assert cost["total_monthly_usd"] == 0.0
+
+
+def test_aurora_cluster_is_not_priced_twice(tmp_path: Path) -> None:
+    resources = {
+        "Cluster": {"Type": "AWS::RDS::DBCluster", "Properties": {"Engine": "aurora-postgresql",
+                                                                  "StorageEncrypted": True}},
+        "Writer": {"Type": "AWS::RDS::DBInstance", "Properties": {
+            "DBInstanceClass": "db.r6g.large", "Engine": "aurora-postgresql",
+            "DBClusterIdentifier": {"Ref": "Cluster"}}},
+        "Reader": {"Type": "AWS::RDS::DBInstance", "Properties": {
+            "DBInstanceClass": "db.r6g.large", "Engine": "aurora-postgresql",
+            "DBClusterIdentifier": {"Ref": "Cluster"}}},
+    }
+    (tmp_path / "t.json").write_text(json.dumps({"Resources": resources}), encoding="utf-8")
+    with stack_cost.collect():
+        findings = run_cf_rules_from_paths([tmp_path / "t.json"], repo_path=tmp_path)
+        # The same template reached again by another path is still one stack.
+        run_cf_rules_from_paths([tmp_path / "." / "t.json"], repo_path=tmp_path)
+        cost = stack_cost.summary(findings, tmp_path)
+    assert cost is not None and len(cost["stacks"]) == 1
+    assert cost["total_monthly_usd"] == round(2 * H * _p("rds:aurora-postgresql:single-az:db.r6g.large"), 2)
+    assert "AWS::RDS::DBCluster" in cost["not_priced"]  # storage and I/O are usage-based
+
+
+def test_v2_report_has_the_cost_section(tmp_path: Path) -> None:
+    from aws_arch_agent.agent.v2_graph import analyze_v2
+
+    (tmp_path / "templates").mkdir()
+    (tmp_path / "templates" / "stack.template.json").write_text(
+        json.dumps({"Resources": STACK}), encoding="utf-8")
+    report, ctx, _findings, _warnings = analyze_v2(
+        tmp_path, use_llm=False, templates_path=str(tmp_path / "templates"))
+    assert ctx.notes["cost"]["total_monthly_usd"] == round(sum(_expected().values()), 2)
+    assert "## Estimated Monthly Cost (estimate)" in report

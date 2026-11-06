@@ -490,7 +490,7 @@ def node_report(state: State) -> State:
 
 {base_report}
 """
-    return {"final_report": final}
+    return {"final_report": final, "ctx": ctx}  # ctx carries the cost section
 
 
 def build_graph():
