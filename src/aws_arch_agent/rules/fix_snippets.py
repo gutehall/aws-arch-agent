@@ -838,6 +838,48 @@ _TERRAFORM.update({
 }""",
 })
 
+# Public IPs (DM3-534).
+_CLOUDFORMATION.update({
+    "CF-EC2-002": """$name:
+  Type: AWS::EC2::Subnet
+  Properties:
+    # keep the other properties as they are
+    MapPublicIpOnLaunch: false""",
+    "CF-EC2-003": """$name:
+  Type: AWS::EC2::Instance
+  Properties:
+    # keep the other properties as they are
+    NetworkInterfaces:
+      - DeviceIndex: "0"
+        # keep this interface's other keys (SubnetId, GroupSet, ...) as they are
+        AssociatePublicIpAddress: false""",
+    "CF-EC2-003:AWS::EC2::LaunchTemplate": """$name:
+  Type: AWS::EC2::LaunchTemplate
+  Properties:
+    LaunchTemplateData:
+      # keep the other settings as they are
+      NetworkInterfaces:
+        - DeviceIndex: 0
+          # keep this interface's other keys as they are
+          AssociatePublicIpAddress: false""",
+})
+_TERRAFORM.update({
+    "CF-EC2-002": """resource "aws_subnet" "$tf_name" {
+  # keep the other arguments as they are
+  map_public_ip_on_launch = false
+}""",
+    "CF-EC2-003": """resource "aws_instance" "$tf_name" {
+  # keep the other arguments as they are
+  associate_public_ip_address = false
+}""",
+    "CF-EC2-003:aws_launch_template": """resource "aws_launch_template" "$tf_name" {
+  # keep the other arguments as they are
+  network_interfaces {
+    associate_public_ip_address = false
+  }
+}""",
+})
+
 # CloudFront and WAF (DM3-526).
 _CLOUDFORMATION.update({
     "CF-CF-001": """$name:
