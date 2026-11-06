@@ -81,6 +81,8 @@ TF_TYPE_TO_CANONICAL: dict[str, str] = {
     "aws_sns_topic_policy": "resource_policy",
     "aws_s3_bucket_policy": "resource_policy",
     "aws_ecr_repository_policy": "resource_policy",
+    "aws_ecr_repository": "ecr_repository",
+    "aws_ecs_task_definition": "ecs_task_definition",
     "aws_lambda_permission": "lambda_permission",
     "aws_iam_user": "iam_user",
     "aws_iam_group": "iam_group",
@@ -99,6 +101,7 @@ _S3_PARTS: dict[str, str] = {
 # var/local are module inputs; each/count/self differ per instance. None is known statically.
 _UNRESOLVED_REF = re.compile(r"\b(?:var|local|each|count|self)\.[A-Za-z_]")
 _BUCKET_REF = re.compile(r"\baws_s3_bucket\.([A-Za-z0-9_-]+)\.")
+_ECR_REF = re.compile(r"\baws_ecr_repository\.([A-Za-z0-9_-]+)\.")
 _META_KEYS = {"__is_block__", "__start_line__", "__end_line__"}
 
 
@@ -755,6 +758,68 @@ def _resource_policy(body: dict) -> dict:
     return props
 
 
+def _ecr_repository(body: dict) -> dict:
+    props: dict = {}
+    # Terraform's default is MUTABLE too, so unset stays unset.
+    _set(props, "ImageTagMutability", _v(body, "image_tag_mutability"))
+    scanning = _first_block(body, "image_scanning_configuration")
+    if scanning:
+        props["ImageScanningConfiguration"] = {"ScanOnPush": _v(scanning, "scan_on_push")}
+    return props
+
+
+# ECS API container keys (camelCase in Terraform JSON) -> CloudFormation keys.
+_CONTAINER_KEYS = {
+    "name": "Name", "privileged": "Privileged",
+    "readonlyRootFilesystem": "ReadonlyRootFilesystem", "user": "User",
+}
+
+
+def _container_definitions(value: Any) -> Any:
+    """container_definitions (jsonencode, JSON string or heredoc) -> ContainerDefinitions.
+
+    Text the scan cannot read, such as file() or templatefile(), is UNRESOLVED.
+    """
+    if isinstance(value, _JsonEncode):
+        decoded = decode_jsonencode(value)
+    elif isinstance(value, _Expr):
+        heredoc = _HEREDOC.fullmatch(value)
+        if not heredoc or _UNRESOLVED_REF.search(value) or "${" in value:
+            return UNRESOLVED
+        decoded = _json_or_unresolved(heredoc.group(2))
+    elif isinstance(value, str):
+        heredoc = _HEREDOC.fullmatch(value)
+        decoded = _json_or_unresolved(heredoc.group(2) if heredoc else value)
+    else:
+        return UNRESOLVED
+    if not isinstance(decoded, list):
+        return UNRESOLVED
+    out = []
+    for item in decoded:
+        if not isinstance(item, dict):
+            return UNRESOLVED
+        out.append({cf: item[tf] for tf, cf in _CONTAINER_KEYS.items() if tf in item})
+    return out
+
+
+def _json_or_unresolved(text: str) -> Any:
+    try:
+        return json.loads(text)
+    except ValueError:
+        return UNRESOLVED
+
+
+def _ecs_task_definition(body: dict) -> dict:
+    props: dict = {}
+    value = body.get("container_definitions")
+    if value is not None:
+        props["ContainerDefinitions"] = _container_definitions(value)
+    platform = _first_block(body, "runtime_platform")
+    if "operating_system_family" in platform:
+        props["RuntimePlatform"] = {"OperatingSystemFamily": _v(platform, "operating_system_family")}
+    return props
+
+
 def _lambda_permission(body: dict) -> dict:
     props: dict = {}
     _set(props, "Principal", _v(body, "principal"))
@@ -950,6 +1015,8 @@ _ADAPTERS: dict[str, Callable[[dict], dict]] = {
     "aws_sns_topic_policy": _resource_policy,
     "aws_s3_bucket_policy": _resource_policy,
     "aws_ecr_repository_policy": _resource_policy,
+    "aws_ecr_repository": _ecr_repository,
+    "aws_ecs_task_definition": _ecs_task_definition,
     "aws_lambda_permission": _lambda_permission,
     "aws_iam_role_policy_attachment": _policy_attachment,
     "aws_iam_user_policy_attachment": _policy_attachment,
@@ -964,6 +1031,8 @@ _ADAPTERS: dict[str, Callable[[dict], dict]] = {
 # Nested block name -> CloudFormation property it feeds. A `dynamic` block of that name
 # is built from input the scan cannot see.
 _BLOCK_PROPERTY: dict[str, str] = {
+    "image_scanning_configuration": "ImageScanningConfiguration",
+    "runtime_platform": "RuntimePlatform",
     "versioning": "VersioningConfiguration",
     "server_side_encryption_configuration": "BucketEncryption",
     "logging": "LoggingConfiguration",
@@ -1231,6 +1300,41 @@ def _merge_s3_parts(blocks: list[_Block], resources: dict[str, Resource]) -> Non
             bucket.unresolved = bucket.unresolved | missing
 
 
+def _merge_ecr_lifecycle(blocks: list[_Block], resources: dict[str, Resource]) -> None:
+    """Attach aws_ecr_lifecycle_policy to its aws_ecr_repository as LifecyclePolicy.
+
+    A policy that names no repository the scan can find may belong to any of them, so
+    none is reported for a missing lifecycle policy.
+    """
+    repos = {
+        r.name.split(".", 1)[1]: r for r in resources.values() if r.source_type == "aws_ecr_repository"
+    }
+    by_literal = {
+        b.body.get("name"): repos[b.name]
+        for b in blocks
+        if b.type == "aws_ecr_repository" and isinstance(b.body.get("name"), str)
+        and not isinstance(b.body.get("name"), _Expr) and b.name in repos
+    }
+    unlinked = False
+    for block in blocks:
+        if block.type != "aws_ecr_lifecycle_policy":
+            continue
+        ref = block.body.get("repository")
+        target = None
+        if isinstance(ref, str):
+            match = _ECR_REF.search(ref)
+            target = repos.get(match.group(1)) if match else by_literal.get(ref)
+        if target is None:
+            unlinked = True
+            continue
+        target.properties["LifecyclePolicy"] = {"LifecyclePolicyText": block.body.get("policy")}
+        target.unresolved = target.unresolved - {"LifecyclePolicy"}
+    if unlinked:
+        for repo in repos.values():
+            if "LifecyclePolicy" not in repo.properties:
+                repo.unresolved = repo.unresolved | {"LifecyclePolicy"}
+
+
 # --- terraform show -json ------------------------------------------------------
 
 
@@ -1317,6 +1421,9 @@ def _plan_keep(block: _Block) -> frozenset[str]:
     ref = block.body.get("bucket")
     if block.type in _S3_PARTS and isinstance(ref, str) and _BUCKET_REF.search(ref):
         return frozenset({"bucket"})
+    repo = block.body.get("repository")
+    if block.type == "aws_ecr_lifecycle_policy" and isinstance(repo, str) and _ECR_REF.search(repo):
+        return frozenset({"repository"})
     return frozenset()
 
 
@@ -1352,6 +1459,7 @@ def resources_from_terraform(
         resource = _to_resource(block)
         resources[resource.name] = resource
     _merge_s3_parts(blocks, resources)
+    _merge_ecr_lifecycle(blocks, resources)
     _resolve_iam(resources, blocks)
     return list(resources.values())
 
