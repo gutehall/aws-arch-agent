@@ -15,6 +15,16 @@ def _group(findings: List[Finding]) -> Dict[str, List[Finding]]:
     return groups
 
 
+def price_line(ctx: RepoContext) -> str | None:
+    """The region and snapshot date cost estimates use, or None when the scan set none."""
+    note = ctx.notes.get("prices")
+    if not isinstance(note, dict) or not note.get("region"):
+        return None
+    if note.get("snapshot_date"):
+        return f"on-demand, {note['region']} (AWS price list of {note['snapshot_date']})"
+    return f"{note['region']}: not in the price snapshot, so no cost estimates"
+
+
 def render_markdown(ctx: RepoContext, findings: List[Finding], warnings: List[str] | None = None) -> str:
     """Build a full Markdown report (title, repo info, findings by severity, next actions)."""
     groups = _group(findings)
@@ -27,6 +37,9 @@ def render_markdown(ctx: RepoContext, findings: List[Finding], warnings: List[st
     lines.append(f"- Source: **{ctx.source}**")
     lines.append(f"- Language: **{ctx.language}**")
     lines.append(f"- Files scanned: **{ctx.files_scanned}**")
+    prices = price_line(ctx)
+    if prices:
+        lines.append(f"- Prices: {prices}")
     lines.append(f"- Generated: {now}")
     lines.append("")
     lines.append("## Executive Summary")
