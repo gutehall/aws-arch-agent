@@ -34,14 +34,22 @@ def render_sarif(ctx: RepoContext, findings: list[Finding], warnings: list[str] 
                 "fullDescription": {"text": f.recommendation},
                 "defaultConfiguration": {"level": _SEVERITY_TO_LEVEL.get(f.severity, "warning")},
             }
-        results.append(
-            {
-                "ruleId": f.id,
-                "level": _SEVERITY_TO_LEVEL.get(f.severity, "warning"),
-                "message": {"text": f.recommendation},
-                "locations": [_location(f)],
-            }
-        )
+        result: dict[str, Any] = {
+            "ruleId": f.id,
+            "level": _SEVERITY_TO_LEVEL.get(f.severity, "warning"),
+            "message": {"text": f.recommendation},
+            "locations": [_location(f)],
+        }
+        estimate = {
+            key: value for key, value in (
+                ("estimatedMonthlyCostUsd", f.monthly_cost_usd),
+                ("estimatedMonthlySavingsUsd", f.monthly_savings_usd),
+                ("estimateBasis", f.estimate_basis),
+            ) if value is not None
+        }
+        if f.monthly_cost_usd is not None or f.monthly_savings_usd is not None:
+            result["properties"] = estimate
+        results.append(result)
     if warnings:
         rules["AWS-ARCH-AGENT-WARNING"] = {
             "id": "AWS-ARCH-AGENT-WARNING",

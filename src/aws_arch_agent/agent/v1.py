@@ -23,7 +23,7 @@ from aws_arch_agent.rules.terraform_model import (
     variables_from_terraform,
 )
 from aws_arch_agent.rules.runner import filter_by_severity, run_all_rules
-from aws_arch_agent.pricing import DEFAULT_REGION, price_note
+from aws_arch_agent.pricing import DEFAULT_REGION, price_note, use_region
 from aws_arch_agent.report.markdown import render_markdown
 from aws_arch_agent.tools.llm import LLMClient
 from aws_arch_agent.tools.files import iter_files, read_text_safe
@@ -408,10 +408,11 @@ def analyze_v1(
     price_region: str = DEFAULT_REGION,
 ) -> tuple[str, RepoContext, list[Finding], list[str]]:
     """Run V1 pipeline: scan repo, run rules, optionally polish with LLM; return (report_md, ctx, findings, warnings)."""
-    ctx, findings, warnings = _collect_findings(
-        repo_path, max_files, rules_include, rules_exclude, severity_threshold, rules_org, iac,
-        tf_plan,
-    )
+    with use_region(price_region):  # cost estimates price in this region
+        ctx, findings, warnings = _collect_findings(
+            repo_path, max_files, rules_include, rules_exclude, severity_threshold, rules_org, iac,
+            tf_plan,
+        )
     ctx.notes["prices"] = price_note(price_region)
 
     draft = render_markdown(ctx, findings, warnings=warnings)

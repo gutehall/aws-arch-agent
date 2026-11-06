@@ -875,6 +875,31 @@ _TERRAFORM["CF-PAR-002:variable"] = """variable "$tf_name" {
 # Better: no variable at all. Read the secret where it is used:
 # data "aws_secretsmanager_secret_version" "$tf_name" { secret_id = "my-secret" }"""
 
+# gp2 volumes (DM3-541).
+_CLOUDFORMATION["CF-EBS-002"] = """$name:
+  Type: AWS::EC2::Volume
+  Properties:
+    # keep the other properties as they are
+    VolumeType: gp3
+    # over 1,000 GiB: Iops: <3 x size in GiB> to keep the gp2 baseline"""
+# Unused Elastic IPs (DM3-541): delete the resource to release it, or attach it.
+_CLOUDFORMATION["CF-EIP-001"] = """# Not needed: delete $name to release the address. Needed: attach it.
+${name}Association:
+  Type: AWS::EC2::EIPAssociation
+  Properties:
+    AllocationId: !GetAtt $name.AllocationId
+    InstanceId: !Ref Instance # the instance that needs a fixed public address"""
+_TERRAFORM["CF-EIP-001"] = """# Not needed: delete aws_eip.$tf_name to release the address. Needed: attach it.
+resource "aws_eip_association" "$tf_name" {
+  allocation_id = aws_eip.$tf_name.id
+  instance_id   = aws_instance.app.id # the instance that needs a fixed public address
+}"""
+_TERRAFORM["CF-EBS-002"] = """resource "aws_ebs_volume" "$tf_name" {
+  # keep the other arguments as they are
+  type = "gp3"
+  # over 1,000 GiB: iops = <3 x size in GiB> to keep the gp2 baseline
+}"""
+
 # Secrets Manager rotation and Cognito user pools (DM3-528).
 _CLOUDFORMATION.update({
     "CF-SM-001": """${name}Rotation:

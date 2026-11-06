@@ -11,7 +11,7 @@ from jinja2.sandbox import SandboxedEnvironment
 
 from aws_arch_agent.models import Finding, RepoContext
 from aws_arch_agent.report.docs import doc_links
-from aws_arch_agent.report.markdown import price_line
+from aws_arch_agent.report.markdown import estimate_lines, price_line
 
 SEVERITIES = ("High", "Medium", "Low")
 _SEVERITY_RANK = {s: i for i, s in enumerate(SEVERITIES)}
@@ -66,6 +66,7 @@ def render_html(
             "evidence": f.evidence or "",
             "recommendation": f.recommendation.strip(),
             "suggested_code": (f.suggested_code or "").strip(),
+            "estimates": estimate_lines(f),
             "docs": doc_links(f),
             "baseline": None if flag is None else ("accepted" if flag else "new"),
         }

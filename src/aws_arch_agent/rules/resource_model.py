@@ -24,6 +24,7 @@ CF_TYPE_TO_CANONICAL: dict[str, str] = {
     "AWS::EC2::VPCEndpoint": "vpc_endpoint",
     "AWS::EC2::FlowLog": "flow_log",
     "AWS::EC2::NatGateway": "nat_gateway",
+    "AWS::EC2::EIP": "eip",
     "AWS::ElasticLoadBalancingV2::LoadBalancer": "lb",
     "AWS::CloudTrail::Trail": "cloudtrail",
     "AWS::KMS::Key": "kms_key",
@@ -93,6 +94,7 @@ class Resource:
     (Terraform var.* / local.*). Checks that read them report nothing.
     policies: resource-level DeletionPolicy and UpdateReplacePolicy, when set. Terraform
     lifecycle.prevent_destroy = true maps to Retain for both.
+    references: Terraform addresses the block refers to (see field comment).
     """
 
     type: str | None
@@ -104,6 +106,9 @@ class Resource:
     malformed: str | None = None
     unresolved: frozenset[str] = frozenset()
     policies: dict[str, Any] = field(default_factory=dict)
+    # Terraform only: addresses (aws_eip.nat) this block's arguments point at, all of them,
+    # including ones no adapter maps. CloudFormation references are read from properties.
+    references: frozenset[str] = frozenset()
 
 
 def resources_from_cf_template(
