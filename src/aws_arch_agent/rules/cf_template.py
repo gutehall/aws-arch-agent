@@ -11,6 +11,7 @@ from aws_arch_agent.rules import (
     estimates,
     iam_policy,
     lambda_runtimes,
+    nonprod,
     stack_cost,
     tag_policy,
 )
@@ -2277,6 +2278,11 @@ def run_resource_checks(
     # --- Required tag policy (config tags.required; off without one) ---
     findings.extend(tag_policy.findings(resources, template_path))
 
+    # --- Production-grade spend in dev and staging stacks (DM3-545) ---
+    stack_env = environments.resolve(template_path, resources)
+    if stack_env in ("dev", "staging"):
+        findings.extend(nonprod.findings(resources, template_path, stack_env))
+
     # --- Stack cost: price every resource the snapshot covers (report cost section) ---
     stack_cost.record(template_path, resources)
 
@@ -2536,6 +2542,9 @@ def _store_repo_relative(findings: List[Finding], repo_path: Path | None) -> Non
 def drop_static_covered_by_cf(findings: List[Finding]) -> List[Finding]:
     """Drop a static finding when a CloudFormation finding already covers that control."""
     covered = {sid for f in findings for sid in CF_COVERS_STATIC.get(f.id, ())}
+    if environments.only_nonprod():
+        # Every stack is dev or staging: the CDK source Multi-AZ advice is prod-only.
+        covered |= set(environments.PROD_ONLY_STATIC)
     if tag_policy.policy_checked():
         # Templates were checked against the tag policy, which replaces the repo-wide guesses.
         covered |= set(tag_policy.REPLACED_STATIC_RULES)

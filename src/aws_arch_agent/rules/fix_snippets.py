@@ -900,6 +900,48 @@ _TERRAFORM["CF-TAG-001"] = """resource "$tf_type" "$tf_name" {
 
 # Or once for every resource: provider "aws" { default_tags { tags = { CostCenter = "1234" } } }"""
 
+# Production-grade spend in non-production stacks (DM3-545).
+_CLOUDFORMATION.update({
+    "CF-ENV-001": """$name:
+  Type: AWS::RDS::DBInstance
+  Properties:
+    # keep the other properties as they are
+    MultiAZ: false""",
+    "CF-ENV-001:AWS::ElastiCache::ReplicationGroup": """$name:
+  Type: AWS::ElastiCache::ReplicationGroup
+  Properties:
+    # keep the other properties as they are
+    MultiAZEnabled: false""",
+    "CF-ENV-005": """$name:
+  Type: AWS::Logs::LogGroup
+  Properties:
+    # keep the other properties as they are
+    RetentionInDays: 30""",
+    "CF-ENV-006": """$name:
+  Type: AWS::DynamoDB::Table
+  Properties:
+    # keep the other properties as they are; remove ProvisionedThroughput
+    BillingMode: PAY_PER_REQUEST""",
+})
+_TERRAFORM.update({
+    "CF-ENV-001": """resource "aws_db_instance" "$tf_name" {
+  # keep the other arguments as they are
+  multi_az = false
+}""",
+    "CF-ENV-001:aws_elasticache_replication_group": """resource "aws_elasticache_replication_group" "$tf_name" {
+  # keep the other arguments as they are
+  multi_az_enabled = false
+}""",
+    "CF-ENV-005": """resource "aws_cloudwatch_log_group" "$tf_name" {
+  # keep the other arguments as they are
+  retention_in_days = 30
+}""",
+    "CF-ENV-006": """resource "aws_dynamodb_table" "$tf_name" {
+  # keep the other arguments as they are; remove read_capacity and write_capacity
+  billing_mode = "PAY_PER_REQUEST"
+}""",
+})
+
 # gp2 volumes (DM3-541).
 _CLOUDFORMATION["CF-EBS-002"] = """$name:
   Type: AWS::EC2::Volume
