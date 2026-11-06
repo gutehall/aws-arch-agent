@@ -1906,6 +1906,74 @@ def run_resource_checks(
     return list(dedup.values())
 
 
+# A parameter name that holds a secret (DbPassword, ApiKey, GithubToken, ...).
+_SECRET_NAME = re.compile(
+    r"pass(?:word|wd|phrase)|pwd|secret|token|api_?key|private_?key|credential|auth_?key|"
+    r"access_?key|signing_?key|client_?secret",
+    re.IGNORECASE,
+)
+# Names that point at a secret or describe one, without holding it (DbSecretArn, KeyName).
+_SECRET_REFERENCE = re.compile(
+    r"(?:arn|name|id|length|policy|ttl|expiry|expiration|rotation|version|path|parameter|"
+    r"param|prefix|type|enabled|count|url|uri|header|duration|days)$",
+    re.IGNORECASE,
+)
+
+
+def _parameter_findings(template_path: Path, doc: dict) -> List[Finding]:
+    """CF-PAR-001 (secret-named parameter without NoEcho) and CF-PAR-002 (with a Default).
+
+    Parameters resolved from SSM (Type AWS::SSM::Parameter::Value<...>) hold no value of
+    their own and are not reported.
+    """
+    params = doc.get("Parameters")
+    out: List[Finding] = []
+    for name, body in params.items() if isinstance(params, dict) else []:
+        if type(name) is not str or not isinstance(body, dict):
+            continue
+        if not _SECRET_NAME.search(name) or _SECRET_REFERENCE.search(name):
+            continue
+        ptype = body.get("Type")
+        if type(ptype) is str and ptype.startswith("AWS::SSM::Parameter"):
+            continue
+        evidence = f"{name} (Parameter)"
+        use_instead = (
+            "Use a dynamic reference instead, such as "
+            "'{{resolve:secretsmanager:my-secret:SecretString:password}}' or "
+            "'{{resolve:ssm-secure:/my/parameter}}', or pass the secret's ARN."
+        )
+        default = body.get("Default")
+        if default not in (None, ""):
+            out.append(Finding(
+                id="CF-PAR-002",
+                title="Template parameter has a secret as its default value",
+                severity="High",
+                category="Security",
+                file=str(template_path),
+                line=None,
+                evidence=evidence,
+                recommendation=(
+                    f"{name} looks like a secret and has a Default, so the value is committed "
+                    f"with the template. Remove the Default and rotate the secret. {use_instead}"
+                ),
+            ))
+        if _flag(body.get("NoEcho")) is not True:
+            out.append(Finding(
+                id="CF-PAR-001",
+                title="Secret template parameter is not NoEcho",
+                severity="Medium",
+                category="Security",
+                file=str(template_path),
+                line=None,
+                evidence=evidence,
+                recommendation=(
+                    f"{name} looks like a secret but NoEcho is not true, so its value shows in "
+                    f"the console, the API and stack events. Set NoEcho: true. {use_instead}"
+                ),
+            ))
+    return out
+
+
 def _run_cf_rules_on_template(
     template_path: Path,
     doc: dict,
@@ -1915,7 +1983,7 @@ def _run_cf_rules_on_template(
     if warnings is None:
         warnings = []
     resources = resources_from_cf_template(template_path, doc, warnings)
-    return run_resource_checks(resources, template_path, warnings)
+    return run_resource_checks(resources, template_path, warnings) + _parameter_findings(template_path, doc)
 
 
 def _store_repo_relative(findings: List[Finding], repo_path: Path | None) -> None:
