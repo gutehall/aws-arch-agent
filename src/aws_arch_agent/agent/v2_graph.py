@@ -21,7 +21,7 @@ from aws_arch_agent.rules.fix_snippets import attach_fixes
 from aws_arch_agent.rules.registry import ALL_RULES
 from aws_arch_agent.rules.runner import filter_by_severity, run_all_rules
 from aws_arch_agent.pricing import DEFAULT_REGION, price_note, use_region
-from aws_arch_agent.rules import stack_cost
+from aws_arch_agent.rules import effort, stack_cost
 from aws_arch_agent.rules.tag_policy import TagPolicy, use_tag_policy
 from aws_arch_agent.report.markdown import render_markdown
 from aws_arch_agent.tools.cdk_synth import (
@@ -464,6 +464,7 @@ def node_report(state: State) -> State:
     ctx = state["ctx"]
     findings = state.get("raw_findings", [])
     warnings = state.get("rule_warnings") or []
+    effort.annotate(findings)  # the summary's quick wins need it
     cost = stack_cost.summary(findings, Path(state["repo_path"]))
     if cost is not None:
         ctx.notes["cost"] = cost

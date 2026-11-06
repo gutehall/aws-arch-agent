@@ -24,9 +24,9 @@ from aws_arch_agent.rules.terraform_model import (
 )
 from aws_arch_agent.rules.runner import filter_by_severity, run_all_rules
 from aws_arch_agent.pricing import DEFAULT_REGION, price_note, use_region
-from aws_arch_agent.rules import stack_cost
+from aws_arch_agent.rules import effort, stack_cost
 from aws_arch_agent.rules.tag_policy import TagPolicy, policy_checked, use_tag_policy
-from aws_arch_agent.report.markdown import render_markdown
+from aws_arch_agent.report.markdown import insert_summary, render_markdown
 from aws_arch_agent.tools.llm import LLMClient
 from aws_arch_agent.tools.files import iter_files, read_text_safe
 from aws_arch_agent.tools.cdk_synth import list_templates_from_path
@@ -394,6 +394,7 @@ def _collect_findings(
     if tf_plan is not None and source not in TERRAFORM_SOURCES:
         warnings.append(f"--tf-plan applies only to a Terraform scan (source is {source}); ignored")
     findings = filter_by_severity(findings, severity_threshold)
+    effort.annotate(findings)
     return ctx, findings, warnings
 
 
@@ -423,12 +424,12 @@ def analyze_v1(
             ctx.notes["cost"] = cost
     ctx.notes["prices"] = price_note(price_region)
 
-    draft = render_markdown(ctx, findings, warnings=warnings)
     if not use_llm:
-        return draft, ctx, findings, warnings
+        return render_markdown(ctx, findings, warnings=warnings), ctx, findings, warnings
+    # The summary is built from rule output: the LLM polishes the rest, never its numbers.
     llm = LLMClient()
-    polished = llm.polish(draft)
-    return polished, ctx, findings, warnings
+    polished = llm.polish(render_markdown(ctx, findings, warnings=warnings, include_summary=False))
+    return insert_summary(polished, findings), ctx, findings, warnings
 
 
 def collect_ctx_findings(

@@ -108,3 +108,13 @@ python scripts/refresh_prices.py --regions us-east-1 eu-north-1 --cache-dir /tmp
 
 The script streams the offer files (the EC2 one is about 300 MB per region) and writes the same file for the same offers. `--cache-dir` keeps the downloads so a rebuild needs no network. A price two offer rows disagree on stops the build.
 
+## Report summary
+
+Every report opens with a **Summary** built from the findings alone, so it is the same with `--no-llm` and the same on every run. It appears in Markdown and HTML, and as `summary` in JSON:
+
+- **Top fixes**: the five most important fixes. A fix is one rule, covering every resource it reported. They are ranked by severity, then estimated monthly saving, then how many resources the fix covers, then rule id.
+- **By pillar**: one line per finding category with its count by severity and possible savings, for example "Cost Optimization: 7 findings (7 Low), about $120.00/month possible savings (estimate)". The lines add up to the findings below, counts and savings alike.
+- **Quick wins**: fixes with suggested code and low effort.
+
+Each finding has an `effort` field. `low` means one property, changed in place (versioning, log retention, tracing, gp2 to gp3, NoEcho, a tag). `high` means the fix replaces the resource or changes its design (encrypting an existing database or volume, NAT traffic, a public EKS endpoint). Everything else is `medium`. The map is `aws_arch_agent/rules/effort.py`.
+

@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import json
 from aws_arch_agent.models import Finding, RepoContext
+from aws_arch_agent.report.summary import build_summary
 
 
 def render_json(
@@ -13,6 +14,7 @@ def render_json(
     """Serialize context and findings to JSON (Pydantic model_dump)."""
     data = {
         "context": ctx.model_dump(),
+        "summary": build_summary(findings),
         "findings": [f.model_dump() for f in findings],
     }
     if warnings:
