@@ -356,3 +356,15 @@ Some findings carry `monthly_cost_usd`, `monthly_savings_usd` and an `estimate_b
 
 CDK source rules (`COST-*`) cannot see sizes or counts and carry no estimates.
 
+### Estimated monthly cost per stack
+
+When templates are scanned (CloudFormation, `cdk synth` output, Terraform root modules), the report opens with an **Estimated Monthly Cost (estimate)** section. JSON has it as `context.notes.cost`. It prices every resource the snapshot covers, not only those with findings:
+
+- EC2 instances (Linux, on-demand), RDS instances (engine, class, Multi-AZ), NAT gateways (hours), EBS volumes (size × type; gp2 by default), public IPv4 addresses, and DynamoDB provisioned capacity (RCU and WCU)
+- the estimated monthly total for each template or root module, and overall
+- the top 5 resources by cost, with the basis for each
+- the possible savings: the sum of the findings' `monthly_savings_usd`, never subtracted from the total
+- the resource types that cost money but were not priced, with counts. These are usage-based types (Lambda, S3, on-demand DynamoDB, ...), types not in the snapshot (load balancers, ...), and resources whose size comes from a parameter. Types that are free in themselves (IAM, security groups, subnets, routes, policies) are not listed.
+
+Like Infracost's view, it is an approximation: on-demand prices, 730 hours a month, no data transfer, requests or storage growth. The region and AWS price list date are stated. A V1 scan of CDK source reads no templates and has no cost section; use `--mode v2`.
+

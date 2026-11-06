@@ -228,3 +228,90 @@ def idle_public_ipv4() -> Estimate | None:
             "The saving is the cost: released, it is not billed."
         ),
     )
+
+
+# --- Whole-resource costs for the stack total (DM3-542) ---------------------------------
+
+
+def volume(volume_type: Any, size: Any) -> Estimate | None:
+    """Storage cost of an EBS volume by type and size (gp2 by default). io2 and gp3 extras
+    (provisioned IOPS, throughput) are excluded."""
+    kind = "gp2" if volume_type is None else volume_type
+    gib = _literal_int(size)
+    if not isinstance(kind, str) or gib is None or gib < 1:
+        return None
+    per_gb = price(f"ebs:{kind}", current_region())
+    if per_gb is None:
+        return None
+    extras = " Excludes provisioned IOPS and throughput." if kind in ("gp3", "io2") else ""
+    return Estimate(
+        monthly_cost_usd=_round(gib * per_gb.usd),
+        monthly_savings_usd=None,
+        basis=f"{gib:,} GiB {kind} × {_unit_price(per_gb)}/GB-month, {_where(per_gb)}.{extras} Excludes snapshots.",
+    )
+
+
+def public_ipv4(pool: Any = None) -> Estimate | None:
+    if pool is not None and pool != "amazon":
+        return Estimate(0.0, None, "Public IPv4 from your own BYOIP pool: not billed by the hour.")
+    hour = price("eip:in-use-hour", current_region())
+    if hour is None:
+        return None
+    return Estimate(
+        monthly_cost_usd=_round(HOURS_PER_MONTH * hour.usd),
+        monthly_savings_usd=None,
+        basis=f"1 public IPv4 address × {HOURS_PER_MONTH} h × {_unit_price(hour)}/h, {_where(hour)}.",
+    )
+
+
+def dynamodb_provisioned(props: dict) -> Estimate | None:
+    """Provisioned read and write capacity. On-demand tables are usage-based: no estimate."""
+    mode = props.get("BillingMode", "PROVISIONED")
+    if mode != "PROVISIONED":
+        return None
+    throughput = props.get("ProvisionedThroughput")
+    if not isinstance(throughput, dict):
+        return None
+    rcu, wcu = _literal_int(throughput.get("ReadCapacityUnits")), _literal_int(throughput.get("WriteCapacityUnits"))
+    read, write = price("dynamodb:rcu-hour", current_region()), price("dynamodb:wcu-hour", current_region())
+    if rcu is None or wcu is None or read is None or write is None:
+        return None
+    return Estimate(
+        monthly_cost_usd=_round(HOURS_PER_MONTH * (rcu * read.usd + wcu * write.usd)),
+        monthly_savings_usd=None,
+        basis=(
+            f"{rcu:,} RCU × {_unit_price(read)}/h + {wcu:,} WCU × {_unit_price(write)}/h, "
+            f"× {HOURS_PER_MONTH} h, {_where(read)}. Excludes storage, index capacity, "
+            "free tier and autoscaling."
+        ),
+    )
+
+
+def resource_cost(res: Any) -> Estimate | None:
+    """The monthly on-demand cost of one resource, or None when the snapshot cannot price it.
+    Only the resource's own cost: savings are a finding's business, so they are dropped."""
+    props = res.properties
+    est: Estimate | None
+    if res.type == "instance":
+        est = ec2_instance(props.get("InstanceType"))
+    elif res.type == "db_instance":
+        est = rds_instance(props)
+    elif res.type == "nat_gateway":
+        est = nat_gateways(1)
+    elif res.type == "ebs_volume":
+        est = volume(props.get("VolumeType"), props.get("Size"))
+    elif res.type == "eip":
+        est = public_ipv4(props.get("PublicIpv4Pool"))
+    elif res.type == "dynamodb_table":
+        est = dynamodb_provisioned(props)
+    else:
+        return None
+    if est is None or est.monthly_cost_usd is None:
+        return None
+    return Estimate(est.monthly_cost_usd, None, _without_saving(est.basis))
+
+
+def _without_saving(basis: str) -> str:
+    """The basis with its 'Saving if ...' sentence removed (a stack total has no saving)."""
+    return re.sub(r" Saving if one size smaller \([^)]*\)\.", "", basis)
+
