@@ -57,7 +57,7 @@ def test_terraform_snippets_are_valid_hcl(key: str) -> None:
     rtype = rtype or "aws_s3_bucket"
     finding = attach_fixes([_finding(check_id, f"{rtype}.data ({rtype})")], "terraform")[0]
     doc = hcl2.loads(finding.suggested_code or "")
-    assert doc.get("resource")
+    assert doc.get("variable" if rtype == "variable" else "resource")  # variable fixes: DM3-553
 
 
 def test_snippets_name_the_resource() -> None:

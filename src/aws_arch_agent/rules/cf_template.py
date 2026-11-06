@@ -8,6 +8,7 @@ from typing import List, Any
 from aws_arch_agent.models import Finding, Severity
 from aws_arch_agent.rules import iam_policy, lambda_runtimes
 from aws_arch_agent.rules.resource_model import Resource, resources_from_cf_template
+from aws_arch_agent.rules.terraform_model import TfVariable
 from aws_arch_agent.tools.cdk_synth import list_cf_templates
 from aws_arch_agent.tools.cfn_yaml import parse_template_text
 from aws_arch_agent.tools.paths import to_repo_relative
@@ -2290,7 +2291,7 @@ def _parameter_findings(template_path: Path, doc: dict) -> List[Finding]:
     for name, body in params.items() if isinstance(params, dict) else []:
         if type(name) is not str or not isinstance(body, dict):
             continue
-        if not _SECRET_NAME.search(name) or _SECRET_REFERENCE.search(name):
+        if not _is_secret_name(name):
             continue
         ptype = body.get("Type")
         if type(ptype) is str and "AWS::SSM::Parameter" in ptype:  # incl. List<AWS::SSM::...>
@@ -2335,6 +2336,72 @@ def _parameter_findings(template_path: Path, doc: dict) -> List[Finding]:
                 recommendation=(
                     f"{name} looks like a secret but NoEcho is not true, so its value shows in "
                     f"the console, the API and stack events. Set NoEcho: true. {use_instead}"
+                ),
+            ))
+    return out
+
+
+def _is_secret_name(name: str) -> bool:
+    return bool(_SECRET_NAME.search(name)) and not _SECRET_REFERENCE.search(name)
+
+
+def _committed(default: Any) -> bool:
+    """A default that puts a value in the repo: a non-empty string, a number, or a
+    non-empty list or map."""
+    if isinstance(default, bool):
+        return False
+    if isinstance(default, str):
+        return default != ""
+    if isinstance(default, (int, float)):
+        return True
+    return isinstance(default, (list, dict)) and len(default) > 0
+
+
+def terraform_variable_findings(variables: List[TfVariable]) -> List[Finding]:
+    """CF-PAR-001 / CF-PAR-002 for a Terraform root module's input variables.
+
+    A variable named like a secret without sensitive = true shows its value in plan and
+    apply output (Medium); one with a non-empty default commits the secret (High).
+    """
+    use_instead = (
+        "Read the secret where it is used instead, with data "
+        '"aws_secretsmanager_secret_version" or data "aws_ssm_parameter", or let the '
+        "service manage it (manage_master_user_password = true for RDS)."
+    )
+    out: List[Finding] = []
+    for var in variables:
+        if not _is_secret_name(var.name):
+            continue
+        sensitive = _flag(var.sensitive) is True
+        evidence = f"var.{var.name} (variable)"
+        if _committed(var.default):
+            out.append(Finding(
+                id="CF-PAR-002",
+                title="Terraform variable has a secret as its default value",
+                severity="High",
+                category="Security",
+                file=var.file,
+                line=var.line,
+                evidence=evidence,
+                recommendation=(
+                    f"{var.name} looks like a secret and has a default, so the value is committed "
+                    "with the code"
+                    + ("" if sensitive else ", and sensitive is not true, so it also shows in plan output")
+                    + f". Remove the default and rotate the secret. {use_instead}"
+                ),
+            ))
+        elif not sensitive:
+            out.append(Finding(
+                id="CF-PAR-001",
+                title="Secret Terraform variable is not sensitive",
+                severity="Medium",
+                category="Security",
+                file=var.file,
+                line=var.line,
+                evidence=evidence,
+                recommendation=(
+                    f"{var.name} looks like a secret but sensitive is not true, so its value shows "
+                    f"in plan and apply output. Set sensitive = true. {use_instead}"
                 ),
             ))
     return out

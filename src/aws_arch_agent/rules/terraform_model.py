@@ -13,6 +13,7 @@ replace those unresolved arguments before the checks run.
 from __future__ import annotations
 
 import json
+from dataclasses import dataclass
 import re
 from pathlib import Path
 from typing import Any, Callable
@@ -256,8 +257,8 @@ def _iter_type_maps(section: Any) -> list[dict]:
     return []
 
 
-def parse_tf_file(path: Path) -> tuple[list[_Block], list[str]]:
-    """Return the resource blocks and local module sources declared in one file."""
+def _load_tf(path: Path) -> tuple[dict, str, bool, Callable[[Any], Any]]:
+    """Parse one *.tf or *.tf.json file: (document, text, is_json, value normalizer)."""
     text = path.read_text(encoding="utf-8")
     is_json = path.name.endswith(".tf.json")
     try:
@@ -273,6 +274,71 @@ def parse_tf_file(path: Path) -> tuple[list[_Block], list[str]]:
         raise TerraformError(f"Failed to parse Terraform {path.name}: {exc}") from exc
     if not isinstance(doc, dict):
         raise TerraformError(f"Terraform {path.name} is not an object")
+    return doc, text, is_json, normalize
+
+
+@dataclass
+class TfVariable:
+    """One `variable "name"` block. default is NO_DEFAULT when the block sets none."""
+
+    name: str
+    default: Any
+    sensitive: Any
+    file: str
+    line: int | None
+
+
+NO_DEFAULT = _Unresolved()
+
+
+def _variable_line(text: str, name: str, is_json: bool) -> int | None:
+    if is_json:
+        at = text.find('"variable"')
+        at = text.find(f'"{name}"', at) if at >= 0 else -1
+    else:
+        match = re.search(rf'^\s*variable\s+"?{re.escape(name)}"?\s*\{{', text, re.MULTILINE)
+        at = match.start() + len(match.group(0)) - len(match.group(0).lstrip()) if match else -1
+    return text.count("\n", 0, at) + 1 if at >= 0 else None
+
+
+def parse_tf_variables(path: Path) -> list[TfVariable]:
+    """The `variable` blocks declared in one file."""
+    doc, text, is_json, normalize = _load_tf(path)
+    out: list[TfVariable] = []
+    for var_map in _iter_type_maps(doc.get("variable")):
+        for raw_name, body in var_map.items():
+            if isinstance(body, list):  # *.tf.json allows a list of bodies
+                body = body[0] if body and isinstance(body[0], dict) else {}
+            if not isinstance(body, dict):
+                continue
+            name = _unquote_key(raw_name)
+            norm = normalize(body)
+            out.append(TfVariable(
+                name=name,
+                default=norm.get("default", NO_DEFAULT),
+                sensitive=norm.get("sensitive"),
+                file=str(path),
+                line=_variable_line(text, name, is_json),
+            ))
+    return out
+
+
+def variables_from_terraform(module_dir: Path, warnings: list[str] | None = None) -> list[TfVariable]:
+    """The root module's input variables (one directory, non-recursive)."""
+    if warnings is None:
+        warnings = []
+    out: list[TfVariable] = []
+    for path in _module_files(module_dir):
+        try:
+            out.extend(parse_tf_variables(path))
+        except (TerraformError, OSError, UnicodeError):
+            continue  # resources_from_terraform already warned about this file
+    return out
+
+
+def parse_tf_file(path: Path) -> tuple[list[_Block], list[str]]:
+    """Return the resource blocks and local module sources declared in one file."""
+    doc, text, is_json, normalize = _load_tf(path)
 
     blocks: list[_Block] = []
     for type_map in _iter_type_maps(doc.get("resource")):
