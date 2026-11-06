@@ -51,6 +51,7 @@ TF_TYPE_TO_CANONICAL: dict[str, str] = {
     "aws_msk_cluster": "msk_cluster",
     "aws_wafv2_web_acl_association": "waf_association",
     "aws_wafregional_web_acl_association": "waf_association",
+    "aws_cloudfront_origin_access_control": "cloudfront_origin_access_control",
     "aws_api_gateway_rest_api": "api_gateway_rest_api",
     "aws_api_gateway_stage": "api_gateway_stage",
     "aws_apigatewayv2_api": "apigatewayv2_api",
@@ -656,6 +657,23 @@ def _cloudfront_distribution(body: dict) -> dict:
             "CloudFrontDefaultCertificate": _known(_v(cert, "cloudfront_default_certificate")),
             **({} if version is None else {"MinimumProtocolVersion": _known(version)}),
         }
+    origins = []
+    for origin in _blocks(body, "origin"):
+        item: dict = {
+            "Id": _known(_ref(origin, "origin_id")),
+            "DomainName": _known(_ref(origin, "domain_name")),
+        }
+        oac = _ref(origin, "origin_access_control_id")
+        if oac is not None:
+            item["OriginAccessControlId"] = _known(oac)
+        s3 = _first_block(origin, "s3_origin_config")
+        if s3:
+            item["S3OriginConfig"] = {"OriginAccessIdentity": _known(_ref(s3, "origin_access_identity"))}
+        if _first_block(origin, "custom_origin_config"):
+            item["CustomOriginConfig"] = {}
+        origins.append(item)
+    if origins:
+        config["Origins"] = origins
     web_acl = _ref(body, "web_acl_id")
     if web_acl is not None:
         config["WebACLId"] = _known(web_acl)
@@ -944,6 +962,7 @@ _BLOCK_PROPERTY: dict[str, str] = {
     "default_cache_behavior": "DistributionConfig",
     "ordered_cache_behavior": "DistributionConfig",
     "viewer_certificate": "DistributionConfig",
+    "origin": "DistributionConfig",
 }
 
 
