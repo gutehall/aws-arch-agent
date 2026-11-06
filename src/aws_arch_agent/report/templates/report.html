@@ -72,6 +72,22 @@
   <p class="meta">Accepted findings stay in the report and do not fail the build.</p>
   {% endif %}
 
+  {% if summary.findings %}
+  <section class="summary" aria-label="Summary">
+    <h2>Summary</h2>
+    <h3>Top fixes</h3>
+    <p class="meta">By severity, then estimated saving, then resources covered.</p>
+    <ol>{% for fix in summary.top_fixes %}<li>{{ fix_line(fix) }}</li>{% endfor %}</ol>
+    <h3>By pillar</h3>
+    <ul>{% for row in summary.pillars %}<li>{{ pillar_line(row) }}</li>{% endfor %}</ul>
+    {% if summary.quick_wins %}
+    <h3>Quick wins</h3>
+    <p class="meta">Low effort, with suggested code.</p>
+    <ul>{% for fix in summary.quick_wins %}<li>{{ fix_line(fix) }}</li>{% endfor %}</ul>
+    {% endif %}
+  </section>
+  {% endif %}
+
   {% if cost and cost.stacks %}
   <section class="cost" aria-label="Estimated monthly cost">
     <h2>Estimated monthly cost (estimate)</h2>
