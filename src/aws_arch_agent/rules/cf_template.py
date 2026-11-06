@@ -482,13 +482,18 @@ def _rotation_coverage(resources: List[Resource]) -> tuple[set[str], bool]:
             continue
         target = r.properties.get("SecretId")
         text = target if type(target) is str else json.dumps(target, default=str)
-        hits = {
-            s.name for s in secrets
-            if _references(text, s.name) or (type(target) is str and target == s.properties.get("Name"))
-        }
+        hits = {s.name for s in secrets if _references(text, s.name) or _names_secret(target, s)}
         covered |= hits
         unlinked = unlinked or not hits
     return covered, unlinked
+
+
+def _names_secret(target: Any, secret: Resource) -> bool:
+    """A literal SecretId that is the secret's Name, or its ARN (which ends ':secret:<Name>-<6 chars>')."""
+    name = secret.properties.get("Name")
+    if type(target) is not str or type(name) is not str:
+        return False
+    return target == name or re.search(rf":secret:{re.escape(name)}-[A-Za-z0-9]{{6}}$", target) is not None
 
 
 def _rotation_finding(res: Resource, template_path: Path) -> Finding:
@@ -549,7 +554,7 @@ def _cognito_findings(res: Resource, template_path: Path) -> List[Finding]:
         mode = "unknown"  # an intrinsic: not judged
     if mode is None or mode == "OFF":
         tier = props.get("UserPoolTier", "ESSENTIALS")
-        plan = "" if tier == "PLUS" else (
+        plan = "" if type(tier) is not str or tier == "PLUS" else (
             "Threat protection needs the Plus feature plan (UserPoolTier: PLUS), which costs more "
             "per active user. ")
         add("CF-COG-003", "Low", "Cognito threat protection is off",

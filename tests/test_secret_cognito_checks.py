@@ -51,6 +51,10 @@ def test_cloudformation_rotation(tmp_path: Path) -> None:
         "ByRefRotation": _rotation({"Ref": "ByRef"}),
         "ByName": _secret(Name="app/db"),
         "ByNameRotation": _rotation("app/db"),
+        "ByArn": _secret(Name="app/api"),
+        "ByArnRotation": _rotation("arn:aws:secretsmanager:eu-north-1:111122223333:secret:app/api-AbC123"),
+        "BySub": _secret(),
+        "BySubRotation": _rotation({"Fn::Sub": "${BySub}"}),
     })
     assert _found(findings) == {("Plain", "CF-SM-001")}
     assert findings[0].severity == "Medium"
@@ -83,12 +87,15 @@ def test_cloudformation_cognito(tmp_path: Path) -> None:
         "ThreatAudit": _pool(UserPoolAddOns={"AdvancedSecurityMode": "AUDIT"}),
         "ThreatUnsetEssentials": _pool(UserPoolAddOns=None, UserPoolTier=None),
         "ThreatParam": _pool(UserPoolAddOns={"AdvancedSecurityMode": {"Ref": "Mode"}}),
+        "TierParam": _pool(UserPoolAddOns=None, UserPoolTier={"Ref": "Tier"}),
+        "NoLength": _pool(Policies={"PasswordPolicy": {k: v for k, v in STRONG.items() if k != "MinimumLength"}}),
     })
     assert _found(findings) == {
         ("MfaOff", "CF-COG-001"), ("MfaUnset", "CF-COG-001"),
         ("DefaultPolicy", "CF-COG-002"), ("SignInOnly", "CF-COG-002"),
         ("Short", "CF-COG-002"), ("ShortString", "CF-COG-002"), ("NoClasses", "CF-COG-002"),
         ("ThreatOff", "CF-COG-003"), ("ThreatUnsetEssentials", "CF-COG-003"),
+        ("TierParam", "CF-COG-003"), ("NoLength", "CF-COG-002"),
     }
     by = _by(findings)
     assert by[("MfaOff", "CF-COG-001")].severity == "High"
@@ -99,6 +106,8 @@ def test_cloudformation_cognito(tmp_path: Path) -> None:
     assert by[("ThreatOff", "CF-COG-003")].severity == "Low"
     assert "Plus feature plan" not in by[("ThreatOff", "CF-COG-003")].recommendation  # already PLUS
     assert "Plus feature plan" in by[("ThreatUnsetEssentials", "CF-COG-003")].recommendation
+    assert "Plus feature plan" not in by[("TierParam", "CF-COG-003")].recommendation  # may be PLUS
+    assert by[("NoLength", "CF-COG-002")].recommendation.startswith("MinimumLength is 8.")
 
 
 def test_cloudformation_fixes(tmp_path: Path) -> None:
@@ -137,6 +146,15 @@ resource "aws_secretsmanager_secret_rotation" "rotated" {
   rotation_rules {
     automatically_after_days = 30
   }
+}
+
+resource "aws_secretsmanager_secret" "by_arn" {
+  name = "by-arn"
+}
+
+resource "aws_secretsmanager_secret_rotation" "by_arn" {
+  secret_id           = aws_secretsmanager_secret.by_arn.arn
+  rotation_lambda_arn = aws_lambda_function.rotate.arn
 }
 
 resource "aws_secretsmanager_secret" "by_name" {
@@ -253,3 +271,12 @@ def test_terraform_fixes(tmp_path: Path) -> None:
     assert 'mfa_configuration = "ON"' in code[("aws_cognito_user_pool.defaults", "CF-COG-001")]
     assert "minimum_length    = 12" in code[("aws_cognito_user_pool.weak", "CF-COG-002")]
     assert all("In CDK" not in f.recommendation for f in findings)
+
+
+def test_rotation_with_an_unknown_arn_still_covers_every_secret(tmp_path: Path) -> None:
+    """A literal ARN that matches no secret here may be any of them: nothing is reported."""
+    findings = _cf(tmp_path, {
+        "A": _secret(Name="app/a"),
+        "Other": _rotation("arn:aws:secretsmanager:eu-north-1:111122223333:secret:app/other-AbC123"),
+    })
+    assert _found(findings) == set()
