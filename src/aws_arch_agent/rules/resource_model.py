@@ -20,6 +20,7 @@ CF_TYPE_TO_CANONICAL: dict[str, str] = {
     "AWS::EC2::SecurityGroup": "security_group",
     "AWS::EC2::SecurityGroupIngress": "security_group_ingress_rule",
     "AWS::EC2::VPC": "vpc",
+    "AWS::EC2::Subnet": "subnet",
     "AWS::EC2::VPCEndpoint": "vpc_endpoint",
     "AWS::EC2::FlowLog": "flow_log",
     "AWS::EC2::NatGateway": "nat_gateway",
