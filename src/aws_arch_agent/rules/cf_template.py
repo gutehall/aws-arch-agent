@@ -6,7 +6,7 @@ from pathlib import Path
 from typing import List, Any
 
 from aws_arch_agent.models import Finding, Severity
-from aws_arch_agent.rules import estimates, iam_policy, lambda_runtimes, tag_policy
+from aws_arch_agent.rules import estimates, iam_policy, lambda_runtimes, stack_cost, tag_policy
 from aws_arch_agent.rules.resource_model import Resource, resources_from_cf_template
 from aws_arch_agent.rules.terraform_model import TfVariable
 from aws_arch_agent.tools.cdk_synth import list_cf_templates
@@ -2269,6 +2269,9 @@ def run_resource_checks(
 
     # --- Required tag policy (config tags.required; off without one) ---
     findings.extend(tag_policy.findings(resources, template_path))
+
+    # --- Stack cost: price every resource the snapshot covers (report cost section) ---
+    stack_cost.record(template_path, resources)
 
     # --- VPC endpoints (template-level: VPC present but no endpoints) ---
     if vpc_count > 0 and vpce_count == 0:

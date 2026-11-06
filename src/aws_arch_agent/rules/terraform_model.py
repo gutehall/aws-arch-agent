@@ -1017,6 +1017,13 @@ def _dynamodb(body: dict) -> dict:
     sse = _first_block(body, "server_side_encryption")
     if sse:
         props["SSESpecification"] = {"SSEEnabled": _v(sse, "enabled")}
+    # Priced for the stack total. Terraform's default billing mode is PROVISIONED too.
+    _set(props, "BillingMode", _v(body, "billing_mode"))
+    if "read_capacity" in body or "write_capacity" in body:
+        props["ProvisionedThroughput"] = {
+            "ReadCapacityUnits": _v(body, "read_capacity"),
+            "WriteCapacityUnits": _v(body, "write_capacity"),
+        }
     return props
 
 
