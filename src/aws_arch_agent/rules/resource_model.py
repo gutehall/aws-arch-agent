@@ -87,6 +87,8 @@ class Resource:
     still counts for template-level checks; per-resource checks skip it with a warning.
     unresolved: property names whose value depends on input the scan cannot see
     (Terraform var.* / local.*). Checks that read them report nothing.
+    policies: resource-level DeletionPolicy and UpdateReplacePolicy, when set. Terraform
+    lifecycle.prevent_destroy = true maps to Retain for both.
     """
 
     type: str | None
@@ -97,6 +99,7 @@ class Resource:
     source_type: str = ""
     malformed: str | None = None
     unresolved: frozenset[str] = frozenset()
+    policies: dict[str, Any] = field(default_factory=dict)
 
 
 def resources_from_cf_template(
@@ -137,6 +140,9 @@ def resources_from_cf_template(
                 line=None,
                 source_type=source_type,
                 malformed=malformed,
+                policies={
+                    k: body[k] for k in ("DeletionPolicy", "UpdateReplacePolicy") if k in body
+                },
             )
         )
     return out

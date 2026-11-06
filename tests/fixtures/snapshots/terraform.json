@@ -1,5 +1,19 @@
 [
   {
+    "id": "CF-DEL-001",
+    "severity": "Medium",
+    "file": "main.tf",
+    "line": 20,
+    "evidence": "aws_s3_bucket.data (aws_s3_bucket)"
+  },
+  {
+    "id": "CF-DEL-001",
+    "severity": "Medium",
+    "file": "main.tf",
+    "line": 24,
+    "evidence": "aws_db_instance.database (aws_db_instance)"
+  },
+  {
     "id": "CF-FL-001",
     "severity": "Low",
     "file": "network.tf",
