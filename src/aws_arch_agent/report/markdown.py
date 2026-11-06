@@ -150,6 +150,9 @@ def render_markdown(
             lines.append(f"- Severity: **{f.severity}**")
             if loc:
                 lines.append(f"- {loc}")
+            if f.environment:
+                shown = "unknown (judged as prod)" if f.environment == "unknown" else f.environment
+                lines.append(f"- Environment: **{shown}**")
             lines.extend(f"- {line}" for line in estimate_lines(f))
             if f.evidence:
                 lines.append("")

@@ -29,6 +29,9 @@ class Finding(BaseModel):
     # How much work the fix is: low = one property, applied in place; high = the
     # resource is replaced or redesigned. Set from rules/effort.py.
     effort: Effort = "medium"
+    # The environment of the stack the finding came from; unknown is judged as
+    # prod. None for findings not tied to a template (CDK source rules).
+    environment: Literal["prod", "staging", "dev", "unknown"] | None = None
 
 
 class RepoContext(BaseModel):

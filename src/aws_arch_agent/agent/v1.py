@@ -24,7 +24,7 @@ from aws_arch_agent.rules.terraform_model import (
 )
 from aws_arch_agent.rules.runner import filter_by_severity, run_all_rules
 from aws_arch_agent.pricing import DEFAULT_REGION, price_note, use_region
-from aws_arch_agent.rules import effort, stack_cost
+from aws_arch_agent.rules import effort, environments, stack_cost
 from aws_arch_agent.rules.tag_policy import TagPolicy, policy_checked, use_tag_policy
 from aws_arch_agent.report.markdown import insert_summary, render_markdown
 from aws_arch_agent.tools.llm import LLMClient
@@ -337,7 +337,8 @@ def _scan_terraform(
             module, warnings, plan_values if module == plan_target else None
         )
         module_findings = run_resource_checks(resources, module, warnings)
-        module_findings += terraform_variable_findings(variables_from_terraform(module))
+        module_findings += environments.apply(
+            terraform_variable_findings(variables_from_terraform(module)), module, resources)
         for finding in module_findings:
             if finding.file:
                 finding.file = to_repo_relative(finding.file, repo_path)
@@ -410,9 +411,15 @@ def analyze_v1(
     tf_plan: Path | None = None,
     price_region: str = DEFAULT_REGION,
     tag_policy: TagPolicy | None = None,
+    environment_map: dict[str, str] | None = None,
 ) -> tuple[str, RepoContext, list[Finding], list[str]]:
     """Run V1 pipeline: scan repo, run rules, optionally polish with LLM; return (report_md, ctx, findings, warnings)."""
-    with use_region(price_region), use_tag_policy(tag_policy), stack_cost.collect():
+    with (
+        use_region(price_region),
+        use_tag_policy(tag_policy),
+        stack_cost.collect(),
+        environments.use_environments(environment_map, repo_path),
+    ):
         ctx, findings, warnings = _collect_findings(
             repo_path, max_files, rules_include, rules_exclude, severity_threshold, rules_org, iac,
             tf_plan,
