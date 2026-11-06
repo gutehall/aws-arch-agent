@@ -963,8 +963,9 @@ _TERRAFORM.update({
 }""",
     "CF-S3-007": """resource "aws_s3_bucket_lifecycle_configuration" "$tf_name" {
   bucket = aws_s3_bucket.$tf_name.id
+  # Add this rule to the bucket's existing aws_s3_bucket_lifecycle_configuration
+  # (one per bucket), next to its expiration rules.
   rule {
-    # keep the existing rules; add a transition
     id     = "tier"
     status = "Enabled"
     filter {}

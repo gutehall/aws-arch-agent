@@ -532,16 +532,28 @@ def _s3_part(part_type: str, body: dict) -> Any:
     return {"DestinationBucketName": _ref(body, "target_bucket")}
 
 
-def _lifecycle_rules(rules: list[dict]) -> dict:
-    """Lifecycle rules in CloudFormation shape: the storage classes they move objects to."""
+def _lifecycle_rules(rules: list[dict]) -> Any:
+    """Lifecycle rules in CloudFormation shape: status and the storage classes they move to.
+
+    A dynamic transition block, or a status from a variable, makes the whole configuration
+    UNRESOLVED: the S3 storage checks then do not judge the bucket.
+    """
     out = []
     for rule in rules:
+        if {"transition", "noncurrent_version_transition"} & _dynamic_names(rule):
+            return UNRESOLVED
+        status = _v(rule, "status")
+        enabled = _v(rule, "enabled")  # inline lifecycle_rule (provider < v4)
+        if status is UNRESOLVED or enabled is UNRESOLVED:
+            return UNRESOLVED
+        if status is None and enabled is not None:
+            status = "Enabled" if enabled is True else "Disabled"
         transitions = [
             {"StorageClass": _known(_v(t, "storage_class"))}
             for key in ("transition", "noncurrent_version_transition")
             for t in _blocks(rule, key)
         ]
-        out.append({"Transitions": transitions})
+        out.append({"Status": status or "Enabled", "Transitions": transitions})
     return {"Rules": out}
 
 
@@ -1285,6 +1297,7 @@ _ADAPTERS: dict[str, Callable[[dict], dict]] = {
 # Nested block name -> CloudFormation property it feeds. A `dynamic` block of that name
 # is built from input the scan cannot see.
 _BLOCK_PROPERTY: dict[str, str] = {
+    "lifecycle_rule": "LifecycleConfiguration",
     "password_policy": "Policies",
     "user_pool_add_ons": "UserPoolAddOns",
     "image_scanning_configuration": "ImageScanningConfiguration",

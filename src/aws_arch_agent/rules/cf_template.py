@@ -737,10 +737,13 @@ def _autoscaled_tables(resources: List[Resource]) -> tuple[set[str], bool]:
             continue
         target = r.properties.get("ResourceId")
         text = target if type(target) is str else json.dumps(target, default=str)
+        if "/index/" in text:
+            continue  # scales a global secondary index, not the table's own capacity
         hits = {
             t.name for t in tables
             if _references(text, t.name) or t.name in r.references
-            or (type(t.properties.get("TableName")) is str and text.endswith(f"table/{t.properties['TableName']}"))
+            or (type(t.properties.get("TableName")) is str
+                and re.search(rf"table/{re.escape(t.properties['TableName'])}(?:$|[\"/])", text) is not None)
         }
         covered |= hits
         unlinked = unlinked or not hits
@@ -791,14 +794,25 @@ def _s3_storage_findings(res: Resource, template_path: Path) -> List[Finding]:
             ),
         )]
     rules = lifecycle.get("Rules") if isinstance(lifecycle, dict) and not _is_intrinsic(lifecycle) else None
-    if not isinstance(rules, list) or tiering:
+    if not isinstance(rules, list):
+        return []
+    if any(not isinstance(rule, dict) or _is_intrinsic(rule) for rule in rules):
+        return []  # a rule from Fn::If: not judged
+    enabled = [rule for rule in rules if rule.get("Status") != "Disabled"]
+    if not enabled:
+        return [make(
+            "CF-S3-006", "S3 bucket has no lifecycle rules",
+            "Every lifecycle rule is Disabled, so objects stay in S3 Standard until someone "
+            "deletes them. Enable a rule that expires old objects and versions, and moves data "
+            "read rarely to a cheaper class, or to INTELLIGENT_TIERING when access is unknown. "
+            "In CDK: lifecycleRules.",
+        )]
+    if tiering:
         return []
     moves = any(
-        isinstance(rule, dict) and (
-            rule.get("Transitions") or rule.get("NoncurrentVersionTransitions")
-            or rule.get("Transition") or rule.get("NoncurrentVersionTransition")
-        )
-        for rule in rules
+        rule.get("Transitions") or rule.get("NoncurrentVersionTransitions")
+        or rule.get("Transition") or rule.get("NoncurrentVersionTransition")
+        for rule in enabled
     )
     if moves:
         return []

@@ -248,3 +248,82 @@ def test_terraform(tmp_path: Path) -> None:
     assert 'resource "aws_s3_bucket_lifecycle_configuration" "plain"' in fixes[("CF-S3-006", "aws_s3_bucket.plain")]
     assert "aws_dynamodb_table.users.name" in fixes[("CF-DDB-003", "aws_dynamodb_table.users")]
     assert 'volume_type = "gp3"' in fixes[("CF-EBS-002", "aws_launch_template.gp2")]
+
+
+def test_rule_shapes(tmp_path: Path) -> None:
+    found = _found(_cf(tmp_path, {
+        "Singular": _bucket(LifecycleConfiguration={"Rules": [
+            {"Status": "Enabled", "Transition": {"StorageClass": "GLACIER", "TransitionInDays": 90}}]}),
+        "Noncurrent": _bucket(LifecycleConfiguration={"Rules": [
+            {"Status": "Enabled", "NoncurrentVersionTransitions": [{"StorageClass": "GLACIER", "TransitionInDays": 30}]}]}),
+        "AllDisabled": _bucket(LifecycleConfiguration={"Rules": [
+            {"Status": "Disabled", "Transitions": [{"StorageClass": "GLACIER", "TransitionInDays": 30}]}]}),
+        "DisabledMove": _bucket(LifecycleConfiguration={"Rules": [
+            {"Status": "Enabled", "ExpirationInDays": 30},
+            {"Status": "Disabled", "Transitions": [{"StorageClass": "GLACIER", "TransitionInDays": 30}]}]}),
+        "RuleIf": _bucket(LifecycleConfiguration={"Rules": [{"Fn::If": ["X", {"Status": "Enabled"}, {"Ref": "AWS::NoValue"}]}]}),
+    }))
+    assert found == {("CF-S3-006", "AllDisabled"), ("CF-S3-007", "DisabledMove")}
+
+
+def test_index_targets_do_not_cover_the_table(tmp_path: Path) -> None:
+    found = _found(_cf(tmp_path, {
+        "Orders": _table(TableName="orders", ProvisionedThroughput=THROUGHPUT),
+        "IndexOnly": _target({"Fn::Sub": "table/${Orders}/index/by-date"}),
+        "LiteralIndex": _target("table/orders/index/by-date"),
+        "Other": _table(TableName="orders-archive", ProvisionedThroughput=THROUGHPUT),
+        "OtherByName": _target("table/orders-archive"),
+    }))
+    assert found == {("CF-DDB-003", "Orders")}  # the index targets neither cover nor hide it
+
+
+def test_terraform_dynamic_lifecycle_blocks_are_not_judged(tmp_path: Path) -> None:
+    module = tmp_path / "infra"
+    module.mkdir()
+    (module / "main.tf").write_text("""\
+resource "aws_s3_bucket" "dyn_inline" {
+  bucket = "a"
+  dynamic "lifecycle_rule" {
+    for_each = var.rules
+    content {
+      enabled = true
+    }
+  }
+}
+
+resource "aws_s3_bucket" "dyn_transition" {
+  bucket = "b"
+}
+
+resource "aws_s3_bucket_lifecycle_configuration" "dyn_transition" {
+  bucket = aws_s3_bucket.dyn_transition.id
+  rule {
+    id     = "r"
+    status = "Enabled"
+    dynamic "transition" {
+      for_each = var.transitions
+      content {
+        days          = transition.value
+        storage_class = "GLACIER"
+      }
+    }
+  }
+}
+
+resource "aws_s3_bucket" "disabled" {
+  bucket = "c"
+}
+
+resource "aws_s3_bucket_lifecycle_configuration" "disabled" {
+  bucket = aws_s3_bucket.disabled.id
+  rule {
+    id     = "r"
+    status = "Disabled"
+    expiration {
+      days = 30
+    }
+  }
+}
+""", encoding="utf-8")
+    found = _found(run_resource_checks(resources_from_terraform(module), module))
+    assert found == {("CF-S3-006", "aws_s3_bucket.disabled")}
