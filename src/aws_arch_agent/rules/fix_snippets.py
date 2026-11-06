@@ -859,6 +859,101 @@ resource "aws_db_instance" "db" {
 _TERRAFORM["CF-PAR-001"] = _TF_SECRET_REFERENCE
 _TERRAFORM["CF-PAR-002"] = _TF_SECRET_REFERENCE
 
+# ECR repositories and ECS task definitions (DM3-527).
+_CLOUDFORMATION.update({
+    "CF-ECR-001": """$name:
+  Type: AWS::ECR::Repository
+  Properties:
+    # keep the other properties as they are
+    ImageScanningConfiguration:
+      ScanOnPush: true""",
+    "CF-ECR-002": """$name:
+  Type: AWS::ECR::Repository
+  Properties:
+    # keep the other properties as they are
+    ImageTagMutability: IMMUTABLE""",
+    "CF-ECR-003": """$name:
+  Type: AWS::ECR::Repository
+  Properties:
+    # keep the other properties as they are
+    LifecyclePolicy:
+      LifecyclePolicyText: |
+        {"rules": [{"rulePriority": 1, "description": "Expire untagged images after 14 days",
+          "selection": {"tagStatus": "untagged", "countType": "sinceImagePushed",
+            "countUnit": "days", "countNumber": 14},
+          "action": {"type": "expire"}}]}""",
+    "CF-ECS-001": """$name:
+  Type: AWS::ECS::TaskDefinition
+  Properties:
+    # keep the other properties as they are
+    ContainerDefinitions:
+      - Name: app # each container: keep its other keys as they are
+        Privileged: false""",
+    "CF-ECS-002": """$name:
+  Type: AWS::ECS::TaskDefinition
+  Properties:
+    # keep the other properties as they are
+    ContainerDefinitions:
+      - Name: app # each container: keep its other keys as they are
+        ReadonlyRootFilesystem: true""",
+    "CF-ECS-003": """$name:
+  Type: AWS::ECS::TaskDefinition
+  Properties:
+    # keep the other properties as they are
+    ContainerDefinitions:
+      - Name: app # each container: keep its other keys as they are
+        User: '1000'""",
+})
+_TERRAFORM.update({
+    "CF-ECR-001": """resource "aws_ecr_repository" "$tf_name" {
+  # keep the other arguments as they are
+  image_scanning_configuration {
+    scan_on_push = true
+  }
+}""",
+    "CF-ECR-002": """resource "aws_ecr_repository" "$tf_name" {
+  # keep the other arguments as they are
+  image_tag_mutability = "IMMUTABLE"
+}""",
+    "CF-ECR-003": """resource "aws_ecr_lifecycle_policy" "$tf_name" {
+  repository = aws_ecr_repository.$tf_name.name
+  policy = jsonencode({
+    rules = [{
+      rulePriority = 1
+      description  = "Expire untagged images after 14 days"
+      selection = {
+        tagStatus   = "untagged"
+        countType   = "sinceImagePushed"
+        countUnit   = "days"
+        countNumber = 14
+      }
+      action = { type = "expire" }
+    }]
+  })
+}""",
+    "CF-ECS-001": """resource "aws_ecs_task_definition" "$tf_name" {
+  # keep the other arguments as they are
+  container_definitions = jsonencode([{
+    name       = "app" # each container: keep its other keys as they are
+    privileged = false
+  }])
+}""",
+    "CF-ECS-002": """resource "aws_ecs_task_definition" "$tf_name" {
+  # keep the other arguments as they are
+  container_definitions = jsonencode([{
+    name                   = "app" # each container: keep its other keys as they are
+    readonlyRootFilesystem = true
+  }])
+}""",
+    "CF-ECS-003": """resource "aws_ecs_task_definition" "$tf_name" {
+  # keep the other arguments as they are
+  container_definitions = jsonencode([{
+    name = "app" # each container: keep its other keys as they are
+    user = "1000"
+  }])
+}""",
+})
+
 # Stateful resources deleted with the stack (DM3-539).
 _CLOUDFORMATION.update({
     "CF-DEL-001": """$name:
