@@ -83,6 +83,9 @@ TF_TYPE_TO_CANONICAL: dict[str, str] = {
     "aws_ecr_repository_policy": "resource_policy",
     "aws_ecr_repository": "ecr_repository",
     "aws_ecs_task_definition": "ecs_task_definition",
+    "aws_secretsmanager_secret": "secretsmanager_secret",
+    "aws_secretsmanager_secret_rotation": "secretsmanager_secret_rotation",
+    "aws_cognito_user_pool": "cognito_user_pool",
     "aws_lambda_permission": "lambda_permission",
     "aws_iam_user": "iam_user",
     "aws_iam_group": "iam_group",
@@ -820,6 +823,38 @@ def _ecs_task_definition(body: dict) -> dict:
     return props
 
 
+def _secretsmanager_secret(body: dict) -> dict:
+    props: dict = {}
+    name = body.get("name")
+    if type(name) is str:  # a literal name; a rotation may point at the secret by it
+        props["Name"] = name
+    return props
+
+
+def _secret_rotation(body: dict) -> dict:
+    return {"SecretId": _known(_ref(body, "secret_id"))}
+
+
+def _cognito_user_pool(body: dict) -> dict:
+    props: dict = {}
+    _set(props, "MfaConfiguration", _v(body, "mfa_configuration"))
+    _set(props, "UserPoolTier", _v(body, "user_pool_tier"))
+    policy_block = _first_block(body, "password_policy")
+    if "password_policy" in body:
+        policy: dict = {}
+        for tf_key, cf_key in (
+            ("minimum_length", "MinimumLength"), ("require_lowercase", "RequireLowercase"),
+            ("require_uppercase", "RequireUppercase"), ("require_numbers", "RequireNumbers"),
+            ("require_symbols", "RequireSymbols"),
+        ):
+            _set(policy, cf_key, _v(policy_block, tf_key))
+        props["Policies"] = {"PasswordPolicy": policy}
+    add_ons = _first_block(body, "user_pool_add_ons")
+    if add_ons:
+        props["UserPoolAddOns"] = {"AdvancedSecurityMode": _v(add_ons, "advanced_security_mode")}
+    return props
+
+
 def _lambda_permission(body: dict) -> dict:
     props: dict = {}
     _set(props, "Principal", _v(body, "principal"))
@@ -1017,6 +1052,9 @@ _ADAPTERS: dict[str, Callable[[dict], dict]] = {
     "aws_ecr_repository_policy": _resource_policy,
     "aws_ecr_repository": _ecr_repository,
     "aws_ecs_task_definition": _ecs_task_definition,
+    "aws_secretsmanager_secret": _secretsmanager_secret,
+    "aws_secretsmanager_secret_rotation": _secret_rotation,
+    "aws_cognito_user_pool": _cognito_user_pool,
     "aws_lambda_permission": _lambda_permission,
     "aws_iam_role_policy_attachment": _policy_attachment,
     "aws_iam_user_policy_attachment": _policy_attachment,
@@ -1031,6 +1069,8 @@ _ADAPTERS: dict[str, Callable[[dict], dict]] = {
 # Nested block name -> CloudFormation property it feeds. A `dynamic` block of that name
 # is built from input the scan cannot see.
 _BLOCK_PROPERTY: dict[str, str] = {
+    "password_policy": "Policies",
+    "user_pool_add_ons": "UserPoolAddOns",
     "image_scanning_configuration": "ImageScanningConfiguration",
     "runtime_platform": "RuntimePlatform",
     "versioning": "VersioningConfiguration",
