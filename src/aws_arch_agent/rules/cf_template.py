@@ -6,7 +6,7 @@ from pathlib import Path
 from typing import List, Any
 
 from aws_arch_agent.models import Finding, Severity
-from aws_arch_agent.rules import iam_policy, lambda_runtimes
+from aws_arch_agent.rules import estimates, iam_policy, lambda_runtimes
 from aws_arch_agent.rules.resource_model import Resource, resources_from_cf_template
 from aws_arch_agent.rules.terraform_model import TfVariable
 from aws_arch_agent.tools.cdk_synth import list_cf_templates
@@ -39,6 +39,8 @@ CF_COVERS_STATIC: dict[str, tuple[str, ...]] = {
     "CF-DOCDB-001": ("SEC-060",),
     "CF-NEP-001": ("SEC-061",),
     "CF-MSK-001": ("SEC-044",),
+    "CF-EBS-002": ("COST-008",),
+    "CF-EIP-001": ("COST-012",),
     "CF-SM-001": ("SEC-015",),
     "CF-COG-001": ("SEC-034",),
     "CF-COG-002": ("SEC-035",),
@@ -166,7 +168,7 @@ _PER_RESOURCE_TYPES = frozenset({
     "elasticache_replication_group", "launch_template",
     "opensearch_domain", "redshift_cluster", "docdb_cluster", "neptune_cluster", "msk_cluster",
     "cloudfront_distribution", "subnet", "ecs_task_definition",
-    "secretsmanager_secret", "cognito_user_pool",
+    "secretsmanager_secret", "cognito_user_pool", "eip",
 })
 
 
@@ -217,6 +219,8 @@ CHECK_PROPERTIES: dict[str, frozenset[str]] = {
         # Reads DBClusterIdentifier on instances only; _deletion_finding checks it.
         "CF-DEL-001": set(),
         "CF-SM-001": set(),  # judged on the template's rotation schedules
+        "CF-EBS-002": {"VolumeType"},  # Size only feeds the estimate
+        "CF-EIP-001": {"InstanceId", "NetworkInterfaceId", "PublicIpv4Pool"},
         "CF-COG-001": {"MfaConfiguration"},
         "CF-COG-002": {"Policies"},
         "CF-COG-003": {"UserPoolAddOns", "UserPoolTier"},
@@ -591,6 +595,69 @@ def _weak_password_policy(policies: Any) -> str | None:
         if len(missing) == len(_PASSWORD_CLASSES):
             reasons.append("No character class is required.")
     return " ".join(reasons) or None
+
+
+def _gp2_finding(res: Resource, template_path: Path) -> Finding | None:
+    """CF-EBS-002: a volume on gp2, set or by default (AWS::EC2::Volume and aws_ebs_volume
+    default to gp2). The estimate needs a literal Size; a volume sized by its snapshot has none."""
+    volume_type = res.properties.get("VolumeType", "gp2")
+    if volume_type != "gp2":
+        return None  # another type, or an intrinsic
+    finding = Finding(
+        id="CF-EBS-002",
+        title="EBS volume uses gp2 instead of gp3",
+        severity="Low",
+        category="Cost Optimization",
+        file=res.file or str(template_path),
+        line=res.line,
+        evidence=f"{res.name} ({res.source_type})",
+        recommendation=(
+            ("VolumeType is gp2." if "VolumeType" in res.properties else "VolumeType is not set, so it is gp2.")
+            + " gp3 costs about 20% less per GB and includes 3,000 IOPS and 125 MB/s whatever "
+            "the size. Set VolumeType to gp3; for a volume over 1,000 GiB, set Iops to match "
+            "its gp2 baseline (3 per GiB). In CDK: volumeType: ec2.EbsDeviceVolumeType.GP3."
+        ),
+    )
+    return estimates.apply(finding, estimates.gp2_volume(res.properties.get("Size")))
+
+
+def _eips_in_use(resources: List[Resource]) -> set[str]:
+    """Elastic IPs another resource in this template refers to (a NAT gateway's AllocationId,
+    an EIPAssociation, a load balancer's SubnetMappings, ...), or that name their instance."""
+    eips = [r for r in resources if r.type == "eip"]
+    used = {e.name for e in eips if e.properties.get("InstanceId") or e.properties.get("NetworkInterfaceId")}
+    for r in resources:
+        if r.type == "eip":
+            continue
+        if r.source_type.startswith("AWS::"):
+            text = json.dumps(r.properties, default=str)
+            used |= {e.name for e in eips if _references(text, e.name)}
+        else:
+            used |= {e.name for e in eips if e.name in r.references}
+    return used
+
+
+def _eip_finding(res: Resource, template_path: Path) -> Finding | None:
+    """CF-EIP-001: an Elastic IP nothing in this template uses. Public IPv4 addresses are
+    billed by the hour attached or not; one from your own BYOIP pool is not."""
+    pool = res.properties.get("PublicIpv4Pool")
+    if pool is not None and pool != "amazon":
+        return None
+    finding = Finding(
+        id="CF-EIP-001",
+        title="Elastic IP is not used in this template",
+        severity="Low",
+        category="Cost Optimization",
+        file=res.file or str(template_path),
+        line=res.line,
+        evidence=f"{res.name} ({res.source_type})",
+        recommendation=(
+            "No NAT gateway, instance, network interface, association or load balancer in this "
+            "template uses it, and every public IPv4 address is billed by the hour. If nothing "
+            "outside the template uses it either, release it."
+        ),
+    )
+    return estimates.apply(finding, estimates.idle_public_ipv4())
 
 
 def _waf_finding(res: Resource, template_path: Path) -> Finding | None:
@@ -1511,6 +1578,7 @@ def run_resource_checks(
     cf_policies, cf_policy_unlinked = _cf_bucket_policies(resources)
     waf_covered, waf_unlinked = _waf_coverage(resources)
     rotated, rotation_unlinked = _rotation_coverage(resources)
+    eips_in_use = _eips_in_use(resources)
     launch_templates_without_spot = 0
     first_lt_without_spot: Resource | None = None
     for r in resources:
@@ -1714,6 +1782,7 @@ def run_resource_checks(
                             evidence=f"{logical_id} ({rtype})",
                             recommendation="Review DBInstanceClass against actual workload; consider right-sizing to reduce cost and improve efficiency.",
                         ))
+                        estimates.apply(findings[-1], estimates.rds_instance(props))
 
                 # --- EC2 instance metadata: IMDSv2 required ---
                 if ctype == "instance":
@@ -1743,6 +1812,7 @@ def run_resource_checks(
                             evidence=f"{logical_id} ({rtype})",
                             recommendation="Review InstanceType against actual workload; consider right-sizing or autoscaling to match load.",
                         ))
+                        estimates.apply(findings[-1], estimates.ec2_instance(props.get("InstanceType")))
 
                 # --- ALB access logs (heuristic) ---
                 if ctype == "lb":
@@ -1812,6 +1882,16 @@ def run_resource_checks(
                     findings.extend(_iam_findings(res, template_path))
                 if ctype == "iam_role":
                     findings.extend(_trust_findings(res, template_path))
+
+                # --- gp2 volumes and unused Elastic IPs (cost estimates) ---
+                if ctype == "ebs_volume":
+                    gp2 = _gp2_finding(res, template_path)
+                    if gp2 is not None:
+                        findings.append(gp2)
+                if ctype == "eip" and logical_id not in eips_in_use:
+                    eip = _eip_finding(res, template_path)
+                    if eip is not None:
+                        findings.append(eip)
 
                 # --- Secrets Manager rotation and Cognito user pools ---
                 if ctype == "secretsmanager_secret" and not rotation_unlinked and logical_id not in rotated:
@@ -2239,6 +2319,7 @@ def run_resource_checks(
             evidence=f"Template has {nat_count} NAT Gateway(s)" + _anchor("nat_gateway")[2],
             recommendation="Consider VPC endpoints (S3, DynamoDB, or interface endpoints) to reduce NAT data processing costs.",
         ))
+        estimates.apply(findings[-1], estimates.nat_gateways(nat_count))
 
     # --- Launch template Spot (template-level: LTs without Spot when no ASG) ---
     if launch_templates_without_spot > 0 and asg_count == 0:

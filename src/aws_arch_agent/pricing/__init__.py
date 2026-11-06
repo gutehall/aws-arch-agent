@@ -25,10 +25,11 @@ from __future__ import annotations
 
 import gzip
 import json
+from contextlib import contextmanager
 from dataclasses import dataclass
 from functools import lru_cache
 from pathlib import Path
-from typing import Any
+from typing import Any, Iterator
 
 DEFAULT_REGION = "us-east-1"
 DATA_PATH = Path(__file__).with_name("prices.json.gz")
@@ -89,6 +90,25 @@ def price(key: str, region: str = DEFAULT_REGION) -> Price | None:
     published = (body or {}).get("published", {}).get(offer) or None
     usd, unit = entry
     return Price(usd=float(usd), unit=str(unit), region=region, snapshot_date=published)
+
+
+_active_region = DEFAULT_REGION
+
+
+def current_region() -> str:
+    """The region a scan prices in (see use_region)."""
+    return _active_region
+
+
+@contextmanager
+def use_region(region: str) -> Iterator[None]:
+    """Price in this region for the duration of a scan. Restores the previous one after."""
+    global _active_region
+    previous, _active_region = _active_region, region
+    try:
+        yield
+    finally:
+        _active_region = previous
 
 
 def price_note(region: str = DEFAULT_REGION) -> dict[str, Any]:

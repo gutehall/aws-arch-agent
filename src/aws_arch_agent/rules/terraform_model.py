@@ -34,6 +34,7 @@ TF_TYPE_TO_CANONICAL: dict[str, str] = {
     "aws_vpc_endpoint": "vpc_endpoint",
     "aws_flow_log": "flow_log",
     "aws_nat_gateway": "nat_gateway",
+    "aws_eip": "eip",
     "aws_lb": "lb",
     "aws_alb": "lb",
     "aws_cloudtrail": "cloudtrail",
@@ -106,6 +107,8 @@ _S3_PARTS: dict[str, str] = {
 _UNRESOLVED_REF = re.compile(r"\b(?:var|local|each|count|self)\.[A-Za-z_]")
 _BUCKET_REF = re.compile(r"\baws_s3_bucket\.([A-Za-z0-9_-]+)\.")
 _ECR_REF = re.compile(r"\baws_ecr_repository\.([A-Za-z0-9_-]+)\.")
+# A reference to another managed resource: aws_eip.nat.id -> aws_eip.nat.
+_ADDRESS_REF = re.compile(r"(?<![\w.])(aws_[a-z0-9_]+\.[A-Za-z0-9_-]+)(?=\[|\.)")
 _META_KEYS = {"__is_block__", "__start_line__", "__end_line__"}
 
 
@@ -490,6 +493,7 @@ def _db(body: dict) -> dict:
         ("cluster_identifier", "DBClusterIdentifier"),
     ):
         _set(props, cf_key, body.get(tf_key))
+    _set(props, "Engine", _v(body, "engine"))
     return props
 
 
@@ -579,6 +583,16 @@ def _ebs_volume(body: dict) -> dict:
     props: dict = {}
     _set(props, "Encrypted", _v(body, "encrypted"))
     _set(props, "SnapshotId", _ref(body, "snapshot_id"))
+    _set(props, "VolumeType", _v(body, "type"))
+    _set(props, "Size", _v(body, "size"))
+    return props
+
+
+def _eip(body: dict) -> dict:
+    props: dict = {}
+    _set(props, "InstanceId", _ref(body, "instance"))
+    _set(props, "NetworkInterfaceId", _ref(body, "network_interface"))
+    _set(props, "PublicIpv4Pool", _v(body, "public_ipv4_pool"))
     return props
 
 
@@ -1102,6 +1116,7 @@ _ADAPTERS: dict[str, Callable[[dict], dict]] = {
     "aws_iam_role": _iam_role,
     "aws_sns_topic": _sns_topic,
     "aws_ebs_volume": _ebs_volume,
+    "aws_eip": _eip,
     "aws_efs_file_system": _efs_file_system,
     "aws_kinesis_stream": _kinesis_stream,
     "aws_elasticache_replication_group": _elasticache_replication_group,
@@ -1354,6 +1369,7 @@ def _to_resource(block: _Block) -> Resource:
         source_type=block.type,
         unresolved=unresolved,
         policies=_lifecycle_policies(block.body),
+        references=frozenset(_ADDRESS_REF.findall(json.dumps(block.body, default=str))),
     )
 
 
