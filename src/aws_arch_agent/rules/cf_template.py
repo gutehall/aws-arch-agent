@@ -203,7 +203,8 @@ CHECK_PROPERTIES: dict[str, frozenset[str]] = {
         "CF-CF-002": {"DistributionConfig"},
         "CF-CF-003": {"DistributionConfig"},
         "CF-CF-004": {"DistributionConfig"},
-        "CF-DEL-001": {"DBClusterIdentifier"},
+        # Reads DBClusterIdentifier on instances only; _deletion_finding checks it.
+        "CF-DEL-001": set(),
         "CF-EC2-002": {"MapPublicIpOnLaunch"},
         "CF-EC2-003": {"NetworkInterfaces"},
         "CF-WAF-001": {"Type", "Scheme"},
@@ -539,7 +540,8 @@ def _keeps_data(res: Resource, key: str) -> bool | None:
 
     No DeletionPolicy means Delete, except RDS clusters and standalone RDS instances,
     which CloudFormation snapshots by default. No UpdateReplacePolicy always means Delete.
-    Snapshot on a type that cannot be snapshotted also means Delete.
+    Snapshot on a type that cannot be snapshotted also means Delete. RetainExceptOnCreate
+    is a DeletionPolicy value only.
     """
     value = res.policies.get(key)
     if value is None:
@@ -547,15 +549,17 @@ def _keeps_data(res: Resource, key: str) -> bool | None:
         return key == "DeletionPolicy" and is_rds
     if type(value) is not str:
         return None  # Fn::If, or a Terraform expression
-    if value in ("Retain", "RetainExceptOnCreate"):
+    if value == "Retain" or (value == "RetainExceptOnCreate" and key == "DeletionPolicy"):
         return True
     return value == "Snapshot" and res.type in _SNAPSHOT_TYPES
 
 
 def _deletion_finding(res: Resource, template_path: Path) -> Finding | None:
     """CF-DEL-001: a stateful resource whose data is lost when the stack deletes or replaces it."""
-    if res.type == "db_instance" and res.properties.get("DBClusterIdentifier"):
-        return None  # an Aurora member: the cluster holds the data
+    if res.type == "db_instance" and (
+        res.properties.get("DBClusterIdentifier") or "DBClusterIdentifier" in res.unresolved
+    ):
+        return None  # an Aurora member (or maybe one): the cluster holds the data
     terraform = not res.source_type.startswith("AWS::")
     if terraform:
         keep = _keeps_data(res, "DeletionPolicy")
@@ -568,12 +572,13 @@ def _deletion_finding(res: Resource, template_path: Path) -> Finding | None:
     else:
         on_delete = _keeps_data(res, "DeletionPolicy")
         on_replace = _keeps_data(res, "UpdateReplacePolicy")
-        if on_delete is None or on_replace is None or (on_delete and on_replace):
-            return None
+        # Only a policy known to delete is reported: one set with Fn::If is not judged.
         missing = [
             k for k, kept in (("DeletionPolicy", on_delete), ("UpdateReplacePolicy", on_replace))
-            if not kept
+            if kept is False
         ]
+        if not missing:
+            return None
         keep_value = "Snapshot or Retain" if res.type in _SNAPSHOT_TYPES else "Retain"
         when = {
             "DeletionPolicy": "the stack is deleted or the resource is removed from the template",

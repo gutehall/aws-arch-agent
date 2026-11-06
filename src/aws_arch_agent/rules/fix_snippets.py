@@ -875,7 +875,7 @@ for _rds in ("AWS::RDS::DBInstance", "AWS::RDS::DBCluster"):
 _TERRAFORM.update({
     "CF-DEL-001": """resource "$tf_type" "$tf_name" {
   # keep the other arguments as they are
-  lifecycle {
+  lifecycle { # one lifecycle block: add this line to an existing one
     prevent_destroy = true
   }
 }""",

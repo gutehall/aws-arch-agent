@@ -47,10 +47,18 @@ def test_cloudformation_each_type_with_and_without_retention(tmp_path: Path) -> 
     resources["BucketSnap"] = _r("AWS::S3::Bucket", DeletionPolicy="Snapshot", UpdateReplacePolicy="Snapshot")
     resources["BucketIf"] = _r(
         "AWS::S3::Bucket", DeletionPolicy={"Fn::If": ["Prod", "Retain", "Delete"]}, UpdateReplacePolicy="Retain")
+    # Fn::If is not judged, but a missing UpdateReplacePolicy still deletes on replacement.
+    resources["DbIfNoReplace"] = _r("AWS::RDS::DBInstance", DeletionPolicy={"Fn::If": ["Prod", "Snapshot", "Delete"]})
+    # RetainExceptOnCreate is not an UpdateReplacePolicy value.
+    resources["TableBadReplace"] = _r(
+        "AWS::DynamoDB::Table", DeletionPolicy="Retain", UpdateReplacePolicy="RetainExceptOnCreate")
+    for name in ("Table", "Fs", "Logs"):  # these cannot be snapshotted
+        resources[f"{name}Snap"] = _r(STATEFUL[name], DeletionPolicy="Snapshot", UpdateReplacePolicy="Snapshot")
     resources["Member"] = {"Type": "AWS::RDS::DBInstance", "Properties": {"DBClusterIdentifier": {"Ref": "Cluster"}}}
     resources["Queue"] = _r("AWS::SQS::Queue")  # not stateful here
     findings = _cf(tmp_path, resources)
-    expected = {f"{n}{s}" for n in STATEFUL for s in ("Plain", "Delete", "OnlyDelete")} | {"BucketSnap"}
+    expected = {f"{n}{s}" for n in STATEFUL for s in ("Plain", "Delete", "OnlyDelete")} | {
+        "BucketSnap", "DbIfNoReplace", "TableBadReplace", "TableSnap", "FsSnap", "LogsSnap"}
     assert _found(findings) == expected
     assert {f.severity for f in findings} == {"Medium"}
     assert {f.category for f in findings} == {"Reliability"}
@@ -62,17 +70,20 @@ def test_cloudformation_each_type_with_and_without_retention(tmp_path: Path) -> 
     # A standalone RDS instance is snapshotted on delete by default; replacement still deletes it.
     assert by_name["DbPlain"].recommendation.startswith("UpdateReplacePolicy does not keep the data")
     assert "to Snapshot or Retain" in by_name["DbPlain"].recommendation
+    assert by_name["DbIfNoReplace"].recommendation.startswith("UpdateReplacePolicy does not keep")
 
 
 def test_cloudformation_fixes(tmp_path: Path) -> None:
     findings = _cf(tmp_path, {
         "Bucket": _r("AWS::S3::Bucket"),
         "Db": _r("AWS::RDS::DBInstance"),
+        "Cluster": _r("AWS::RDS::DBCluster"),
     })
     attach_fixes(findings, "cloudformation")
     code = {f.evidence.split(" ")[0]: f.suggested_code or "" for f in findings}
     assert "Type: AWS::S3::Bucket\n  DeletionPolicy: Retain\n  UpdateReplacePolicy: Retain" in code["Bucket"]
     assert "DeletionPolicy: Snapshot\n  UpdateReplacePolicy: Snapshot" in code["Db"]
+    assert "Type: AWS::RDS::DBCluster\n  DeletionPolicy: Snapshot" in code["Cluster"]
     assert all("In CDK" not in f.recommendation for f in findings)
 
 
@@ -183,6 +194,18 @@ resource "aws_cloudwatch_log_group" "kept" {
   }
 }
 
+resource "aws_rds_cluster" "named_from_var" {
+  cluster_identifier = var.name
+  engine             = "aurora-postgresql"
+}
+
+resource "aws_s3_bucket" "from_var" {
+  bucket = "v"
+  lifecycle {
+    prevent_destroy = var.keep
+  }
+}
+
 resource "aws_sqs_queue" "q" {
   name = "q"
 }
@@ -198,7 +221,8 @@ def _tf(tmp_path: Path) -> list[Finding]:
 def test_terraform_prevent_destroy_clears_the_finding(tmp_path: Path) -> None:
     findings = _tf(tmp_path)
     assert _found(findings) == {
-        "aws_db_instance.plain", "aws_rds_cluster.plain", "aws_dynamodb_table.plain",
+        "aws_db_instance.plain", "aws_rds_cluster.plain", "aws_rds_cluster.named_from_var",
+        "aws_dynamodb_table.plain",
         "aws_s3_bucket.plain", "aws_s3_bucket.off", "aws_s3_bucket.other_lifecycle",
         "aws_efs_file_system.plain", "aws_cloudwatch_log_group.plain",
     }
