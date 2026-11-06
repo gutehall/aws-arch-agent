@@ -19,6 +19,8 @@ from aws_arch_agent.rules.resource_model import Resource
 
 DATA_PATH = Path(__file__).with_name("data") / "instance_generations.json"
 CHECK_ID = "CF-GEN-001"
+# RDS engines with no Graviton instance classes: only the x86 successor is suggested.
+_NO_GRAVITON_ENGINES = ("oracle", "sqlserver", "db2", "custom-")
 
 
 @lru_cache(maxsize=1)
@@ -89,8 +91,12 @@ def _types(res: Resource) -> list[tuple[str, str]]:
 
 
 def _estimate(res: Resource, kind: str, current: str, x86: str | None, graviton: str | None) -> estimates.Estimate | None:
-    """The current cost, and the saving on the x86 successor (Graviton's price in the basis)."""
-    if x86 is None:
+    """The current cost, and the saving on the x86 successor (Graviton's price in the basis).
+
+    Only a single EC2 or RDS instance is priced: an Auto Scaling group runs some number of
+    instances and a launch template or configuration may run none.
+    """
+    if x86 is None or res.type not in ("instance", "db_instance"):
         return None
     if kind == "ec2":
         now, new, arm = (estimates.ec2_instance(t) if t else None for t in (current, x86, graviton))
@@ -113,6 +119,10 @@ def findings(res: Resource, template_path: Path) -> List[Finding]:
     """One CF-GEN-001 finding per resource that runs a previous-generation type."""
     old = [(kind, t, successors(kind, t)) for kind, t in _types(res)]
     old = [(kind, t, s) for kind, t, s in old if s is not None]
+    if res.type == "db_instance":
+        engine = res.properties.get("Engine")
+        if isinstance(engine, str) and engine.lower().startswith(_NO_GRAVITON_ENGINES):
+            old = [(kind, t, (pair[0], None) if pair else pair) for kind, t, pair in old]
     if not old:
         return []
     parts = []

@@ -82,6 +82,9 @@ def test_every_resource_kind(tmp_path: Path) -> None:
     assert found["Search"].monthly_cost_usd is None  # two types, and OpenSearch is not priced
     assert found["Cache"].monthly_cost_usd is None   # ElastiCache is not in the price snapshot
     assert "If the size does not exist in the new family" in found["Lc"].recommendation
+    # Groups, templates and launch configurations run some number of instances: no price.
+    for name in ("Lt", "Lc", "Asg"):
+        assert found[name].monthly_cost_usd is None and found[name].monthly_savings_usd is None
 
 
 @pytest.mark.parametrize("kind,current,expected", [
@@ -185,3 +188,55 @@ def test_terraform(tmp_path: Path) -> None:
 
 def test_replaces_the_cdk_source_rule() -> None:
     assert CF_COVERS_STATIC[ID] == ("SUST-007",)
+
+
+def test_engines_without_graviton_get_only_the_x86_class(tmp_path: Path) -> None:
+    found = _cf(tmp_path, {"Ora": {"Type": "AWS::RDS::DBInstance", "Properties": {
+        "DBInstanceClass": "db.m4.large", "Engine": "oracle-ee", "StorageEncrypted": True}}})
+    rec = found["Ora"].recommendation
+    assert "db.m6i.large (x86)." in rec and "Graviton" not in rec
+
+
+def test_savings_are_not_counted_twice_with_right_sizing(tmp_path: Path) -> None:
+    findings = {f.id: f for f in run_cf_rules_from_paths(
+        [_write(tmp_path, {"Big": _ec2("c4.4xlarge")})], repo_path=tmp_path)}
+    gen, perf = findings["CF-GEN-001"], findings["CF-PERF-004"]
+    assert gen.monthly_savings_usd == round(H * _p("ec2:c4.4xlarge") - H * _p("ec2:c7i.4xlarge"), 2)
+    assert perf.monthly_savings_usd is None and "counted on CF-GEN-001" in (perf.estimate_basis or "")
+    assert perf.monthly_cost_usd == gen.monthly_cost_usd
+
+
+def _write(tmp_path: Path, resources: dict) -> Path:
+    path = tmp_path / "s.json"
+    path.write_text(json.dumps({"Resources": resources}), encoding="utf-8")
+    return path
+
+
+def test_cdk_synth_launch_template(tmp_path: Path) -> None:
+    out = tmp_path / "cdk.out"
+    out.mkdir()
+    lt = {"Type": "AWS::EC2::LaunchTemplate", "Properties": {"LaunchTemplateData": {
+        "InstanceType": "t2.medium", "MetadataOptions": {"HttpTokens": "required"}}},
+        "Metadata": {"aws:cdk:path": "App/Stack/Lt/Resource"}}
+    path = out / "Stack.template.json"
+    path.write_text(json.dumps({"Resources": {"Lt": lt}}), encoding="utf-8")
+    found = [f for f in run_cf_rules_from_paths([path], repo_path=tmp_path) if f.id == ID]
+    assert len(found) == 1 and "t3.medium (x86) or t4g.medium (Graviton)" in found[0].recommendation
+
+
+@pytest.mark.parametrize("kind,current,expected", [
+    ("ec2", "m4.metal", ("m7i.metal", "m7g.metal")),
+    ("ec2", "g3s.xlarge", ("g6.xlarge", None)),
+    ("ec2", "x1e.xlarge", ("x2iedn.xlarge", "x2gd.xlarge")),
+])
+def test_more_successors(kind, current, expected) -> None:
+    assert successors(kind, current) == expected
+
+
+def test_a_dearer_successor_gives_no_saving(tmp_path: Path) -> None:
+    """m7i.4xlarge costs a little more than m4.4xlarge: a cost, no saving, and right-sizing keeps its own."""
+    findings = {f.id: f for f in run_cf_rules_from_paths(
+        [_write(tmp_path, {"Big": _ec2("m4.4xlarge")})], repo_path=tmp_path)}
+    assert _p("ec2:m7i.4xlarge") > _p("ec2:m4.4xlarge")
+    assert findings["CF-GEN-001"].monthly_savings_usd is None
+    assert findings["CF-PERF-004"].monthly_savings_usd is not None

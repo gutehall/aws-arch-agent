@@ -17,7 +17,8 @@
     "x1": ["x2iedn", "x2gd"],
     "x1e": ["x2iedn", "x2gd"],
     "g2": ["g6", null],
-    "g3": ["g6", null]
+    "g3": ["g6", null],
+    "g3s": ["g6", null]
   },
   "rds": {
     "db.t1": ["db.t3", "db.t4g"],

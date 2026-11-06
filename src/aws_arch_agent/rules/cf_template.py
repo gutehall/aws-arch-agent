@@ -1550,6 +1550,21 @@ def _tls_enforced(document: Any) -> bool | None:
     return None if unknown else False
 
 
+def _one_saving_per_instance(resource_findings: List[Finding]) -> None:
+    """Moving to a current generation (CF-GEN-001) and one size smaller (CF-PERF-003/004)
+    are alternative fixes for one instance: their savings do not add up. Keep the
+    generation saving and say so on the right-sizing finding."""
+    if not any(f.id == "CF-GEN-001" and f.monthly_savings_usd for f in resource_findings):
+        return
+    for f in resource_findings:
+        if f.id in ("CF-PERF-003", "CF-PERF-004") and f.monthly_savings_usd:
+            f.monthly_savings_usd = None
+            f.estimate_basis = (
+                estimates._without_saving(f.estimate_basis or "")
+                + " The saving is counted on CF-GEN-001 for this instance (the fixes do not add up)."
+            ).strip()
+
+
 def run_resource_checks(
     resources: List[Resource],
     template_path: Path,
@@ -2281,6 +2296,7 @@ def run_resource_checks(
                 f for f in findings[first_new:]
                 if not (CHECK_PROPERTIES.get(f.id, frozenset()) & res.unresolved)
             ]
+        _one_saving_per_instance(findings[first_new:])
 
     # --- Required tag policy (config tags.required; off without one) ---
     findings.extend(tag_policy.findings(resources, template_path))
