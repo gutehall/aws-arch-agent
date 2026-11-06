@@ -9,13 +9,18 @@ from typing import Literal
 
 from aws_arch_agent.models import IacSource, RepoContext, Finding
 from aws_arch_agent.rules.registry import ALL_RULES
-from aws_arch_agent.rules.cf_template import run_cf_rules_from_paths, run_resource_checks
+from aws_arch_agent.rules.cf_template import (
+    run_cf_rules_from_paths,
+    run_resource_checks,
+    terraform_variable_findings,
+)
 from aws_arch_agent.rules.fix_snippets import attach_fixes
 from aws_arch_agent.rules.terraform_model import (
     TerraformError,
     find_modules,
     load_plan_values,
     resources_from_terraform,
+    variables_from_terraform,
 )
 from aws_arch_agent.rules.runner import filter_by_severity, run_all_rules
 from aws_arch_agent.report.markdown import render_markdown
@@ -329,6 +334,7 @@ def _scan_terraform(
             module, warnings, plan_values if module == plan_target else None
         )
         module_findings = run_resource_checks(resources, module, warnings)
+        module_findings += terraform_variable_findings(variables_from_terraform(module))
         for finding in module_findings:
             if finding.file:
                 finding.file = to_repo_relative(finding.file, repo_path)
