@@ -19,6 +19,8 @@ from pathlib import Path
 from typing import Any, Callable
 
 from aws_arch_agent.rules.resource_model import Resource
+from aws_arch_agent.rules.tag_policy import TF_TAGGABLE
+from aws_arch_agent.rules.tag_policy import UNKNOWN as UNKNOWN_TAG
 
 TF_TYPE_TO_CANONICAL: dict[str, str] = {
     "aws_s3_bucket": "s3_bucket",
@@ -327,6 +329,40 @@ def parse_tf_variables(path: Path) -> list[TfVariable]:
                 file=str(path),
                 line=_variable_line(text, name, is_json),
             ))
+    return out
+
+
+# provider = aws.west, as parsed ("aws.west") or interpolated ("${aws.west}").
+_PROVIDER_ALIAS = re.compile(r"^(?:\$\{)?aws\.([A-Za-z0-9_-]+)\}?$")
+
+
+def _tag_values(tags: Any) -> dict[str, Any] | None:
+    """A Terraform tags map: literal values kept, others marked unknown; None if unreadable."""
+    if not isinstance(tags, dict):
+        return None
+    return {str(k): (v if type(v) is str else UNKNOWN_TAG) for k, v in tags.items() if k not in _META_KEYS}
+
+
+def parse_tf_default_tags(path: Path) -> dict[str, dict[str, Any] | None]:
+    """provider "aws" default_tags in one file: alias ("" for the default) -> tags.
+
+    None for a provider whose default_tags cannot be read (tags from a variable).
+    """
+    doc, _text, _is_json, normalize = _load_tf(path)
+    out: dict[str, dict[str, Any] | None] = {}
+    for provider_map in _iter_type_maps(doc.get("provider")):
+        for raw_name, body in provider_map.items():
+            if _unquote_key(raw_name) != "aws":
+                continue
+            for item in _iter_type_maps(body):
+                norm = normalize(item)
+                alias = norm.get("alias")
+                key = alias if type(alias) is str else ""
+                default_tags = _first_block(norm, "default_tags")
+                if not default_tags:
+                    out.setdefault(key, {})
+                    continue
+                out[key] = _tag_values(default_tags.get("tags"))
     return out
 
 
@@ -1344,6 +1380,27 @@ def _split_unresolved(props: dict) -> tuple[dict, frozenset[str]]:
     return {k: v for k, v in props.items() if k not in unresolved}, unresolved
 
 
+def _resource_tags(block: _Block) -> Any:
+    """`tags` (and aws_autoscaling_group `tag` blocks) as a map; UNRESOLVED when unreadable.
+
+    A value from var/local keeps its key (the tag is set) with an unknown value. A whole
+    map from an expression (var.tags, merge(...)) or a dynamic tag block is unreadable.
+    """
+    if {"tag", "tags"} & _dynamic_names(block.body):
+        return UNRESOLVED
+    raw = block.body.get("tags")
+    if raw is not None and not isinstance(raw, dict):
+        return UNRESOLVED
+    tags = _tag_values(raw or {}) or {}
+    for item in _blocks(block.body, "tag"):
+        key = item.get("key")
+        if type(key) is not str:
+            return UNRESOLVED
+        value = item.get("value")
+        tags[key] = value if type(value) is str else UNKNOWN_TAG
+    return tags
+
+
 def _to_resource(block: _Block) -> Resource:
     canonical = TF_TYPE_TO_CANONICAL.get(block.type)
     if block.type == "aws_security_group_rule":
@@ -1355,6 +1412,8 @@ def _to_resource(block: _Block) -> Resource:
     else:
         adapter = _ADAPTERS.get(block.type)
         props = adapter(block.body) if adapter else {}
+    if block.type in TF_TAGGABLE:
+        props["Tags"] = _resource_tags(block)
     for name in _dynamic_names(block.body):
         cf_key = _BLOCK_PROPERTY.get(name)
         if cf_key is not None and canonical is not None:
@@ -1566,9 +1625,11 @@ def resources_from_terraform(
     if warnings is None:
         warnings = []
     blocks: list[_Block] = []
+    default_tags: dict[str, dict[str, Any] | None] = {}
     for path in _module_files(module_dir):
         try:
             file_blocks, _sources = parse_tf_file(path)
+            default_tags.update(parse_tf_default_tags(path))
         except (TerraformError, OSError, UnicodeError) as exc:
             warnings.append(str(exc))
             continue
@@ -1583,11 +1644,24 @@ def resources_from_terraform(
         if block.data:
             continue
         resource = _to_resource(block)
+        resource.inherited_tags = _inherited_tags(block, default_tags)
         resources[resource.name] = resource
     _merge_s3_parts(blocks, resources)
     _merge_ecr_lifecycle(blocks, resources)
     _resolve_iam(resources, blocks)
     return list(resources.values())
+
+
+def _inherited_tags(block: _Block, default_tags: dict[str, dict[str, Any] | None]) -> dict[str, Any] | None:
+    """The provider default_tags that apply to a block. A provider set from an expression
+    other than aws.<alias>, or an alias with no provider block, gives None (unknown)."""
+    provider = block.body.get("provider")
+    if provider is None:
+        return default_tags.get("", {})
+    match = _PROVIDER_ALIAS.match(str(provider))
+    if match is None:
+        return None
+    return default_tags.get(match.group(1))
 
 
 def find_modules(files: list[Path]) -> tuple[list[Path], list[Path]]:

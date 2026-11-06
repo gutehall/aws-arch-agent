@@ -21,6 +21,7 @@ from aws_arch_agent.rules.fix_snippets import attach_fixes
 from aws_arch_agent.rules.registry import ALL_RULES
 from aws_arch_agent.rules.runner import filter_by_severity, run_all_rules
 from aws_arch_agent.pricing import DEFAULT_REGION, price_note, use_region
+from aws_arch_agent.rules.tag_policy import TagPolicy, use_tag_policy
 from aws_arch_agent.report.markdown import render_markdown
 from aws_arch_agent.tools.cdk_synth import (
     list_cf_templates,
@@ -541,6 +542,7 @@ def analyze_v2(
     rules_org: bool = False,
     iac: str = "auto",
     price_region: str = DEFAULT_REGION,
+    tag_policy: TagPolicy | None = None,
 ) -> tuple[str, RepoContext, List[Finding], List[str]]:
     """Run V2 graph; return (final_report_md, ctx, findings, warnings)."""
     graph = build_graph()
@@ -562,7 +564,7 @@ def analyze_v2(
         "iac": iac,
         "price_region": price_region,
     }
-    with use_region(price_region):  # cost estimates price in this region
+    with use_region(price_region), use_tag_policy(tag_policy):
         out = graph.invoke(initial)
     report = out.get("final_report") or "No report produced."
     ctx = out.get("ctx")

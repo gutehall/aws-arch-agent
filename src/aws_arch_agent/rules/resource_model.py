@@ -109,6 +109,9 @@ class Resource:
     # Terraform only: addresses (aws_eip.nat) this block's arguments point at, all of them,
     # including ones no adapter maps. CloudFormation references are read from properties.
     references: frozenset[str] = frozenset()
+    # Tags set for the whole stack that apply to this resource (Terraform provider
+    # default_tags). None means they exist but cannot be read (from a variable).
+    inherited_tags: dict[str, Any] | None = field(default_factory=dict)
 
 
 def resources_from_cf_template(

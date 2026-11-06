@@ -6,7 +6,7 @@ from pathlib import Path
 from typing import List, Any
 
 from aws_arch_agent.models import Finding, Severity
-from aws_arch_agent.rules import estimates, iam_policy, lambda_runtimes
+from aws_arch_agent.rules import estimates, iam_policy, lambda_runtimes, tag_policy
 from aws_arch_agent.rules.resource_model import Resource, resources_from_cf_template
 from aws_arch_agent.rules.terraform_model import TfVariable
 from aws_arch_agent.tools.cdk_synth import list_cf_templates
@@ -221,6 +221,7 @@ CHECK_PROPERTIES: dict[str, frozenset[str]] = {
         "CF-SM-001": set(),  # judged on the template's rotation schedules
         "CF-EBS-002": {"VolumeType"},  # Size only feeds the estimate
         "CF-EIP-001": {"InstanceId", "NetworkInterfaceId", "PublicIpv4Pool"},
+        "CF-TAG-001": set(),  # tag_policy reads Tags and skips unreadable ones itself
         "CF-COG-001": {"MfaConfiguration"},
         "CF-COG-002": {"Policies"},
         "CF-COG-003": {"UserPoolAddOns", "UserPoolTier"},
@@ -2266,6 +2267,9 @@ def run_resource_checks(
                 if not (CHECK_PROPERTIES.get(f.id, frozenset()) & res.unresolved)
             ]
 
+    # --- Required tag policy (config tags.required; off without one) ---
+    findings.extend(tag_policy.findings(resources, template_path))
+
     # --- VPC endpoints (template-level: VPC present but no endpoints) ---
     if vpc_count > 0 and vpce_count == 0:
         findings.append(Finding(
@@ -2520,6 +2524,9 @@ def _store_repo_relative(findings: List[Finding], repo_path: Path | None) -> Non
 def drop_static_covered_by_cf(findings: List[Finding]) -> List[Finding]:
     """Drop a static finding when a CloudFormation finding already covers that control."""
     covered = {sid for f in findings for sid in CF_COVERS_STATIC.get(f.id, ())}
+    if tag_policy.active_policy() is not None:
+        # The templates were checked against the tag policy, which replaces the repo-wide guesses.
+        covered |= set(tag_policy.REPLACED_STATIC_RULES)
     if not covered:
         return findings
     return [f for f in findings if f.id not in covered]
