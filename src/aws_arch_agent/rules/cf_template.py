@@ -38,6 +38,10 @@ CF_COVERS_STATIC: dict[str, tuple[str, ...]] = {
     "CF-DOCDB-001": ("SEC-060",),
     "CF-NEP-001": ("SEC-061",),
     "CF-MSK-001": ("SEC-044",),
+    "CF-SM-001": ("SEC-015",),
+    "CF-COG-001": ("SEC-034",),
+    "CF-COG-002": ("SEC-035",),
+    "CF-COG-003": ("SEC-036",),
     "CF-ECR-001": ("SEC-028",),
     "CF-ECR-002": ("SEC-029",),
     "CF-ECR-003": ("SEC-030",),
@@ -161,6 +165,7 @@ _PER_RESOURCE_TYPES = frozenset({
     "elasticache_replication_group", "launch_template",
     "opensearch_domain", "redshift_cluster", "docdb_cluster", "neptune_cluster", "msk_cluster",
     "cloudfront_distribution", "subnet", "ecs_task_definition",
+    "secretsmanager_secret", "cognito_user_pool",
 })
 
 
@@ -210,6 +215,10 @@ CHECK_PROPERTIES: dict[str, frozenset[str]] = {
         "CF-CF-004": {"DistributionConfig"},
         # Reads DBClusterIdentifier on instances only; _deletion_finding checks it.
         "CF-DEL-001": set(),
+        "CF-SM-001": set(),  # judged on the template's rotation schedules
+        "CF-COG-001": {"MfaConfiguration"},
+        "CF-COG-002": {"Policies"},
+        "CF-COG-003": {"UserPoolAddOns", "UserPoolTier"},
         "CF-ECR-001": {"ImageScanningConfiguration"},
         "CF-ECR-002": {"ImageTagMutability"},
         "CF-ECR-003": {"LifecyclePolicy"},
@@ -456,6 +465,131 @@ def _waf_coverage(resources: List[Resource]) -> tuple[set[str], bool]:
         covered |= hits
         unlinked = unlinked or not hits
     return covered, unlinked
+
+
+def _rotation_coverage(resources: List[Resource]) -> tuple[set[str], bool]:
+    """Names of secrets a rotation schedule in this template points at.
+
+    A schedule points at a secret by Ref / Terraform address, or by the secret's literal
+    name. The second value is True when a schedule points at something the scan cannot
+    tie to a secret: it may then rotate any of them.
+    """
+    secrets = [r for r in resources if r.type == "secretsmanager_secret"]
+    covered: set[str] = set()
+    unlinked = False
+    for r in resources:
+        if r.type != "secretsmanager_secret_rotation":
+            continue
+        target = r.properties.get("SecretId")
+        text = target if type(target) is str else json.dumps(target, default=str)
+        hits = {s.name for s in secrets if _references(text, s.name) or _names_secret(target, s)}
+        covered |= hits
+        unlinked = unlinked or not hits
+    return covered, unlinked
+
+
+def _names_secret(target: Any, secret: Resource) -> bool:
+    """A literal SecretId that is the secret's Name, or its ARN (which ends ':secret:<Name>-<6 chars>')."""
+    name = secret.properties.get("Name")
+    if type(target) is not str or type(name) is not str:
+        return False
+    return target == name or re.search(rf":secret:{re.escape(name)}-[A-Za-z0-9]{{6}}$", target) is not None
+
+
+def _rotation_finding(res: Resource, template_path: Path) -> Finding:
+    """CF-SM-001 for a secret that no rotation schedule in this template points at."""
+    return Finding(
+        id="CF-SM-001",
+        title="Secrets Manager secret is not rotated",
+        severity="Medium",
+        category="Security",
+        file=res.file or str(template_path),
+        line=res.line,
+        evidence=f"{res.name} ({res.source_type})",
+        recommendation=(
+            "No AWS::SecretsManager::RotationSchedule (Terraform aws_secretsmanager_secret_rotation) "
+            "in this template points at it, so the secret keeps its value until someone changes "
+            "it by hand (Security Hub SecretsManager.1). Add a rotation schedule with a rotation "
+            "Lambda or a hosted rotation function. A secret for a third-party credential that "
+            "cannot be rotated this way can exclude CF-SM-001. In CDK: secret.addRotationSchedule()."
+        ),
+    )
+
+
+_PASSWORD_CLASSES = ("RequireLowercase", "RequireUppercase", "RequireNumbers", "RequireSymbols")
+
+
+def _cognito_findings(res: Resource, template_path: Path) -> List[Finding]:
+    """CF-COG-001 (MFA off), CF-COG-002 (weak password policy), CF-COG-003 (no threat protection)."""
+    props = res.properties
+    out: List[Finding] = []
+
+    def add(fid: str, severity: Severity, title: str, recommendation: str) -> None:
+        out.append(Finding(
+            id=fid, title=title, severity=severity, category="Security",
+            file=res.file or str(template_path), line=res.line,
+            evidence=f"{res.name} ({res.source_type})", recommendation=recommendation,
+        ))
+
+    mfa = props.get("MfaConfiguration")
+    if mfa is None or mfa == "OFF":
+        add("CF-COG-001", "High", "Cognito user pool does not use MFA",
+            f"MfaConfiguration is {'not set (OFF)' if mfa is None else 'OFF'}, so a password alone "
+            "signs a user in. Set it to ON, or to OPTIONAL with threat protection, and enable "
+            "EnabledMfas (SOFTWARE_TOKEN_MFA). In CDK: mfa: cognito.Mfa.REQUIRED.")
+
+    weak = _weak_password_policy(props.get("Policies"))
+    if weak:
+        add("CF-COG-002", "Medium", "Cognito password policy is weak",
+            f"{weak} Set Policies.PasswordPolicy.MinimumLength to 12 or more and require "
+            "lowercase, uppercase, numbers and symbols. "
+            "In CDK: passwordPolicy with minLength: 12 and every require flag set to true.")
+
+    add_ons = props.get("UserPoolAddOns")
+    if add_ons is None:
+        mode: Any = None
+    elif isinstance(add_ons, dict) and not _is_intrinsic(add_ons):
+        mode = add_ons.get("AdvancedSecurityMode")
+    else:
+        mode = "unknown"  # an intrinsic: not judged
+    if mode is None or mode == "OFF":
+        tier = props.get("UserPoolTier", "ESSENTIALS")
+        plan = "" if type(tier) is not str or tier == "PLUS" else (
+            "Threat protection needs the Plus feature plan (UserPoolTier: PLUS), which costs more "
+            "per active user. ")
+        add("CF-COG-003", "Low", "Cognito threat protection is off",
+            "UserPoolAddOns.AdvancedSecurityMode is not set or OFF, so compromised-credential and "
+            f"adaptive-authentication checks do not run. {plan}Set it to ENFORCED, or AUDIT to "
+            "log risks first. In CDK: featurePlan: cognito.FeaturePlan.PLUS and "
+            "standardThreatProtectionMode: cognito.StandardThreatProtectionMode.FULL_FUNCTION.")
+    return out
+
+
+def _weak_password_policy(policies: Any) -> str | None:
+    """Why the password policy is weak, or None when it is strong or cannot be read.
+
+    No PasswordPolicy means the Cognito default: 8 characters, every character class.
+    Inside a PasswordPolicy, an unset class requirement is false.
+    """
+    if policies is not None and (not isinstance(policies, dict) or _is_intrinsic(policies)):
+        return None
+    policy = (policies or {}).get("PasswordPolicy")
+    if policy is None:
+        return "No PasswordPolicy is set, so Cognito requires only 8 characters."
+    if not isinstance(policy, dict) or _is_intrinsic(policy):
+        return None
+    reasons = []
+    length = policy.get("MinimumLength", 8)
+    if type(length) is str and length.isdigit():
+        length = int(length)
+    if type(length) is int and length < 12:
+        reasons.append(f"MinimumLength is {length}.")
+    flags = {k: _flag(policy.get(k)) for k in _PASSWORD_CLASSES}
+    if None not in flags.values():
+        missing = [k for k, on in flags.items() if not on]
+        if len(missing) == len(_PASSWORD_CLASSES):
+            reasons.append("No character class is required.")
+    return " ".join(reasons) or None
 
 
 def _waf_finding(res: Resource, template_path: Path) -> Finding | None:
@@ -1375,6 +1509,7 @@ def run_resource_checks(
     asg_count = count("autoscaling_group")
     cf_policies, cf_policy_unlinked = _cf_bucket_policies(resources)
     waf_covered, waf_unlinked = _waf_coverage(resources)
+    rotated, rotation_unlinked = _rotation_coverage(resources)
     launch_templates_without_spot = 0
     first_lt_without_spot: Resource | None = None
     for r in resources:
@@ -1676,6 +1811,12 @@ def run_resource_checks(
                     findings.extend(_iam_findings(res, template_path))
                 if ctype == "iam_role":
                     findings.extend(_trust_findings(res, template_path))
+
+                # --- Secrets Manager rotation and Cognito user pools ---
+                if ctype == "secretsmanager_secret" and not rotation_unlinked and logical_id not in rotated:
+                    findings.append(_rotation_finding(res, template_path))
+                if ctype == "cognito_user_pool":
+                    findings.extend(_cognito_findings(res, template_path))
 
                 # --- ECR repositories and ECS task definitions ---
                 if ctype == "ecr_repository":

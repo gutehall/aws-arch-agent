@@ -859,6 +859,76 @@ resource "aws_db_instance" "db" {
 _TERRAFORM["CF-PAR-001"] = _TF_SECRET_REFERENCE
 _TERRAFORM["CF-PAR-002"] = _TF_SECRET_REFERENCE
 
+# Secrets Manager rotation and Cognito user pools (DM3-528).
+_CLOUDFORMATION.update({
+    "CF-SM-001": """${name}Rotation:
+  Type: AWS::SecretsManager::RotationSchedule
+  Properties:
+    SecretId: !Ref $name
+    # a rotation Lambda you own, or HostedRotationLambda for RDS, Redshift and DocumentDB
+    RotationLambdaARN: !GetAtt RotationFunction.Arn
+    RotationRules:
+      ScheduleExpression: rate(30 days)""",
+    "CF-COG-001": """$name:
+  Type: AWS::Cognito::UserPool
+  Properties:
+    # keep the other properties as they are
+    MfaConfiguration: "ON"
+    EnabledMfas:
+      - SOFTWARE_TOKEN_MFA""",
+    "CF-COG-002": """$name:
+  Type: AWS::Cognito::UserPool
+  Properties:
+    # keep the other properties as they are
+    Policies:
+      PasswordPolicy:
+        MinimumLength: 12
+        RequireLowercase: true
+        RequireUppercase: true
+        RequireNumbers: true
+        RequireSymbols: true""",
+    "CF-COG-003": """$name:
+  Type: AWS::Cognito::UserPool
+  Properties:
+    # keep the other properties as they are
+    UserPoolTier: PLUS # threat protection needs the Plus feature plan
+    UserPoolAddOns:
+      AdvancedSecurityMode: ENFORCED""",
+})
+_TERRAFORM.update({
+    "CF-SM-001": """resource "aws_secretsmanager_secret_rotation" "$tf_name" {
+  secret_id           = aws_secretsmanager_secret.$tf_name.id
+  rotation_lambda_arn = aws_lambda_function.rotation.arn # a rotation Lambda you own
+  rotation_rules {
+    automatically_after_days = 30
+  }
+}""",
+    "CF-COG-001": """resource "aws_cognito_user_pool" "$tf_name" {
+  # keep the other arguments as they are
+  mfa_configuration = "ON"
+  software_token_mfa_configuration {
+    enabled = true
+  }
+}""",
+    "CF-COG-002": """resource "aws_cognito_user_pool" "$tf_name" {
+  # keep the other arguments as they are
+  password_policy {
+    minimum_length    = 12
+    require_lowercase = true
+    require_uppercase = true
+    require_numbers   = true
+    require_symbols   = true
+  }
+}""",
+    "CF-COG-003": """resource "aws_cognito_user_pool" "$tf_name" {
+  # keep the other arguments as they are
+  user_pool_tier = "PLUS" # threat protection needs the Plus feature plan
+  user_pool_add_ons {
+    advanced_security_mode = "ENFORCED"
+  }
+}""",
+})
+
 # ECR repositories and ECS task definitions (DM3-527).
 _CLOUDFORMATION.update({
     "CF-ECR-001": """$name:
