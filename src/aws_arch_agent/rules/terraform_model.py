@@ -29,6 +29,7 @@ TF_TYPE_TO_CANONICAL: dict[str, str] = {
     "aws_vpc_security_group_ingress_rule": "security_group_ingress_rule",
     "aws_security_group_rule": "security_group_ingress_rule",  # type = "ingress" only
     "aws_vpc": "vpc",
+    "aws_subnet": "subnet",
     "aws_vpc_endpoint": "vpc_endpoint",
     "aws_flow_log": "flow_log",
     "aws_nat_gateway": "nat_gateway",
@@ -438,6 +439,9 @@ def _instance(body: dict) -> dict:
     props: dict = {}
     _set(props, "InstanceType", _v(body, "instance_type"))
     _set(props, "MetadataOptions", _metadata_options(body))
+    public_ip = _v(body, "associate_public_ip_address")
+    if public_ip is not None:
+        props["NetworkInterfaces"] = [{"DeviceIndex": 0, "AssociatePublicIpAddress": public_ip}]
     template = _first_block(body, "launch_template")
     if template:
         props["LaunchTemplate"] = {
@@ -470,6 +474,19 @@ def _launch_template(body: dict) -> dict:
             })
     if devices:
         props["BlockDeviceMappings"] = devices
+    # Also its own property, like the block devices.
+    interfaces = [
+        {"DeviceIndex": _v(n, "device_index"), "AssociatePublicIpAddress": _v(n, "associate_public_ip_address")}
+        for n in _blocks(body, "network_interfaces")
+    ]
+    if interfaces:
+        props["NetworkInterfaces"] = interfaces
+    return props
+
+
+def _subnet(body: dict) -> dict:
+    props: dict = {}
+    _set(props, "MapPublicIpOnLaunch", _v(body, "map_public_ip_on_launch"))
     return props
 
 
@@ -889,6 +906,7 @@ _ADAPTERS: dict[str, Callable[[dict], dict]] = {
     "aws_db_instance": _db,
     "aws_rds_cluster": _db,
     "aws_instance": _instance,
+    "aws_subnet": _subnet,
     "aws_launch_template": _launch_template,
     "aws_security_group": _security_group,
     "aws_lb": _lb,
@@ -963,6 +981,7 @@ _BLOCK_PROPERTY: dict[str, str] = {
     "ordered_cache_behavior": "DistributionConfig",
     "viewer_certificate": "DistributionConfig",
     "origin": "DistributionConfig",
+    "network_interfaces": "NetworkInterfaces",
 }
 
 

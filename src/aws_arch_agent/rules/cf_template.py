@@ -155,7 +155,7 @@ _PER_RESOURCE_TYPES = frozenset({
     "sns_topic", "ebs_volume", "efs_file_system", "kinesis_stream",
     "elasticache_replication_group", "launch_template",
     "opensearch_domain", "redshift_cluster", "docdb_cluster", "neptune_cluster", "msk_cluster",
-    "cloudfront_distribution",
+    "cloudfront_distribution", "subnet",
 })
 
 
@@ -203,6 +203,8 @@ CHECK_PROPERTIES: dict[str, frozenset[str]] = {
         "CF-CF-002": {"DistributionConfig"},
         "CF-CF-003": {"DistributionConfig"},
         "CF-CF-004": {"DistributionConfig"},
+        "CF-EC2-002": {"MapPublicIpOnLaunch"},
+        "CF-EC2-003": {"NetworkInterfaces"},
         "CF-WAF-001": {"Type", "Scheme"},
         "CF-PERF-001": {"Architectures"},
         "CF-DDB-001": {"PointInTimeRecoverySpecification"},
@@ -467,6 +469,58 @@ def _waf_finding(res: Resource, template_path: Path) -> Finding | None:
             "ELB.16, APIGateway.4). In CDK: new wafv2.CfnWebACLAssociation."
         ),
     )
+
+
+def _cdk_generated_subnet(props: dict) -> bool:
+    """CDK tags the subnets ec2.Vpc creates; its public subnets map public IPs by design."""
+    tags = props.get("Tags")
+    return isinstance(tags, list) and any(
+        isinstance(t, dict) and t.get("Key") == "aws-cdk:subnet-type" for t in tags
+    )
+
+
+def _public_ip_interfaces(interfaces: Any) -> list[str]:
+    """Device indexes of network interfaces with AssociatePublicIpAddress true."""
+    out: list[str] = []
+    for i, item in enumerate(interfaces if isinstance(interfaces, list) else []):
+        if isinstance(item, dict) and not _is_intrinsic(item) and _flag(item.get("AssociatePublicIpAddress")):
+            index = item.get("DeviceIndex", i)
+            out.append(str(index) if type(index) in (str, int) else str(i))
+    return out
+
+
+def _public_ip_findings(res: Resource, template_path: Path) -> List[Finding]:
+    """CF-EC2-002 (subnet maps public IPs) and CF-EC2-003 (instance asks for one)."""
+    props = res.properties
+    out: List[Finding] = []
+
+    def add(fid: str, title: str, detail: str) -> None:
+        out.append(Finding(
+            id=fid, title=title, severity="Medium", category="Security",
+            file=res.file or str(template_path), line=res.line,
+            evidence=f"{res.name} ({res.source_type})",
+            recommendation=(
+                f"{detail} Keep instances in private subnets and put a load balancer, NAT "
+                "gateway or VPC endpoints in front of them (Security Hub EC2.15, EC2.9)."
+            ),
+        ))
+
+    if res.type == "subnet":
+        if _flag(props.get("MapPublicIpOnLaunch")) and not _cdk_generated_subnet(props):
+            add("CF-EC2-002", "Subnet assigns public IPs automatically",
+                "MapPublicIpOnLaunch is true, so every instance launched here gets a public IP. "
+                "Set it to false unless the subnet only holds load balancers or NAT gateways.")
+    elif res.type in ("instance", "launch_template"):
+        interfaces = props.get("NetworkInterfaces")  # instance; Terraform launch templates too
+        data = props.get("LaunchTemplateData")
+        if interfaces is None and isinstance(data, dict):
+            interfaces = data.get("NetworkInterfaces")
+        devices = _public_ip_interfaces(interfaces)
+        if devices:
+            add("CF-EC2-003", "EC2 instance requests a public IP address",
+                f"AssociatePublicIpAddress is true on network interface {', '.join(devices)}. "
+                "Set it to false.")
+    return out
 
 
 def _runtime_finding(res: Resource, template_path: Path) -> Finding | None:
@@ -1417,6 +1471,10 @@ def run_resource_checks(
                     findings.extend(_iam_findings(res, template_path))
                 if ctype == "iam_role":
                     findings.extend(_trust_findings(res, template_path))
+
+                # --- Public IPs on subnets and instances ---
+                if ctype in ("subnet", "instance", "launch_template"):
+                    findings.extend(_public_ip_findings(res, template_path))
 
                 # --- CloudFront and WAF ---
                 if ctype == "cloudfront_distribution":
