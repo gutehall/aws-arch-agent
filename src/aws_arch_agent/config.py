@@ -85,7 +85,8 @@ def _optional_str(value: Any, key: str) -> str | None:
     raise ConfigError(f"{key} must be a string, got {value!r}")
 
 
-_REGION = re.compile(r"[a-z]{2}(?:-gov|-iso[a-z]?)?-[a-z]+-[0-9]")
+# us-east-1, us-gov-west-1, cn-north-1, eusc-de-east-1, us-isob-east-1
+_REGION = re.compile(r"[a-z]{2,4}(?:-[a-z]+)+-[0-9]{1,2}")
 
 
 def price_region(value: Any, key: str = "region") -> str:
@@ -294,7 +295,7 @@ class RunConfig:
         rag_embedding_provider: str | None = None,
         rag_embedding_model: str | None = None,
         llm_mode: str = "full",
-        region: str = "us-east-1",
+        region: str = DEFAULT_REGION,
     ):
         self.format = format
         self.fail_on = fail_on

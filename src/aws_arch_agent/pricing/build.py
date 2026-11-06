@@ -52,13 +52,13 @@ class PriceBuildError(ValueError):
 
 
 def _usage(row: dict[str, str], name: str) -> bool:
-    return re.fullmatch(_PFX + re.escape(name), row.get("usageType", "")) is not None
+    return re.fullmatch(_PFX + re.escape(name), row.get("usageType") or "") is not None
 
 
 def _ec2(row: dict[str, str]) -> str | None:
     family = row.get("Product Family", "")
     if family in ("Compute Instance", "Compute Instance (bare metal)"):
-        box = _BOX.match(row.get("usageType", ""))
+        box = _BOX.match(row.get("usageType") or "")
         if box and (
             row.get("Operating System") == "Linux" and row.get("Tenancy") == "Shared"
             and row.get("Pre Installed S/W") == "NA" and row.get("CapacityStatus") == "Used"
@@ -72,7 +72,7 @@ def _ec2(row: dict[str, str]) -> str | None:
         if _usage(row, "NatGateway-Bytes"):
             return "nat:gb"
         return None
-    if family == "Storage" and re.match(_PFX + r"EBS:VolumeUsage", row.get("usageType", "")):
+    if family == "Storage" and re.match(_PFX + r"EBS:VolumeUsage", row.get("usageType") or ""):
         api = row.get("Volume API Name", "")
         return f"ebs:{api}" if api in ("gp2", "gp3", "io2") else None
     return None
@@ -98,7 +98,7 @@ def _rds(row: dict[str, str]) -> str | None:
         return None
     engine = _RDS_ENGINES.get(row.get("Database Engine", ""))
     deployment = _RDS_DEPLOYMENTS.get(row.get("Deployment Option", ""))
-    match = _RDS.match(row.get("usageType", ""))
+    match = _RDS.match(row.get("usageType") or "")
     if not (engine and deployment and match) or row.get("License Model") != "No license required":
         return None
     return f"rds:{engine}:{deployment}:{row.get('Instance Type') or match.group('class')}"
@@ -138,7 +138,8 @@ def _s3(row: dict[str, str]) -> str | None:
 def _cloudwatch(row: dict[str, str]) -> str | None:
     if row.get("Group") == "Ingested Logs" and _usage(row, "DataProcessing-Bytes"):
         return "logs:ingest-gb"
-    if "Storage" in row.get("Group", "") and _usage(row, "TimedStorage-ByteHrs"):
+    group = row.get("Group") or ""
+    if group.startswith("Amazon CloudWatch Standard Storage") and _usage(row, "TimedStorage-ByteHrs"):
         return "logs:storage-gb"
     return None
 
@@ -189,7 +190,7 @@ def build_region(offers: dict[str, Iterable[str]]) -> dict:
             try:
                 usd = Decimal(row["PricePerUnit"])
                 start = Decimal(row.get("StartingRange") or "0")
-            except (KeyError, ArithmeticError) as exc:
+            except (KeyError, TypeError, ArithmeticError) as exc:  # missing or short row
                 raise PriceBuildError(f"{offer}: bad price for {key}: {exc}") from exc
             if usd > 0:
                 unit = row.get("Unit", "")
@@ -220,4 +221,7 @@ def dump(data: dict) -> bytes:
 
 
 def write(data: dict, path: Path) -> None:
-    path.write_bytes(dump(data))
+    """Write atomically, so an interrupted run leaves the old file in place."""
+    tmp = path.with_name(path.name + ".tmp")
+    tmp.write_bytes(dump(data))
+    tmp.replace(path)

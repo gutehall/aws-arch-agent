@@ -48,13 +48,17 @@ class Price:
     usd: float
     unit: str
     region: str
-    snapshot_date: str
+    snapshot_date: str | None
 
 
 @lru_cache(maxsize=1)
 def _snapshot() -> dict[str, Any]:
-    with gzip.open(DATA_PATH, "rt", encoding="utf-8") as fh:
-        data = json.load(fh)
+    """The snapshot, or {} when the file is missing or unreadable: then no region has prices."""
+    try:
+        with gzip.open(DATA_PATH, "rt", encoding="utf-8") as fh:
+            data = json.load(fh)
+    except (OSError, EOFError, ValueError):  # missing, truncated, not gzip, not JSON
+        return {}
     return data if isinstance(data, dict) else {}
 
 
@@ -82,7 +86,7 @@ def price(key: str, region: str = DEFAULT_REGION) -> Price | None:
     if not entry:
         return None
     offer = _KEY_OFFER.get(key) or _KEY_OFFER.get(key.split(":", 1)[0], "")
-    published = (body or {}).get("published", {}).get(offer, "")
+    published = (body or {}).get("published", {}).get(offer) or None
     usd, unit = entry
     return Price(usd=float(usd), unit=str(unit), region=region, snapshot_date=published)
 

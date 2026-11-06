@@ -28,6 +28,7 @@ from aws_arch_agent.config import (
     load_config,
 )
 from aws_arch_agent.models import Finding, IacSource
+from aws_arch_agent.pricing import DEFAULT_REGION
 from aws_arch_agent.report.json_report import render_json
 from aws_arch_agent.report.html import render_html
 from aws_arch_agent.report.sarif import render_sarif
@@ -156,7 +157,7 @@ def analyze(
     enforce_baseline: bool = typer.Option(False, "--enforce-baseline", help="Only fail on findings not in baseline"),
     update_baseline: bool = typer.Option(False, "--update-baseline", help="Add current findings to baseline file"),
     region: str = typer.Option(
-        "us-east-1", "--region", help="AWS region whose prices cost estimates use (offline snapshot)"
+        DEFAULT_REGION, "--region", help="AWS region whose prices cost estimates use (offline snapshot)"
     ),
 ):
     """Run architecture review on a CDK repo (V1 or V2 mode) and write report."""

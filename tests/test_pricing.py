@@ -112,6 +112,12 @@ def _offers(prefix: str = "") -> dict[str, list[str]]:
             {"Group": "Ingested Logs", "usageType": f"{prefix}DataProcessing-Bytes", "Unit": "GB",
              "PricePerUnit": "0.5"},
             {"Group": "Ingested Logs", "usageType": "DataProcessing-Bytes", "Unit": "GB", "PricePerUnit": "0.5"},
+            {"Group": "Amazon CloudWatch Standard Storage pricing current",
+             "usageType": f"{prefix}TimedStorage-ByteHrs", "Unit": "GB-Mo", "PricePerUnit": "0.03"},
+            # Infrequent Access storage and the free archival tier are other prices.
+            {"Group": "", "usageType": f"{prefix}TimedStorage-IA-ByteHrs", "Unit": "GB-Mo", "PricePerUnit": "0.018"},
+            {"Group": "CW-MonthlyFree-Archival", "usageType": "Global-TimedStorage-ByteHrs", "Unit": "GB-Mo",
+             "PricePerUnit": "0"},
         ]),
     }
 
@@ -132,6 +138,7 @@ def test_build_keeps_only_the_skus_the_rules_use(prefix: str) -> None:
         "s3:standard": [0.023, "GB-Mo"],
         "s3:deep-archive": [0.00099, "GB-Mo"],
         "logs:ingest-gb": [0.5, "GB"],
+        "logs:storage-gb": [0.03, "GB-Mo"],
     }
 
 
@@ -258,3 +265,60 @@ def test_bad_region_flag_fails(tmp_path: Path) -> None:
                                       "--out", str(tmp_path / "r.md")])
     assert result.exit_code != 0
     assert "--region must be an AWS region code" in result.output
+
+
+@pytest.mark.parametrize("content", [None, b"", b"not gzip", __import__("gzip").compress(b"{not json")])
+def test_missing_or_broken_snapshot_gives_no_prices(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, content: bytes | None
+) -> None:
+    path = tmp_path / "prices.json.gz"
+    if content is not None:
+        path.write_bytes(content)
+    monkeypatch.setattr(pricing, "DATA_PATH", path)
+    pricing._snapshot.cache_clear()
+    try:
+        assert pricing.price("ec2:m5.large") is None
+        assert pricing.price_note() == {"region": "us-east-1", "snapshot_date": None}
+    finally:
+        monkeypatch.undo()
+        pricing._snapshot.cache_clear()
+
+
+def test_short_offer_row_is_skipped_not_a_crash() -> None:
+    """A row cut off before its price has no Currency, so it is not read as a price."""
+    lines = _offer("AmazonS3", [
+        {"Product Family": "Storage", "usageType": "TimedStorage-ByteHrs", "Unit": "GB-Mo", "PricePerUnit": "0.023"},
+    ])
+    lines.append('"SKU1","OnDemand","0","GB-Mo"\n')
+    assert build_region({"AmazonS3": lines})["prices"] == {"s3:standard": [0.023, "GB-Mo"]}
+
+
+def test_row_without_a_price_is_a_build_error() -> None:
+    lines = _offer("AmazonS3", [
+        {"Product Family": "Storage", "usageType": "TimedStorage-ByteHrs", "Unit": "GB-Mo", "PricePerUnit": "n/a"},
+    ])
+    with pytest.raises(PriceBuildError, match="bad price"):
+        build_region({"AmazonS3": lines})
+
+
+def test_write_is_atomic(tmp_path: Path) -> None:
+    from aws_arch_agent.pricing.build import write
+
+    out = tmp_path / "prices.json.gz"
+    write({"schema": 1, "regions": {}}, out)
+    assert out.is_file() and not (tmp_path / "prices.json.gz.tmp").exists()
+
+
+@pytest.mark.parametrize("region", ["us-gov-west-1", "cn-north-1", "eusc-de-east-1", "ap-southeast-5"])
+def test_region_codes_accepted(tmp_path: Path, region: str) -> None:
+    assert load_config(tmp_path, region=region).region == region
+
+
+def test_v2_states_the_price_region(tmp_path: Path) -> None:
+    from aws_arch_agent.agent.v2_graph import analyze_v2
+
+    _repo(tmp_path)
+    report, ctx, _findings, _warnings = analyze_v2(tmp_path, use_llm=False, skip_synth=True,
+                                                   price_region="eu-north-1")
+    assert ctx.notes["prices"]["region"] == "eu-north-1"
+    assert "- Prices: on-demand, eu-north-1" in report
