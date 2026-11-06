@@ -32,6 +32,9 @@ class Finding(BaseModel):
     # The environment of the stack the finding came from (DM3-544); unknown is judged as
     # prod. None for findings not tied to a template (CDK source rules).
     environment: Literal["prod", "staging", "dev", "unknown"] | None = None
+    # The rule's themes (DM3-551): finops, security-baseline, identity, data-protection,
+    # network-exposure, resilience, observability, sustainability.
+    themes: List[str] = Field(default_factory=list)
 
 
 class RepoContext(BaseModel):
