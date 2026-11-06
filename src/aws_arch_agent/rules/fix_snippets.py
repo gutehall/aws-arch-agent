@@ -770,6 +770,74 @@ _TERRAFORM.update({
 }""",
 })
 
+# Encryption, part 2 (DM3-552).
+_CLOUDFORMATION.update({
+    "CF-OS-001": """$name:
+  Type: AWS::OpenSearchService::Domain
+  Properties:
+    EncryptionAtRestOptions:
+      Enabled: true  # changing it later replaces the domain""",
+    "CF-OS-002": """$name:
+  Type: AWS::OpenSearchService::Domain
+  Properties:
+    NodeToNodeEncryptionOptions:
+      Enabled: true""",
+    "CF-RS-001": """$name:
+  Type: AWS::Redshift::Cluster
+  Properties:
+    Encrypted: true""",
+    "CF-DOCDB-001": """$name:
+  Type: AWS::DocDB::DBCluster
+  Properties:
+    StorageEncrypted: true  # set at creation; it cannot be changed later""",
+    "CF-NEP-001": """$name:
+  Type: AWS::Neptune::DBCluster
+  Properties:
+    StorageEncrypted: true  # set at creation; it cannot be changed later""",
+    "CF-MSK-001": """$name:
+  Type: AWS::MSK::Cluster
+  Properties:
+    EncryptionInfo:
+      EncryptionInTransit:
+        ClientBroker: TLS
+        InCluster: true""",
+})
+_TERRAFORM.update({
+    "CF-OS-001": """resource "aws_opensearch_domain" "$tf_name" {
+  # keep the other arguments as they are
+  encrypt_at_rest {
+    enabled = true
+  }
+}""",
+    "CF-OS-002": """resource "aws_opensearch_domain" "$tf_name" {
+  # keep the other arguments as they are
+  node_to_node_encryption {
+    enabled = true
+  }
+}""",
+    "CF-RS-001": """resource "aws_redshift_cluster" "$tf_name" {
+  # keep the other arguments as they are
+  encrypted = true
+}""",
+    "CF-DOCDB-001": """resource "aws_docdb_cluster" "$tf_name" {
+  # keep the other arguments as they are
+  storage_encrypted = true # set at creation; it cannot be changed later
+}""",
+    "CF-NEP-001": """resource "aws_neptune_cluster" "$tf_name" {
+  # keep the other arguments as they are
+  storage_encrypted = true # set at creation; it cannot be changed later
+}""",
+    "CF-MSK-001": """resource "aws_msk_cluster" "$tf_name" {
+  # keep the other arguments as they are
+  encryption_info {
+    encryption_in_transit {
+      client_broker = "TLS"
+      in_cluster    = true
+    }
+  }
+}""",
+})
+
 # Lambda runtime (CF-LAM-003): the recommendation names the runtime to move to.
 _CLOUDFORMATION["CF-LAM-003"] = """$name:
   Type: AWS::Lambda::Function

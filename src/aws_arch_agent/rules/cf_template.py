@@ -27,6 +27,12 @@ CF_COVERS_STATIC: dict[str, tuple[str, ...]] = {
     "CF-KIN-001": ("SEC-038",),
     "CF-EC-001": ("SEC-025",),
     "CF-EC-002": ("SEC-025",),
+    "CF-OS-001": ("SEC-039",),
+    "CF-OS-002": ("SEC-039",),
+    "CF-RS-001": ("SEC-059",),
+    "CF-DOCDB-001": ("SEC-060",),
+    "CF-NEP-001": ("SEC-061",),
+    "CF-MSK-001": ("SEC-044",),
     "CF-IAM-001": ("SEC-001",),
     "CF-IAM-002": ("SEC-001",),
     "CF-IAM-003": ("SEC-002",),
@@ -143,6 +149,7 @@ _PER_RESOURCE_TYPES = frozenset({
     "resource_policy", "ecr_repository", "lambda_permission",
     "sns_topic", "ebs_volume", "efs_file_system", "kinesis_stream",
     "elasticache_replication_group", "launch_template",
+    "opensearch_domain", "redshift_cluster", "docdb_cluster", "neptune_cluster", "msk_cluster",
 })
 
 
@@ -173,6 +180,12 @@ CHECK_PROPERTIES: dict[str, frozenset[str]] = {
         "CF-KIN-001": {"StreamEncryption"},
         "CF-EC-001": {"AtRestEncryptionEnabled", "Engine"},
         "CF-EC-002": {"TransitEncryptionEnabled"},
+        "CF-OS-001": {"EncryptionAtRestOptions"},
+        "CF-OS-002": {"NodeToNodeEncryptionOptions"},
+        "CF-RS-001": {"Encrypted", "SnapshotIdentifier"},
+        "CF-DOCDB-001": {"StorageEncrypted", "SnapshotIdentifier"},
+        "CF-NEP-001": {"StorageEncrypted", "SnapshotIdentifier", "SourceDBClusterIdentifier"},
+        "CF-MSK-001": {"EncryptionInfo"},
         "CF-RP-001": {
             "PolicyDocument", "RepositoryPolicyText",
             "Principal", "SourceArn", "SourceAccount", "PrincipalOrgID", "FunctionUrlAuthType",
@@ -341,7 +354,67 @@ _ENCRYPTION: dict[str, tuple[Severity, str, str]] = {
         "ElastiCache replication group is not encrypted in transit",
         "Set TransitEncryptionEnabled: true so clients connect with TLS (Security Hub ElastiCache.5).",
     ),
+    "CF-OS-001": (
+        "Medium",
+        "OpenSearch domain is not encrypted at rest",
+        "Set EncryptionAtRestOptions.Enabled: true. It is off by default (Security Hub Opensearch.1). "
+        "In CDK: set encryptionAtRest: { enabled: true } on the Domain.",
+    ),
+    "CF-OS-002": (
+        "Medium",
+        "OpenSearch domain does not encrypt node-to-node traffic",
+        "Set NodeToNodeEncryptionOptions.Enabled: true. It is off by default (Security Hub "
+        "Opensearch.3). In CDK: set nodeToNodeEncryption: true on the Domain.",
+    ),
+    "CF-RS-001": (
+        "Low",
+        "Redshift cluster sets Encrypted to false",
+        "Remove Encrypted: false or set it to true. New provisioned clusters are encrypted by "
+        "default since 2025; an explicit false asks for an unencrypted cluster (Security Hub Redshift.10).",
+    ),
+    "CF-DOCDB-001": (
+        "Medium",
+        "DocumentDB cluster is not encrypted at rest",
+        "Set StorageEncrypted: true. It defaults to false in CloudFormation and cannot be "
+        "changed after the cluster is created (Security Hub DocumentDB.1).",
+    ),
+    "CF-NEP-001": (
+        "Medium",
+        "Neptune cluster is not encrypted at rest",
+        "Set StorageEncrypted: true. It cannot be changed after the cluster is created "
+        "(Security Hub Neptune.1).",
+    ),
+    "CF-MSK-001": (
+        "Medium",
+        "MSK cluster allows unencrypted traffic",
+        "Set EncryptionInfo.EncryptionInTransit.ClientBroker to TLS and InCluster to true "
+        "(both are the default). Data at rest is always encrypted (Security Hub MSK.1).",
+    ),
 }
+
+
+def _msk_plaintext(info: Any) -> str | None:
+    """What an MSK EncryptionInfo leaves unencrypted, or None when nothing (or unknown).
+
+    ClientBroker defaults to TLS and InCluster to true.
+    """
+    if info is None:
+        return None
+    if not isinstance(info, dict) or _is_intrinsic(info):
+        return None
+    transit = info.get("EncryptionInTransit")
+    if transit is None:
+        return None
+    if not isinstance(transit, dict) or _is_intrinsic(transit):
+        return None
+    problems = []
+    broker = transit.get("ClientBroker")
+    if type(broker) is str and broker.upper() in ("PLAINTEXT", "TLS_PLAINTEXT"):
+        problems.append(f"ClientBroker is {broker}")
+    in_cluster = transit.get("InCluster")
+    if in_cluster is not None and _flag(in_cluster) is False:
+        problems.append("InCluster is false")
+    return ("; ".join(problems) + ". ") if problems else None
 
 
 def _unencrypted_block_devices(mappings: Any) -> list[str] | None:
@@ -366,7 +439,7 @@ def _unencrypted_block_devices(mappings: Any) -> list[str] | None:
 
 
 def _encryption_findings(res: Resource, template_path: Path) -> List[Finding]:
-    """CF-SNS-001, CF-EBS-001, CF-EFS-001, CF-KIN-001, CF-EC-001/002 for one resource.
+    """Encryption checks (see _ENCRYPTION) for one resource.
 
     Only literal settings are judged: an intrinsic or variable gives no finding.
     """
@@ -400,6 +473,26 @@ def _encryption_findings(res: Resource, template_path: Path) -> List[Finding]:
             failed.append(("CF-EC-001", ""))
         if _flag(props.get("TransitEncryptionEnabled")) is False:
             failed.append(("CF-EC-002", ""))
+    elif ctype == "opensearch_domain":
+        for fid, key in (("CF-OS-001", "EncryptionAtRestOptions"), ("CF-OS-002", "NodeToNodeEncryptionOptions")):
+            options = props.get(key)
+            if options is None or (isinstance(options, dict) and not _is_intrinsic(options)):
+                if _flag((options or {}).get("Enabled")) is False:
+                    failed.append((fid, ""))
+    elif ctype == "redshift_cluster":
+        encrypted = props.get("Encrypted")
+        restored = props.get("SnapshotIdentifier") is not None  # inherits the snapshot's setting
+        if not restored and encrypted is not None and _flag(encrypted) is False:  # unset: encrypted
+            failed.append(("CF-RS-001", ""))
+    elif ctype in ("docdb_cluster", "neptune_cluster"):
+        # A cluster restored from a snapshot or another cluster inherits its encryption.
+        restored = any(props.get(k) is not None for k in ("SnapshotIdentifier", "SourceDBClusterIdentifier"))
+        if not restored and _flag(props.get("StorageEncrypted")) is False:
+            failed.append(("CF-DOCDB-001" if ctype == "docdb_cluster" else "CF-NEP-001", ""))
+    elif ctype == "msk_cluster":
+        detail = _msk_plaintext(props.get("EncryptionInfo"))
+        if detail:
+            failed.append(("CF-MSK-001", detail))
     out: List[Finding] = []
     for fid, detail in failed:
         severity, title, recommendation = _ENCRYPTION[fid]
