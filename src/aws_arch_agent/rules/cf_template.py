@@ -3,7 +3,7 @@ from __future__ import annotations
 import json
 import re
 from pathlib import Path
-from typing import List, Any
+from typing import Any, Callable, List
 
 from aws_arch_agent.models import Finding, Severity
 from aws_arch_agent.rules import (
@@ -317,7 +317,7 @@ CF_THEMES: dict[str, tuple[str, ...]] = {
     "CF-S3-005": (_DP, _NET), "CF-SG-001": (_NET,), "CF-SM-001": (_DP, _ID), "CF-SNS-001": (_DP,),
     "CF-SQS-001": (_DP,), "CF-SQS-002": (_RES,),
     "CF-SUST-001": (_SUS, _F), "CF-SUST-002": (_SUS, _F), "CF-SUST-003": (_SUS, _F),
-    "CF-TAG-001": (_F,), "CF-VPC-001": (_NET, _F), "CF-WAF-001": (_NET,),
+    "CF-TAG-001": (_F,), "CF-VPC-001": (_NET, _F), "CF-VPC-002": (_F,), "CF-VPC-003": (_F,), "CF-WAF-001": (_NET,),
 }
 
 
@@ -748,6 +748,126 @@ def _autoscaled_tables(resources: List[Resource]) -> tuple[set[str], bool]:
         covered |= hits
         unlinked = unlinked or not hits
     return covered, unlinked
+
+
+# Services with a free gateway VPC endpoint: (service name suffix, check id, label).
+_GATEWAY_SERVICES = (("s3", "CF-VPC-002", "S3"), ("dynamodb", "CF-VPC-003", "DynamoDB"))
+
+
+def _endpoint_service(value: Any) -> str | None:
+    """The service an endpoint's ServiceName names: "s3", "dynamodb", "" for another
+    service, or None when the scan cannot tell (a Ref, a data source, a variable)."""
+    if isinstance(value, dict) and len(value) == 1:
+        fn, arg = next(iter(value.items()))
+        if fn == "Fn::Sub":
+            value = arg[0] if isinstance(arg, list) and arg else arg
+        elif fn == "Fn::Join" and isinstance(arg, list) and len(arg) == 2 \
+                and type(arg[0]) is str and isinstance(arg[1], list):
+            value = arg[0].join(p if type(p) is str else "${x}" for p in arg[1])
+    if not isinstance(value, str) or value.endswith("}"):
+        return None
+    match = re.search(r"\.(s3|dynamodb)$", value)
+    if match:
+        return match.group(1)
+    # A service name ends in a literal segment: com.amazonaws.<region>.ec2, aws.sagemaker...
+    return "" if re.match(r"^(?:com\.amazonaws|aws)\.", value) else None
+
+
+def _endpoint_is_gateway(res: Resource) -> bool | None:
+    """Gateway is the default type in CloudFormation and Terraform. None: not readable."""
+    if "VpcEndpointType" in res.unresolved:
+        return None
+    kind = res.properties.get("VpcEndpointType", "Gateway")
+    return kind.lower() == "gateway" if type(kind) is str else None
+
+
+def _points_at(res: Resource, key: str, target: Resource) -> bool:
+    """True when res refers to target: in property key (CloudFormation), or anywhere in
+    the block (Terraform)."""
+    if res.source_type.startswith("AWS::"):
+        value = res.properties.get(key)
+        text = value if type(value) is str else json.dumps(value, default=str)
+        return _references(text, target.name)
+    return target.name in res.references
+
+
+def _gateway_endpoint_findings(
+    resources: List[Resource], template_path: Path,
+    at: Callable[[Resource | None], tuple[str, int | None, str]],
+) -> List[Finding]:
+    """CF-VPC-002 / CF-VPC-003: a VPC with a NAT gateway and no gateway endpoint for S3 or
+    DynamoDB. Its private subnets then reach the service through the NAT gateway, which
+    bills every GB it processes; a gateway endpoint is free.
+
+    NAT gateways and endpoints are tied to a VPC through their subnet and VpcId. One the
+    scan cannot tie to a VPC is judged at template level: an endpoint then covers every
+    VPC, and a NAT gateway counts for the template as a whole. An endpoint whose service
+    or type cannot be read may be the missing one, so its VPC is not judged.
+    """
+    nats = [
+        r for r in resources if r.type == "nat_gateway" and not r.malformed
+        and "ConnectivityType" not in r.unresolved
+        and r.properties.get("ConnectivityType", "public") == "public"  # a private NAT has no route out
+    ]
+    if not nats:
+        return []
+    vpcs = [r for r in resources if r.type == "vpc"]
+    subnets = [r for r in resources if r.type == "subnet"]
+
+    def vpc_of(res: Resource) -> Resource | None:
+        return next((v for v in vpcs if _points_at(res, "VpcId", v)), None)
+
+    def nat_vpc(nat: Resource) -> Resource | None:
+        subnet = next((s for s in subnets if _points_at(nat, "SubnetId", s)), None)
+        return vpc_of(subnet) if subnet is not None else None
+
+    groups: list[tuple[Resource | None, Resource]] = []  # (VPC or None, first NAT gateway in it)
+    for nat in nats:
+        vpc = nat_vpc(nat)
+        if all(g[0] is not vpc for g in groups):
+            groups.append((vpc, nat))
+
+    endpoints = []
+    for r in resources:
+        if r.type != "vpc_endpoint":
+            continue
+        service = None if r.malformed or "ServiceName" in r.unresolved \
+            else _endpoint_service(r.properties.get("ServiceName"))
+        endpoints.append((vpc_of(r), service, None if r.malformed else _endpoint_is_gateway(r)))
+
+    per_gb = estimates.nat_processing_price()
+    cost = f"NAT gateway data processing costs {per_gb}" if per_gb else "NAT gateway data processing is billed per GB"
+    out: List[Finding] = []
+    for vpc, nat in groups:
+        for suffix, check_id, label in _GATEWAY_SERVICES:
+            here = [e for e in endpoints if vpc is None or e[0] is None or e[0] is vpc]
+            if any(service == suffix and gateway for _, service, gateway in here):
+                continue
+            if any((service is None and gateway is not False) or (service == suffix and gateway is None)
+                   for _, service, gateway in here):
+                continue  # an endpoint the scan cannot read may be this one
+            anchor = vpc or nat
+            file, line, _ = at(anchor)
+            where = "this VPC" if vpc is not None else "this template"
+            out.append(Finding(
+                id=check_id,
+                title=f"{label} traffic goes through the NAT gateway",
+                severity="Low",
+                category="Cost Optimization",
+                file=file,
+                line=line,
+                evidence=f"{anchor.name} ({anchor.source_type})",
+                recommendation=(
+                    f"{where.capitalize()} has a NAT gateway and no gateway VPC endpoint for {label}, so "
+                    f"private subnets reach {label} through the NAT gateway. {cost}; a gateway endpoint "
+                    f"for {label} carries no hourly or data charge. Add an AWS::EC2::VPCEndpoint with "
+                    f"VpcEndpointType Gateway for {label} on the private route tables. An Interface "
+                    f"endpoint for {label} is billed by the hour and GB: only the Gateway type is free. "
+                    f"In CDK: vpc.addGatewayEndpoint('{label}', {{ service: "
+                    f"ec2.GatewayVpcEndpointAwsService.{label.upper()} }})."
+                ),
+            ))
+    return out
 
 
 def _autoscaling_finding(res: Resource, template_path: Path) -> Finding | None:
@@ -2564,6 +2684,9 @@ def run_resource_checks(
             recommendation="Consider VPC endpoints (S3, DynamoDB, or interface endpoints) to reduce NAT data processing costs.",
         ))
         estimates.apply(findings[-1], estimates.nat_gateways(nat_count))
+
+    # --- Gateway endpoints: S3 and DynamoDB through a NAT gateway (CF-VPC-002/003) ---
+    findings.extend(_gateway_endpoint_findings(resources, template_path, _at))
 
     # --- Launch template Spot (template-level: LTs without Spot when no ASG) ---
     if launch_templates_without_spot > 0 and asg_count == 0:

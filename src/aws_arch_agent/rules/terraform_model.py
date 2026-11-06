@@ -657,6 +657,22 @@ def _subnet(body: dict) -> dict:
     return props
 
 
+def _nat_gateway(body: dict) -> dict:
+    """aws_nat_gateway: a private NAT gateway has no route out (CF-VPC-002/003)."""
+    props: dict = {}
+    _set(props, "ConnectivityType", _v(body, "connectivity_type"))
+    return props
+
+
+def _vpc_endpoint(body: dict) -> dict:
+    """aws_vpc_endpoint: the service and type CF-VPC-002/003 read. The service name is
+    kept as written: a template string ("com.amazonaws.${...}.s3") still names it."""
+    props: dict = {}
+    _set(props, "ServiceName", _ref(body, "service_name"))
+    _set(props, "VpcEndpointType", _v(body, "vpc_endpoint_type"))
+    return props
+
+
 def _sns_topic(body: dict) -> dict:
     props: dict = {}
     _set(props, "KmsMasterKeyId", _ref(body, "kms_master_key_id"))
@@ -1260,6 +1276,8 @@ _ADAPTERS: dict[str, Callable[[dict], dict]] = {
     "aws_sns_topic": _sns_topic,
     "aws_ebs_volume": _ebs_volume,
     "aws_eip": _eip,
+    "aws_nat_gateway": _nat_gateway,
+    "aws_vpc_endpoint": _vpc_endpoint,
     "aws_efs_file_system": _efs_file_system,
     "aws_kinesis_stream": _kinesis_stream,
     "aws_elasticache_replication_group": _elasticache_replication_group,
