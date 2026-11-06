@@ -276,6 +276,7 @@ def analyze(
             price_region=cfg.region,
             tag_policy=cfg.tag_policy,
             environment_map=cfg.environments,
+            nonprod_max_size=cfg.nonprod_max_size,
         )
     else:
         report_md, ctx_report, findings, warnings = analyze_v1(
@@ -291,6 +292,7 @@ def analyze(
             price_region=cfg.region,
             tag_policy=cfg.tag_policy,
             environment_map=cfg.environments,
+            nonprod_max_size=cfg.nonprod_max_size,
         )
 
     if ctx_report.notes.get("tag_policy") == "not checked":

@@ -75,6 +75,8 @@ CF_TYPE_TO_CANONICAL: dict[str, str] = {
     "AWS::SecretsManager::RotationSchedule": "secretsmanager_secret_rotation",
     "AWS::Cognito::UserPool": "cognito_user_pool",
     "AWS::Lambda::Permission": "lambda_permission",
+    "AWS::Lambda::Alias": "lambda_alias",
+    "AWS::Lambda::Version": "lambda_version",
 }
 
 CANONICAL_TYPES: frozenset[str] = frozenset(CF_TYPE_TO_CANONICAL.values())
