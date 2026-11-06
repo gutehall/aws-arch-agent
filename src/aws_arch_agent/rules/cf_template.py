@@ -38,6 +38,11 @@ CF_COVERS_STATIC: dict[str, tuple[str, ...]] = {
     "CF-DOCDB-001": ("SEC-060",),
     "CF-NEP-001": ("SEC-061",),
     "CF-MSK-001": ("SEC-044",),
+    "CF-ECR-001": ("SEC-028",),
+    "CF-ECR-002": ("SEC-029",),
+    "CF-ECR-003": ("SEC-030",),
+    "CF-ECS-002": ("SEC-020",),
+    "CF-ECS-003": ("SEC-058",),
     "CF-IAM-001": ("SEC-001",),
     "CF-IAM-002": ("SEC-001",),
     "CF-IAM-003": ("SEC-002",),
@@ -155,7 +160,7 @@ _PER_RESOURCE_TYPES = frozenset({
     "sns_topic", "ebs_volume", "efs_file_system", "kinesis_stream",
     "elasticache_replication_group", "launch_template",
     "opensearch_domain", "redshift_cluster", "docdb_cluster", "neptune_cluster", "msk_cluster",
-    "cloudfront_distribution", "subnet",
+    "cloudfront_distribution", "subnet", "ecs_task_definition",
 })
 
 
@@ -205,6 +210,12 @@ CHECK_PROPERTIES: dict[str, frozenset[str]] = {
         "CF-CF-004": {"DistributionConfig"},
         # Reads DBClusterIdentifier on instances only; _deletion_finding checks it.
         "CF-DEL-001": set(),
+        "CF-ECR-001": {"ImageScanningConfiguration"},
+        "CF-ECR-002": {"ImageTagMutability"},
+        "CF-ECR-003": {"LifecyclePolicy"},
+        "CF-ECS-001": {"ContainerDefinitions"},
+        "CF-ECS-002": {"ContainerDefinitions", "RuntimePlatform"},
+        "CF-ECS-003": {"ContainerDefinitions", "RuntimePlatform"},
         "CF-EC2-002": {"MapPublicIpOnLaunch"},
         "CF-EC2-003": {"NetworkInterfaces"},
         "CF-WAF-001": {"Type", "Scheme"},
@@ -602,6 +613,119 @@ def _deletion_finding(res: Resource, template_path: Path) -> Finding | None:
             "In CDK: removalPolicy: RemovalPolicy.RETAIN (or SNAPSHOT for RDS), not DESTROY."
         ),
     )
+
+
+def _ecr_findings(res: Resource, template_path: Path) -> List[Finding]:
+    """CF-ECR-001 (scan on push), CF-ECR-002 (mutable tags), CF-ECR-003 (no lifecycle policy)."""
+    props = res.properties
+    out: List[Finding] = []
+
+    def add(fid: str, title: str, recommendation: str) -> None:
+        out.append(Finding(
+            id=fid, title=title, severity="Low", category="Security",
+            file=res.file or str(template_path), line=res.line,
+            evidence=f"{res.name} ({res.source_type})", recommendation=recommendation,
+        ))
+
+    scanning = props.get("ImageScanningConfiguration")
+    if scanning is None:
+        scan: bool | None = False
+    elif isinstance(scanning, dict) and not _is_intrinsic(scanning):
+        scan = _flag(scanning.get("ScanOnPush"))
+    else:
+        scan = None
+    if scan is False:
+        add("CF-ECR-001", "ECR repository does not scan images on push",
+            "Set ImageScanningConfiguration.ScanOnPush to true. If the registry uses enhanced "
+            "scanning (Amazon Inspector), that setting replaces this one and this finding can be "
+            "excluded. In CDK: imageScanOnPush: true.")
+    mutability = props.get("ImageTagMutability", "MUTABLE")
+    if mutability in ("MUTABLE", "MUTABLE_WITH_EXCLUSION"):
+        add("CF-ECR-002", "ECR image tags are mutable",
+            "ImageTagMutability is MUTABLE, so a push can overwrite a tag that a deployment "
+            "points at. Set it to IMMUTABLE. In CDK: imageTagMutability: ecr.TagMutability.IMMUTABLE.")
+    if not props.get("LifecyclePolicy"):
+        add("CF-ECR-003", "ECR repository has no lifecycle policy",
+            "Old and untagged images pile up and keep known vulnerabilities around. Add a "
+            "LifecyclePolicy that expires them. In CDK: repository.addLifecycleRule().")
+    return out
+
+
+def _is_root_user(user: str) -> bool:
+    """root or UID 0, with or without a group (root:root, 0:0)."""
+    return user.split(":", 1)[0].strip() in ("root", "0")
+
+
+def _ecs_findings(res: Resource, template_path: Path) -> List[Finding]:
+    """CF-ECS-001 (privileged), CF-ECS-002 (writable root filesystem), CF-ECS-003 (root user).
+
+    One finding per check, naming the containers. A container whose value is not literal
+    (an intrinsic or a Terraform expression) is not judged for that check.
+    """
+    containers = res.properties.get("ContainerDefinitions")
+    if not isinstance(containers, list):
+        return []
+    # Windows containers support neither User nor ReadonlyRootFilesystem. A family the scan
+    # cannot read may be Windows, so those two checks are skipped then too.
+    platform = res.properties.get("RuntimePlatform")
+    if platform is None:
+        family: Any = None
+    elif isinstance(platform, dict) and not _is_intrinsic(platform):
+        family = platform.get("OperatingSystemFamily")
+    else:
+        family = {"unknown": platform}
+    windows = family is not None and (type(family) is not str or family.upper().startswith("WINDOWS"))
+    privileged: list[str] = []
+    writable: list[str] = []
+    root: list[str] = []
+    no_user: list[str] = []
+    for i, c in enumerate(containers):
+        if not isinstance(c, dict) or _is_intrinsic(c):
+            continue
+        name = c.get("Name")
+        label = name if type(name) is str else f"#{i + 1}"
+        if _flag(c.get("Privileged")) is True:
+            privileged.append(label)
+        if windows:
+            continue
+        if _flag(c.get("ReadonlyRootFilesystem")) is False:
+            writable.append(label)
+        user = c.get("User")
+        if user is None:
+            no_user.append(label)
+        elif type(user) is str and _is_root_user(user):
+            root.append(label)
+        elif type(user) is int and user == 0:
+            root.append(label)
+    out: List[Finding] = []
+
+    def add(fid: str, severity: Severity, title: str, recommendation: str) -> None:
+        out.append(Finding(
+            id=fid, title=title, severity=severity, category="Security",
+            file=res.file or str(template_path), line=res.line,
+            evidence=f"{res.name} ({res.source_type})", recommendation=recommendation,
+        ))
+
+    if privileged:
+        add("CF-ECS-001", "High", "ECS container runs in privileged mode",
+            f"Privileged is true on {', '.join(privileged)}: the container gets root access to "
+            "the host. Remove Privileged and grant only the Linux capabilities it needs "
+            "(Security Hub ECS.4). In CDK: privileged: false.")
+    if writable:
+        add("CF-ECS-002", "Low", "ECS container root filesystem is writable",
+            f"ReadonlyRootFilesystem is not true on {', '.join(writable)}. Set it to true and "
+            "mount a volume for paths the app writes to (Security Hub ECS.5). "
+            "In CDK: readonlyRootFilesystem: true.")
+    if root:
+        add("CF-ECS-003", "Medium", "ECS container runs as root",
+            f"User is root or 0 on {', '.join(root)}."
+            + (f" User is not set on {', '.join(no_user)}." if no_user else "")
+            + " Set User to a non-root UID, such as 1000. In CDK: user: '1000'.")
+    elif no_user:
+        add("CF-ECS-003", "Low", "ECS container may run as root",
+            f"User is not set on {', '.join(no_user)}, so the image decides, and many images "
+            "run as root. Set User to a non-root UID, such as 1000. In CDK: user: '1000'.")
+    return out
 
 
 def _runtime_finding(res: Resource, template_path: Path) -> Finding | None:
@@ -1552,6 +1676,12 @@ def run_resource_checks(
                     findings.extend(_iam_findings(res, template_path))
                 if ctype == "iam_role":
                     findings.extend(_trust_findings(res, template_path))
+
+                # --- ECR repositories and ECS task definitions ---
+                if ctype == "ecr_repository":
+                    findings.extend(_ecr_findings(res, template_path))
+                if ctype == "ecs_task_definition":
+                    findings.extend(_ecs_findings(res, template_path))
 
                 # --- Stateful resources deleted with the stack ---
                 if ctype in _STATEFUL_TYPES:

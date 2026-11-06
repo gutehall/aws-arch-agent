@@ -69,6 +69,7 @@ CF_TYPE_TO_CANONICAL: dict[str, str] = {
     "AWS::SNS::TopicPolicy": "resource_policy",
     "AWS::S3::BucketPolicy": "resource_policy",
     "AWS::ECR::Repository": "ecr_repository",
+    "AWS::ECS::TaskDefinition": "ecs_task_definition",
     "AWS::Lambda::Permission": "lambda_permission",
 }
 
