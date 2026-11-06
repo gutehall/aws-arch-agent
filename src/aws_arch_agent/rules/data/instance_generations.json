@@ -1,0 +1,53 @@
+{
+  "_comment": "Previous-generation instance families and their current successors: [x86, Graviton]. null means none to suggest. Used by CF-GEN-001 (rules/generations.py).",
+  "ec2": {
+    "t1": ["t3", "t4g"],
+    "t2": ["t3", "t4g"],
+    "m1": ["m7i", "m7g"],
+    "m2": ["r7i", "r7g"],
+    "m3": ["m7i", "m7g"],
+    "m4": ["m7i", "m7g"],
+    "c1": ["c7i", "c7g"],
+    "c3": ["c7i", "c7g"],
+    "c4": ["c7i", "c7g"],
+    "r3": ["r7i", "r7g"],
+    "r4": ["r7i", "r7g"],
+    "i2": ["i4i", "i4g"],
+    "d2": ["d3", null],
+    "x1": ["x2iedn", "x2gd"],
+    "x1e": ["x2iedn", "x2gd"],
+    "g2": ["g6", null],
+    "g3": ["g6", null],
+    "g3s": ["g6", null]
+  },
+  "rds": {
+    "db.t1": ["db.t3", "db.t4g"],
+    "db.t2": ["db.t3", "db.t4g"],
+    "db.m1": ["db.m6i", "db.m7g"],
+    "db.m2": ["db.r6i", "db.r7g"],
+    "db.m3": ["db.m6i", "db.m7g"],
+    "db.m4": ["db.m6i", "db.m7g"],
+    "db.r3": ["db.r6i", "db.r7g"],
+    "db.r4": ["db.r6i", "db.r7g"]
+  },
+  "elasticache": {
+    "cache.t1": ["cache.t3", "cache.t4g"],
+    "cache.t2": ["cache.t3", "cache.t4g"],
+    "cache.m1": ["cache.m5", "cache.m7g"],
+    "cache.m2": ["cache.r5", "cache.r7g"],
+    "cache.m3": ["cache.m5", "cache.m7g"],
+    "cache.m4": ["cache.m5", "cache.m7g"],
+    "cache.c1": ["cache.m5", "cache.m7g"],
+    "cache.r3": ["cache.r5", "cache.r7g"],
+    "cache.r4": ["cache.r5", "cache.r7g"]
+  },
+  "opensearch": {
+    "t2": ["t3", null],
+    "m3": ["m5", "m7g"],
+    "m4": ["m5", "m7g"],
+    "c4": ["c5", "c7g"],
+    "r3": ["r5", "r7g"],
+    "r4": ["r5", "r7g"],
+    "i2": ["i3", "im4gn"]
+  }
+}

@@ -62,6 +62,7 @@ TF_TYPE_TO_CANONICAL: dict[str, str] = {
     "aws_apigatewayv2_api": "apigatewayv2_api",
     "aws_apigatewayv2_stage": "apigatewayv2_stage",
     "aws_autoscaling_group": "autoscaling_group",
+    "aws_launch_configuration": "launch_configuration",
     "aws_ecs_service": "ecs_service",
     "aws_eks_cluster": "eks_cluster",
     "aws_cloudfront_distribution": "cloudfront_distribution",
@@ -576,6 +577,8 @@ def _launch_template(body: dict) -> dict:
         data["InstanceMarketOptions"] = {"MarketType": _v(market, "market_type")}
     _set(data, "MetadataOptions", _metadata_options(body))
     props: dict = {"LaunchTemplateData": data}
+    # Apart from LaunchTemplateData, so an instance type from a variable hides only CF-GEN-001.
+    _set(props, "InstanceType", _v(body, "instance_type"))
     # Its own property, so an unknown block device does not hide the Spot or IMDS checks.
     # A device whose encryption or snapshot is unknown is left out on its own, so it does
     # not hide the other devices either.
@@ -660,6 +663,12 @@ def _opensearch_domain(body: dict) -> dict:
         found = _first_block(body, block)
         if found:
             props[key] = {"Enabled": _v(found, "enabled")}
+    cluster = _first_block(body, "cluster_config")
+    if cluster:
+        config: dict = {}
+        _set(config, "InstanceType", _v(cluster, "instance_type"))
+        _set(config, "DedicatedMasterType", _v(cluster, "dedicated_master_type"))
+        props["ClusterConfig"] = config
     return props
 
 
@@ -698,6 +707,7 @@ def _elasticache_replication_group(body: dict) -> dict:
     _set(props, "TransitEncryptionEnabled", _v(body, "transit_encryption_enabled"))
     _set(props, "Engine", _v(body, "engine"))
     _set(props, "MultiAZEnabled", _v(body, "multi_az_enabled"))
+    _set(props, "CacheNodeType", _v(body, "node_type"))
     return props
 
 
@@ -1087,7 +1097,7 @@ def _asg(body: dict) -> dict:
     if not mixed:
         return {}
     dist = _first_block(mixed, "instances_distribution")
-    return {
+    props: dict = {
         "MixedInstancesPolicy": {
             "InstancesDistribution": {
                 "SpotMaxPrice": _ref(dist, "spot_max_price"),
@@ -1095,6 +1105,27 @@ def _asg(body: dict) -> dict:
             }
         }
     }
+    # Override instance types, apart from the policy so an unknown one hides only CF-GEN-001.
+    types = [
+        _v(item, "instance_type")
+        for template in _blocks(mixed, "launch_template")
+        for item in _blocks(template, "override")
+    ]
+    if types:
+        props["OverrideInstanceTypes"] = types
+    return props
+
+
+def _launch_configuration(body: dict) -> dict:
+    props: dict = {}
+    _set(props, "InstanceType", _v(body, "instance_type"))
+    return props
+
+
+def _elasticache_cluster(body: dict) -> dict:
+    props: dict = {}
+    _set(props, "CacheNodeType", _v(body, "node_type"))
+    return props
 
 
 def _ecs_service(body: dict) -> dict:
@@ -1180,6 +1211,8 @@ _ADAPTERS: dict[str, Callable[[dict], dict]] = {
     "aws_kinesis_stream": _kinesis_stream,
     "aws_elasticache_replication_group": _elasticache_replication_group,
     "aws_opensearch_domain": _opensearch_domain,
+    "aws_elasticache_cluster": _elasticache_cluster,
+    "aws_launch_configuration": _launch_configuration,
     "aws_redshift_cluster": _redshift_cluster,
     "aws_docdb_cluster": _storage_encrypted_cluster,
     "aws_neptune_cluster": _storage_encrypted_cluster,
