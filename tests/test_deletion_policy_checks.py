@@ -213,9 +213,12 @@ resource "aws_sqs_queue" "q" {
 
 
 def _tf(tmp_path: Path) -> list[Finding]:
-    (tmp_path / "main.tf").write_text(DELETION_TF, encoding="utf-8")
-    resources = resources_from_terraform(tmp_path)
-    return [f for f in run_resource_checks(resources, tmp_path) if f.id == ID]
+    # A neutral module directory: pytest's own ("test_...") would read as a dev stack (DM3-544).
+    module = tmp_path / "infra"
+    module.mkdir(exist_ok=True)
+    (module / "main.tf").write_text(DELETION_TF, encoding="utf-8")
+    resources = resources_from_terraform(module)
+    return [f for f in run_resource_checks(resources, module) if f.id == ID]
 
 
 def test_terraform_prevent_destroy_clears_the_finding(tmp_path: Path) -> None:

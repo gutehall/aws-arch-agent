@@ -64,6 +64,21 @@ rules:
   ```
 
   CF-TAG-001 (Medium) reports each taggable resource that misses a required tag, or has a value `allowed` does not list, at its file and line. Keys and values are case-sensitive. Tags set for the whole stack count: CDK `Tags.of(app).add(...)` (already on each resource in synth output) and Terraform `provider "aws" { default_tags { ... } }`, including a resource's `provider = aws.<alias>`. Resource types that do not take tags are skipped, and so are tags the scan cannot read, such as `tags = var.tags` or `Fn::If`. Tags passed only at deploy time (`aws cloudformation deploy --tags`) are not in the template, so they do not count. With a policy, the repo-wide guesses BP-001 and COST-015 are dropped wherever templates are checked. A V1 scan of CDK source reads no templates, so it keeps them and says the policy needs `--mode v2`.
+- **environments**: which environment each stack is for (a stack is one CloudFormation template, `cdk synth` output included, or one Terraform root module). Keys are matched in order. Each is a glob against the stack's repo-relative path or its name, or `tag:<value>` for an `Environment` tag value. Values are `prod`, `staging` or `dev`:
+
+  ```yaml
+  environments:
+    "infra/prod/**": prod
+    "infra/dev/**": dev
+    "*-sandbox*": dev
+    "tag:Staging": staging
+  ```
+
+  In globs, `*` and `?` stay within one path segment and `**` spans segments. `./` and a leading `/` are dropped, because paths are relative to the repo. A config match decides outright.
+
+  Without a match, the scan looks at every signal and **the most-prod one wins**. The signals are the stack's `Environment` tag values and common words in the path, file or stack name: `prod`/`production`/`prd`/`live`, `staging`/`stage`/`stg`/`uat`/`preprod`, `dev`/`development`/`test`/`testing`/`qa`/`sandbox`/`sbx`. An `Environment` tag the scan cannot read (a `Ref`, `Fn::If`, `var.*` or `tags = var.tags`) counts as prod, and so does a value it does not recognise. So a dev directory holding a prod-tagged resource is prod, and a stray `Environment=dev` in a prod path is prod. A stack with no signal is **unknown, and judged as prod**: a missed prod finding is worse than an extra dev one. Findings from CDK source rules are not tied to a stack, so they are unknown too. Terraform workspaces exist only at run time, so match the directory instead.
+
+  Each template finding records its environment (`environment` in JSON and SARIF, a line in Markdown and HTML). In dev, production durability advice is skipped (CF-RDS-003 Multi-AZ, CF-RDS-005 deletion protection, CF-DEL-001 retain on delete), and CF-RDS-002 backups, CF-DDB-001 PITR and CF-S3-003 versioning drop to Low. Staging, prod and unknown are judged as prod. The rules are in `aws_arch_agent/rules/environments.py` (`RULE_POLICY`).
 - **region**: AWS region whose on-demand prices cost estimates use (default `us-east-1`; `--region` overrides it). Prices come from the snapshot shipped with the package; see [Prices](REFERENCE.md#prices)
 - **severity_threshold**: only report findings at or above this severity
 - **templates**: path to CloudFormation templates (dir or file); V2 only. When set, cdk synth is skipped and CF rules run on these templates (JSON or YAML).

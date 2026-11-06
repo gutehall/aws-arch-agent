@@ -6,7 +6,14 @@ from pathlib import Path
 from typing import List, Any
 
 from aws_arch_agent.models import Finding, Severity
-from aws_arch_agent.rules import estimates, iam_policy, lambda_runtimes, stack_cost, tag_policy
+from aws_arch_agent.rules import (
+    environments,
+    estimates,
+    iam_policy,
+    lambda_runtimes,
+    stack_cost,
+    tag_policy,
+)
 from aws_arch_agent.rules.resource_model import Resource, resources_from_cf_template
 from aws_arch_agent.rules.terraform_model import TfVariable
 from aws_arch_agent.tools.cdk_synth import list_cf_templates
@@ -2350,7 +2357,8 @@ def run_resource_checks(
     for f in findings:
         key = (f.id, f.file, f.evidence)
         dedup[key] = f
-    return list(dedup.values())
+    # Record the stack's environment; some rules are skipped or softened outside prod.
+    return environments.apply(list(dedup.values()), template_path, resources)
 
 
 # A parameter name that holds a secret (DbPassword, ApiKey, GithubToken, ...).
@@ -2513,7 +2521,8 @@ def _run_cf_rules_on_template(
     if warnings is None:
         warnings = []
     resources = resources_from_cf_template(template_path, doc, warnings)
-    return run_resource_checks(resources, template_path, warnings) + _parameter_findings(template_path, doc)
+    parameters = environments.apply(_parameter_findings(template_path, doc), template_path, resources)
+    return run_resource_checks(resources, template_path, warnings) + parameters
 
 
 def _store_repo_relative(findings: List[Finding], repo_path: Path | None) -> None:
