@@ -2,10 +2,13 @@
 from __future__ import annotations
 
 import json
+import re
 from pathlib import Path
 from typing import Any, Literal, cast
 
 import yaml
+
+from aws_arch_agent.pricing import DEFAULT_REGION
 
 SeverityThreshold = Literal["high", "medium", "low", "none"]
 OutputFormat = Literal["markdown", "json", "sarif", "html"]
@@ -82,6 +85,16 @@ def _optional_str(value: Any, key: str) -> str | None:
     raise ConfigError(f"{key} must be a string, got {value!r}")
 
 
+_REGION = re.compile(r"[a-z]{2}(?:-gov|-iso[a-z]?)?-[a-z]+-[0-9]")
+
+
+def price_region(value: Any, key: str = "region") -> str:
+    """An AWS region code for prices, such as eu-north-1."""
+    if isinstance(value, str) and _REGION.fullmatch(value.strip().lower()):
+        return value.strip().lower()
+    raise ConfigError(f"{key} must be an AWS region code such as us-east-1, got {value!r}")
+
+
 def _load_config_file(path: Path) -> dict[str, Any]:
     """Load config from JSON or YAML file."""
     try:
@@ -155,6 +168,7 @@ def load_config(
     no_synth: bool | None = None,
     rag_path: str | None = None,
     llm_mode: LLMMode | None = None,
+    region: str | None = None,
 ) -> "RunConfig":
     """Load config from file and override with CLI flags that were passed.
 
@@ -232,6 +246,11 @@ def load_config(
         rag_embedding_provider=rag_embedding_provider,
         rag_embedding_model=rag_embedding_model,
         llm_mode=_pick_choice(file_cfg, "llm_mode", llm_mode, "full", _LLM_MODES),
+        region=(
+            price_region(region, "--region") if region is not None
+            else price_region(file_cfg["region"]) if "region" in file_cfg
+            else DEFAULT_REGION
+        ),
     )
 
 
@@ -254,6 +273,7 @@ class RunConfig:
         "rag_embedding_provider",
         "rag_embedding_model",
         "llm_mode",
+        "region",
     )
 
     def __init__(
@@ -274,6 +294,7 @@ class RunConfig:
         rag_embedding_provider: str | None = None,
         rag_embedding_model: str | None = None,
         llm_mode: str = "full",
+        region: str = "us-east-1",
     ):
         self.format = format
         self.fail_on = fail_on
@@ -290,3 +311,4 @@ class RunConfig:
         self.rag_embedding_provider = rag_embedding_provider
         self.rag_embedding_model = rag_embedding_model
         self.llm_mode = llm_mode
+        self.region = region  # price region for cost estimates

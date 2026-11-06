@@ -19,6 +19,7 @@ Example (JSON):
   "out": "report.md",
   "severity_threshold": "Medium",
   "llm_mode": "full",
+  "region": "us-east-1",
   "templates": null,
   "no_synth": false,
   "rules": {
@@ -53,6 +54,7 @@ rules:
 - **no_llm**: skip LLM polish (V1) or agent reasoning (V2)
 - **llm_mode**: `full` (six pillar LLM calls in V2) or `compact` (single merged LLM call)
 - **out**: output file path
+- **region**: AWS region whose on-demand prices cost estimates use (default `us-east-1`; `--region` overrides it). Prices come from the snapshot shipped with the package; see [Prices](REFERENCE.md#prices)
 - **severity_threshold**: only report findings at or above this severity
 - **templates**: path to CloudFormation templates (dir or file); V2 only. When set, cdk synth is skipped and CF rules run on these templates (JSON or YAML).
 - **no_synth**: if `true`, do not run cdk synth (V2 only). Use with **templates** for raw CF, or alone for static analysis only.

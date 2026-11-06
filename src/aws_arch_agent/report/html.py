@@ -11,6 +11,7 @@ from jinja2.sandbox import SandboxedEnvironment
 
 from aws_arch_agent.models import Finding, RepoContext
 from aws_arch_agent.report.docs import doc_links
+from aws_arch_agent.report.markdown import price_line
 
 SEVERITIES = ("High", "Medium", "Low")
 _SEVERITY_RANK = {s: i for i, s in enumerate(SEVERITIES)}
@@ -75,6 +76,7 @@ def render_html(
         repo=ctx.repo_path,
         source=ctx.source,
         files_scanned=ctx.files_scanned,
+        prices=price_line(ctx),
         generated=(generated or datetime.now()).strftime("%Y-%m-%d %H:%M"),
         severities=SEVERITIES,
         counts=counts,

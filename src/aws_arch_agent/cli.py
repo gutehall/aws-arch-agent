@@ -155,6 +155,9 @@ def analyze(
     baseline: str | None = typer.Option(None, "--baseline", help="Path to baseline file for suppressions"),
     enforce_baseline: bool = typer.Option(False, "--enforce-baseline", help="Only fail on findings not in baseline"),
     update_baseline: bool = typer.Option(False, "--update-baseline", help="Add current findings to baseline file"),
+    region: str = typer.Option(
+        "us-east-1", "--region", help="AWS region whose prices cost estimates use (offline snapshot)"
+    ),
 ):
     """Run architecture review on a CDK repo (V1 or V2 mode) and write report."""
     resolved_repo = repo if repo is not None else templates
@@ -190,6 +193,7 @@ def analyze(
             no_synth=no_synth if _passed(ctx, "no_synth") else None,
             rag_path=rag if _passed(ctx, "rag") else None,
             llm_mode=cast(LLMMode, llm_mode.lower()) if _passed(ctx, "llm_mode") else None,
+            region=region if _passed(ctx, "region") else None,
         )
     except ConfigError as exc:
         _fail(str(exc))
@@ -268,6 +272,7 @@ def analyze(
             rag_embedding_model=cfg.rag_embedding_model,
             llm_mode=cast(LLMMode, cfg.llm_mode),
             iac=iac_value,
+            price_region=cfg.region,
         )
     else:
         report_md, ctx_report, findings, warnings = analyze_v1(
@@ -280,6 +285,14 @@ def analyze(
             severity_threshold=severity_threshold,
             iac=iac_value,
             tf_plan=tf_plan_path,
+            price_region=cfg.region,
+        )
+
+    if ctx_report.notes.get("prices", {}).get("snapshot_date") is None:
+        console.print(
+            f"No prices for region {cfg.region} in the snapshot: cost estimates are skipped.",
+            style="yellow",
+            markup=False,
         )
 
     if update_baseline:

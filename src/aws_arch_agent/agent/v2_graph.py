@@ -20,6 +20,7 @@ from aws_arch_agent.tools.llm import LLMClient
 from aws_arch_agent.rules.fix_snippets import attach_fixes
 from aws_arch_agent.rules.registry import ALL_RULES
 from aws_arch_agent.rules.runner import filter_by_severity, run_all_rules
+from aws_arch_agent.pricing import DEFAULT_REGION, price_note
 from aws_arch_agent.report.markdown import render_markdown
 from aws_arch_agent.tools.cdk_synth import (
     list_cf_templates,
@@ -62,6 +63,7 @@ class State(TypedDict, total=False):
     rag_embedding_provider: str
     rag_embedding_model: str
     iac: str
+    price_region: str
     rag: object
     synth_ok: bool
     synth_stdout: str
@@ -197,7 +199,10 @@ def node_collect(state: State) -> State:
         source=source,
         files_scanned=len(files),
         key_files=[p.name for p in files if p.name in {"cdk.json", "package.json", "requirements.txt"}],
-        notes={"top_level": [p.name for p in repo_path.iterdir() if p.is_dir()]},
+        notes={
+            "top_level": [p.name for p in repo_path.iterdir() if p.is_dir()],
+            "prices": price_note(state.get("price_region") or DEFAULT_REGION),
+        },
     )
 
     rules = _filter_rules(
@@ -535,6 +540,7 @@ def analyze_v2(
     llm_mode: LLMMode = "full",
     rules_org: bool = False,
     iac: str = "auto",
+    price_region: str = DEFAULT_REGION,
 ) -> tuple[str, RepoContext, List[Finding], List[str]]:
     """Run V2 graph; return (final_report_md, ctx, findings, warnings)."""
     graph = build_graph()
@@ -554,6 +560,7 @@ def analyze_v2(
         "rag_embedding_provider": rag_embedding_provider or "",
         "rag_embedding_model": rag_embedding_model or "",
         "iac": iac,
+        "price_region": price_region,
     }
     out = graph.invoke(initial)
     report = out.get("final_report") or "No report produced."

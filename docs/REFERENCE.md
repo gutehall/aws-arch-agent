@@ -24,6 +24,7 @@ The agent covers all six AWS Well-Architected pillars. Static and CloudFormation
 | `--baseline` | `.aws-arch-agent-baseline.json` | Path to baseline suppressions file |
 | `--enforce-baseline` | `false` | Only fail on findings not in baseline |
 | `--update-baseline` | `false` | Add current findings to baseline file |
+| `--region` | `us-east-1` | AWS region whose on-demand prices cost estimates use (config `region`). Prices come from a snapshot shipped in the package, so the scan makes no network call. The report states the region and the AWS price list date. A region the snapshot lacks gives no estimates, and the run says so. See [Prices](#prices) |
 
 ## IaC sources
 
@@ -94,3 +95,16 @@ See [report-schema.json](report-schema.json) for the machine-readable report for
 ## Rules
 
 Static and CloudFormation rule IDs, titles, and pillar groups are in [CF_RULES.md](CF_RULES.md). That is the full list. This page does not keep a second copy.
+
+## Prices
+
+Cost estimates read `aws_arch_agent/pricing/prices.json.gz`, an offline snapshot of the AWS Price List bulk API: on-demand USD prices for the resources the cost rules touch (EC2 and RDS instance types, NAT gateway hour and GB, EBS gp2/gp3/io2, public IPv4 addresses including Elastic IPs, Lambda, DynamoDB on-demand and provisioned, S3 storage classes, CloudWatch Logs ingestion and storage). Each price carries its region and the publication date of its AWS offer. A tiered price is the first paid tier. An instance type or region the snapshot lacks gives no estimate, never a guess.
+
+The snapshot covers `us-east-1`, `us-west-2`, `eu-west-1`, `eu-central-1` and `eu-north-1`. To refresh it, or to add regions:
+
+```bash
+python scripts/refresh_prices.py --regions us-east-1 eu-north-1 --cache-dir /tmp/offers
+```
+
+The script streams the offer files (the EC2 one is about 300 MB per region) and writes the same file for the same offers. `--cache-dir` keeps the downloads so a rebuild needs no network. A price two offer rows disagree on stops the build.
+
