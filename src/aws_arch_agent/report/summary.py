@@ -59,6 +59,14 @@ def _ranked(fixes: list[dict[str, Any]]) -> list[dict[str, Any]]:
         _SEVERITY_RANK[x["severity"]], -x["monthly_savings_usd"], -x["findings"], x["id"]))
 
 
+def theme_counts(findings: List[Finding]) -> list[tuple[str, int]]:
+    """(theme, findings) in the fixed theme order, for themes that have any."""
+    from aws_arch_agent.rules.themes import THEMES
+
+    counts = {name: sum(1 for f in findings if name in f.themes) for name in THEMES}
+    return [(name, n) for name, n in counts.items() if n]
+
+
 def build_summary(findings: List[Finding]) -> dict[str, Any]:
     fixes = _fixes(findings)
     pillars: dict[str, list[Finding]] = {}
@@ -75,7 +83,19 @@ def build_summary(findings: List[Finding]) -> dict[str, Any]:
     quick = [x for x in fixes if x["effort"] == "low" and x["suggested_code"]]
     quick = sorted(quick, key=lambda x: (
         -x["monthly_savings_usd"], _SEVERITY_RANK[x["severity"]], -x["findings"], x["id"]))
+    from aws_arch_agent.rules.themes import THEMES
+
+    theme_rows = []
+    for name in THEMES:
+        items = [f for f in findings if name in f.themes]
+        if items:
+            theme_rows.append({
+                "name": name, "findings": len(items),
+                "by_severity": {sev: sum(1 for f in items if f.severity == sev) for sev in ("High", "Medium", "Low")},
+                "monthly_savings_usd": _savings(items),
+            })
     return {
+        "themes": theme_rows,
         "findings": len(findings),
         "by_severity": {sev: sum(1 for f in findings if f.severity == sev) for sev in ("High", "Medium", "Low")},
         "monthly_savings_usd": _savings(findings),
@@ -124,6 +144,9 @@ def markdown_lines(summary: dict[str, Any]) -> List[str]:
     out += [f"{i}. {fix_line(fix)}" for i, fix in enumerate(summary["top_fixes"], 1)]
     out += ["", "**By pillar:**"]
     out += [f"- {pillar_line(row)}" for row in summary["pillars"]]
+    if summary.get("themes"):
+        out += ["", "**By theme** (a finding can be in more than one):"]
+        out += [f"- {pillar_line(row)}" for row in summary["themes"]]
     if summary["quick_wins"]:
         out += ["", "**Quick wins** (low effort, with suggested code):"]
         out += [f"- {fix_line(fix)}" for fix in summary["quick_wins"]]

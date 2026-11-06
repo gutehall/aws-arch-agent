@@ -30,6 +30,7 @@ class MissingStandardTags(Rule):
     title = "Standard tags may be missing"
     category = "Best Practices"
     severity = "Low"
+    themes = ("finops",)
 
     def run(self, repo_path: Path, language: str = "typescript") -> List[Finding]:
         tags = rg(repo_path, r'tags\s*:|tags\s*=', glob=code_glob(language))
@@ -54,6 +55,7 @@ class SecretsInEnvVars(Rule):
     title = "Using environment variables instead of Secrets Manager"
     category = "Best Practices"
     severity = "Low"
+    themes = ("data-protection", "identity",)
 
     def run(self, repo_path: Path, language: str = "typescript") -> List[Finding]:
         glob = code_glob(language)
@@ -80,6 +82,7 @@ class ResourceNamingConvention(Rule):
     title = "Resource naming convention may not be followed"
     category = "Best Practices"
     severity = "Low"
+    themes = ("observability",)
 
     def run(self, repo_path: Path, language: str = "typescript") -> List[Finding]:
         short_names = rg(repo_path, _SHORT_PHYSICAL_NAME, glob=code_glob(language))
@@ -106,6 +109,7 @@ class CdkAspectsMissing(Rule):
     title = "CDK Aspects not used for policy enforcement"
     category = "Best Practices"
     severity = "Low"
+    themes = ("security-baseline",)
 
     def run(self, repo_path: Path, language: str = "typescript") -> List[Finding]:
         aspects = rg(repo_path, r'Aspects\.of|aspects\.', glob=code_glob(language))
@@ -130,6 +134,7 @@ class CdkContextMissing(Rule):
     title = "CDK context not used for environment-specific config"
     category = "Best Practices"
     severity = "Low"
+    themes = ("resilience",)
 
     def run(self, repo_path: Path, language: str = "typescript") -> List[Finding]:
         context = rg(repo_path, r'node\.tryGetContext|try_get_context', glob=code_glob(language))

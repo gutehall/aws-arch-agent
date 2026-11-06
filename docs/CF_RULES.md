@@ -370,3 +370,277 @@ When templates are scanned (CloudFormation, `cdk synth` output, Terraform root m
 
 Like Infracost's view, it is an approximation: on-demand prices, 730 hours a month, no data transfer, requests or storage growth. The region and AWS price list date are stated. A V1 scan of CDK source reads no templates and has no cost section; use `--mode v2`.
 
+## Themes
+
+Every rule has one or more themes, which cut across pillars: `finops`, `security-baseline`, `identity`, `data-protection`, `network-exposure`, `resilience`, `observability`, `sustainability`. `--theme finops` (repeatable, or comma-separated; config `themes`) limits a scan to those themes. JSON findings carry `themes`. SARIF carries them as result `properties.themes` and rule `properties.tags`. `--group-by theme` (config `group_by`) groups Markdown findings by theme; a finding in two themes is listed under both. The HTML report has a theme filter next to the severity tabs, and the summary adds one line per theme. CDK source rules declare their themes in their class; template checks declare them in `CF_THEMES` in `rules/cf_template.py`.
+
+<!-- themes:start -->
+| Rule | Themes |
+|------|--------|
+| CF-ALB-001 | observability |
+| CF-APIGW-001 | observability |
+| CF-APIGW-002 | observability |
+| CF-APIGW-V2-001 | observability |
+| CF-APIGW-V2-002 | observability |
+| CF-CF-001 | data-protection, network-exposure |
+| CF-CF-002 | data-protection, network-exposure |
+| CF-CF-003 | network-exposure |
+| CF-CF-004 | network-exposure, identity |
+| CF-COG-001 | identity |
+| CF-COG-002 | identity |
+| CF-COG-003 | identity |
+| CF-COST-002 | finops |
+| CF-CT-001 | observability, security-baseline |
+| CF-CT-002 | observability |
+| CF-CT-003 | observability, data-protection |
+| CF-CW-001 | finops, data-protection |
+| CF-CW-002 | data-protection |
+| CF-DDB-001 | resilience, data-protection |
+| CF-DDB-002 | data-protection |
+| CF-DEL-001 | data-protection, resilience |
+| CF-DOCDB-001 | data-protection |
+| CF-EBS-001 | data-protection |
+| CF-EBS-002 | finops |
+| CF-EC-001 | data-protection |
+| CF-EC-002 | data-protection |
+| CF-EC2-001 | security-baseline, identity |
+| CF-EC2-002 | network-exposure |
+| CF-EC2-003 | network-exposure |
+| CF-ECR-001 | security-baseline |
+| CF-ECR-002 | security-baseline |
+| CF-ECR-003 | security-baseline, finops |
+| CF-ECS-001 | security-baseline |
+| CF-ECS-002 | security-baseline |
+| CF-ECS-003 | security-baseline |
+| CF-EFS-001 | data-protection |
+| CF-EIP-001 | finops |
+| CF-EKS-001 | observability |
+| CF-EKS-002 | network-exposure |
+| CF-EKS-003 | data-protection |
+| CF-ENV-001 | finops |
+| CF-ENV-002 | finops |
+| CF-ENV-003 | finops |
+| CF-ENV-004 | finops |
+| CF-ENV-005 | finops |
+| CF-ENV-006 | finops |
+| CF-FL-001 | observability, network-exposure |
+| CF-GEN-001 | finops, sustainability |
+| CF-IAM-001 | identity |
+| CF-IAM-002 | identity |
+| CF-IAM-003 | identity |
+| CF-IAM-004 | identity |
+| CF-IAM-005 | identity |
+| CF-IAM-006 | identity |
+| CF-IAM-007 | identity |
+| CF-IAM-008 | identity |
+| CF-KIN-001 | data-protection |
+| CF-KMS-001 | identity, data-protection |
+| CF-LAM-001 | resilience |
+| CF-LAM-002 | observability |
+| CF-LAM-003 | security-baseline |
+| CF-MSK-001 | data-protection |
+| CF-NEP-001 | data-protection |
+| CF-OS-001 | data-protection |
+| CF-OS-002 | data-protection |
+| CF-PAR-001 | data-protection, identity |
+| CF-PAR-002 | data-protection, identity |
+| CF-PERF-001 | finops, sustainability |
+| CF-PERF-002 | resilience |
+| CF-PERF-003 | finops |
+| CF-PERF-004 | finops |
+| CF-RDS-001 | data-protection |
+| CF-RDS-002 | resilience, data-protection |
+| CF-RDS-003 | resilience |
+| CF-RDS-004 | network-exposure |
+| CF-RDS-005 | resilience, data-protection |
+| CF-RP-001 | identity, network-exposure |
+| CF-RS-001 | data-protection |
+| CF-S3-001 | network-exposure, data-protection |
+| CF-S3-002 | data-protection |
+| CF-S3-003 | resilience, data-protection |
+| CF-S3-004 | observability |
+| CF-S3-005 | data-protection, network-exposure |
+| CF-SG-001 | network-exposure |
+| CF-SM-001 | data-protection, identity |
+| CF-SNS-001 | data-protection |
+| CF-SQS-001 | data-protection |
+| CF-SQS-002 | resilience |
+| CF-SUST-001 | sustainability, finops |
+| CF-SUST-002 | sustainability, finops |
+| CF-SUST-003 | sustainability, finops |
+| CF-TAG-001 | finops |
+| CF-VPC-001 | network-exposure, finops |
+| CF-WAF-001 | network-exposure |
+| BP-001 | finops |
+| BP-002 | data-protection, identity |
+| BP-003 | observability |
+| BP-004 | security-baseline |
+| BP-005 | resilience |
+| COST-001 | finops, data-protection |
+| COST-002 | finops |
+| COST-003 | finops |
+| COST-004 | finops |
+| COST-005 | finops |
+| COST-006 | finops |
+| COST-007 | finops |
+| COST-008 | finops |
+| COST-009 | finops |
+| COST-010 | finops |
+| COST-011 | finops |
+| COST-012 | finops |
+| COST-013 | finops |
+| COST-014 | finops |
+| COST-015 | finops |
+| COST-016 | finops |
+| COST-017 | finops |
+| COST-018 | finops |
+| OPS-001 | observability |
+| OPS-002 | observability, network-exposure |
+| OPS-003 | observability |
+| OPS-004 | resilience |
+| OPS-005 | observability |
+| OPS-006 | observability |
+| OPS-007 | observability |
+| OPS-008 | observability |
+| OPS-009 | observability |
+| OPS-010 | observability |
+| OPS-011 | observability |
+| OPS-012 | observability |
+| OPS-013 | observability, resilience |
+| OPS-014 | observability |
+| OPS-015 | observability |
+| OPS-016 | observability |
+| OPS-017 | observability |
+| OPS-018 | observability |
+| OPS-019 | resilience |
+| OPS-020 | observability |
+| OPS-021 | observability |
+| OPS-022 | finops, observability |
+| OPS-023 | resilience |
+| OPS-025 | observability, data-protection |
+| PERF-001 | finops |
+| PERF-002 | resilience |
+| PERF-003 | finops |
+| PERF-004 | resilience |
+| PERF-005 | finops |
+| PERF-006 | resilience |
+| PERF-007 | finops |
+| PERF-008 | finops |
+| PERF-009 | resilience |
+| PERF-010 | finops |
+| PERF-011 | resilience |
+| PERF-012 | resilience |
+| PERF-013 | resilience |
+| PERF-014 | resilience |
+| PERF-015 | resilience |
+| PERF-016 | finops |
+| PERF-017 | resilience |
+| PERF-018 | observability |
+| PERF-019 | resilience |
+| REL-001 | resilience |
+| REL-002 | resilience, data-protection |
+| REL-003 | resilience |
+| REL-004 | resilience, data-protection |
+| REL-005 | resilience, data-protection |
+| REL-006 | resilience |
+| REL-007 | resilience |
+| REL-008 | resilience |
+| REL-009 | resilience |
+| REL-010 | resilience, network-exposure |
+| REL-011 | resilience |
+| REL-012 | resilience |
+| REL-013 | resilience, data-protection |
+| REL-014 | resilience, data-protection |
+| REL-015 | resilience |
+| REL-016 | resilience |
+| REL-017 | resilience, data-protection |
+| REL-018 | finops |
+| REL-019 | resilience, data-protection |
+| REL-020 | resilience |
+| REL-021 | resilience |
+| REL-022 | resilience |
+| REL-023 | resilience |
+| REL-024 | resilience |
+| REL-025 | resilience |
+| REL-026 | resilience, data-protection |
+| REL-027 | resilience |
+| REL-028 | resilience, security-baseline |
+| REL-029 | resilience |
+| REL-030 | resilience, data-protection |
+| REL-031 | resilience, data-protection |
+| SEC-001 | identity |
+| SEC-002 | identity |
+| SEC-003 | network-exposure |
+| SEC-004 | network-exposure |
+| SEC-005 | network-exposure |
+| SEC-006 | data-protection |
+| SEC-007 | identity, data-protection |
+| SEC-008 | data-protection |
+| SEC-009 | identity, network-exposure |
+| SEC-010 | data-protection, network-exposure |
+| SEC-011 | data-protection |
+| SEC-012 | data-protection, network-exposure |
+| SEC-013 | data-protection |
+| SEC-014 | data-protection |
+| SEC-015 | data-protection |
+| SEC-016 | identity, data-protection |
+| SEC-017 | data-protection |
+| SEC-018 | data-protection, network-exposure |
+| SEC-019 | data-protection, network-exposure |
+| SEC-020 | security-baseline |
+| SEC-021 | data-protection |
+| SEC-022 | network-exposure, finops |
+| SEC-023 | data-protection |
+| SEC-024 | network-exposure |
+| SEC-025 | data-protection |
+| SEC-026 | security-baseline |
+| SEC-027 | observability, security-baseline |
+| SEC-028 | security-baseline |
+| SEC-029 | security-baseline |
+| SEC-030 | security-baseline, finops |
+| SEC-031 | resilience |
+| SEC-032 | security-baseline |
+| SEC-033 | data-protection |
+| SEC-034 | identity |
+| SEC-035 | identity |
+| SEC-036 | identity |
+| SEC-037 | data-protection |
+| SEC-038 | data-protection |
+| SEC-039 | data-protection, network-exposure |
+| SEC-040 | identity |
+| SEC-041 | network-exposure |
+| SEC-042 | data-protection |
+| SEC-043 | data-protection |
+| SEC-044 | data-protection |
+| SEC-045 | identity |
+| SEC-046 | network-exposure |
+| SEC-047 | data-protection |
+| SEC-048 | observability, security-baseline |
+| SEC-049 | network-exposure |
+| SEC-050 | data-protection |
+| SEC-051 | observability, security-baseline |
+| SEC-052 | data-protection |
+| SEC-053 | security-baseline |
+| SEC-054 | network-exposure |
+| SEC-055 | network-exposure |
+| SEC-056 | resilience, data-protection |
+| SEC-057 | identity, network-exposure |
+| SEC-058 | security-baseline |
+| SEC-059 | data-protection |
+| SEC-060 | data-protection |
+| SEC-061 | data-protection |
+| SEC-062 | data-protection, observability |
+| SEC-063 | data-protection, resilience |
+| SEC-064 | network-exposure |
+| SEC-065 | data-protection |
+| SEC-066 | security-baseline |
+| SEC-067 | identity |
+| SEC-068 | security-baseline |
+| SUST-001 | sustainability, finops |
+| SUST-002 | sustainability, finops |
+| SUST-003 | sustainability |
+| SUST-004 | sustainability |
+| SUST-005 | sustainability |
+| SUST-006 | sustainability, finops |
+| SUST-007 | sustainability, finops |
+<!-- themes:end -->

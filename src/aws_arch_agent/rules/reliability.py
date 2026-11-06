@@ -12,6 +12,7 @@ class RdsMultiAzMissing(Rule):
     title = "RDS may miss Multi-AZ"
     category = "Reliability"
     severity = "Medium"
+    themes = ("resilience",)
 
     def run(self, repo_path: Path, language: str = "typescript") -> List[Finding]:
         rds_pat = r'new\s+rds\.(DatabaseInstance|DatabaseCluster)\(' if language == "typescript" else r'rds\.(DatabaseInstance|DatabaseCluster)\('
@@ -30,6 +31,7 @@ class BackupRetentionMissing(Rule):
     title = "RDS may miss backup retention"
     category = "Reliability"
     severity = "Medium"
+    themes = ("resilience", "data-protection",)
 
     def run(self, repo_path: Path, language: str = "typescript") -> List[Finding]:
         rds_pat = r'new\s+rds\.(DatabaseInstance|DatabaseCluster)\(' if language == "typescript" else r'rds\.(DatabaseInstance|DatabaseCluster)\('
@@ -56,6 +58,7 @@ class LambdaDlqMissing(Rule):
     title = "Lambda may miss DLQ / on-failure destination"
     category = "Reliability"
     severity = "Low"
+    themes = ("resilience",)
 
     def run(self, repo_path: Path, language: str = "typescript") -> List[Finding]:
         # Updated to catch NodejsFunction, PythonFunction, DockerImageFunction, etc.
@@ -83,6 +86,7 @@ class DynamoDbPitrMissing(Rule):
     title = "DynamoDB may miss point-in-time recovery"
     category = "Reliability"
     severity = "Medium"
+    themes = ("resilience", "data-protection",)
 
     def run(self, repo_path: Path, language: str = "typescript") -> List[Finding]:
         ddb_pat = r'new\s+(dynamodb\.Table|Table)\(' if language == "typescript" else r'(dynamodb.Table|aws_dynamodb.Table)\('
@@ -109,6 +113,7 @@ class DynamoDbBackupMissing(Rule):
     title = "DynamoDB may miss automated backups"
     category = "Reliability"
     severity = "Low"
+    themes = ("resilience", "data-protection",)
 
     def run(self, repo_path: Path, language: str = "typescript") -> List[Finding]:
         ddb_pat = r'new\s+(dynamodb\.Table|Table)\(' if language == "typescript" else r'(dynamodb.Table|aws_dynamodb.Table)\('
@@ -136,6 +141,7 @@ class ApiGatewayThrottling(Rule):
     title = "API Gateway throttling not configured"
     category = "Reliability"
     severity = "Medium"
+    themes = ("resilience",)
 
     def run(self, repo_path: Path, language: str = "typescript") -> List[Finding]:
         api_pat = r'new\s+(apigateway\.(RestApi|HttpApi)|RestApi|HttpApi)\(' if language == "typescript" else r'(apigateway\.(RestApi|HttpApi)|RestApi|HttpApi)\('
@@ -154,6 +160,7 @@ class AlbHealthCheck(Rule):
     title = "ALB health check configuration missing"
     category = "Reliability"
     severity = "Medium"
+    themes = ("resilience",)
 
     def run(self, repo_path: Path, language: str = "typescript") -> List[Finding]:
         target_pat = r'new\s+elbv2\.(ApplicationTargetGroup|NetworkTargetGroup)\(' if language == "typescript" else r'elbv2\.(ApplicationTargetGroup|NetworkTargetGroup)\('
@@ -180,6 +187,7 @@ class SqsDlqMissing(Rule):
     title = "SQS missing dead-letter queue configuration"
     category = "Reliability"
     severity = "Medium"
+    themes = ("resilience",)
 
     def run(self, repo_path: Path, language: str = "typescript") -> List[Finding]:
         sqs_pat = r'new\s+sqs\.Queue\(' if language == "typescript" else r'sqs\.Queue\('
@@ -202,6 +210,7 @@ class LambdaTimeout(Rule):
     title = "Lambda timeout may be too low or too high"
     category = "Reliability"
     severity = "Low"
+    themes = ("resilience",)
 
     def run(self, repo_path: Path, language: str = "typescript") -> List[Finding]:
         lambda_pat = r'new\s+(lambda\.Function|NodejsFunction|PythonFunction|DockerImageFunction)\(' if language == "typescript" else r'(lambda_.Function|aws_lambda_python_alpha.PythonFunction|aws_lambda.Function)\('
@@ -224,6 +233,7 @@ class LambdaVpcAccess(Rule):
     title = "Lambda not in VPC when accessing RDS/ElastiCache"
     category = "Reliability"
     severity = "Medium"
+    themes = ("resilience", "network-exposure",)
 
     def run(self, repo_path: Path, language: str = "typescript") -> List[Finding]:
         lambda_pat = r'new\s+(lambda\.Function|NodejsFunction|PythonFunction|DockerImageFunction)\(' if language == "typescript" else r'(lambda_.Function|aws_lambda_python_alpha.PythonFunction|aws_lambda.Function)\('
@@ -245,6 +255,7 @@ class RdsReadReplicas(Rule):
     title = "RDS read replicas missing for read-heavy workloads"
     category = "Reliability"
     severity = "Low"
+    themes = ("resilience",)
 
     def run(self, repo_path: Path, language: str = "typescript") -> List[Finding]:
         rds_pat = r'new\s+rds\.(DatabaseInstance|DatabaseCluster)\(' if language == "typescript" else r'rds\.(DatabaseInstance|DatabaseCluster)\('
@@ -271,6 +282,7 @@ class NatGatewaySingleAz(Rule):
     title = "NAT Gateway single point of failure (need multi-AZ)"
     category = "Reliability"
     severity = "Medium"
+    themes = ("resilience",)
 
     def run(self, repo_path: Path, language: str = "typescript") -> List[Finding]:
         nat_pat = r'natGateways\s*:\s*1(?![0-9])|maxAzs\s*:\s*1(?![0-9])' if language == "typescript" else r'nat_gateways\s*=\s*1(?![0-9])'
@@ -295,6 +307,7 @@ class BackupVaultMissing(Rule):
     title = "AWS Backup vault not configured"
     category = "Reliability"
     severity = "Low"
+    themes = ("resilience", "data-protection",)
 
     def run(self, repo_path: Path, language: str = "typescript") -> List[Finding]:
         resources = rg(repo_path, r'DatabaseInstance|DynamoDB|EFS|EC2', glob=code_glob(language))
@@ -319,6 +332,7 @@ class CrossRegionBackup(Rule):
     title = "Cross-region backup replication missing"
     category = "Reliability"
     severity = "Low"
+    themes = ("resilience", "data-protection",)
 
     def run(self, repo_path: Path, language: str = "typescript") -> List[Finding]:
         backup = rg(repo_path, r'backup\.BackupVault|backup\.BackupPlan', glob=code_glob(language))
@@ -344,6 +358,7 @@ class StepFunctionsRetry(Rule):
     title = "Step Functions retry/catch not configured"
     category = "Reliability"
     severity = "Low"
+    themes = ("resilience",)
 
     def run(self, repo_path: Path, language: str = "typescript") -> List[Finding]:
         sfn_pat = r'new\s+sfn\.StateMachine\(' if language == "typescript" else r'sfn\.StateMachine\('
@@ -370,6 +385,7 @@ class ElastiCacheMultiAz(Rule):
     title = "ElastiCache not using multi-AZ"
     category = "Reliability"
     severity = "Medium"
+    themes = ("resilience",)
 
     def run(self, repo_path: Path, language: str = "typescript") -> List[Finding]:
         cache_pat = r'new\s+elasticache\.(CfnCacheCluster|CfnReplicationGroup)\(' if language == "typescript" else r'elasticache\.(CfnCacheCluster|CfnReplicationGroup)\('
@@ -396,6 +412,7 @@ class EfsBackupPolicy(Rule):
     title = "EFS backup policy not configured"
     category = "Reliability"
     severity = "Medium"
+    themes = ("resilience", "data-protection",)
 
     def run(self, repo_path: Path, language: str = "typescript") -> List[Finding]:
         efs_pat = r'new\s+efs\.FileSystem\(' if language == "typescript" else r'efs\.FileSystem\('
@@ -422,6 +439,7 @@ class EfsLifecyclePolicy(Rule):
     title = "EFS lifecycle policy not configured"
     category = "Reliability"
     severity = "Low"
+    themes = ("finops",)
 
     def run(self, repo_path: Path, language: str = "typescript") -> List[Finding]:
         efs_pat = r'new\s+efs\.FileSystem\(' if language == "typescript" else r'efs\.FileSystem\('
@@ -448,6 +466,7 @@ class KinesisRetention(Rule):
     title = "Kinesis stream retention period too short"
     category = "Reliability"
     severity = "Low"
+    themes = ("resilience", "data-protection",)
 
     def run(self, repo_path: Path, language: str = "typescript") -> List[Finding]:
         kinesis_pat = r'new\s+kinesis\.(Stream|CfnStream)\(' if language == "typescript" else r'kinesis\.(Stream|CfnStream)\('
@@ -474,6 +493,7 @@ class GlobalAcceleratorHealthChecks(Rule):
     title = "Global Accelerator health checks not configured"
     category = "Reliability"
     severity = "Medium"
+    themes = ("resilience",)
 
     def run(self, repo_path: Path, language: str = "typescript") -> List[Finding]:
         ga_pat = r'new\s+globalaccelerator\.(Accelerator|CfnAccelerator)\(' if language == "typescript" else r'globalaccelerator\.(Accelerator|CfnAccelerator)\('
@@ -500,6 +520,7 @@ class CodePipelineApproval(Rule):
     title = "CodePipeline missing manual approval for production"
     category = "Reliability"
     severity = "Low"
+    themes = ("resilience",)
 
     def run(self, repo_path: Path, language: str = "typescript") -> List[Finding]:
         pipeline_pat = r'new\s+codepipeline\.(Pipeline|CfnPipeline)\(' if language == "typescript" else r'codepipeline\.(Pipeline|CfnPipeline)\('
@@ -527,6 +548,7 @@ class AcmCertificateValidation(Rule):
     title = "ACM certificate validation method not specified"
     category = "Reliability"
     severity = "Low"
+    themes = ("resilience",)
 
     def run(self, repo_path: Path, language: str = "typescript") -> List[Finding]:
         acm_pat = r'new\s+acm\.(Certificate|DnsValidatedCertificate)\(' if language == "typescript" else r'acm\.(Certificate|DnsValidatedCertificate)\('
@@ -553,6 +575,7 @@ class BlueGreenDeploymentMissing(Rule):
     title = "Blue-green deployment not configured for critical services"
     category = "Reliability"
     severity = "Low"
+    themes = ("resilience",)
 
     def run(self, repo_path: Path, language: str = "typescript") -> List[Finding]:
         ecs_pat = r'new\s+ecs\.(FargateService|Ec2Service)\(' if language == "typescript" else r'ecs\.(FargateService|Ec2Service)\('
@@ -579,6 +602,7 @@ class SqsVisibilityTimeout(Rule):
     title = "SQS visibility timeout may need review"
     category = "Reliability"
     severity = "Low"
+    themes = ("resilience",)
 
     def run(self, repo_path: Path, language: str = "typescript") -> List[Finding]:
         sqs_pat = r'new\s+sqs\.Queue\(' if language == "typescript" else r'sqs\.Queue\('
@@ -605,6 +629,7 @@ class DynamoDbGlobalTables(Rule):
     title = "DynamoDB global tables not configured for multi-region"
     category = "Reliability"
     severity = "Low"
+    themes = ("resilience",)
 
     def run(self, repo_path: Path, language: str = "typescript") -> List[Finding]:
         ddb_pat = r'new\s+(dynamodb\.Table|Table)\(' if language == "typescript" else r'(dynamodb.Table|aws_dynamodb.Table)\('
@@ -630,6 +655,7 @@ class S3ReplicationMissing(Rule):
     title = "S3 replication not configured for critical buckets"
     category = "Reliability"
     severity = "Low"
+    themes = ("resilience", "data-protection",)
 
     def run(self, repo_path: Path, language: str = "typescript") -> List[Finding]:
         bucket_pat = r'new\s+s3\.Bucket\(' if language == "typescript" else r's3\.Bucket\('
@@ -655,6 +681,7 @@ class LambdaReservedConcurrency(Rule):
     title = "Lambda reserved concurrency not configured for critical functions"
     category = "Reliability"
     severity = "Low"
+    themes = ("resilience",)
 
     def run(self, repo_path: Path, language: str = "typescript") -> List[Finding]:
         lambda_pat = r'new\s+(lambda\.Function|NodejsFunction|PythonFunction)\(' if language == "typescript" else r'(lambda_.Function|aws_lambda.Function)\('
@@ -680,6 +707,7 @@ class ApiGatewayRequestValidator(Rule):
     title = "API Gateway request validation not configured"
     category = "Reliability"
     severity = "Low"
+    themes = ("resilience", "security-baseline",)
 
     def run(self, repo_path: Path, language: str = "typescript") -> List[Finding]:
         api_pat = r'new\s+(apigateway\.RestApi|RestApi)\(' if language == "typescript" else r'(apigateway.RestApi|RestApi)\('
@@ -706,6 +734,7 @@ class EventBridgeRetryPolicy(Rule):
     title = "EventBridge rule retry policy not configured"
     category = "Reliability"
     severity = "Low"
+    themes = ("resilience",)
 
     def run(self, repo_path: Path, language: str = "typescript") -> List[Finding]:
         rule_pat = r'new\s+events\.Rule\(' if language == "typescript" else r'events\.Rule\('
@@ -732,6 +761,7 @@ class RdsDeletionProtection(Rule):
     title = "RDS deletion protection not enabled"
     category = "Reliability"
     severity = "Medium"
+    themes = ("resilience", "data-protection",)
 
     def run(self, repo_path: Path, language: str = "typescript") -> List[Finding]:
         rds_pat = r'new\s+rds\.(DatabaseInstance|DatabaseCluster)\(' if language == "typescript" else r'rds\.(DatabaseInstance|DatabaseCluster)\('
@@ -758,6 +788,7 @@ class S3VersioningMissing(Rule):
     title = "S3 bucket versioning not enabled"
     category = "Reliability"
     severity = "Medium"
+    themes = ("resilience", "data-protection",)
 
     def run(self, repo_path: Path, language: str = "typescript") -> List[Finding]:
         bucket_pat = r'new\s+s3\.Bucket\(' if language == "typescript" else r's3\.Bucket\('

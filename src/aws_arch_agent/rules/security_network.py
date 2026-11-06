@@ -16,6 +16,7 @@ class OpenSshToWorld(Rule):
     title = "Security Group allows SSH from 0.0.0.0/0"
     category = "Security"
     severity = "High"
+    themes = ("network-exposure",)
 
     def run(self, repo_path: Path, language: str = "typescript") -> List[Finding]:
         glob = code_glob(language)
@@ -33,6 +34,7 @@ class OpenDbPortsToWorld(Rule):
     title = "Security Group exposes common DB ports to 0.0.0.0/0"
     category = "Security"
     severity = "High"
+    themes = ("network-exposure",)
 
     def run(self, repo_path: Path, language: str = "typescript") -> List[Finding]:
         glob = code_glob(language)
@@ -50,6 +52,7 @@ class VpcEndpointsMissing(Rule):
     title = "VPC endpoints missing (security & cost improvement)"
     category = "Security"
     severity = "Low"
+    themes = ("network-exposure", "finops",)
 
     def run(self, repo_path: Path, language: str = "typescript") -> List[Finding]:
         vpc_pat = r'new\s+ec2\.Vpc\(' if language == "typescript" else r'ec2\.Vpc\('
@@ -77,6 +80,7 @@ class WafMissing(Rule):
     title = "WAF not enabled on ALB/API Gateway/CloudFront"
     category = "Security"
     severity = "Low"
+    themes = ("network-exposure",)
 
     def run(self, repo_path: Path, language: str = "typescript") -> List[Finding]:
         resources = rg(repo_path, r'ApplicationLoadBalancer|RestApi|CloudFrontWebDistribution', glob=code_glob(language))
@@ -103,6 +107,7 @@ class Route53HealthChecks(Rule):
     title = "Route 53 health checks not configured"
     category = "Security"
     severity = "Low"
+    themes = ("resilience",)
 
     def run(self, repo_path: Path, language: str = "typescript") -> List[Finding]:
         route53_pat = r'new\s+route53\.(HostedZone|RecordSet)\(' if language == "typescript" else r'route53\.(HostedZone|RecordSet)\('
@@ -130,6 +135,7 @@ class Route53Dnssec(Rule):
     title = "Route 53 DNSSEC not enabled"
     category = "Security"
     severity = "Low"
+    themes = ("security-baseline",)
 
     def run(self, repo_path: Path, language: str = "typescript") -> List[Finding]:
         route53_pat = r'new\s+route53\.(PublicHostedZone|HostedZone)\(' if language == "typescript" else r'route53\.(PublicHostedZone|HostedZone)\('
@@ -157,6 +163,7 @@ class SecurityGroupEgressOpen(Rule):
     title = "Security Group egress too permissive (0.0.0.0/0)"
     category = "Security"
     severity = "Low"
+    themes = ("network-exposure",)
 
     def run(self, repo_path: Path, language: str = "typescript") -> List[Finding]:
         sg_pat = r'new\s+ec2\.SecurityGroup\(' if language == "typescript" else r'ec2\.SecurityGroup\('
@@ -180,6 +187,7 @@ class NaclMissing(Rule):
     title = "Network ACLs not configured"
     category = "Security"
     severity = "Low"
+    themes = ("network-exposure",)
 
     def run(self, repo_path: Path, language: str = "typescript") -> List[Finding]:
         vpc_pat = r'new\s+ec2\.Vpc\(' if language == "typescript" else r'ec2\.Vpc\('
@@ -207,6 +215,7 @@ class LambdaFunctionUrlAuth(Rule):
     title = "Lambda function URL without authentication"
     category = "Security"
     severity = "High"
+    themes = ("identity", "network-exposure",)
 
     def run(self, repo_path: Path, language: str = "typescript") -> List[Finding]:
         func_url_pat = (

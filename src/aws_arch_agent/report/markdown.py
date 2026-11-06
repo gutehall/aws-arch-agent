@@ -101,6 +101,7 @@ def render_markdown(
     findings: List[Finding],
     warnings: List[str] | None = None,
     include_summary: bool = True,
+    group_by: str = "severity",
 ) -> str:
     """Build a full Markdown report (title, repo info, findings by severity, next actions)."""
     groups = _group(findings)
@@ -133,13 +134,22 @@ def render_markdown(
             lines.append(f"- {w}")
         lines.append("")
 
-    order = ["High", "Medium", "Low"]
-    for sev in order:
-        if sev not in groups:
+    sections: List[tuple[str, List[Finding]]]
+    if group_by == "theme":
+        from aws_arch_agent.rules.themes import THEMES
+
+        rank = {"High": 0, "Medium": 1, "Low": 2}
+        ordered = sorted(findings, key=lambda x: (rank.get(x.severity, 3), x.category, x.id))
+        sections = [(f"Theme: {name}", [f for f in ordered if name in f.themes]) for name in THEMES]
+        sections.append(("No theme", [f for f in ordered if not f.themes]))
+    else:
+        sections = [(f"{sev} Priority Findings", groups[sev]) for sev in ("High", "Medium", "Low") if sev in groups]
+    for heading, items in sections:
+        if not items:
             continue
-        lines.append(f"## {sev} Priority Findings")
+        lines.append(f"## {heading}")
         lines.append("")
-        for f in groups[sev]:
+        for f in items:
             loc = ""
             if f.file:
                 loc = f"File: `{f.file}`"
@@ -153,6 +163,8 @@ def render_markdown(
             if f.environment:
                 shown = "unknown (judged as prod)" if f.environment == "unknown" else f.environment
                 lines.append(f"- Environment: **{shown}**")
+            if f.themes:
+                lines.append(f"- Themes: {', '.join(f.themes)}")
             lines.extend(f"- {line}" for line in estimate_lines(f))
             if f.evidence:
                 lines.append("")

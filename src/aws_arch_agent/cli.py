@@ -29,6 +29,7 @@ from aws_arch_agent.config import (
 )
 from aws_arch_agent.models import Finding, IacSource
 from aws_arch_agent.pricing import DEFAULT_REGION
+from aws_arch_agent.rules.themes import THEMES
 from aws_arch_agent.report.json_report import render_json
 from aws_arch_agent.report.html import render_html
 from aws_arch_agent.report.sarif import render_sarif
@@ -159,6 +160,13 @@ def analyze(
     region: str = typer.Option(
         DEFAULT_REGION, "--region", help="AWS region whose prices cost estimates use (offline snapshot)"
     ),
+    theme: list[str] = typer.Option(
+        [], "--theme",
+        help="Only report rules in these themes (repeatable or comma-separated): " + ", ".join(THEMES),
+    ),
+    group_by: str = typer.Option(
+        "severity", "--group-by", help="Group Markdown findings by severity (default) or theme"
+    ),
 ):
     """Run architecture review on a CDK repo (V1 or V2 mode) and write report."""
     resolved_repo = repo if repo is not None else templates
@@ -195,6 +203,8 @@ def analyze(
             rag_path=rag if _passed(ctx, "rag") else None,
             llm_mode=cast(LLMMode, llm_mode.lower()) if _passed(ctx, "llm_mode") else None,
             region=region if _passed(ctx, "region") else None,
+            themes=list(theme) if theme else None,
+            group_by=group_by.lower() if _passed(ctx, "group_by") else None,
         )
     except ConfigError as exc:
         _fail(str(exc))
@@ -277,6 +287,8 @@ def analyze(
             tag_policy=cfg.tag_policy,
             environment_map=cfg.environments,
             nonprod_max_size=cfg.nonprod_max_size,
+            theme_filter=cfg.themes,
+            group_by=cfg.group_by,
         )
     else:
         report_md, ctx_report, findings, warnings = analyze_v1(
@@ -293,6 +305,8 @@ def analyze(
             tag_policy=cfg.tag_policy,
             environment_map=cfg.environments,
             nonprod_max_size=cfg.nonprod_max_size,
+            theme_filter=cfg.themes,
+            group_by=cfg.group_by,
         )
 
     if ctx_report.notes.get("tag_policy") == "not checked":

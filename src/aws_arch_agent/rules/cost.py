@@ -11,6 +11,7 @@ class LogRetentionNeverExpire(Rule):
     title = "Log retention may be infinite (cost risk)"
     category = "Cost"
     severity = "Low"
+    themes = ("finops", "data-protection",)
 
     def run(self, repo_path: Path, language: str = "typescript") -> List[Finding]:
         pattern = r'RetentionDays\.INFINITE|retention\s*:\s*logs\.RetentionDays\.INFINITE' if language == "typescript" else r'INFINITE|retention.*infinite'
@@ -35,6 +36,7 @@ class MissingAutoscalingHint(Rule):
     title = "Compute resources may miss autoscaling"
     category = "Cost"
     severity = "Low"
+    themes = ("finops",)
 
     def run(self, repo_path: Path, language: str = "typescript") -> List[Finding]:
         asg = rg(repo_path, r'AutoScalingGroup|add_auto_scaling|addAutoScaling', glob=code_glob(language))
@@ -61,6 +63,7 @@ class DynamoDbAutoscalingMissing(Rule):
     title = "DynamoDB provisioned capacity may miss autoscaling"
     category = "Cost"
     severity = "Low"
+    themes = ("finops",)
 
     def run(self, repo_path: Path, language: str = "typescript") -> List[Finding]:
         # Check for provisioned capacity without autoscaling
@@ -89,6 +92,7 @@ class LambdaProvisionedConcurrency(Rule):
     title = "Lambda provisioned concurrency may be overprovisioned"
     category = "Cost"
     severity = "Low"
+    themes = ("finops",)
 
     def run(self, repo_path: Path, language: str = "typescript") -> List[Finding]:
         provisioned = rg(repo_path, r'provisionedConcurrentExecutions|reservedConcurrentExecutions', glob=code_glob(language))
@@ -112,6 +116,7 @@ class RdsReservedInstances(Rule):
     title = "RDS not using Reserved Instances (savings opportunity)"
     category = "Cost"
     severity = "Low"
+    themes = ("finops",)
 
     def run(self, repo_path: Path, language: str = "typescript") -> List[Finding]:
         rds_pat = r'new\s+rds\.(DatabaseInstance|DatabaseCluster)\(' if language == "typescript" else r'rds\.(DatabaseInstance|DatabaseCluster)\('
@@ -136,6 +141,7 @@ class NatGatewayCosts(Rule):
     title = "NAT Gateway incurs data processing costs"
     category = "Cost"
     severity = "Low"
+    themes = ("finops",)
 
     def run(self, repo_path: Path, language: str = "typescript") -> List[Finding]:
         nat_pat = r'natGateways\s*:\s*[1-9]|NatProvider\.gateway' if language == "typescript" else r'nat_gateways\s*=\s*[1-9]'
@@ -162,6 +168,7 @@ class S3IntelligentTiering(Rule):
     title = "S3 Intelligent-Tiering not enabled"
     category = "Cost"
     severity = "Low"
+    themes = ("finops",)
 
     def run(self, repo_path: Path, language: str = "typescript") -> List[Finding]:
         s3_pat = r'new\s+s3\.(Bucket|CfnBucket)\(' if language == "typescript" else r's3\.(Bucket|CfnBucket)\('
@@ -187,6 +194,7 @@ class EbsGp2ToGp3(Rule):
     title = "EBS volumes using gp2 instead of gp3"
     category = "Cost"
     severity = "Low"
+    themes = ("finops",)
 
     def run(self, repo_path: Path, language: str = "typescript") -> List[Finding]:
         gp2 = rg(repo_path, r'EbsDeviceVolumeType\.GP2|gp2', glob=code_glob(language))
@@ -210,6 +218,7 @@ class ElastiCacheReservedNodes(Rule):
     title = "ElastiCache may benefit from reserved nodes"
     category = "Cost"
     severity = "Low"
+    themes = ("finops",)
 
     def run(self, repo_path: Path, language: str = "typescript") -> List[Finding]:
         elasticache = rg(repo_path, r'elasticache\.(CfnCacheCluster|CfnReplicationGroup)', glob=code_glob(language))
@@ -233,6 +242,7 @@ class RdsGraviton(Rule):
     title = "RDS not using Graviton instances"
     category = "Cost"
     severity = "Low"
+    themes = ("finops",)
 
     def run(self, repo_path: Path, language: str = "typescript") -> List[Finding]:
         rds_pat = r'new\s+rds\.(DatabaseInstance|DatabaseCluster)\(' if language == "typescript" else r'rds\.(DatabaseInstance|DatabaseCluster)\('
@@ -259,6 +269,7 @@ class CloudFrontPriceClass(Rule):
     title = "CloudFront using all edge locations (Price Class All)"
     category = "Cost"
     severity = "Low"
+    themes = ("finops",)
 
     def run(self, repo_path: Path, language: str = "typescript") -> List[Finding]:
         cf_pat = r'new\s+cloudfront\.(Distribution|CloudFrontWebDistribution)\(' if language == "typescript" else r'cloudfront\.(Distribution|CloudFrontWebDistribution)\('
@@ -285,6 +296,7 @@ class UnusedEips(Rule):
     title = "Elastic IP allocated but may not be used"
     category = "Cost"
     severity = "Low"
+    themes = ("finops",)
 
     def run(self, repo_path: Path, language: str = "typescript") -> List[Finding]:
         eip = rg(repo_path, r'new\s+ec2\.(CfnEIP|CfnEIPAssociation)\(', glob=code_glob(language))
@@ -308,6 +320,7 @@ class S3LifecycleMissing(Rule):
     title = "S3 lifecycle policy not configured for cost optimization"
     category = "Cost"
     severity = "Low"
+    themes = ("finops",)
 
     def run(self, repo_path: Path, language: str = "typescript") -> List[Finding]:
         s3_pat = r'new\s+s3\.(Bucket|CfnBucket)\(' if language == "typescript" else r's3\.(Bucket|CfnBucket)\('
@@ -333,6 +346,7 @@ class AwsBudgetsMissing(Rule):
     title = "AWS Budgets not configured"
     category = "Cost"
     severity = "Low"
+    themes = ("finops",)
 
     def run(self, repo_path: Path, language: str = "typescript") -> List[Finding]:
         budgets = rg(repo_path, r'budgets\.CfnBudget|CfnBudget', glob=code_glob(language))
@@ -355,6 +369,7 @@ class CostAllocationTags(Rule):
     title = "Cost allocation tags may not be configured"
     category = "Cost"
     severity = "Low"
+    themes = ("finops",)
 
     def run(self, repo_path: Path, language: str = "typescript") -> List[Finding]:
         tags = rg(repo_path, r'tags\s*:|tags\s*=', glob=code_glob(language))
@@ -379,6 +394,7 @@ class SavingsPlansOpportunity(Rule):
     title = "Savings Plans opportunity for compute workloads"
     category = "Cost"
     severity = "Low"
+    themes = ("finops",)
 
     def run(self, repo_path: Path, language: str = "typescript") -> List[Finding]:
         compute = rg(repo_path, r'FargateService|Ec2Service|ec2\.Instance|lambda\.Function', glob=code_glob(language))
@@ -401,6 +417,7 @@ class LambdaPowerTuning(Rule):
     title = "Lambda memory/CPU may not be optimized"
     category = "Cost"
     severity = "Low"
+    themes = ("finops",)
 
     def run(self, repo_path: Path, language: str = "typescript") -> List[Finding]:
         lambda_pat = r'new\s+(lambda\.Function|NodejsFunction|PythonFunction)\(' if language == "typescript" else r'(lambda_.Function|aws_lambda.Function)\('
@@ -426,6 +443,7 @@ class S3StorageLens(Rule):
     title = "S3 Storage Lens not enabled"
     category = "Cost"
     severity = "Low"
+    themes = ("finops",)
 
     def run(self, repo_path: Path, language: str = "typescript") -> List[Finding]:
         buckets = rg(repo_path, r'new\s+s3\.Bucket\(' if language == "typescript" else r's3\.Bucket\(', glob=code_glob(language))

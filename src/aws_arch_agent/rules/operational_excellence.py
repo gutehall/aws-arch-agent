@@ -12,6 +12,7 @@ class CloudTrailMissing(Rule):
     title = "CloudTrail / audit trail may be missing"
     category = "Operational Excellence"
     severity = "Medium"
+    themes = ("observability",)
 
     def run(self, repo_path: Path, language: str = "typescript") -> List[Finding]:
         trail_pat = r"cloudtrail\.(Trail|CfnTrail)|CloudTrail|aws_cloudtrail" if language == "typescript" else r"cloudtrail|CloudTrail|aws_cloudtrail"
@@ -35,6 +36,7 @@ class VpcFlowLogsMissing(Rule):
     title = "VPC Flow Logs may be missing"
     category = "Operational Excellence"
     severity = "Low"
+    themes = ("observability", "network-exposure",)
 
     def run(self, repo_path: Path, language: str = "typescript") -> List[Finding]:
         vpc_pat = r"new\s+ec2\.Vpc\(" if language == "typescript" else r"ec2\.Vpc\("
@@ -61,6 +63,7 @@ class XRayTracingMissing(Rule):
     title = "X-Ray / distributed tracing may be missing"
     category = "Operational Excellence"
     severity = "Low"
+    themes = ("observability",)
 
     def run(self, repo_path: Path, language: str = "typescript") -> List[Finding]:
         if language == "typescript":
@@ -98,6 +101,7 @@ class DynamoDbStreamsMissing(Rule):
     title = "DynamoDB table may benefit from streams for event-driven patterns"
     category = "Operational Excellence"
     severity = "Low"
+    themes = ("resilience",)
 
     def run(self, repo_path: Path, language: str = "typescript") -> List[Finding]:
         ddb_pat = r'new\s+(dynamodb\.Table|Table)\(' if language == "typescript" else r'(dynamodb.Table|aws_dynamodb.Table)\('
@@ -124,6 +128,7 @@ class ApiGatewayAccessLogs(Rule):
     title = "API Gateway access logging not enabled"
     category = "Operational Excellence"
     severity = "Low"
+    themes = ("observability",)
 
     def run(self, repo_path: Path, language: str = "typescript") -> List[Finding]:
         api_pat = r'new\s+(apigateway\.(RestApi|HttpApi|Stage)|RestApi|HttpApi)\(' if language == "typescript" else r'(apigateway\.(RestApi|HttpApi|Stage)|RestApi|HttpApi)\('
@@ -150,6 +155,7 @@ class AlbAccessLogs(Rule):
     title = "ALB/NLB access logs not enabled"
     category = "Operational Excellence"
     severity = "Low"
+    themes = ("observability",)
 
     def run(self, repo_path: Path, language: str = "typescript") -> List[Finding]:
         alb_pat = r'new\s+elbv2\.(ApplicationLoadBalancer|NetworkLoadBalancer)\(' if language == "typescript" else r'elbv2\.(ApplicationLoadBalancer|NetworkLoadBalancer)\('
@@ -176,6 +182,7 @@ class CloudFrontAccessLogs(Rule):
     title = "CloudFront access logging not enabled"
     category = "Operational Excellence"
     severity = "Low"
+    themes = ("observability",)
 
     def run(self, repo_path: Path, language: str = "typescript") -> List[Finding]:
         cf_pat = r'new\s+cloudfront\.(Distribution|CloudFrontWebDistribution)\(' if language == "typescript" else r'cloudfront\.(Distribution|CloudFrontWebDistribution)\('
@@ -202,6 +209,7 @@ class EcsContainerInsights(Rule):
     title = "ECS container insights not enabled"
     category = "Operational Excellence"
     severity = "Low"
+    themes = ("observability",)
 
     def run(self, repo_path: Path, language: str = "typescript") -> List[Finding]:
         cluster_pat = r'new\s+ecs\.Cluster\(' if language == "typescript" else r'ecs\.Cluster\('
@@ -228,6 +236,7 @@ class RdsEnhancedMonitoring(Rule):
     title = "RDS enhanced monitoring not enabled"
     category = "Operational Excellence"
     severity = "Low"
+    themes = ("observability",)
 
     def run(self, repo_path: Path, language: str = "typescript") -> List[Finding]:
         rds_pat = r'new\s+rds\.(DatabaseInstance|DatabaseCluster)\(' if language == "typescript" else r'rds\.(DatabaseInstance|DatabaseCluster)\('
@@ -254,6 +263,7 @@ class CloudWatchAlarmsMissing(Rule):
     title = "CloudWatch alarms not configured for critical resources"
     category = "Operational Excellence"
     severity = "Low"
+    themes = ("observability",)
 
     def run(self, repo_path: Path, language: str = "typescript") -> List[Finding]:
         resources = rg(repo_path, r'DatabaseInstance|ApplicationLoadBalancer|lambda\.Function|DynamoDB', glob=code_glob(language))
@@ -278,6 +288,7 @@ class SnsAlarmNotifications(Rule):
     title = "No SNS topics for alarm notifications"
     category = "Operational Excellence"
     severity = "Low"
+    themes = ("observability",)
 
     def run(self, repo_path: Path, language: str = "typescript") -> List[Finding]:
         alarms = rg(repo_path, r'new\s+cloudwatch\.Alarm\(', glob=code_glob(language))
@@ -303,6 +314,7 @@ class StepFunctionsXRay(Rule):
     title = "Step Functions not using X-Ray tracing"
     category = "Operational Excellence"
     severity = "Low"
+    themes = ("observability",)
 
     def run(self, repo_path: Path, language: str = "typescript") -> List[Finding]:
         sfn_pat = r'new\s+sfn\.StateMachine\(' if language == "typescript" else r'sfn\.StateMachine\('
@@ -329,6 +341,7 @@ class EventBridgeDlq(Rule):
     title = "EventBridge rules not using DLQ"
     category = "Operational Excellence"
     severity = "Low"
+    themes = ("observability", "resilience",)
 
     def run(self, repo_path: Path, language: str = "typescript") -> List[Finding]:
         rule_pat = r'new\s+events\.Rule\(' if language == "typescript" else r'events\.Rule\('
@@ -355,6 +368,7 @@ class ConfigNotEnabled(Rule):
     title = "AWS Config not enabled"
     category = "Operational Excellence"
     severity = "Low"
+    themes = ("observability",)
 
     def run(self, repo_path: Path, language: str = "typescript") -> List[Finding]:
         config = rg(repo_path, r'config\.CfnConfigurationRecorder|aws_config', glob=code_glob(language))
@@ -377,6 +391,7 @@ class GlueJobMetrics(Rule):
     title = "Glue job CloudWatch metrics not enabled"
     category = "Operational Excellence"
     severity = "Low"
+    themes = ("observability",)
 
     def run(self, repo_path: Path, language: str = "typescript") -> List[Finding]:
         glue_pat = r'new\s+glue\.(Job|CfnJob)\(' if language == "typescript" else r'glue\.(Job|CfnJob)\('
@@ -403,6 +418,7 @@ class TransitGatewayFlowLogs(Rule):
     title = "Transit Gateway flow logs not enabled"
     category = "Operational Excellence"
     severity = "Low"
+    themes = ("observability",)
 
     def run(self, repo_path: Path, language: str = "typescript") -> List[Finding]:
         tgw_pat = r'new\s+ec2\.(CfnTransitGateway|TransitGateway)\(' if language == "typescript" else r'ec2\.(CfnTransitGateway|TransitGateway)\('
@@ -429,6 +445,7 @@ class CodePipelineNotifications(Rule):
     title = "CodePipeline notifications not configured"
     category = "Operational Excellence"
     severity = "Low"
+    themes = ("observability",)
 
     def run(self, repo_path: Path, language: str = "typescript") -> List[Finding]:
         pipeline_pat = r'new\s+codepipeline\.(Pipeline|CfnPipeline)\(' if language == "typescript" else r'codepipeline\.(Pipeline|CfnPipeline)\('
@@ -455,6 +472,7 @@ class AppRunnerObservability(Rule):
     title = "App Runner observability not configured"
     category = "Operational Excellence"
     severity = "Low"
+    themes = ("observability",)
 
     def run(self, repo_path: Path, language: str = "typescript") -> List[Finding]:
         apprunner_pat = r'new\s+apprunner\.(Service|CfnService)\(' if language == "typescript" else r'apprunner\.(Service|CfnService)\('
@@ -481,6 +499,7 @@ class GlueJobBookmarks(Rule):
     title = "Glue job bookmarks not enabled"
     category = "Operational Excellence"
     severity = "Low"
+    themes = ("resilience",)
 
     def run(self, repo_path: Path, language: str = "typescript") -> List[Finding]:
         glue_pat = r'new\s+glue\.(Job|CfnJob)\(' if language == "typescript" else r'glue\.(Job|CfnJob)\('
@@ -507,6 +526,7 @@ class CodeBuildLogging(Rule):
     title = "CodeBuild project logging not configured"
     category = "Operational Excellence"
     severity = "Low"
+    themes = ("observability",)
 
     def run(self, repo_path: Path, language: str = "typescript") -> List[Finding]:
         codebuild_pat = r'new\s+codebuild\.(Project|PipelineProject)\(' if language == "typescript" else r'codebuild\.(Project|PipelineProject)\('
@@ -533,6 +553,7 @@ class CloudWatchDashboardMissing(Rule):
     title = "CloudWatch dashboards not configured"
     category = "Operational Excellence"
     severity = "Low"
+    themes = ("observability",)
 
     def run(self, repo_path: Path, language: str = "typescript") -> List[Finding]:
         resources = rg(repo_path, r'DatabaseInstance|ApplicationLoadBalancer|lambda\.Function|FargateService', glob=code_glob(language))
@@ -557,6 +578,7 @@ class ResourceTaggingStrategy(Rule):
     title = "Resource tagging strategy may be incomplete"
     category = "Operational Excellence"
     severity = "Low"
+    themes = ("finops", "observability",)
 
     def run(self, repo_path: Path, language: str = "typescript") -> List[Finding]:
         tags = rg(repo_path, r'tags\s*:\s*\{|tags\s*=\s*\{', glob=code_glob(language))
@@ -582,6 +604,7 @@ class SsmParameterAdvancedTier(Rule):
     title = "SSM Parameter Store not using advanced tier for high throughput"
     category = "Operational Excellence"
     severity = "Low"
+    themes = ("resilience",)
 
     def run(self, repo_path: Path, language: str = "typescript") -> List[Finding]:
         param_pat = r'new\s+ssm\.(StringParameter|CfnParameter)\(' if language == "typescript" else r'ssm\.(StringParameter|CfnParameter)\('
@@ -619,6 +642,7 @@ class S3ReplicationMetrics(Rule):
     title = "S3 replication metrics not enabled"
     category = "Operational Excellence"
     severity = "Low"
+    themes = ("observability", "data-protection",)
 
     def run(self, repo_path: Path, language: str = "typescript") -> List[Finding]:
         replication = rg(repo_path, r'replicationRule|replicationConfiguration|ReplicationRule', glob=code_glob(language))

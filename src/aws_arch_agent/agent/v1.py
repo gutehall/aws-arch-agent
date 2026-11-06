@@ -24,7 +24,7 @@ from aws_arch_agent.rules.terraform_model import (
 )
 from aws_arch_agent.rules.runner import filter_by_severity, run_all_rules
 from aws_arch_agent.pricing import DEFAULT_REGION, price_note, use_region
-from aws_arch_agent.rules import effort, environments, nonprod, stack_cost
+from aws_arch_agent.rules import effort, environments, nonprod, stack_cost, themes
 from aws_arch_agent.rules.tag_policy import TagPolicy, policy_checked, use_tag_policy
 from aws_arch_agent.report.markdown import insert_summary, render_markdown
 from aws_arch_agent.tools.llm import LLMClient
@@ -396,6 +396,7 @@ def _collect_findings(
         warnings.append(f"--tf-plan applies only to a Terraform scan (source is {source}); ignored")
     findings = filter_by_severity(findings, severity_threshold)
     effort.annotate(findings)
+    themes.annotate(findings)
     return ctx, findings, warnings
 
 
@@ -413,6 +414,8 @@ def analyze_v1(
     tag_policy: TagPolicy | None = None,
     environment_map: dict[str, str] | None = None,
     nonprod_max_size: str | None = None,
+    theme_filter: list[str] | None = None,
+    group_by: str = "severity",
 ) -> tuple[str, RepoContext, list[Finding], list[str]]:
     """Run V1 pipeline: scan repo, run rules, optionally polish with LLM; return (report_md, ctx, findings, warnings)."""
     with (
@@ -428,16 +431,20 @@ def analyze_v1(
         )
         if tag_policy is not None:
             ctx.notes["tag_policy"] = "checked" if policy_checked() else "not checked"
+        if theme_filter:
+            findings = themes.select(findings, theme_filter)
+            ctx.notes["themes"] = list(theme_filter)
         cost = stack_cost.summary(findings, repo_path)
         if cost is not None:
             ctx.notes["cost"] = cost
     ctx.notes["prices"] = price_note(price_region)
 
     if not use_llm:
-        return render_markdown(ctx, findings, warnings=warnings), ctx, findings, warnings
+        return render_markdown(ctx, findings, warnings=warnings, group_by=group_by), ctx, findings, warnings
     # The summary is built from rule output: the LLM polishes the rest, never its numbers.
     llm = LLMClient()
-    polished = llm.polish(render_markdown(ctx, findings, warnings=warnings, include_summary=False))
+    polished = llm.polish(render_markdown(ctx, findings, warnings=warnings, include_summary=False,
+                                          group_by=group_by))
     return insert_summary(polished, findings), ctx, findings, warnings
 
 

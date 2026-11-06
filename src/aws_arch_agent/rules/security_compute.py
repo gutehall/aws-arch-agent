@@ -13,6 +13,7 @@ class EcsReadonlyRootFs(Rule):
     title = "ECS task definition not using read-only root filesystem"
     category = "Security"
     severity = "Low"
+    themes = ("security-baseline",)
 
     def run(self, repo_path: Path, language: str = "typescript") -> List[Finding]:
         task_pat = (
@@ -40,6 +41,7 @@ class RdsSslConnection(Rule):
     title = "RDS not enforcing SSL/TLS connections"
     category = "Security"
     severity = "Medium"
+    themes = ("data-protection",)
 
     def run(self, repo_path: Path, language: str = "typescript") -> List[Finding]:
         rds_pat = r'new\s+rds\.(DatabaseInstance|DatabaseCluster)\(' if language == "typescript" else r'rds\.(DatabaseInstance|DatabaseCluster)\('
@@ -67,6 +69,7 @@ class ElastiCacheEncryption(Rule):
     title = "ElastiCache not using encryption in-transit/at-rest"
     category = "Security"
     severity = "Medium"
+    themes = ("data-protection",)
 
     def run(self, repo_path: Path, language: str = "typescript") -> List[Finding]:
         cache_pat = r'new\s+elasticache\.(CfnCacheCluster|CfnReplicationGroup)\(' if language == "typescript" else r'elasticache\.(CfnCacheCluster|CfnReplicationGroup)\('
@@ -94,6 +97,7 @@ class EcrImageScanning(Rule):
     title = "ECR repository image scanning not enabled"
     category = "Security"
     severity = "Medium"
+    themes = ("security-baseline",)
 
     def run(self, repo_path: Path, language: str = "typescript") -> List[Finding]:
         ecr_pat = r'new\s+ecr\.Repository\(' if language == "typescript" else r'ecr\.Repository\('
@@ -121,6 +125,7 @@ class EcrImageImmutability(Rule):
     title = "ECR image tag immutability not configured"
     category = "Security"
     severity = "Low"
+    themes = ("security-baseline",)
 
     def run(self, repo_path: Path, language: str = "typescript") -> List[Finding]:
         ecr_pat = r'new\s+ecr\.Repository\(' if language == "typescript" else r'ecr\.Repository\('
@@ -148,6 +153,7 @@ class EcrLifecyclePolicy(Rule):
     title = "ECR repository lifecycle policy missing"
     category = "Security"
     severity = "Low"
+    themes = ("security-baseline", "finops",)
 
     def run(self, repo_path: Path, language: str = "typescript") -> List[Finding]:
         ecr_pat = r'new\s+ecr\.Repository\(' if language == "typescript" else r'ecr\.Repository\('
@@ -175,6 +181,7 @@ class SagemakerNotebookVpc(Rule):
     title = "SageMaker notebook instance not in VPC"
     category = "Security"
     severity = "Medium"
+    themes = ("network-exposure",)
 
     def run(self, repo_path: Path, language: str = "typescript") -> List[Finding]:
         sm_pat = r'new\s+sagemaker\.(CfnNotebookInstance|NotebookInstance)\(' if language == "typescript" else r'sagemaker\.(CfnNotebookInstance|NotebookInstance)\('
@@ -202,6 +209,7 @@ class SagemakerEncryption(Rule):
     title = "SageMaker encryption not enabled"
     category = "Security"
     severity = "Medium"
+    themes = ("data-protection",)
 
     def run(self, repo_path: Path, language: str = "typescript") -> List[Finding]:
         sm_pat = r'new\s+sagemaker\.' if language == "typescript" else r'sagemaker\.'
@@ -229,6 +237,7 @@ class FsxEncryption(Rule):
     title = "FSx file system encryption not enabled"
     category = "Security"
     severity = "High"
+    themes = ("data-protection",)
 
     def run(self, repo_path: Path, language: str = "typescript") -> List[Finding]:
         fsx_pat = r'new\s+fsx\.(LustreFileSystem|WindowsFileSystem|OntapFileSystem)\(' if language == "typescript" else r'fsx\.(LustreFileSystem|WindowsFileSystem|OntapFileSystem)\('
@@ -256,6 +265,7 @@ class TransferFamilyLogging(Rule):
     title = "Transfer Family server logging not enabled"
     category = "Security"
     severity = "Low"
+    themes = ("observability", "security-baseline",)
 
     def run(self, repo_path: Path, language: str = "typescript") -> List[Finding]:
         transfer_pat = r'new\s+transfer\.(CfnServer|Server)\(' if language == "typescript" else r'transfer\.(CfnServer|Server)\('
@@ -283,6 +293,7 @@ class CodePipelineEncryption(Rule):
     title = "CodePipeline artifact encryption not enabled"
     category = "Security"
     severity = "Medium"
+    themes = ("data-protection",)
 
     def run(self, repo_path: Path, language: str = "typescript") -> List[Finding]:
         pipeline_pat = r'new\s+codepipeline\.(Pipeline|CfnPipeline)\(' if language == "typescript" else r'codepipeline\.(Pipeline|CfnPipeline)\('
@@ -310,6 +321,7 @@ class CodeBuildPrivilegedMode(Rule):
     title = "CodeBuild project using privileged mode"
     category = "Security"
     severity = "Medium"
+    themes = ("security-baseline",)
 
     def run(self, repo_path: Path, language: str = "typescript") -> List[Finding]:
         privileged = rg(repo_path, r'privileged\s*:\s*true', glob=code_glob(language))
@@ -334,6 +346,7 @@ class EcsTaskRunAsRoot(Rule):
     title = "ECS task may run as root user"
     category = "Security"
     severity = "Medium"
+    themes = ("security-baseline",)
 
     def run(self, repo_path: Path, language: str = "typescript") -> List[Finding]:
         task_pat = r'new\s+ecs\.(TaskDefinition|FargateTaskDefinition|Ec2TaskDefinition)\(' if language == "typescript" else r'ecs\.(TaskDefinition|FargateTaskDefinition|Ec2TaskDefinition)\('
@@ -360,6 +373,7 @@ class LambdaDeprecatedRuntime(Rule):
     title = "Lambda function uses a deprecated runtime"
     category = "Security"
     severity = "High"
+    themes = ("security-baseline",)
 
     def run(self, repo_path: Path, language: str = "typescript") -> List[Finding]:
         out: List[Finding] = []
@@ -397,6 +411,7 @@ class Ec2Imdsv2NotRequired(Rule):
     title = "EC2 instance may not require IMDSv2"
     category = "Security"
     severity = "Medium"
+    themes = ("security-baseline",)
 
     def run(self, repo_path: Path, language: str = "typescript") -> List[Finding]:
         glob = code_glob(language)
