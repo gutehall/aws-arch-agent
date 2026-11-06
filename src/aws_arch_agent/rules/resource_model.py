@@ -50,6 +50,7 @@ CF_TYPE_TO_CANONICAL: dict[str, str] = {
     "AWS::ApiGatewayV2::Api": "apigatewayv2_api",
     "AWS::ApiGatewayV2::Stage": "apigatewayv2_stage",
     "AWS::AutoScaling::AutoScalingGroup": "autoscaling_group",
+    "AWS::AutoScaling::LaunchConfiguration": "launch_configuration",
     "AWS::ECS::Service": "ecs_service",
     "AWS::EKS::Cluster": "eks_cluster",
     "AWS::CloudFront::Distribution": "cloudfront_distribution",

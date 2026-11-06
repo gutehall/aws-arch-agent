@@ -9,6 +9,7 @@ from aws_arch_agent.models import Finding, Severity
 from aws_arch_agent.rules import (
     environments,
     estimates,
+    generations,
     iam_policy,
     lambda_runtimes,
     nonprod,
@@ -48,6 +49,7 @@ CF_COVERS_STATIC: dict[str, tuple[str, ...]] = {
     "CF-NEP-001": ("SEC-061",),
     "CF-MSK-001": ("SEC-044",),
     "CF-EBS-002": ("COST-008",),
+    "CF-GEN-001": ("SUST-007",),
     "CF-EIP-001": ("COST-012",),
     "CF-SM-001": ("SEC-015",),
     "CF-COG-001": ("SEC-034",),
@@ -176,7 +178,8 @@ _PER_RESOURCE_TYPES = frozenset({
     "elasticache_replication_group", "launch_template",
     "opensearch_domain", "redshift_cluster", "docdb_cluster", "neptune_cluster", "msk_cluster",
     "cloudfront_distribution", "subnet", "ecs_task_definition",
-    "secretsmanager_secret", "cognito_user_pool", "eip",
+    "secretsmanager_secret", "cognito_user_pool", "eip", "launch_configuration",
+    "elasticache_cluster",
 })
 
 
@@ -230,6 +233,7 @@ CHECK_PROPERTIES: dict[str, frozenset[str]] = {
         "CF-EBS-002": {"VolumeType"},  # Size only feeds the estimate
         "CF-EIP-001": {"InstanceId", "NetworkInterfaceId", "PublicIpv4Pool"},
         "CF-TAG-001": set(),  # tag_policy reads Tags and skips unreadable ones itself
+        "CF-GEN-001": set(),  # reads only literal types; an unknown one is absent, not judged
         "CF-COG-001": {"MfaConfiguration"},
         "CF-COG-002": {"Policies"},
         "CF-COG-003": {"UserPoolAddOns", "UserPoolTier"},
@@ -1914,6 +1918,9 @@ def run_resource_checks(
                     findings.extend(_ecr_findings(res, template_path))
                 if ctype == "ecs_task_definition":
                     findings.extend(_ecs_findings(res, template_path))
+
+                # --- Previous-generation instance families (DM3-547) ---
+                findings.extend(generations.findings(res, template_path))
 
                 # --- Stateful resources deleted with the stack ---
                 if ctype in _STATEFUL_TYPES:
