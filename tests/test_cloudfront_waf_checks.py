@@ -118,6 +118,7 @@ def test_cloudformation_fixes(tmp_path: Path) -> None:
     }), "cloudformation")
     code = {f.id: f.suggested_code or "" for f in findings}
     assert "redirect-to-https" in code["CF-CF-001"]
+    assert "${AWS::Partition}:apigateway:${AWS::Region}" in code["CF-WAF-001"]
     assert code["CF-WAF-001"].startswith("AlbWebAcl:") and "ResourceArn: !Ref Alb" in code["CF-WAF-001"]
 
 
@@ -193,6 +194,26 @@ resource "aws_lb" "internal" {
   internal = true
 }
 
+resource "aws_lb" "counted" {
+  count = 2
+  name  = "counted-${count.index}"
+}
+
+resource "aws_wafv2_web_acl_association" "counted" {
+  resource_arn = aws_lb.counted[0].arn
+  web_acl_arn  = aws_wafv2_web_acl.regional.arn
+}
+
+resource "aws_lb" "internal_from_var" {
+  name     = "iv"
+  internal = var.internal
+}
+
+resource "aws_lb" "type_from_var" {
+  name               = "tv"
+  load_balancer_type = var.lb_type
+}
+
 resource "aws_lb" "network" {
   name               = "nlb"
   load_balancer_type = "network"
@@ -227,6 +248,8 @@ def test_terraform_cloudfront_and_waf(tmp_path: Path) -> None:
         ("aws_cloudfront_distribution.unknown_policy", "CF-CF-003"),
         ("aws_lb.public", "CF-WAF-001"),
         ("aws_api_gateway_stage.prod", "CF-WAF-001"),
+        # aws_lb.counted is linked through its [0] index; an internal or type from a
+        # variable may be an internal ALB or an NLB, so it is not reported.
     }
 
 

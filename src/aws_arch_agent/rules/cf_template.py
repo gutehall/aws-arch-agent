@@ -337,8 +337,8 @@ def _cloudfront_findings(res: Resource, template_path: Path) -> List[Finding]:
 
 def _references(text: str, name: str) -> bool:
     """True when a dumped ResourceArn refers to a resource by logical id or Terraform address."""
-    if "." in name:  # Terraform address: aws_lb.app -> aws_lb.app.arn
-        return re.search(rf"(?<![\w.]){re.escape(name)}\.", text) is not None
+    if "." in name:  # Terraform address: aws_lb.app -> aws_lb.app.arn, aws_lb.app[0].arn
+        return re.search(rf"(?<![\w.]){re.escape(name)}(?:\[[^\]]*\])?\.", text) is not None
     return f'"{name}"' in text or f"${{{name}}}" in text or f"${{{name}." in text
 
 

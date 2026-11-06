@@ -865,7 +865,7 @@ _CLOUDFORMATION.update({
     "CF-WAF-001": """${name}WebAcl:
   Type: AWS::WAFv2::WebACLAssociation
   Properties:
-    ResourceArn: !Ref $name  # for an API stage: the stage ARN
+    ResourceArn: !Ref $name  # an API stage needs its ARN: !Sub arn:$${AWS::Partition}:apigateway:$${AWS::Region}::/restapis/<api-id>/stages/<stage>
     WebACLArn: !GetAtt RegionalWebAcl.Arn  # an AWS::WAFv2::WebACL with Scope: REGIONAL""",
 })
 _TERRAFORM.update({
