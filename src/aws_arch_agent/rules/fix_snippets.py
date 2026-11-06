@@ -900,6 +900,99 @@ _TERRAFORM["CF-TAG-001"] = """resource "$tf_type" "$tf_name" {
 
 # Or once for every resource: provider "aws" { default_tags { tags = { CostCenter = "1234" } } }"""
 
+# S3 storage classes, DynamoDB autoscaling, launch template gp2 (DM3-548).
+_CLOUDFORMATION.update({
+    "CF-S3-006": """$name:
+  Type: AWS::S3::Bucket
+  Properties:
+    # keep the other properties as they are
+    LifecycleConfiguration:
+      Rules:
+        - Id: tier-and-expire
+          Status: Enabled
+          Transitions:
+            - StorageClass: INTELLIGENT_TIERING
+              TransitionInDays: 30
+          NoncurrentVersionExpiration:
+            NoncurrentDays: 90""",
+    "CF-S3-007": """$name:
+  Type: AWS::S3::Bucket
+  Properties:
+    # keep the other properties as they are; add to the existing rule
+    LifecycleConfiguration:
+      Rules:
+        - Id: tier
+          Status: Enabled
+          Transitions:
+            - StorageClass: INTELLIGENT_TIERING
+              TransitionInDays: 30""",
+    "CF-DDB-003": """${name}ReadScaling:
+  Type: AWS::ApplicationAutoScaling::ScalableTarget
+  Properties:
+    ServiceNamespace: dynamodb
+    ScalableDimension: dynamodb:table:ReadCapacityUnits
+    ResourceId: !Sub table/$${$name}
+    MinCapacity: 5
+    MaxCapacity: 100
+    # add a matching WriteCapacityUnits target and target-tracking ScalingPolicies""",
+    "CF-EBS-002:AWS::EC2::LaunchTemplate": """$name:
+  Type: AWS::EC2::LaunchTemplate
+  Properties:
+    LaunchTemplateData:
+      # keep the other settings as they are
+      BlockDeviceMappings:
+        - DeviceName: /dev/xvda # each gp2 device
+          Ebs:
+            VolumeType: gp3""",
+})
+_TERRAFORM.update({
+    "CF-S3-006": """resource "aws_s3_bucket_lifecycle_configuration" "$tf_name" {
+  bucket = aws_s3_bucket.$tf_name.id
+  rule {
+    id     = "tier-and-expire"
+    status = "Enabled"
+    filter {}
+    transition {
+      days          = 30
+      storage_class = "INTELLIGENT_TIERING"
+    }
+    noncurrent_version_expiration {
+      noncurrent_days = 90
+    }
+  }
+}""",
+    "CF-S3-007": """resource "aws_s3_bucket_lifecycle_configuration" "$tf_name" {
+  bucket = aws_s3_bucket.$tf_name.id
+  rule {
+    # keep the existing rules; add a transition
+    id     = "tier"
+    status = "Enabled"
+    filter {}
+    transition {
+      days          = 30
+      storage_class = "INTELLIGENT_TIERING"
+    }
+  }
+}""",
+    "CF-DDB-003": """resource "aws_appautoscaling_target" "${tf_name}_read" {
+  service_namespace  = "dynamodb"
+  scalable_dimension = "dynamodb:table:ReadCapacityUnits"
+  resource_id        = "table/$${aws_dynamodb_table.$tf_name.name}"
+  min_capacity       = 5
+  max_capacity       = 100
+}
+# add a matching WriteCapacityUnits target and aws_appautoscaling_policy resources""",
+    "CF-EBS-002:aws_launch_template": """resource "aws_launch_template" "$tf_name" {
+  # keep the other arguments as they are
+  block_device_mappings {
+    device_name = "/dev/xvda" # each gp2 device
+    ebs {
+      volume_type = "gp3"
+    }
+  }
+}""",
+})
+
 # Previous-generation instance families (DM3-547). The finding names the type to use.
 _CLOUDFORMATION.update({
     "CF-GEN-001": """$name:
