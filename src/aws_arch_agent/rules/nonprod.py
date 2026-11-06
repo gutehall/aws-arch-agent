@@ -76,7 +76,9 @@ def findings(resources: List[Resource], template_path: Path, env: str) -> List[F
         if res.malformed:
             continue
         props = res.properties
-        if res.type == "db_instance" and _flag(props.get("MultiAZ")) and not props.get("DBClusterIdentifier"):
+        unknown = res.unresolved  # Terraform values from var/local: not judged
+        if res.type == "db_instance" and _flag(props.get("MultiAZ")) and not props.get("DBClusterIdentifier") \
+                and "DBClusterIdentifier" not in unknown:
             add("CF-ENV-001", res, "Multi-AZ database in a non-production stack",
                 "MultiAZ doubles the instance cost for a standby a non-production database rarely "
                 "needs. Set MultiAZ to false. In CDK: multiAz: false.",
@@ -102,12 +104,19 @@ def findings(resources: List[Resource], template_path: Path, env: str) -> List[F
                 add("CF-ENV-003", res, "Large instance in a non-production stack",
                     f"{key} {kind} is above {_max_size}, the size set for dev and staging "
                     "(config nonprod.max_instance_size). Use a smaller size of the same family.", est)
-        if res.type == "cloudwatch_log_group":
+        if res.type == "cloudwatch_log_group" and "RetentionInDays" not in unknown:
             days = props.get("RetentionInDays")
-            if isinstance(days, int) and not isinstance(days, bool) and days > MAX_LOG_RETENTION_DAYS:
+            if days is None:  # never expires (Terraform 0 is read as unset too)
+                setting = "Logs never expire (RetentionInDays is not set)"
+            elif isinstance(days, int) and not isinstance(days, bool) and days > MAX_LOG_RETENTION_DAYS:
+                setting = f"RetentionInDays is {days}"
+            else:
+                setting = ""
+            if setting:
                 add("CF-ENV-005", res, "Long log retention in a non-production stack",
-                    f"RetentionInDays is {days}. Logs from a non-production stack rarely need more "
-                    f"than {MAX_LOG_RETENTION_DAYS} days, and storage is billed per GB-month. "
+                    f"{setting}. Logs from a non-production stack rarely need more than "
+                    f"{MAX_LOG_RETENTION_DAYS} days, and storage is billed per GB-month. Set "
+                    f"RetentionInDays to {MAX_LOG_RETENTION_DAYS} or less. "
                     "In CDK: retention: logs.RetentionDays.ONE_MONTH.")
         if res.type == "dynamodb_table" and "BillingMode" not in res.unresolved:
             if props.get("BillingMode", "PROVISIONED") == "PROVISIONED":

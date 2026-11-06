@@ -21,8 +21,8 @@ GP3_BASELINE_GIB = 1000
 # Up to 170 GiB gp2 gives 128 MiB/s, about gp3's included 125 MB/s; above it gp2 gives more.
 GP2_SMALL_THROUGHPUT_GIB = 170
 
-# Instance sizes from small to large, for "one size smaller".
-_SIZES = (
+# Instance sizes from small to large, for "one size smaller" and nonprod.max_instance_size.
+SIZES = _SIZES = (
     "nano", "micro", "small", "medium", "large", "xlarge", "2xlarge", "3xlarge", "4xlarge",
     "6xlarge", "8xlarge", "9xlarge", "10xlarge", "12xlarge", "16xlarge", "18xlarge",
     "24xlarge", "32xlarge", "48xlarge",

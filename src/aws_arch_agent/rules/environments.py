@@ -45,6 +45,8 @@ RULE_POLICY: dict[str, dict[Environment, Severity | None]] = {
     "CF-RDS-003": {"dev": None, "staging": None},  # Multi-AZ
     "CF-RDS-005": {"dev": None},           # deletion protection
     "CF-DEL-001": {"dev": None, "staging": None},  # retain on delete
+    # Never-expiring logs: CF-ENV-005 asks for 30 days or less there instead of 30-365.
+    "CF-CW-001": {"dev": None, "staging": None},
     "CF-RDS-002": {"dev": "Low"},          # backup retention
     "CF-DDB-001": {"dev": "Low"},          # point-in-time recovery
     "CF-S3-003": {"dev": "Low"},           # versioning
@@ -52,30 +54,36 @@ RULE_POLICY: dict[str, dict[Environment, Severity | None]] = {
 
 # CDK source rules that recommend production durability. They cannot see a stack, so they
 # are dropped when every stack the scan resolved is dev or staging.
-PROD_ONLY_STATIC = ("REL-001", "REL-016")
+# COST-003 (DynamoDB autoscaling) is dropped too: CF-ENV-006 says use on demand instead.
+PROD_ONLY_STATIC = ("REL-001", "REL-016", "COST-003")
 
 _config: dict[str, Environment] = {}
 _repo_path: Path | None = None
 _seen: set[str] = set()  # environments resolved for stacks in this scan
+_seen_outside_synth = False  # a stack not from cdk.out (e.g. --templates) was resolved
 
 
 def only_nonprod() -> bool:
-    """True when the scan resolved at least one stack and none was prod or unknown."""
-    return bool(_seen) and _seen <= {"dev", "staging"}
+    """True when every stack of the CDK app is dev or staging.
+
+    Only cdk synth output covers the whole app; with --templates the scan may see only
+    some stacks, so the CDK source rules are kept then.
+    """
+    return bool(_seen) and _seen <= {"dev", "staging"} and not _seen_outside_synth
 
 
 @contextmanager
 def use_environments(config: Mapping[str, str] | None, repo_path: Path | None) -> Iterator[None]:
     """Resolve environments with this config, relative to this repo, for a scan."""
-    global _config, _repo_path, _seen
-    previous = (_config, _repo_path, _seen)
+    global _config, _repo_path, _seen, _seen_outside_synth
+    previous = (_config, _repo_path, _seen, _seen_outside_synth)
     _config = {k: cast(Environment, v) for k, v in (config or {}).items()}
     _repo_path = repo_path
-    _seen = set()
+    _seen, _seen_outside_synth = set(), False
     try:
         yield
     finally:
-        _config, _repo_path, _seen = previous
+        _config, _repo_path, _seen, _seen_outside_synth = previous
 
 
 def _words(text: str) -> list[str]:
@@ -199,7 +207,10 @@ def apply(findings: List[Finding], template_path: Path, resources: Iterable[Reso
     resources = list(resources)
     env = resolve(template_path, resources)
     if resources:
+        global _seen_outside_synth
         _seen.add(env)
+        if "cdk.out" not in template_path.parts:
+            _seen_outside_synth = True
     out: List[Finding] = []
     for f in findings:
         f.environment = env

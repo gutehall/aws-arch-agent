@@ -44,6 +44,7 @@ STACK = {
     "NatB": {"Type": "AWS::EC2::NatGateway", "Properties": {"SubnetId": "b", "AllocationId": "eipalloc-2"}},
     "Logs": {"Type": "AWS::Logs::LogGroup", "Properties": {"RetentionInDays": 365, "KmsKeyId": "k"}},
     "ShortLogs": {"Type": "AWS::Logs::LogGroup", "Properties": {"RetentionInDays": 14, "KmsKeyId": "k"}},
+    "Forever": {"Type": "AWS::Logs::LogGroup", "Properties": {"KmsKeyId": "k"}},
     "Table": {"Type": "AWS::DynamoDB::Table", "Properties": {
         "ProvisionedThroughput": {"ReadCapacityUnits": 5, "WriteCapacityUnits": 5},
         "PointInTimeRecoverySpecification": {"PointInTimeRecoveryEnabled": True},
@@ -91,6 +92,8 @@ def test_same_template_in_dev_and_prod_scan(tmp_path: Path) -> None:
     assert ("CF-ENV-001", "SingleDb") not in dev
     assert ("CF-ENV-003", "Web") in dev and ("CF-ENV-003", "Small") not in dev
     assert ("CF-ENV-005", "ShortLogs") not in dev and ("CF-ENV-006", "OnDemand") not in dev
+    assert ("CF-ENV-005", "Forever") in dev and "CF-CW-001" not in dev_ids  # one piece of log advice
+    assert "CF-CW-001" in prod_ids
 
 
 def test_savings(tmp_path: Path) -> None:
@@ -146,6 +149,23 @@ resource "aws_dynamodb_table" "from_var" {
   hash_key     = "id"
   billing_mode = var.mode
 }
+
+resource "aws_cloudwatch_log_group" "from_var" {
+  name              = "l"
+  retention_in_days = var.days
+}
+
+resource "aws_lambda_provisioned_concurrency_config" "from_var" {
+  function_name                     = "f"
+  qualifier                         = "live"
+  provisioned_concurrent_executions = var.count
+}
+
+resource "aws_elasticache_replication_group" "maybe" {
+  replication_group_id = "m"
+  description          = "m"
+  multi_az_enabled     = var.multi_az
+}
 """
 
 
@@ -164,7 +184,27 @@ def test_cdk_source_multi_az_advice_is_prod_only() -> None:
     static = [Finding(id=i, title="t", recommendation="r") for i in ("REL-001", "REL-016", "SEC-005")]
     with environments.use_environments(None, None):
         assert [f.id for f in drop_static_covered_by_cf(list(static))] == ["REL-001", "REL-016", "SEC-005"]
-        environments.apply([], Path("dev-stack.template.json"), [Resource(type=None, name="x")])
+        environments.apply([], Path("cdk.out") / "dev-stack.template.json", [Resource(type=None, name="x")])
         assert [f.id for f in drop_static_covered_by_cf(list(static))] == ["SEC-005"]
-        environments.apply([], Path("prod-stack.template.json"), [Resource(type=None, name="y")])
+        environments.apply([], Path("cdk.out") / "prod-stack.template.json", [Resource(type=None, name="y")])
         assert [f.id for f in drop_static_covered_by_cf(list(static))] == ["REL-001", "REL-016", "SEC-005"]
+    cost = [Finding(id="COST-003", title="t", recommendation="r")]
+    with environments.use_environments(None, None):
+        environments.apply([], Path("cdk.out") / "dev-stack.template.json", [Resource(type=None, name="x")])
+        assert drop_static_covered_by_cf(list(cost)) == []  # autoscaling advice vs on-demand
+    with environments.use_environments(None, None):
+        # --templates may hold only some stacks of the app: the CDK source advice stays.
+        environments.apply([], Path("templates") / "dev-stack.template.json", [Resource(type=None, name="x")])
+        assert [f.id for f in drop_static_covered_by_cf(list(static))] == ["REL-001", "REL-016", "SEC-005"]
+
+
+def test_family_without_the_cap_size_keeps_the_finding() -> None:
+    from aws_arch_agent.rules.estimates import downsize
+
+    # m5 has no 48xlarge: no price, so no saving (the CF-ENV-003 finding itself still fires).
+    assert downsize("ec2", "m5.48xlarge", "large") is None
+
+
+def test_config_accepts_every_known_size(tmp_path: Path) -> None:
+    (tmp_path / ".aws-arch-agent.yaml").write_text("nonprod:\n  max_instance_size: 6xlarge\n", encoding="utf-8")
+    assert load_config(tmp_path).nonprod_max_size == "6xlarge"

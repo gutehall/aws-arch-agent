@@ -9,6 +9,7 @@ from typing import Any, Literal, cast
 import yaml
 
 from aws_arch_agent.pricing import DEFAULT_REGION
+from aws_arch_agent.rules.estimates import SIZES
 from aws_arch_agent.rules.tag_policy import TagPolicy
 
 SeverityThreshold = Literal["high", "medium", "low", "none"]
@@ -119,8 +120,6 @@ def environments_from(value: Any) -> dict[str, str] | None:
     return out
 
 
-_SIZES = ("nano", "micro", "small", "medium", "large", "xlarge", "2xlarge", "4xlarge", "8xlarge",
-          "12xlarge", "16xlarge", "24xlarge", "32xlarge", "48xlarge")
 
 
 def nonprod_max_size(value: Any) -> str | None:
@@ -132,8 +131,8 @@ def nonprod_max_size(value: Any) -> str | None:
     size = value.get("max_instance_size")
     if size is None:
         return None
-    if size not in _SIZES:
-        raise ConfigError(f"nonprod.max_instance_size must be one of {', '.join(_SIZES)}, got {size!r}")
+    if size not in SIZES:
+        raise ConfigError(f"nonprod.max_instance_size must be one of {', '.join(SIZES)}, got {size!r}")
     return str(size)
 
 

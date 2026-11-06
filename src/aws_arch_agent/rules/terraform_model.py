@@ -706,6 +706,8 @@ def _provisioned_concurrency(body: dict) -> dict:
     count = _v(body, "provisioned_concurrent_executions")
     if count is None:
         return {}
+    if count is UNRESOLVED:
+        return {"ProvisionedConcurrencyConfig": UNRESOLVED}
     return {"ProvisionedConcurrencyConfig": {"ProvisionedConcurrentExecutions": count}}
 
 
