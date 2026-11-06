@@ -39,6 +39,23 @@ REPORT_SCHEMA: dict = {
                     "evidence": {"type": ["string", "null"]},
                     "recommendation": {"type": "string"},
                     "suggested_code": {"type": ["string", "null"]},
+                    "monthly_cost_usd": {
+                        "type": ["number", "null"],
+                        "minimum": 0,
+                        "description": "Estimated on-demand cost per month in USD (730 hours). "
+                        "Null when the finding has too little to price.",
+                    },
+                    "monthly_savings_usd": {
+                        "type": ["number", "null"],
+                        "minimum": 0,
+                        "description": "Estimated saving per month in USD if the recommendation "
+                        "is applied. A separate number: never subtracted from monthly_cost_usd.",
+                    },
+                    "estimate_basis": {
+                        "type": ["string", "null"],
+                        "description": "How the estimate was worked out: quantities, unit "
+                        "prices, region, price list date, and what it excludes.",
+                    },
                 },
             },
         },

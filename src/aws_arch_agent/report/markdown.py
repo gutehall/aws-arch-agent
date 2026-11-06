@@ -25,6 +25,18 @@ def price_line(ctx: RepoContext) -> str | None:
     return f"{note['region']}: not in the price snapshot, so no cost estimates"
 
 
+def estimate_lines(f: Finding) -> List[str]:
+    """Labelled estimate lines for a finding; empty when it has no estimate."""
+    out: List[str] = []
+    if f.monthly_cost_usd is not None:
+        out.append(f"Estimated cost: **${f.monthly_cost_usd:,.2f}/month** (estimate)")
+    if f.monthly_savings_usd is not None:
+        out.append(f"Estimated saving: **${f.monthly_savings_usd:,.2f}/month** (estimate)")
+    if out and f.estimate_basis:
+        out.append(f"Estimate basis: {f.estimate_basis}")
+    return out
+
+
 def render_markdown(ctx: RepoContext, findings: List[Finding], warnings: List[str] | None = None) -> str:
     """Build a full Markdown report (title, repo info, findings by severity, next actions)."""
     groups = _group(findings)
@@ -71,6 +83,7 @@ def render_markdown(ctx: RepoContext, findings: List[Finding], warnings: List[st
             lines.append(f"- Severity: **{f.severity}**")
             if loc:
                 lines.append(f"- {loc}")
+            lines.extend(f"- {line}" for line in estimate_lines(f))
             if f.evidence:
                 lines.append("")
                 lines.append("**Evidence**")
