@@ -665,10 +665,16 @@ def _ecs_findings(res: Resource, template_path: Path) -> List[Finding]:
     containers = res.properties.get("ContainerDefinitions")
     if not isinstance(containers, list):
         return []
+    # Windows containers support neither User nor ReadonlyRootFilesystem. A family the scan
+    # cannot read may be Windows, so those two checks are skipped then too.
     platform = res.properties.get("RuntimePlatform")
-    family = platform.get("OperatingSystemFamily") if isinstance(platform, dict) else None
-    # Windows containers support neither User nor ReadonlyRootFilesystem.
-    windows = type(family) is str and family.upper().startswith("WINDOWS")
+    if platform is None:
+        family: Any = None
+    elif isinstance(platform, dict) and not _is_intrinsic(platform):
+        family = platform.get("OperatingSystemFamily")
+    else:
+        family = {"unknown": platform}
+    windows = family is not None and (type(family) is not str or family.upper().startswith("WINDOWS"))
     privileged: list[str] = []
     writable: list[str] = []
     root: list[str] = []

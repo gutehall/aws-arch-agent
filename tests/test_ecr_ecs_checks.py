@@ -5,7 +5,7 @@ from pathlib import Path
 from aws_arch_agent.models import Finding
 from aws_arch_agent.rules.cf_template import CF_COVERS_STATIC, run_cf_rules_from_paths, run_resource_checks
 from aws_arch_agent.rules.fix_snippets import attach_fixes
-from aws_arch_agent.rules.terraform_model import resources_from_terraform
+from aws_arch_agent.rules.terraform_model import load_plan_values, resources_from_terraform
 
 ECR = {"CF-ECR-001", "CF-ECR-002", "CF-ECR-003"}
 ECS = {"CF-ECS-001", "CF-ECS-002", "CF-ECS-003"}
@@ -80,12 +80,24 @@ def test_cloudformation_ecs(tmp_path: Path) -> None:
                           "ReadonlyRootFilesystem": {"Ref": "R"}, "User": {"Ref": "U"}}),
         "Windows": _task({"Name": "win", "Image": "x"},
                          RuntimePlatform={"OperatingSystemFamily": "WINDOWS_SERVER_2022_CORE"}),
+        # A family from a parameter may be Windows: User and ReadonlyRootFilesystem are not judged.
+        "FamilyParam": _task({"Name": "win", "Image": "x", "Privileged": True},
+                             RuntimePlatform={"OperatingSystemFamily": {"Ref": "Family"}}),
+        "PlatformIf": _task({"Name": "win", "Image": "x"},
+                            RuntimePlatform={"Fn::If": ["Win", {"OperatingSystemFamily": "WINDOWS_SERVER_2022_CORE"},
+                                                        {"Ref": "AWS::NoValue"}]}),
+        "Linux": _task({"Name": "lin", "Image": "x"}, RuntimePlatform={"OperatingSystemFamily": "LINUX"}),
+        "Intrinsic": {"Type": "AWS::ECS::TaskDefinition", "Properties": {
+            "ContainerDefinitions": {"Fn::If": ["A", [], []]}}},
     })
     assert _found(findings) == {
         ("Privileged", "CF-ECS-001"),
         ("Writable", "CF-ECS-002"),
         ("Root", "CF-ECS-003"),
         ("NoUser", "CF-ECS-003"),
+        ("FamilyParam", "CF-ECS-001"),
+        ("Linux", "CF-ECS-002"),
+        ("Linux", "CF-ECS-003"),
     }
     by = _by(findings)
     assert by[("Privileged", "CF-ECS-001")].severity == "High"
@@ -207,6 +219,33 @@ resource "aws_ecs_task_definition" "from_file" {
   container_definitions = file("containers.json")
 }
 
+resource "aws_ecs_task_definition" "int_root" {
+  family = "int"
+  container_definitions = jsonencode([{ name = "app", image = "x", readonlyRootFilesystem = true, user = 0 }])
+}
+
+resource "aws_ecr_repository" "dynamic_scan" {
+  name                 = "dyn"
+  image_tag_mutability = "IMMUTABLE"
+  dynamic "image_scanning_configuration" {
+    for_each = var.scan ? [1] : []
+    content {
+      scan_on_push = true
+    }
+  }
+}
+
+resource "aws_ecs_task_definition" "dynamic_platform" {
+  family = "dyn"
+  container_definitions = jsonencode([{ name = "app", image = "x" }])
+  dynamic "runtime_platform" {
+    for_each = var.platforms
+    content {
+      operating_system_family = runtime_platform.value
+    }
+  }
+}
+
 resource "aws_ecs_task_definition" "windows" {
   family = "windows"
   container_definitions = jsonencode([{ name = "win", image = "x" }])
@@ -235,8 +274,11 @@ def test_terraform_ecr_and_ecs(tmp_path: Path) -> None:
         ("aws_ecs_task_definition.risky", "CF-ECS-002"),
         ("aws_ecs_task_definition.risky", "CF-ECS-003"),
         ("aws_ecs_task_definition.json_string", "CF-ECS-003"),
+        ("aws_ecs_task_definition.int_root", "CF-ECS-003"),
+        ("aws_ecr_repository.dynamic_scan", "CF-ECR-003"),
     }
     assert all(f.line for f in findings)
+    assert _by(findings)[("aws_ecs_task_definition.int_root", "CF-ECS-003")].severity == "Medium"
     by = _by(findings)
     assert by[("aws_ecs_task_definition.risky", "CF-ECS-002")].recommendation.startswith(
         "ReadonlyRootFilesystem is not true on app.")
@@ -266,3 +308,22 @@ def test_terraform_fixes(tmp_path: Path) -> None:
     assert "repository = aws_ecr_repository.plain.name" in code[("aws_ecr_repository.plain", "CF-ECR-003")]
     assert 'user = "1000"' in code[("aws_ecs_task_definition.risky", "CF-ECS-003")]
     assert all("In CDK" not in f.recommendation for f in findings)
+
+
+def test_terraform_plan_fills_container_definitions(tmp_path: Path) -> None:
+    """The plan writes container_definitions as a JSON string; a var.* image is filled in."""
+    (tmp_path / "main.tf").write_text("""\
+resource "aws_ecs_task_definition" "planned" {
+  family = "planned"
+  container_definitions = jsonencode([{ name = "app", image = var.image, user = var.user }])
+}
+""", encoding="utf-8")
+    plan_path = tmp_path / "plan.json"
+    plan_path.write_text(json.dumps({"planned_values": {"root_module": {"resources": [{
+        "address": "aws_ecs_task_definition.planned", "mode": "managed",
+        "values": {"family": "planned", "container_definitions": json.dumps(
+            [{"name": "app", "image": "nginx", "user": "root", "readonlyRootFilesystem": True}])},
+    }]}}}), encoding="utf-8")
+    resources = resources_from_terraform(tmp_path, plan_values=load_plan_values(plan_path))
+    findings = [f for f in run_resource_checks(resources, tmp_path) if f.id in IDS]
+    assert _found(findings) == {("aws_ecs_task_definition.planned", "CF-ECS-003")}

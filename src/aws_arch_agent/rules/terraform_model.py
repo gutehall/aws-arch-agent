@@ -1031,6 +1031,8 @@ _ADAPTERS: dict[str, Callable[[dict], dict]] = {
 # Nested block name -> CloudFormation property it feeds. A `dynamic` block of that name
 # is built from input the scan cannot see.
 _BLOCK_PROPERTY: dict[str, str] = {
+    "image_scanning_configuration": "ImageScanningConfiguration",
+    "runtime_platform": "RuntimePlatform",
     "versioning": "VersioningConfiguration",
     "server_side_encryption_configuration": "BucketEncryption",
     "logging": "LoggingConfiguration",
