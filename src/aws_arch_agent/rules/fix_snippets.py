@@ -860,16 +860,16 @@ _TERRAFORM["CF-PAR-001"] = _TF_SECRET_REFERENCE
 _TERRAFORM["CF-PAR-002"] = _TF_SECRET_REFERENCE
 # Terraform variables (DM3-553): evidence "var.<name> (variable)".
 _TERRAFORM["CF-PAR-001:variable"] = """variable "$tf_name" {
-  type      = string
-  sensitive = true # keep the other arguments as they are
+  # keep the other arguments (type, description, validation) as they are
+  sensitive = true
 }
 
 # Better: no variable at all. Read the secret where it is used:
 # data "aws_secretsmanager_secret_version" "$tf_name" { secret_id = "my-secret" }"""
 _TERRAFORM["CF-PAR-002:variable"] = """variable "$tf_name" {
-  type      = string
+  # keep type, description and validation; remove the default
   sensitive = true
-  # no default: the value comes from the environment (TF_VAR_$tf_name) or a secret store
+  # the value comes from the environment (TF_VAR_$tf_name) or a secret store
 }
 
 # Better: no variable at all. Read the secret where it is used:

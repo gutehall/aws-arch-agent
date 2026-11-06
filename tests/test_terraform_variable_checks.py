@@ -55,6 +55,27 @@ variable "region" {
   default = "eu-north-1"
 }
 
+variable "max_tokens" {
+  type    = number
+  default = 4096
+}
+
+variable "app_token_limit" {
+  type    = number
+  default = 10
+}
+
+variable "admin_password" {
+  type      = string
+  sensitive = true
+  default   = null
+}
+
+variable "session_secret" {
+  type    = string
+  default = null
+}
+
 resource "aws_s3_bucket" "b" {
   bucket = "b"
 }
@@ -78,6 +99,7 @@ def test_secret_variables(tmp_path: Path) -> None:
         ("var.signing_key", "CF-PAR-002"),     # sensitive does not hide a committed default
         ("var.client_secret", "CF-PAR-001"),   # an empty default commits nothing
         ("var.db_credentials", "CF-PAR-002"),  # a map default with values
+        ("var.session_secret", "CF-PAR-001"),  # default = null is no default
     }
     by = {f.evidence.split(" ")[0]: f for f in findings}
     assert by["var.db_password"].severity == "Medium"
@@ -91,9 +113,38 @@ def test_secret_variables(tmp_path: Path) -> None:
 
 
 def test_variables_are_read_from_tf_json(tmp_path: Path) -> None:
-    doc = {"variable": {"db_password": {"type": "string"}, "region": {"default": "x"}}}
+    # region's default text equals the secret variable's name: the line is the key's.
+    doc = {"variable": {"region": {"default": "db_password"}, "db_password": {"type": "string"}}}
     findings = _findings(tmp_path, json.dumps(doc, indent=2), "variables.tf.json")
     assert _found(findings) == {("var.db_password", "CF-PAR-001")}
+    assert findings[0].line == 6
+
+
+def test_expressions_are_not_judged() -> None:
+    """Terraform allows neither in these arguments, but a non-literal value is not reported."""
+    from aws_arch_agent.rules.terraform_model import TfVariable, _Expr
+
+    found = terraform_variable_findings([
+        TfVariable("db_password", _Expr("${random_password.db.result}"), True, "v.tf", 1),
+        TfVariable("api_key", NO_DEFAULT, _Expr("${var.hide}"), "v.tf", 5),
+    ])
+    assert found == []
+
+
+def test_cloudformation_count_parameters_are_not_secrets(tmp_path: Path) -> None:
+    from aws_arch_agent.rules.cf_template import run_cf_rules_from_paths
+
+    path = tmp_path / "t.json"
+    path.write_text(json.dumps({"Parameters": {
+        "MaxTokens": {"Type": "Number", "Default": 4096},
+        "MinimumPasswordAge": {"Type": "Number", "Default": 1},
+        "ApiToken": {"Type": "String"},
+        "MinioSecretKey": {"Type": "String"},
+        "MAX_API_TOKENS": {"Type": "Number"},
+    }, "Resources": {}}), encoding="utf-8")
+    found = {f.evidence.split(" ")[0] for f in run_cf_rules_from_paths([path], repo_path=tmp_path)
+             if f.id in IDS}
+    assert found == {"ApiToken", "MinioSecretKey"}
 
 
 def test_variable_records(tmp_path: Path) -> None:
@@ -121,3 +172,16 @@ def test_terraform_scan_reports_variables(tmp_path: Path) -> None:
     assert ("var.db_password", "CF-PAR-001", "main.tf") in rows
     excluded, _ = _scan_terraform(tmp_path, [tmp_path], None, ["CF-PAR-001"])
     assert not any(f.id == "CF-PAR-001" for f in excluded)
+
+
+def test_child_module_variables_are_not_read(tmp_path: Path) -> None:
+    child = tmp_path / "modules" / "db"
+    child.mkdir(parents=True)
+    (child / "variables.tf").write_text('variable "db_password" {\n  type = string\n}\n', encoding="utf-8")
+    (tmp_path / "main.tf").write_text(
+        'module "db" {\n  source      = "./modules/db"\n  db_password = var.root_password\n}\n\n'
+        'variable "root_password" {\n  type      = string\n  sensitive = true\n}\n',
+        encoding="utf-8",
+    )
+    findings, _ = _scan_terraform(tmp_path, [tmp_path], None, None)
+    assert not any(f.id in IDS for f in findings)

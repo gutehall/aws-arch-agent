@@ -2275,9 +2275,12 @@ _SECRET_NAME = re.compile(
 _SECRET_REFERENCE = re.compile(
     r"(?:arn|name|id|length|policy|ttl|expiry|expiration|rotation|version|path|prefix|type|"
     r"enabled|count|url|uri|header|duration|days|audience|issuer|complexity|validity|format|"
-    r"symbols|numbers|uppercase|lowercase|require\w*)$",
+    r"symbols|numbers|uppercase|lowercase|require\w*|tokens|limit|size)$",
     re.IGNORECASE,
 )
+# Counts and limits named after a secret word, such as MaxTokens or min_password_age.
+# Case-sensitive, so the next word must start a new word: MinioSecretKey is a secret.
+_SECRET_LIMIT = re.compile(r"^(?:max|Max|MAX|min|Min|MIN)(?:imum|IMUM)?(?:_|[A-Z0-9])")
 
 
 def _parameter_findings(template_path: Path, doc: dict) -> List[Finding]:
@@ -2342,14 +2345,18 @@ def _parameter_findings(template_path: Path, doc: dict) -> List[Finding]:
 
 
 def _is_secret_name(name: str) -> bool:
-    return bool(_SECRET_NAME.search(name)) and not _SECRET_REFERENCE.search(name)
+    return (
+        bool(_SECRET_NAME.search(name))
+        and not _SECRET_REFERENCE.search(name)
+        and not _SECRET_LIMIT.match(name)
+    )
 
 
 def _committed(default: Any) -> bool:
     """A default that puts a value in the repo: a non-empty string, a number, or a
     non-empty list or map."""
-    if isinstance(default, bool):
-        return False
+    if isinstance(default, bool) or (isinstance(default, str) and type(default) is not str):
+        return False  # an expression (Terraform allows none here), not a literal value
     if isinstance(default, str):
         return default != ""
     if isinstance(default, (int, float)):
@@ -2372,7 +2379,8 @@ def terraform_variable_findings(variables: List[TfVariable]) -> List[Finding]:
     for var in variables:
         if not _is_secret_name(var.name):
             continue
-        sensitive = _flag(var.sensitive) is True
+        sensitive_flag = _flag(var.sensitive)
+        sensitive = sensitive_flag is True
         evidence = f"var.{var.name} (variable)"
         if _committed(var.default):
             out.append(Finding(
@@ -2390,7 +2398,7 @@ def terraform_variable_findings(variables: List[TfVariable]) -> List[Finding]:
                     + f". Remove the default and rotate the secret. {use_instead}"
                 ),
             ))
-        elif not sensitive:
+        elif sensitive_flag is False:  # unset or false; an expression is not judged
             out.append(Finding(
                 id="CF-PAR-001",
                 title="Secret Terraform variable is not sensitive",

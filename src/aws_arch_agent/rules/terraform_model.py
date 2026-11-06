@@ -293,8 +293,9 @@ NO_DEFAULT = _Unresolved()
 
 def _variable_line(text: str, name: str, is_json: bool) -> int | None:
     if is_json:
-        at = text.find('"variable"')
-        at = text.find(f'"{name}"', at) if at >= 0 else -1
+        start = text.find('"variable"')
+        match = re.compile(rf'"{re.escape(name)}"\s*:').search(text, start) if start >= 0 else None
+        at = match.start() if match else -1
     else:
         match = re.search(rf'^\s*variable\s+"?{re.escape(name)}"?\s*\{{', text, re.MULTILINE)
         at = match.start() + len(match.group(0)) - len(match.group(0).lstrip()) if match else -1
