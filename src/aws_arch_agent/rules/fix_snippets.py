@@ -859,6 +859,28 @@ resource "aws_db_instance" "db" {
 _TERRAFORM["CF-PAR-001"] = _TF_SECRET_REFERENCE
 _TERRAFORM["CF-PAR-002"] = _TF_SECRET_REFERENCE
 
+# Stateful resources deleted with the stack (DM3-539).
+_CLOUDFORMATION.update({
+    "CF-DEL-001": """$name:
+  Type: $type
+  DeletionPolicy: Retain
+  UpdateReplacePolicy: Retain
+  Properties:
+    # keep the properties as they are
+    {}""",
+})
+for _rds in ("AWS::RDS::DBInstance", "AWS::RDS::DBCluster"):
+    _CLOUDFORMATION[f"CF-DEL-001:{_rds}"] = _CLOUDFORMATION["CF-DEL-001"].replace(
+        "Retain", "Snapshot")
+_TERRAFORM.update({
+    "CF-DEL-001": """resource "$tf_type" "$tf_name" {
+  # keep the other arguments as they are
+  lifecycle { # one lifecycle block: add this line to an existing one
+    prevent_destroy = true
+  }
+}""",
+})
+
 # Public IPs (DM3-534).
 _CLOUDFORMATION.update({
     "CF-EC2-002": """$name:

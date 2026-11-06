@@ -1177,7 +1177,23 @@ def _to_resource(block: _Block) -> Resource:
         line=block.line,
         source_type=block.type,
         unresolved=unresolved,
+        policies=_lifecycle_policies(block.body),
     )
+
+
+def _lifecycle_policies(body: dict) -> dict:
+    """lifecycle.prevent_destroy as CloudFormation policies: true blocks destroy and replace."""
+    lifecycle = _first_block(body, "lifecycle")
+    if "prevent_destroy" not in lifecycle:
+        return {}
+    keep = _v(lifecycle, "prevent_destroy")
+    if keep is True:
+        value: Any = "Retain"
+    elif keep is False:
+        value = "Delete"
+    else:
+        value = UNRESOLVED
+    return {"DeletionPolicy": value, "UpdateReplacePolicy": value}
 
 
 def _merge_s3_parts(blocks: list[_Block], resources: dict[str, Resource]) -> None:
