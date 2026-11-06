@@ -63,6 +63,7 @@ TF_TYPE_TO_CANONICAL: dict[str, str] = {
     "aws_apigatewayv2_stage": "apigatewayv2_stage",
     "aws_autoscaling_group": "autoscaling_group",
     "aws_launch_configuration": "launch_configuration",
+    "aws_appautoscaling_target": "scalable_target",
     "aws_ecs_service": "ecs_service",
     "aws_eks_cluster": "eks_cluster",
     "aws_cloudfront_distribution": "cloudfront_distribution",
@@ -106,6 +107,8 @@ _S3_PARTS: dict[str, str] = {
     "aws_s3_bucket_logging": "LoggingConfiguration",
     # Not a CloudFormation bucket property: the policy document, read by CF-S3-005.
     "aws_s3_bucket_policy": "BucketPolicy",
+    "aws_s3_bucket_lifecycle_configuration": "LifecycleConfiguration",
+    "aws_s3_bucket_intelligent_tiering_configuration": "IntelligentTieringConfigurations",
 }
 
 # var/local are module inputs; each/count/self differ per instance. None is known statically.
@@ -494,6 +497,8 @@ def _s3_bucket(body: dict) -> dict:
     logging = _first_block(body, "logging")
     if logging:
         props["LoggingConfiguration"] = {"DestinationBucketName": _ref(logging, "target_bucket")}
+    if _blocks(body, "lifecycle_rule"):
+        props["LifecycleConfiguration"] = _lifecycle_rules(_blocks(body, "lifecycle_rule"))
     return props
 
 
@@ -520,7 +525,36 @@ def _s3_part(part_type: str, body: dict) -> Any:
         return _s3_encryption(body)
     if part_type == "aws_s3_bucket_policy":
         return body.get("policy", UNRESOLVED)  # a document once _resolve_iam has run
+    if part_type == "aws_s3_bucket_lifecycle_configuration":
+        return _lifecycle_rules(_blocks(body, "rule"))
+    if part_type == "aws_s3_bucket_intelligent_tiering_configuration":
+        return [{"Status": _known(_v(body, "status")) or "Enabled"}]
     return {"DestinationBucketName": _ref(body, "target_bucket")}
+
+
+def _lifecycle_rules(rules: list[dict]) -> Any:
+    """Lifecycle rules in CloudFormation shape: status and the storage classes they move to.
+
+    A dynamic transition block, or a status from a variable, makes the whole configuration
+    UNRESOLVED: the S3 storage checks then do not judge the bucket.
+    """
+    out = []
+    for rule in rules:
+        if {"transition", "noncurrent_version_transition"} & _dynamic_names(rule):
+            return UNRESOLVED
+        status = _v(rule, "status")
+        enabled = _v(rule, "enabled")  # inline lifecycle_rule (provider < v4)
+        if status is UNRESOLVED or enabled is UNRESOLVED:
+            return UNRESOLVED
+        if status is None and enabled is not None:
+            status = "Enabled" if enabled is True else "Disabled"
+        transitions = [
+            {"StorageClass": _known(_v(t, "storage_class"))}
+            for key in ("transition", "noncurrent_version_transition")
+            for t in _blocks(rule, key)
+        ]
+        out.append({"Status": status or "Enabled", "Transitions": transitions})
+    return {"Rules": out}
 
 
 def _db(body: dict) -> dict:
@@ -589,9 +623,15 @@ def _launch_template(body: dict) -> dict:
             encrypted, snapshot = _v(ebs, "encrypted"), _ref(ebs, "snapshot_id")
             if encrypted is UNRESOLVED or _contains_unresolved(snapshot):
                 continue
+            volume_type = _v(ebs, "volume_type")
             devices.append({
                 "DeviceName": name if type(name) is str else None,
-                "Ebs": {"Encrypted": encrypted, "SnapshotId": snapshot},
+                "Ebs": {
+                    "Encrypted": encrypted, "SnapshotId": snapshot,
+                    # Unknown type stays non-literal, so it hides only the gp2 check.
+                    "VolumeType": _Expr("<unresolved>") if volume_type is UNRESOLVED else volume_type,
+                    "VolumeSize": _known(_v(ebs, "volume_size")),
+                },
             })
     if devices:
         props["BlockDeviceMappings"] = devices
@@ -1040,6 +1080,9 @@ def _dynamodb(body: dict) -> dict:
     sse = _first_block(body, "server_side_encryption")
     if sse:
         props["SSESpecification"] = {"SSEEnabled": _v(sse, "enabled")}
+    name = body.get("name")
+    if type(name) is str:
+        props["TableName"] = name
     # Priced for the stack total. Terraform's default billing mode is PROVISIONED too.
     _set(props, "BillingMode", _v(body, "billing_mode"))
     if "read_capacity" in body or "write_capacity" in body:
@@ -1114,6 +1157,15 @@ def _asg(body: dict) -> dict:
     if types:
         props["OverrideInstanceTypes"] = types
     return props
+
+
+def _scalable_target(body: dict) -> dict:
+    """aws_appautoscaling_target: which service and resource it scales (CF-DDB-003)."""
+    return {
+        "ServiceNamespace": _known(_v(body, "service_namespace")),
+        "ResourceId": _known(_ref(body, "resource_id")),
+        "ScalableDimension": _known(_v(body, "scalable_dimension")),
+    }
 
 
 def _launch_configuration(body: dict) -> dict:
@@ -1192,6 +1244,7 @@ _ADAPTERS: dict[str, Callable[[dict], dict]] = {
     "aws_kms_key": _kms_key,
     "aws_lambda_function": _lambda,
     "aws_dynamodb_table": _dynamodb,
+    "aws_appautoscaling_target": _scalable_target,
     "aws_cloudwatch_log_group": _log_group,
     "aws_sqs_queue": _sqs,
     "aws_api_gateway_stage": _api_stage,
@@ -1244,6 +1297,7 @@ _ADAPTERS: dict[str, Callable[[dict], dict]] = {
 # Nested block name -> CloudFormation property it feeds. A `dynamic` block of that name
 # is built from input the scan cannot see.
 _BLOCK_PROPERTY: dict[str, str] = {
+    "lifecycle_rule": "LifecycleConfiguration",
     "password_policy": "Policies",
     "user_pool_add_ons": "UserPoolAddOns",
     "image_scanning_configuration": "ImageScanningConfiguration",

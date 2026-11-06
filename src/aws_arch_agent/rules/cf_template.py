@@ -50,6 +50,9 @@ CF_COVERS_STATIC: dict[str, tuple[str, ...]] = {
     "CF-MSK-001": ("SEC-044",),
     "CF-EBS-002": ("COST-008",),
     "CF-GEN-001": ("SUST-007",),
+    "CF-S3-006": ("COST-013",),
+    "CF-S3-007": ("COST-007",),
+    "CF-DDB-003": ("COST-003",),
     "CF-EIP-001": ("COST-012",),
     "CF-SM-001": ("SEC-015",),
     "CF-COG-001": ("SEC-034",),
@@ -179,7 +182,7 @@ _PER_RESOURCE_TYPES = frozenset({
     "opensearch_domain", "redshift_cluster", "docdb_cluster", "neptune_cluster", "msk_cluster",
     "cloudfront_distribution", "subnet", "ecs_task_definition",
     "secretsmanager_secret", "cognito_user_pool", "eip", "launch_configuration",
-    "elasticache_cluster",
+    "elasticache_cluster", "scalable_target",
 })
 
 
@@ -234,6 +237,9 @@ CHECK_PROPERTIES: dict[str, frozenset[str]] = {
         "CF-EIP-001": {"InstanceId", "NetworkInterfaceId", "PublicIpv4Pool"},
         "CF-TAG-001": set(),  # tag_policy reads Tags and skips unreadable ones itself
         "CF-GEN-001": set(),  # reads only literal types; an unknown one is absent, not judged
+        "CF-S3-006": {"LifecycleConfiguration"},
+        "CF-S3-007": {"LifecycleConfiguration", "IntelligentTieringConfigurations"},
+        "CF-DDB-003": {"BillingMode"},
         "CF-COG-001": {"MfaConfiguration"},
         "CF-COG-002": {"Policies"},
         "CF-COG-003": {"UserPoolAddOns", "UserPoolTier"},
@@ -307,6 +313,7 @@ CF_THEMES: dict[str, tuple[str, ...]] = {
     "CF-RDS-001": (_DP,), "CF-RDS-002": (_RES, _DP), "CF-RDS-003": (_RES,), "CF-RDS-004": (_NET,),
     "CF-RDS-005": (_RES, _DP), "CF-RP-001": (_ID, _NET), "CF-RS-001": (_DP,),
     "CF-S3-001": (_NET, _DP), "CF-S3-002": (_DP,), "CF-S3-003": (_RES, _DP), "CF-S3-004": (_OBS,),
+    "CF-S3-006": (_F, _DP), "CF-S3-007": (_F,), "CF-DDB-003": (_F, _RES),
     "CF-S3-005": (_DP, _NET), "CF-SG-001": (_NET,), "CF-SM-001": (_DP, _ID), "CF-SNS-001": (_DP,),
     "CF-SQS-001": (_DP,), "CF-SQS-002": (_RES,),
     "CF-SUST-001": (_SUS, _F), "CF-SUST-002": (_SUS, _F), "CF-SUST-003": (_SUS, _F),
@@ -710,6 +717,148 @@ def _eip_finding(res: Resource, template_path: Path) -> Finding | None:
         ),
     )
     return estimates.apply(finding, estimates.idle_public_ipv4())
+
+
+def _autoscaled_tables(resources: List[Resource]) -> tuple[set[str], bool]:
+    """DynamoDB tables an Application Auto Scaling target in this template scales.
+
+    A target names its table in ResourceId (table/<name>): by Ref, Terraform address or the
+    table's literal name. The second value is True when a DynamoDB target names something
+    the scan cannot tie to a table: it may then scale any of them.
+    """
+    tables = [r for r in resources if r.type == "dynamodb_table"]
+    covered: set[str] = set()
+    unlinked = False
+    for r in resources:
+        if r.type != "scalable_target":
+            continue
+        namespace = r.properties.get("ServiceNamespace")
+        if type(namespace) is str and namespace != "dynamodb":
+            continue
+        target = r.properties.get("ResourceId")
+        text = target if type(target) is str else json.dumps(target, default=str)
+        if "/index/" in text:
+            continue  # scales a global secondary index, not the table's own capacity
+        hits = {
+            t.name for t in tables
+            if _references(text, t.name) or t.name in r.references
+            or (type(t.properties.get("TableName")) is str
+                and re.search(rf"table/{re.escape(t.properties['TableName'])}(?:$|[\"/])", text) is not None)
+        }
+        covered |= hits
+        unlinked = unlinked or not hits
+    return covered, unlinked
+
+
+def _autoscaling_finding(res: Resource, template_path: Path) -> Finding | None:
+    """CF-DDB-003: provisioned capacity that no scaling target in this template adjusts."""
+    if "BillingMode" in res.unresolved or res.properties.get("BillingMode", "PROVISIONED") != "PROVISIONED":
+        return None
+    finding = Finding(
+        id="CF-DDB-003",
+        title="DynamoDB provisioned capacity has no autoscaling",
+        severity="Medium",
+        category="Cost Optimization",
+        file=res.file or str(template_path),
+        line=res.line,
+        evidence=f"{res.name} ({res.source_type})",
+        recommendation=(
+            "BillingMode is PROVISIONED and no AWS::ApplicationAutoScaling::ScalableTarget "
+            "(Terraform aws_appautoscaling_target) in this template scales the table, so it pays "
+            "for its peak capacity all day and throttles above it. Add read and write scaling "
+            "targets with target-tracking policies, or use PAY_PER_REQUEST for spiky traffic. "
+            "In CDK: table.autoScaleReadCapacity(...).scaleOnUtilization(...)."
+        ),
+    )
+    return estimates.apply(finding, estimates.dynamodb_provisioned(res.properties))
+
+
+def _s3_storage_findings(res: Resource, template_path: Path) -> List[Finding]:
+    """CF-S3-006 (no lifecycle rules) and CF-S3-007 (nothing moves to a cheaper class)."""
+    props = res.properties
+    lifecycle = props.get("LifecycleConfiguration")
+    tiering = props.get("IntelligentTieringConfigurations")
+    def make(fid: str, title: str, recommendation: str) -> Finding:
+        return Finding(id=fid, title=title, severity="Low", category="Cost Optimization",
+                       file=res.file or str(template_path), line=res.line,
+                       evidence=f"{res.name} ({res.source_type})", recommendation=recommendation)
+
+    if lifecycle is None:
+        return [make(
+            "CF-S3-006", "S3 bucket has no lifecycle rules",
+            (
+                "Objects stay in S3 Standard until someone deletes them. Add a "
+                "LifecycleConfiguration that expires old objects and versions, and moves data "
+                "read rarely to a cheaper class (Standard-IA, Glacier Instant Retrieval), or to "
+                "INTELLIGENT_TIERING when access is unknown. In CDK: lifecycleRules."
+            ),
+        )]
+    rules = lifecycle.get("Rules") if isinstance(lifecycle, dict) and not _is_intrinsic(lifecycle) else None
+    if not isinstance(rules, list):
+        return []
+    if any(not isinstance(rule, dict) or _is_intrinsic(rule) for rule in rules):
+        return []  # a rule from Fn::If: not judged
+    enabled = [rule for rule in rules if rule.get("Status") != "Disabled"]
+    if not enabled:
+        return [make(
+            "CF-S3-006", "S3 bucket has no lifecycle rules",
+            "Every lifecycle rule is Disabled, so objects stay in S3 Standard until someone "
+            "deletes them. Enable a rule that expires old objects and versions, and moves data "
+            "read rarely to a cheaper class, or to INTELLIGENT_TIERING when access is unknown. "
+            "In CDK: lifecycleRules.",
+        )]
+    if tiering:
+        return []
+    moves = any(
+        rule.get("Transitions") or rule.get("NoncurrentVersionTransitions")
+        or rule.get("Transition") or rule.get("NoncurrentVersionTransition")
+        for rule in enabled
+    )
+    if moves:
+        return []
+    return [make(
+        "CF-S3-007", "S3 bucket never moves objects to a cheaper storage class",
+        (
+            "The lifecycle rules only expire objects; nothing moves to a cheaper class. For data "
+            "with unknown or changing access, add a transition to INTELLIGENT_TIERING (or an "
+            "IntelligentTieringConfiguration); for data read rarely, to Standard-IA or Glacier "
+            "Instant Retrieval. Intelligent-Tiering does not pay off for objects under 128 KB. "
+            "In CDK: transitions with storageClass: s3.StorageClass.INTELLIGENT_TIERING."
+        ),
+    )]
+
+
+def _gp2_block_devices(res: Resource, template_path: Path) -> Finding | None:
+    """CF-EBS-002 on a launch template: block devices set to gp2. An unset type comes from
+    the AMI's mapping, so only an explicit gp2 is reported."""
+    data = res.properties.get("LaunchTemplateData")
+    mappings = res.properties.get("BlockDeviceMappings")  # Terraform keeps them apart
+    if mappings is None and isinstance(data, dict):
+        mappings = data.get("BlockDeviceMappings")
+    devices = []
+    for i, item in enumerate(mappings if isinstance(mappings, list) else []):
+        ebs = item.get("Ebs") if isinstance(item, dict) else None
+        if isinstance(ebs, dict) and ebs.get("VolumeType") == "gp2":
+            name = item.get("DeviceName")
+            devices.append(name if type(name) is str else f"device {i + 1}")
+    if not devices:
+        return None
+    return Finding(
+        id="CF-EBS-002",
+        title="Launch template block device uses gp2 instead of gp3",
+        severity="Low",
+        category="Cost Optimization",
+        file=res.file or str(template_path),
+        line=res.line,
+        evidence=f"{res.name} ({res.source_type})",
+        recommendation=(
+            f"VolumeType is gp2 on {', '.join(devices)}. gp3 costs about 20% less per GB and "
+            "includes 3,000 IOPS and 125 MB/s at any size. Set VolumeType to gp3 on each device "
+            "(Iops over 1,000 GiB to keep the gp2 baseline). Every instance the template "
+            "launches gets these volumes. In CDK: volume: ec2.BlockDeviceVolume.ebs(size, "
+            "{ volumeType: ec2.EbsDeviceVolumeType.GP3 })."
+        ),
+    )
 
 
 def _waf_finding(res: Resource, template_path: Path) -> Finding | None:
@@ -1646,6 +1795,7 @@ def run_resource_checks(
     waf_covered, waf_unlinked = _waf_coverage(resources)
     rotated, rotation_unlinked = _rotation_coverage(resources)
     eips_in_use = _eips_in_use(resources)
+    autoscaled, autoscaling_unlinked = _autoscaled_tables(resources)
     launch_templates_without_spot = 0
     first_lt_without_spot: Resource | None = None
     for r in resources:
@@ -1971,6 +2121,18 @@ def run_resource_checks(
                     findings.extend(_ecr_findings(res, template_path))
                 if ctype == "ecs_task_definition":
                     findings.extend(_ecs_findings(res, template_path))
+
+                # --- S3 storage classes, DynamoDB autoscaling, launch template gp2 (DM3-548) ---
+                if ctype == "s3_bucket":
+                    findings.extend(_s3_storage_findings(res, template_path))
+                if ctype == "dynamodb_table" and not autoscaling_unlinked and logical_id not in autoscaled:
+                    ddb = _autoscaling_finding(res, template_path)
+                    if ddb is not None:
+                        findings.append(ddb)
+                if ctype == "launch_template":
+                    gp2_devices = _gp2_block_devices(res, template_path)
+                    if gp2_devices is not None:
+                        findings.append(gp2_devices)
 
                 # --- Previous-generation instance families (DM3-547) ---
                 findings.extend(generations.findings(res, template_path))

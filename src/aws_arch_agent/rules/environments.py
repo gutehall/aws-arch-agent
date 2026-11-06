@@ -47,6 +47,8 @@ RULE_POLICY: dict[str, dict[Environment, Severity | None]] = {
     "CF-DEL-001": {"dev": None, "staging": None},  # retain on delete
     # Never-expiring logs: CF-ENV-005 asks for 30 days or less there instead of 30-365.
     "CF-CW-001": {"dev": None, "staging": None},
+    # DynamoDB autoscaling: CF-ENV-006 says on demand there instead.
+    "CF-DDB-003": {"dev": None, "staging": None},
     "CF-RDS-002": {"dev": "Low"},          # backup retention
     "CF-DDB-001": {"dev": "Low"},          # point-in-time recovery
     "CF-S3-003": {"dev": "Low"},           # versioning
