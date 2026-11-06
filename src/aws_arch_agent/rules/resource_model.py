@@ -42,6 +42,7 @@ CF_TYPE_TO_CANONICAL: dict[str, str] = {
     # WAF associations attach a web ACL to an ALB or API Gateway stage (CF-WAF-001).
     "AWS::WAFv2::WebACLAssociation": "waf_association",
     "AWS::WAFRegional::WebACLAssociation": "waf_association",
+    "AWS::CloudFront::OriginAccessControl": "cloudfront_origin_access_control",
     "AWS::ApiGateway::RestApi": "api_gateway_rest_api",
     "AWS::ApiGateway::Stage": "api_gateway_stage",
     "AWS::ApiGatewayV2::Api": "apigatewayv2_api",

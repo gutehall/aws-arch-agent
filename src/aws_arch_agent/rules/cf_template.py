@@ -202,6 +202,7 @@ CHECK_PROPERTIES: dict[str, frozenset[str]] = {
         "CF-CF-001": {"DistributionConfig"},
         "CF-CF-002": {"DistributionConfig"},
         "CF-CF-003": {"DistributionConfig"},
+        "CF-CF-004": {"DistributionConfig"},
         "CF-WAF-001": {"Type", "Scheme"},
         "CF-PERF-001": {"Architectures"},
         "CF-DDB-001": {"PointInTimeRecoverySpecification"},
@@ -287,7 +288,8 @@ _CLOUDFRONT_TLS_MIN = _CLOUDFRONT_TLS.index("TLSv1.2_2021")
 
 
 def _cloudfront_findings(res: Resource, template_path: Path) -> List[Finding]:
-    """CF-CF-001 (allow-all behavior), CF-CF-002 (old TLS policy), CF-CF-003 (no WebACLId).
+    """CF-CF-001 (allow-all behavior), CF-CF-002 (old TLS policy), CF-CF-003 (no WebACLId),
+    CF-CF-004 (S3 origin without Origin Access Control).
 
     Only literal values are judged. The default *.cloudfront.net certificate is not given
     a TLS finding: its minimum protocol cannot be set.
@@ -332,7 +334,86 @@ def _cloudfront_findings(res: Resource, template_path: Path) -> List[Finding]:
         add("CF-CF-003", "Low", "CloudFront distribution has no WAF web ACL",
             "Set WebACLId to an AWS WAF web ACL (scope CLOUDFRONT) to filter common attacks "
             "(Security Hub CloudFront.6). In CDK: webAclId on the Distribution.")
+    out.extend(_s3_origin_findings(res, template_path, config))
     return out
+
+
+# S3 REST endpoints: bucket.s3.amazonaws.com, bucket.s3.eu-north-1.amazonaws.com,
+# bucket.s3-eu-north-1.amazonaws.com, bucket.s3.dualstack.eu-north-1.amazonaws.com.
+_S3_REST_DOMAIN = re.compile(r"\.s3(?:[.-][a-z0-9-]+){0,2}\.amazonaws\.com(?:\.cn)?$", re.IGNORECASE)
+# Website endpoints (bucket.s3-website-eu-north-1..., bucket.s3-website.eu-north-1...) cannot use OAC.
+_S3_WEBSITE_DOMAIN = re.compile(r"\.s3-website[.-]", re.IGNORECASE)
+# Terraform bucket attributes that are an S3 REST domain.
+_S3_DOMAIN_ATTR = re.compile(r"\baws_s3_bucket\.[\w-]+\.bucket(?:_regional)?_domain_name\b")
+
+
+def _is_s3_origin(origin: dict) -> bool:
+    domain = origin.get("DomainName")
+    if isinstance(domain, str) and _S3_WEBSITE_DOMAIN.search(domain):
+        return False
+    if origin.get("S3OriginConfig") is not None:
+        return True
+    # A Terraform expression is a str subclass: a template string or a bucket attribute.
+    return isinstance(domain, str) and (
+        _S3_REST_DOMAIN.search(domain) is not None or _S3_DOMAIN_ATTR.search(domain) is not None
+    )
+
+
+def _s3_origin_access(origin: dict) -> str | None:
+    """"oac", "oai", "none", or None when unknown, for one S3 origin."""
+    if origin.get("OriginAccessControlId") not in (None, ""):
+        return "oac"
+    config = origin.get("S3OriginConfig")
+    if isinstance(config, dict) and _is_intrinsic(config):
+        return None
+    oai = config.get("OriginAccessIdentity") if isinstance(config, dict) else None
+    if isinstance(oai, dict) and "Fn::Unresolved" in oai:  # a Terraform variable: unknown
+        return None
+    if oai not in (None, ""):
+        return "oai"
+    return "none"
+
+
+def _s3_origin_findings(res: Resource, template_path: Path, config: dict) -> List[Finding]:
+    """CF-CF-004: an S3 origin without Origin Access Control (Medium), or with only a
+    legacy Origin Access Identity (Low)."""
+    origins = config.get("Origins")
+    by_access: dict[str, list[str]] = {}
+    for i, origin in enumerate(origins if isinstance(origins, list) else []):
+        if not isinstance(origin, dict) or _is_intrinsic(origin) or not _is_s3_origin(origin):
+            continue
+        access = _s3_origin_access(origin)
+        if access in ("oai", "none"):
+            name = origin.get("Id")
+            by_access.setdefault(access, []).append(name if type(name) is str else f"origin {i + 1}")
+    if not by_access:
+        return []
+    # One finding per distribution: findings are deduplicated on id, file and evidence.
+    none, oai = by_access.get("none", []), by_access.get("oai", [])
+    parts = []
+    if none:
+        parts.append(f"No OAC or OAI on origins: {', '.join(none)}; the bucket must then be "
+                     "public for CloudFront to read it.")
+    if oai:
+        parts.append(f"Legacy OAI on origins: {', '.join(oai)}; OAI does not support SSE-KMS "
+                     "or newer Regions.")
+    return [Finding(
+        id="CF-CF-004",
+        title=("CloudFront S3 origin has no Origin Access Control" if none
+               else "CloudFront S3 origin uses a legacy Origin Access Identity"),
+        severity="Medium" if none else "Low",
+        category="Security",
+        file=res.file or str(template_path),
+        line=res.line,
+        evidence=f"{res.name} ({res.source_type})",
+        recommendation=(
+            " ".join(parts)
+            + " Create an AWS::CloudFront::OriginAccessControl, set OriginAccessControlId on the "
+            "origin, and allow cloudfront.amazonaws.com with aws:SourceArn of the distribution "
+            "in the bucket policy (Security Hub CloudFront.13). "
+            "In CDK: origins.S3BucketOrigin.withOriginAccessControl(bucket)."
+        ),
+    )]
 
 
 def _references(text: str, name: str) -> bool:

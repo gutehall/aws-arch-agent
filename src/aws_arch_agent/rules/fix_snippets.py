@@ -862,6 +862,21 @@ _CLOUDFORMATION.update({
     DistributionConfig:
       # keep the other settings as they are
       WebACLId: !GetAtt EdgeWebAcl.Arn  # an AWS::WAFv2::WebACL with Scope: CLOUDFRONT""",
+    "CF-CF-004": """$name:
+  Type: AWS::CloudFront::Distribution
+  Properties:
+    DistributionConfig:
+      # keep the other settings and the other origins as they are; change the S3 origin:
+      Origins:
+        - Id: s3  # your S3 origin's Id
+          DomainName: !GetAtt MyBucket.RegionalDomainName  # your bucket
+          S3OriginConfig:
+            OriginAccessIdentity: ""  # no OAI
+          # add an AWS::CloudFront::OriginAccessControl named ${name}Oac with
+          # OriginAccessControlOriginType: s3, SigningBehavior: always, SigningProtocol: sigv4
+          OriginAccessControlId: !GetAtt ${name}Oac.Id
+# Bucket policy: allow s3:GetObject to Service cloudfront.amazonaws.com
+# with Condition StringEquals AWS:SourceArn = the distribution ARN.""",
     "CF-WAF-001": """${name}WebAcl:
   Type: AWS::WAFv2::WebACLAssociation
   Properties:
@@ -887,6 +902,23 @@ _TERRAFORM.update({
   # keep the other arguments as they are
   web_acl_id = aws_wafv2_web_acl.edge.arn # scope = "CLOUDFRONT"
 }""",
+    "CF-CF-004": """resource "aws_cloudfront_origin_access_control" "$tf_name" {
+  name                              = "$tf_name"
+  origin_access_control_origin_type = "s3"
+  signing_behavior                  = "always"
+  signing_protocol                  = "sigv4"
+}
+
+resource "aws_cloudfront_distribution" "$tf_name" {
+  # keep the other arguments and origin blocks as they are; change the S3 origin:
+  origin {
+    origin_id                = "s3"                                         # your S3 origin's id
+    domain_name              = aws_s3_bucket.my_bucket.bucket_regional_domain_name # your bucket
+    origin_access_control_id = aws_cloudfront_origin_access_control.$tf_name.id
+  }
+}
+# Bucket policy: allow s3:GetObject to Service cloudfront.amazonaws.com
+# with condition StringEquals AWS:SourceArn = aws_cloudfront_distribution.$tf_name.arn""",
     "CF-WAF-001": """resource "aws_wafv2_web_acl_association" "$tf_name" {
   resource_arn = $tf_type.$tf_name.arn
   web_acl_arn  = aws_wafv2_web_acl.regional.arn # scope = "REGIONAL"
