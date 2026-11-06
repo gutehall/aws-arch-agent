@@ -315,3 +315,53 @@ def _without_saving(basis: str) -> str:
     """The basis with its 'Saving if ...' sentence removed (a stack total has no saving)."""
     return re.sub(r" Saving if one size smaller \([^)]*\)\.", "", basis)
 
+
+# --- Non-production savings (DM3-545) ---------------------------------------------------
+
+
+def rds_multi_az_premium(props: dict) -> Estimate | None:
+    """A Multi-AZ RDS instance's cost, and the saving as a single-AZ instance."""
+    if not props.get("MultiAZ"):
+        return None
+    multi = rds_instance(props)
+    single = rds_instance({**props, "MultiAZ": False})
+    if multi is None or single is None or multi.monthly_cost_usd is None or single.monthly_cost_usd is None:
+        return None
+    return Estimate(
+        monthly_cost_usd=multi.monthly_cost_usd,
+        monthly_savings_usd=_round(multi.monthly_cost_usd - single.monthly_cost_usd),
+        basis=_without_saving(multi.basis) + f" Saving as a single-AZ instance ({money(single.monthly_cost_usd)}/month).",
+    )
+
+
+def downsize(kind: str, instance_type: str, size: str, props: dict | None = None) -> Estimate | None:
+    """Cost of an EC2 or RDS instance, and the saving at a smaller size of the same family."""
+    family, _, current = instance_type.rpartition(".")
+    if current not in _SIZES or size not in _SIZES or _SIZES.index(size) >= _SIZES.index(current):
+        return None
+    target = f"{family}.{size}"
+    if kind == "ec2":
+        now, smaller = ec2_instance(instance_type), ec2_instance(target)
+    else:
+        now = rds_instance({**(props or {}), "DBInstanceClass": instance_type})
+        smaller = rds_instance({**(props or {}), "DBInstanceClass": target})
+    if now is None or smaller is None or now.monthly_cost_usd is None or smaller.monthly_cost_usd is None:
+        return None
+    return Estimate(
+        monthly_cost_usd=now.monthly_cost_usd,
+        monthly_savings_usd=_round(now.monthly_cost_usd - smaller.monthly_cost_usd),
+        basis=_without_saving(now.basis) + f" Saving at {target} ({money(smaller.monthly_cost_usd)}/month).",
+    )
+
+
+def extra_nat_gateways(count: int) -> Estimate | None:
+    """All NAT gateways' hours, and the saving with one shared NAT gateway."""
+    total, one = nat_gateways(count), nat_gateways(1)
+    if count < 2 or total is None or one is None or total.monthly_cost_usd is None or one.monthly_cost_usd is None:
+        return None
+    return Estimate(
+        monthly_cost_usd=total.monthly_cost_usd,
+        monthly_savings_usd=_round(total.monthly_cost_usd - one.monthly_cost_usd),
+        basis=total.basis + f" Saving with one NAT gateway ({money(one.monthly_cost_usd)}/month).",
+    )
+

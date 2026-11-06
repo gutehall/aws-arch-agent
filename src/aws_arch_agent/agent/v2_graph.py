@@ -21,7 +21,7 @@ from aws_arch_agent.rules.fix_snippets import attach_fixes
 from aws_arch_agent.rules.registry import ALL_RULES
 from aws_arch_agent.rules.runner import filter_by_severity, run_all_rules
 from aws_arch_agent.pricing import DEFAULT_REGION, price_note, use_region
-from aws_arch_agent.rules import effort, environments, stack_cost
+from aws_arch_agent.rules import effort, environments, nonprod, stack_cost
 from aws_arch_agent.rules.tag_policy import TagPolicy, use_tag_policy
 from aws_arch_agent.report.markdown import render_markdown
 from aws_arch_agent.tools.cdk_synth import (
@@ -549,6 +549,7 @@ def analyze_v2(
     price_region: str = DEFAULT_REGION,
     tag_policy: TagPolicy | None = None,
     environment_map: dict[str, str] | None = None,
+    nonprod_max_size: str | None = None,
 ) -> tuple[str, RepoContext, List[Finding], List[str]]:
     """Run V2 graph; return (final_report_md, ctx, findings, warnings)."""
     graph = build_graph()
@@ -575,6 +576,7 @@ def analyze_v2(
         use_tag_policy(tag_policy),
         stack_cost.collect(),
         environments.use_environments(environment_map, repo_path),
+        nonprod.use_max_size(nonprod_max_size),
     ):
         out = graph.invoke(initial)
     report = out.get("final_report") or "No report produced."

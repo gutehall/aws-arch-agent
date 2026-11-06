@@ -91,6 +91,8 @@ TF_TYPE_TO_CANONICAL: dict[str, str] = {
     "aws_secretsmanager_secret_rotation": "secretsmanager_secret_rotation",
     "aws_cognito_user_pool": "cognito_user_pool",
     "aws_lambda_permission": "lambda_permission",
+    # Holds ProvisionedConcurrencyConfig, like AWS::Lambda::Alias (CF-ENV-002).
+    "aws_lambda_provisioned_concurrency_config": "lambda_alias",
     "aws_iam_user": "iam_user",
     "aws_iam_group": "iam_group",
 }
@@ -695,7 +697,16 @@ def _elasticache_replication_group(body: dict) -> dict:
     _set(props, "AtRestEncryptionEnabled", _v(body, "at_rest_encryption_enabled"))
     _set(props, "TransitEncryptionEnabled", _v(body, "transit_encryption_enabled"))
     _set(props, "Engine", _v(body, "engine"))
+    _set(props, "MultiAZEnabled", _v(body, "multi_az_enabled"))
     return props
+
+
+def _provisioned_concurrency(body: dict) -> dict:
+    """aws_lambda_provisioned_concurrency_config, in the CloudFormation alias shape."""
+    count = _v(body, "provisioned_concurrent_executions")
+    if count is None:
+        return {}
+    return {"ProvisionedConcurrencyConfig": {"ProvisionedConcurrentExecutions": count}}
 
 
 def _ingress_entries(rule: dict) -> Any:
@@ -1180,6 +1191,7 @@ _ADAPTERS: dict[str, Callable[[dict], dict]] = {
     "aws_ecr_repository_policy": _resource_policy,
     "aws_ecr_repository": _ecr_repository,
     "aws_ecs_task_definition": _ecs_task_definition,
+    "aws_lambda_provisioned_concurrency_config": _provisioned_concurrency,
     "aws_secretsmanager_secret": _secretsmanager_secret,
     "aws_secretsmanager_secret_rotation": _secret_rotation,
     "aws_cognito_user_pool": _cognito_user_pool,

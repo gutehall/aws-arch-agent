@@ -119,6 +119,24 @@ def environments_from(value: Any) -> dict[str, str] | None:
     return out
 
 
+_SIZES = ("nano", "micro", "small", "medium", "large", "xlarge", "2xlarge", "4xlarge", "8xlarge",
+          "12xlarge", "16xlarge", "24xlarge", "32xlarge", "48xlarge")
+
+
+def nonprod_max_size(value: Any) -> str | None:
+    """Config `nonprod.max_instance_size`: the largest size not flagged in dev and staging."""
+    if value is None:
+        return None
+    if not isinstance(value, dict) or set(value) - {"max_instance_size"}:
+        raise ConfigError(f"nonprod must be a mapping with max_instance_size, got {value!r}")
+    size = value.get("max_instance_size")
+    if size is None:
+        return None
+    if size not in _SIZES:
+        raise ConfigError(f"nonprod.max_instance_size must be one of {', '.join(_SIZES)}, got {size!r}")
+    return str(size)
+
+
 def tag_policy_from(value: Any) -> TagPolicy | None:
     """Config `tags`: {required: [keys], allowed: {key: [values]}}. None when unset."""
     if value is None:
@@ -303,6 +321,7 @@ def load_config(
         ),
         tag_policy=tag_policy_from(file_cfg.get("tags")),
         environments=environments_from(file_cfg.get("environments")),
+        nonprod_max_size=nonprod_max_size(file_cfg.get("nonprod")),
     )
 
 
@@ -328,6 +347,7 @@ class RunConfig:
         "region",
         "tag_policy",
         "environments",
+        "nonprod_max_size",
     )
 
     def __init__(
@@ -351,6 +371,7 @@ class RunConfig:
         region: str = DEFAULT_REGION,
         tag_policy: TagPolicy | None = None,
         environments: dict[str, str] | None = None,
+        nonprod_max_size: str | None = None,
     ):
         self.format = format
         self.fail_on = fail_on
@@ -370,3 +391,4 @@ class RunConfig:
         self.region = region  # price region for cost estimates
         self.tag_policy = tag_policy  # config tags.required; None turns the check off
         self.environments = environments  # config environments: match -> prod|staging|dev
+        self.nonprod_max_size = nonprod_max_size  # config nonprod.max_instance_size

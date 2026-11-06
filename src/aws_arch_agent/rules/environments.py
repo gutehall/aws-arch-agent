@@ -40,29 +40,42 @@ _WORDS: dict[str, Environment] = {
 # Not listed: judged the same everywhere. Unknown and prod are never changed.
 RULE_POLICY: dict[str, dict[Environment, Severity | None]] = {
     # Production durability advice that is wrong for a throwaway stack.
-    "CF-RDS-003": {"dev": None},           # Multi-AZ
+    # Multi-AZ and retain-on-delete are prod-only: CF-ENV-001 says the opposite in dev and
+    # staging (DM3-545), so no stack gets both pieces of advice.
+    "CF-RDS-003": {"dev": None, "staging": None},  # Multi-AZ
     "CF-RDS-005": {"dev": None},           # deletion protection
-    "CF-DEL-001": {"dev": None},           # retain on delete
+    "CF-DEL-001": {"dev": None, "staging": None},  # retain on delete
     "CF-RDS-002": {"dev": "Low"},          # backup retention
     "CF-DDB-001": {"dev": "Low"},          # point-in-time recovery
     "CF-S3-003": {"dev": "Low"},           # versioning
 }
 
+# CDK source rules that recommend production durability. They cannot see a stack, so they
+# are dropped when every stack the scan resolved is dev or staging.
+PROD_ONLY_STATIC = ("REL-001", "REL-016")
+
 _config: dict[str, Environment] = {}
 _repo_path: Path | None = None
+_seen: set[str] = set()  # environments resolved for stacks in this scan
+
+
+def only_nonprod() -> bool:
+    """True when the scan resolved at least one stack and none was prod or unknown."""
+    return bool(_seen) and _seen <= {"dev", "staging"}
 
 
 @contextmanager
 def use_environments(config: Mapping[str, str] | None, repo_path: Path | None) -> Iterator[None]:
     """Resolve environments with this config, relative to this repo, for a scan."""
-    global _config, _repo_path
-    previous = (_config, _repo_path)
+    global _config, _repo_path, _seen
+    previous = (_config, _repo_path, _seen)
     _config = {k: cast(Environment, v) for k, v in (config or {}).items()}
     _repo_path = repo_path
+    _seen = set()
     try:
         yield
     finally:
-        _config, _repo_path = previous
+        _config, _repo_path, _seen = previous
 
 
 def _words(text: str) -> list[str]:
@@ -183,7 +196,10 @@ def apply(findings: List[Finding], template_path: Path, resources: Iterable[Reso
 
     Returns the findings the environment keeps (some are skipped in dev).
     """
+    resources = list(resources)
     env = resolve(template_path, resources)
+    if resources:
+        _seen.add(env)
     out: List[Finding] = []
     for f in findings:
         f.environment = env
