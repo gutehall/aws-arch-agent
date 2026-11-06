@@ -63,6 +63,10 @@ def render_html(
             "title": f.title,
             "severity": f.severity,
             "pillar": f.category,
+            "environment": (
+                None if not f.environment
+                else "unknown (judged as prod)" if f.environment == "unknown" else f.environment
+            ),
             "location": _location(f),
             "evidence": f.evidence or "",
             "recommendation": f.recommendation.strip(),

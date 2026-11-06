@@ -47,7 +47,9 @@ def render_sarif(ctx: RepoContext, findings: list[Finding], warnings: list[str] 
                 ("estimateBasis", f.estimate_basis),
             ) if value is not None
         }
-        if f.monthly_cost_usd is not None or f.monthly_savings_usd is not None:
+        if f.environment:
+            estimate["environment"] = f.environment
+        if estimate:
             result["properties"] = estimate
         results.append(result)
     if warnings:

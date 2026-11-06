@@ -51,6 +51,12 @@ REPORT_SCHEMA: dict = {
                         "description": "Estimated saving per month in USD if the recommendation "
                         "is applied. A separate number: never subtracted from monthly_cost_usd.",
                     },
+                    "environment": {
+                        "type": ["string", "null"],
+                        "enum": ["prod", "staging", "dev", "unknown", None],
+                        "description": "The environment of the stack the finding came from. "
+                        "unknown is judged as prod. Null for findings not tied to a template.",
+                    },
                     "effort": {
                         "type": "string",
                         "enum": ["low", "medium", "high"],

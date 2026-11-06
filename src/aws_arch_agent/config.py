@@ -97,6 +97,22 @@ def price_region(value: Any, key: str = "region") -> str:
     raise ConfigError(f"{key} must be an AWS region code such as us-east-1, got {value!r}")
 
 
+def environments_from(value: Any) -> dict[str, str] | None:
+    """Config `environments`: {glob or "tag:<value>": prod|staging|dev}, in match order."""
+    if value is None:
+        return None
+    if not isinstance(value, dict):
+        raise ConfigError(f"environments must be a mapping of match to prod, staging or dev, got {value!r}")
+    out: dict[str, str] = {}
+    for key, env in value.items():
+        if not isinstance(key, str) or not key.strip():
+            raise ConfigError(f"environments keys must be path globs or tag:<value>, got {key!r}")
+        if env not in ("prod", "staging", "dev"):
+            raise ConfigError(f"environments.{key} must be prod, staging or dev, got {env!r}")
+        out[key.strip()] = env
+    return out
+
+
 def tag_policy_from(value: Any) -> TagPolicy | None:
     """Config `tags`: {required: [keys], allowed: {key: [values]}}. None when unset."""
     if value is None:
@@ -280,6 +296,7 @@ def load_config(
             else DEFAULT_REGION
         ),
         tag_policy=tag_policy_from(file_cfg.get("tags")),
+        environments=environments_from(file_cfg.get("environments")),
     )
 
 
@@ -304,6 +321,7 @@ class RunConfig:
         "llm_mode",
         "region",
         "tag_policy",
+        "environments",
     )
 
     def __init__(
@@ -326,6 +344,7 @@ class RunConfig:
         llm_mode: str = "full",
         region: str = DEFAULT_REGION,
         tag_policy: TagPolicy | None = None,
+        environments: dict[str, str] | None = None,
     ):
         self.format = format
         self.fail_on = fail_on
@@ -344,3 +363,4 @@ class RunConfig:
         self.llm_mode = llm_mode
         self.region = region  # price region for cost estimates
         self.tag_policy = tag_policy  # config tags.required; None turns the check off
+        self.environments = environments  # config environments: match -> prod|staging|dev

@@ -275,6 +275,7 @@ def analyze(
             iac=iac_value,
             price_region=cfg.region,
             tag_policy=cfg.tag_policy,
+            environment_map=cfg.environments,
         )
     else:
         report_md, ctx_report, findings, warnings = analyze_v1(
@@ -289,6 +290,7 @@ def analyze(
             tf_plan=tf_plan_path,
             price_region=cfg.region,
             tag_policy=cfg.tag_policy,
+            environment_map=cfg.environments,
         )
 
     if ctx_report.notes.get("tag_policy") == "not checked":
