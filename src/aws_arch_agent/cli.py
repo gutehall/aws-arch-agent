@@ -274,6 +274,7 @@ def analyze(
             llm_mode=cast(LLMMode, cfg.llm_mode),
             iac=iac_value,
             price_region=cfg.region,
+            tag_policy=cfg.tag_policy,
         )
     else:
         report_md, ctx_report, findings, warnings = analyze_v1(
@@ -287,8 +288,16 @@ def analyze(
             iac=iac_value,
             tf_plan=tf_plan_path,
             price_region=cfg.region,
+            tag_policy=cfg.tag_policy,
         )
 
+    if ctx_report.notes.get("tag_policy") == "not checked":
+        console.print(
+            "tags.required is checked on templates, and this scan read none "
+            "(CDK source is not a template: run --mode v2 to synth it).",
+            style="yellow",
+            markup=False,
+        )
     if ctx_report.notes.get("prices", {}).get("snapshot_date") is None:
         console.print(
             f"No prices for region {cfg.region} in the snapshot: cost estimates are skipped.",
