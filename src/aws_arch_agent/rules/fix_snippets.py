@@ -875,6 +875,31 @@ _TERRAFORM["CF-PAR-002:variable"] = """variable "$tf_name" {
 # Better: no variable at all. Read the secret where it is used:
 # data "aws_secretsmanager_secret_version" "$tf_name" { secret_id = "my-secret" }"""
 
+# Required tag policy (DM3-543). The keys are an example: use the ones in tags.required.
+_CF_TAGS = """$name:
+  Type: $type
+  Properties:
+    # keep the other properties as they are
+    Tags:
+      - Key: CostCenter # every key in tags.required
+        Value: '1234'"""
+_CLOUDFORMATION["CF-TAG-001"] = _CF_TAGS
+_CLOUDFORMATION["CF-TAG-001:AWS::EFS::FileSystem"] = _CF_TAGS.replace("    Tags:", "    FileSystemTags:")
+_CLOUDFORMATION["CF-TAG-001:AWS::Cognito::UserPool"] = """$name:
+  Type: AWS::Cognito::UserPool
+  Properties:
+    # keep the other properties as they are
+    UserPoolTags:
+      CostCenter: "1234" # every key in tags.required"""
+_TERRAFORM["CF-TAG-001"] = """resource "$tf_type" "$tf_name" {
+  # keep the other arguments as they are
+  tags = {
+    CostCenter = "1234" # every key in tags.required
+  }
+}
+
+# Or once for every resource: provider "aws" { default_tags { tags = { CostCenter = "1234" } } }"""
+
 # gp2 volumes (DM3-541).
 _CLOUDFORMATION["CF-EBS-002"] = """$name:
   Type: AWS::EC2::Volume

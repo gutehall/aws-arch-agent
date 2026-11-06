@@ -9,6 +9,7 @@ from typing import Any, Literal, cast
 import yaml
 
 from aws_arch_agent.pricing import DEFAULT_REGION
+from aws_arch_agent.rules.tag_policy import TagPolicy
 
 SeverityThreshold = Literal["high", "medium", "low", "none"]
 OutputFormat = Literal["markdown", "json", "sarif", "html"]
@@ -94,6 +95,32 @@ def price_region(value: Any, key: str = "region") -> str:
     if isinstance(value, str) and _REGION.fullmatch(value.strip().lower()):
         return value.strip().lower()
     raise ConfigError(f"{key} must be an AWS region code such as us-east-1, got {value!r}")
+
+
+def tag_policy_from(value: Any) -> TagPolicy | None:
+    """Config `tags`: {required: [keys], allowed: {key: [values]}}. None when unset."""
+    if value is None:
+        return None
+    if not isinstance(value, dict):
+        raise ConfigError(f"tags must be a mapping, got {value!r}")
+    unknown = set(value) - {"required", "allowed"}
+    if unknown:
+        raise ConfigError(f"tags has unknown keys: {', '.join(sorted(unknown))} (use required, allowed)")
+    required = _as_string_list(value.get("required"), "tags.required") or []
+    allowed_raw = value.get("allowed")
+    if allowed_raw is None:
+        allowed_raw = {}
+    if not isinstance(allowed_raw, dict):
+        raise ConfigError(f"tags.allowed must be a mapping of tag key to values, got {allowed_raw!r}")
+    allowed: dict[str, tuple[str, ...]] = {}
+    for key, values in allowed_raw.items():
+        listed = _as_string_list(values, f"tags.allowed.{key}")
+        if not isinstance(key, str) or not listed:
+            raise ConfigError(f"tags.allowed.{key} must be a non-empty list of strings")
+        allowed[key] = tuple(listed)
+    if not required:
+        return None  # no required tags: the check is off
+    return TagPolicy(required=tuple(dict.fromkeys(required)), allowed=allowed)
 
 
 def _load_config_file(path: Path) -> dict[str, Any]:
@@ -252,6 +279,7 @@ def load_config(
             else price_region(file_cfg["region"]) if "region" in file_cfg
             else DEFAULT_REGION
         ),
+        tag_policy=tag_policy_from(file_cfg.get("tags")),
     )
 
 
@@ -275,6 +303,7 @@ class RunConfig:
         "rag_embedding_model",
         "llm_mode",
         "region",
+        "tag_policy",
     )
 
     def __init__(
@@ -296,6 +325,7 @@ class RunConfig:
         rag_embedding_model: str | None = None,
         llm_mode: str = "full",
         region: str = DEFAULT_REGION,
+        tag_policy: TagPolicy | None = None,
     ):
         self.format = format
         self.fail_on = fail_on
@@ -313,3 +343,4 @@ class RunConfig:
         self.rag_embedding_model = rag_embedding_model
         self.llm_mode = llm_mode
         self.region = region  # price region for cost estimates
+        self.tag_policy = tag_policy  # config tags.required; None turns the check off
