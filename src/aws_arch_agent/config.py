@@ -11,6 +11,7 @@ import yaml
 from aws_arch_agent.pricing import DEFAULT_REGION
 from aws_arch_agent.rules.estimates import SIZES
 from aws_arch_agent.rules.tag_policy import TagPolicy
+from aws_arch_agent.rules.themes import THEMES
 from aws_arch_agent.rules.themes import parse as parse_themes
 
 SeverityThreshold = Literal["high", "medium", "low", "none"]
@@ -148,7 +149,9 @@ def themes_from(value: Any, key: str = "themes") -> list[str] | None:
         names = parse_themes(items)
     except ValueError as exc:
         raise ConfigError(f"{key}: {exc}") from exc
-    return names or None
+    if not names:
+        raise ConfigError(f"{key} names no theme; use one of {', '.join(THEMES)}, or leave it out")
+    return names
 
 
 def tag_policy_from(value: Any) -> TagPolicy | None:
@@ -338,7 +341,7 @@ def load_config(
         tag_policy=tag_policy_from(file_cfg.get("tags")),
         environments=environments_from(file_cfg.get("environments")),
         nonprod_max_size=nonprod_max_size(file_cfg.get("nonprod")),
-        themes=themes_from(themes, "--theme") if themes else themes_from(file_cfg.get("themes")),
+        themes=themes_from(themes, "--theme") if themes is not None else themes_from(file_cfg.get("themes")),
         group_by=_pick_choice(file_cfg, "group_by", group_by, "severity", ("severity", "theme")),
     )
 

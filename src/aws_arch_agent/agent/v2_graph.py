@@ -188,6 +188,16 @@ def _parts_under(path: Path, root: Path) -> tuple[str, ...]:
         return path.parts
 
 
+def _in_themes(findings: List[Finding], state: State) -> List[Finding]:
+    """Keep only findings in the --theme themes, before the pillar notes and the LLM see
+    them, so a finops scan reports and reasons about finops findings alone."""
+    wanted = state.get("theme_filter")
+    if not wanted:
+        return findings
+    themes.annotate(findings)
+    return themes.select(findings, wanted)
+
+
 def node_collect(state: State) -> State:
     repo_path = Path(state["repo_path"])
     max_files = state.get("max_files") or 400
@@ -219,6 +229,7 @@ def node_collect(state: State) -> State:
     with limit_to_files(repo_path, files):
         findings, warnings = run_all_rules(repo_path, rules, _languages_to_scan(language))
     findings = filter_by_severity(findings, state.get("severity_threshold"))
+    findings = _in_themes(findings, state)
 
     return {
         "ctx": ctx,
@@ -277,7 +288,7 @@ def node_synth(state: State) -> State:
             if not any("cdk.out" in _parts_under(p, repo_path) for p in template_paths):
                 attach_fixes(cf_findings, "cloudformation")
             out_findings.extend(cf_findings)
-            out_findings = drop_static_covered_by_cf(out_findings)
+            out_findings = _in_themes(drop_static_covered_by_cf(out_findings), state)
         except Exception as exc:
             cf_failed = True
             _note(warnings, f"CF template rules failed: {exc}")
@@ -359,7 +370,7 @@ def node_synth(state: State) -> State:
     try:
         cf_findings = run_cf_rules(cdk_out, repo_path=repo_path, warnings=cf_warnings)
         out_findings.extend(cf_findings)
-        out_findings = drop_static_covered_by_cf(out_findings)
+        out_findings = _in_themes(drop_static_covered_by_cf(out_findings), state)
     except Exception as exc:
         cf_failed = True
         _note(warnings, f"CF template rules failed: {exc}")

@@ -142,3 +142,25 @@ def test_html_theme_filter(tmp_path: Path) -> None:
     html = out.read_text()
     assert 'id="theme-filter"' in html and '<option value="finops">finops (' in html
     assert 'data-themes="finops"' in html
+
+
+def test_empty_theme_is_an_error(tmp_path: Path) -> None:
+    with pytest.raises(ConfigError, match="names no theme"):
+        load_config(tmp_path, themes=[""])
+    (tmp_path / ".aws-arch-agent.yaml").write_text("themes: ['']\n", encoding="utf-8")
+    with pytest.raises(ConfigError, match="names no theme"):
+        load_config(tmp_path)
+
+
+def test_v2_filters_before_the_pillar_notes(tmp_path: Path) -> None:
+    from aws_arch_agent.agent.v2_graph import analyze_v2
+
+    (tmp_path / "templates").mkdir()
+    (tmp_path / "templates" / "s.template.json").write_text(json.dumps({"Resources": STACK}), encoding="utf-8")
+    (tmp_path / "package.json").write_text("{}", encoding="utf-8")
+    (tmp_path / "lib").mkdir()
+    (tmp_path / "lib" / "stack.ts").write_text('new s3.Bucket(this, "B");', encoding="utf-8")
+    report, _ctx, findings, _w = analyze_v2(tmp_path, use_llm=False, templates_path=str(tmp_path / "templates"),
+                                            theme_filter=["finops"])
+    assert findings and all("finops" in f.themes for f in findings)
+    assert "CF-SG-001" not in report and "SEC-005" not in report  # not even in the pillar notes
