@@ -300,6 +300,12 @@ CloudFormation template rules run when the agent has access to template files. T
 - **CloudFront** (`AWS::CloudFront::Distribution`, `aws_cloudfront_distribution`): CF-CF-001 (a cache behavior with `ViewerProtocolPolicy: allow-all`, Medium), CF-CF-002 (`ViewerCertificate.MinimumProtocolVersion` below `TLSv1.2_2021`, Medium; unset with your own certificate means `TLSv1`; the default `*.cloudfront.net` certificate is not reported because its minimum cannot be set), CF-CF-003 (no `WebACLId`, Low), CF-CF-004 (an S3 origin, by `S3OriginConfig` or an `*.s3[.region].amazonaws.com` / Terraform `bucket_regional_domain_name` domain, without `OriginAccessControlId`: Medium with neither OAC nor OAI, Low with only a legacy Origin Access Identity; S3 website endpoints are skipped because they cannot use OAC)
 - **WAF**: CF-WAF-001 (Low): an internet-facing Application Load Balancer or an API Gateway REST API stage that no `AWS::WAFv2::WebACLAssociation` / `aws_wafv2_web_acl_association` (or WAF Classic regional association) in this template points at. Network and Gateway Load Balancers and internal ALBs are not reported. An association the scan cannot tie to a resource counts for all of them
 - **Lambda**: CF-LAM-001 (no DLQ), CF-LAM-002 (X-Ray not enabled), CF-LAM-003 (deprecated runtime, High; deprecated within 6 months, Low; container images skipped; dates in `rules/lambda_runtimes.py`), CF-PERF-001 (ARM64 not used)
+- **Storage and capacity**:
+  - CF-S3-006 (an S3 bucket with no lifecycle rules, Low).
+  - CF-S3-007 (a bucket whose lifecycle rules only expire objects, with no transition to a cheaper class and no Intelligent-Tiering configuration, Low). Terraform reads `aws_s3_bucket_lifecycle_configuration`, `aws_s3_bucket_intelligent_tiering_configuration` and the legacy inline `lifecycle_rule`.
+  - CF-DDB-003 (a DynamoDB table with provisioned capacity that no `AWS::ApplicationAutoScaling::ScalableTarget` / `aws_appautoscaling_target` in the template scales, Medium, with the capacity cost). A target named by `Ref`, Terraform address or the table's literal name counts. One the scan cannot tie to a table counts for all of them. CF-DDB-003 is skipped in dev and staging, where CF-ENV-006 suggests on demand.
+  - CF-EBS-002 also reports launch template block devices set to `gp2`. An unset type comes from the AMI, so it is not reported.
+  - In V2 these replace COST-013, COST-007 and COST-003.
 - **Previous-generation types**: CF-GEN-001 (Low): an EC2 instance, launch template, launch configuration, Auto Scaling group override, RDS instance, ElastiCache cluster or replication group, or OpenSearch domain on a previous-generation family (`t2`, `m4`, `c4`, `r4`, `db.m4`, `cache.t2`, `m4.large.search`, ...). It suggests the current x86 family and the Graviton family at the same size (`m4.large` to `m7i.large` or `m7g.large`), and says Graviton needs an arm64 build of the workload. For a single EC2 or RDS instance it adds the cost and the saving on the x86 successor (none when the successor costs more), with the Graviton price in the basis. Auto Scaling groups, launch templates and launch configurations run some number of instances, so they carry no number. ElastiCache and OpenSearch are not in the price snapshot. RDS for Oracle, SQL Server and Db2 get only the x86 class, since those engines have no Graviton classes. When CF-PERF-003/004 (one size smaller) also prices the same instance, only the CF-GEN-001 saving counts, because the two fixes do not add up. The family map is `aws_arch_agent/rules/data/instance_generations.json`. In V2 it replaces SUST-007
 - **Non-production spend** (only in stacks that resolve to `dev` or `staging`, see `environments` in [CONFIG.md](CONFIG.md); Low): CF-ENV-001 (Multi-AZ RDS instance or ElastiCache replication group, with the single-AZ saving for RDS), CF-ENV-002 (Lambda provisioned concurrency on an alias or version, or `aws_lambda_provisioned_concurrency_config`), CF-ENV-003 (an EC2 or RDS instance above `nonprod.max_instance_size`, default `large`, with the saving at that size), CF-ENV-004 (more than one NAT gateway, with the saving from sharing one), CF-ENV-005 (log retention over 30 days, or never expiring), CF-ENV-006 (DynamoDB provisioned capacity, priced; on demand is suggested). The advice that says the opposite is prod-only. CF-RDS-003 (Multi-AZ), CF-DEL-001 (retain on delete) and CF-CW-001 (set a 30–365 day retention) are skipped in dev and staging. The CDK source rules REL-001, REL-016 (Multi-AZ) and COST-003 (DynamoDB autoscaling) are dropped when every stack in `cdk synth` output is dev or staging; with `--templates`, which may hold only some of the app's stacks, they stay. No stack gets both pieces of advice
 - **Tag policy**: CF-TAG-001 (Medium): a taggable resource that misses a tag in config `tags.required`, or has a value `tags.allowed` does not list. Off without a policy. Stack-level tags (CDK `Tags.of(app)`, Terraform provider `default_tags`) count. See [CONFIG.md](CONFIG.md)
@@ -334,7 +340,7 @@ CloudFormation template rules run when the agent has access to template files. T
 | Security | CF-S3-001, CF-S3-002, CF-S3-005, CF-RDS-001, CF-RDS-004, CF-CT-003, CF-KMS-001, CF-RP-001, CF-EC2-001, CF-EKS-002, CF-EKS-003, CF-IAM-001, CF-IAM-002, CF-IAM-003, CF-IAM-004, CF-IAM-005, CF-IAM-006, CF-IAM-007, CF-IAM-008, CF-SG-001, CF-CW-002, CF-SQS-001, CF-DDB-002, CF-LAM-003, CF-SNS-001, CF-EBS-001, CF-EFS-001, CF-KIN-001, CF-EC-001, CF-EC-002, CF-OS-001, CF-OS-002, CF-RS-001, CF-DOCDB-001, CF-NEP-001, CF-MSK-001, CF-CF-001, CF-CF-002, CF-CF-003, CF-CF-004, CF-WAF-001, CF-EC2-002, CF-EC2-003, CF-PAR-001, CF-PAR-002, CF-ECR-001, CF-ECR-002, CF-ECR-003, CF-ECS-001, CF-ECS-002, CF-ECS-003, CF-SM-001, CF-COG-001, CF-COG-002, CF-COG-003 |
 | Reliability | CF-S3-003, CF-RDS-002, CF-RDS-003, CF-RDS-005, CF-LAM-001, CF-DDB-001, CF-SQS-002, CF-DEL-001 |
 | Performance Efficiency | CF-PERF-001, CF-PERF-002, CF-PERF-003, CF-PERF-004 |
-| Cost Optimization | CF-CW-001, CF-COST-002, CF-EBS-002, CF-EIP-001, CF-TAG-001, CF-ENV-001, CF-ENV-002, CF-ENV-003, CF-ENV-004, CF-ENV-005, CF-ENV-006, CF-GEN-001 |
+| Cost Optimization | CF-CW-001, CF-COST-002, CF-EBS-002, CF-EIP-001, CF-TAG-001, CF-ENV-001, CF-ENV-002, CF-ENV-003, CF-ENV-004, CF-ENV-005, CF-ENV-006, CF-GEN-001, CF-S3-006, CF-S3-007, CF-DDB-003 |
 | Sustainability | CF-SUST-001, CF-SUST-002, CF-SUST-003 |
 | Observability (reported under Operational Excellence) | CF-ALB-001, CF-LAM-002, CF-APIGW-001, CF-APIGW-002, CF-APIGW-V2-001, CF-APIGW-V2-002 |
 | Best Practices | CF-VPC-001 |
@@ -397,6 +403,7 @@ Every rule has one or more themes, which cut across pillars: `finops`, `security
 | CF-CW-002 | data-protection |
 | CF-DDB-001 | resilience, data-protection |
 | CF-DDB-002 | data-protection |
+| CF-DDB-003 | finops, resilience |
 | CF-DEL-001 | data-protection, resilience |
 | CF-DOCDB-001 | data-protection |
 | CF-EBS-001 | data-protection |
@@ -460,6 +467,8 @@ Every rule has one or more themes, which cut across pillars: `finops`, `security
 | CF-S3-003 | resilience, data-protection |
 | CF-S3-004 | observability |
 | CF-S3-005 | data-protection, network-exposure |
+| CF-S3-006 | finops, data-protection |
+| CF-S3-007 | finops |
 | CF-SG-001 | network-exposure |
 | CF-SM-001 | data-protection, identity |
 | CF-SNS-001 | data-protection |

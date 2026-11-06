@@ -19,7 +19,7 @@ LOW: frozenset[str] = frozenset({
     "CF-APIGW-V2-002", "CF-SQS-001", "CF-SNS-001", "CF-DDB-001", "CF-DDB-002", "CF-RDS-002",
     "CF-RDS-005", "CF-ECR-001", "CF-ECR-002", "CF-ECR-003", "CF-EBS-002", "CF-EIP-001",
     "CF-CF-001", "CF-CF-002", "CF-PAR-001", "CF-DEL-001", "CF-TAG-001", "CF-EKS-001",
-    "CF-ALB-001", "CF-ENV-001", "CF-ENV-005", "CF-ENV-006",
+    "CF-ALB-001", "CF-ENV-001", "CF-ENV-005", "CF-ENV-006", "CF-S3-006", "CF-S3-007",
 })
 HIGH: frozenset[str] = frozenset({
     # Encryption at rest on an existing store: CloudFormation replaces the resource.
