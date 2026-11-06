@@ -203,6 +203,7 @@ CHECK_PROPERTIES: dict[str, frozenset[str]] = {
         "CF-CF-002": {"DistributionConfig"},
         "CF-CF-003": {"DistributionConfig"},
         "CF-CF-004": {"DistributionConfig"},
+        "CF-DEL-001": {"DBClusterIdentifier"},
         "CF-EC2-002": {"MapPublicIpOnLaunch"},
         "CF-EC2-003": {"NetworkInterfaces"},
         "CF-WAF-001": {"Type", "Scheme"},
@@ -522,6 +523,80 @@ def _public_ip_findings(res: Resource, template_path: Path) -> List[Finding]:
                 f"AssociatePublicIpAddress is true on network interface {', '.join(devices)}. "
                 "Set it to false.")
     return out
+
+
+# Stateful types whose data goes with the stack unless a policy keeps it (CF-DEL-001).
+_STATEFUL_TYPES = frozenset({
+    "db_instance", "rds_cluster", "dynamodb_table", "s3_bucket", "efs_file_system",
+    "cloudwatch_log_group",
+})
+# Of those, the types CloudFormation can snapshot.
+_SNAPSHOT_TYPES = frozenset({"db_instance", "rds_cluster"})
+
+
+def _keeps_data(res: Resource, key: str) -> bool | None:
+    """Whether DeletionPolicy / UpdateReplacePolicy keeps the data; None when not literal.
+
+    No DeletionPolicy means Delete, except RDS clusters and standalone RDS instances,
+    which CloudFormation snapshots by default. No UpdateReplacePolicy always means Delete.
+    Snapshot on a type that cannot be snapshotted also means Delete.
+    """
+    value = res.policies.get(key)
+    if value is None:
+        is_rds = res.source_type.startswith("AWS::RDS::") and res.type in _SNAPSHOT_TYPES
+        return key == "DeletionPolicy" and is_rds
+    if type(value) is not str:
+        return None  # Fn::If, or a Terraform expression
+    if value in ("Retain", "RetainExceptOnCreate"):
+        return True
+    return value == "Snapshot" and res.type in _SNAPSHOT_TYPES
+
+
+def _deletion_finding(res: Resource, template_path: Path) -> Finding | None:
+    """CF-DEL-001: a stateful resource whose data is lost when the stack deletes or replaces it."""
+    if res.type == "db_instance" and res.properties.get("DBClusterIdentifier"):
+        return None  # an Aurora member: the cluster holds the data
+    terraform = not res.source_type.startswith("AWS::")
+    if terraform:
+        keep = _keeps_data(res, "DeletionPolicy")
+        if keep is None or keep:
+            return None
+        detail = (
+            "lifecycle.prevent_destroy is not true, so terraform destroy, or a change that "
+            "forces replacement, deletes it and its data. Add lifecycle { prevent_destroy = true }."
+        )
+    else:
+        on_delete = _keeps_data(res, "DeletionPolicy")
+        on_replace = _keeps_data(res, "UpdateReplacePolicy")
+        if on_delete is None or on_replace is None or (on_delete and on_replace):
+            return None
+        missing = [
+            k for k, kept in (("DeletionPolicy", on_delete), ("UpdateReplacePolicy", on_replace))
+            if not kept
+        ]
+        keep_value = "Snapshot or Retain" if res.type in _SNAPSHOT_TYPES else "Retain"
+        when = {
+            "DeletionPolicy": "the stack is deleted or the resource is removed from the template",
+            "UpdateReplacePolicy": "an update replaces it",
+        }
+        detail = (
+            f"{' and '.join(missing)} {'does' if len(missing) == 1 else 'do'} not keep the data, "
+            f"so CloudFormation deletes it when {' or when '.join(when[k] for k in missing)}. "
+            f"Set {' and '.join(missing)} to {keep_value}."
+        )
+    return Finding(
+        id="CF-DEL-001",
+        title="Stateful resource is deleted with the stack",
+        severity="Medium",
+        category="Reliability",
+        file=res.file or str(template_path),
+        line=res.line,
+        evidence=f"{res.name} ({res.source_type})",
+        recommendation=(
+            f"{detail} Stacks for short-lived dev environments can exclude CF-DEL-001. "
+            "In CDK: removalPolicy: RemovalPolicy.RETAIN (or SNAPSHOT for RDS), not DESTROY."
+        ),
+    )
 
 
 def _runtime_finding(res: Resource, template_path: Path) -> Finding | None:
@@ -1472,6 +1547,12 @@ def run_resource_checks(
                     findings.extend(_iam_findings(res, template_path))
                 if ctype == "iam_role":
                     findings.extend(_trust_findings(res, template_path))
+
+                # --- Stateful resources deleted with the stack ---
+                if ctype in _STATEFUL_TYPES:
+                    deletion = _deletion_finding(res, template_path)
+                    if deletion is not None:
+                        findings.append(deletion)
 
                 # --- Public IPs on subnets and instances ---
                 if ctype in ("subnet", "instance", "launch_template"):
