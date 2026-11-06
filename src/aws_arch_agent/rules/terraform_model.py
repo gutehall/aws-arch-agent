@@ -474,11 +474,17 @@ def _launch_template(body: dict) -> dict:
             })
     if devices:
         props["BlockDeviceMappings"] = devices
-    # Also its own property, like the block devices.
-    interfaces = [
-        {"DeviceIndex": _v(n, "device_index"), "AssociatePublicIpAddress": _v(n, "associate_public_ip_address")}
-        for n in _blocks(body, "network_interfaces")
-    ]
+    # Also its own property, like the block devices. An interface whose public IP setting is
+    # unknown is left out on its own, so it does not hide the others.
+    interfaces = []
+    for n in _blocks(body, "network_interfaces"):
+        public_ip, index = _v(n, "associate_public_ip_address"), _v(n, "device_index")
+        if public_ip is UNRESOLVED:
+            continue
+        interfaces.append({
+            "DeviceIndex": None if index is UNRESOLVED else index,
+            "AssociatePublicIpAddress": public_ip,
+        })
     if interfaces:
         props["NetworkInterfaces"] = interfaces
     return props

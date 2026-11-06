@@ -43,6 +43,9 @@ def test_cloudformation_public_ips(tmp_path: Path) -> None:
         "DefaultSubnet": _subnet(),
         "ParamSubnet": _subnet(MapPublicIpOnLaunch={"Ref": "Public"}),
         "CdkPublic": _subnet(MapPublicIpOnLaunch=True, Tags=CDK_TAGS),  # ec2.Vpc public subnet
+        # A CDK private subnet that maps public IPs was set so by hand.
+        "CdkPrivate": _subnet(MapPublicIpOnLaunch=True, Tags=[
+            {"Key": "aws-cdk:subnet-type", "Value": "Private"}]),
         "PublicInstance": _instance(NetworkInterfaces=[
             {"DeviceIndex": "0", "AssociatePublicIpAddress": True, "SubnetId": {"Ref": "S"}}]),
         "PrivateInstance": _instance(NetworkInterfaces=[
@@ -54,6 +57,7 @@ def test_cloudformation_public_ips(tmp_path: Path) -> None:
     assert _found(findings) == {
         ("PublicSubnet", "CF-EC2-002"),
         ("PublicString", "CF-EC2-002"),
+        ("CdkPrivate", "CF-EC2-002"),
         ("PublicInstance", "CF-EC2-003"),
         ("PublicLt", "CF-EC2-003"),
     }
@@ -111,6 +115,20 @@ resource "aws_launch_template" "public" {
   }
 }
 
+resource "aws_launch_template" "mixed" {
+  metadata_options {
+    http_tokens = "required"
+  }
+  network_interfaces {
+    device_index                = 0
+    associate_public_ip_address = var.public
+  }
+  network_interfaces {
+    device_index                = 1
+    associate_public_ip_address = true
+  }
+}
+
 resource "aws_launch_template" "spot_unknown" {
   metadata_options {
     http_tokens = "required"
@@ -136,6 +154,8 @@ def test_terraform_public_ips(tmp_path: Path) -> None:
         ("aws_subnet.public", "CF-EC2-002"),
         ("aws_instance.public", "CF-EC2-003"),
         ("aws_launch_template.public", "CF-EC2-003"),
+        # One interface from a variable does not hide the literal one next to it.
+        ("aws_launch_template.mixed", "CF-EC2-003"),
         # An unknown Spot block does not hide the network interface check.
         ("aws_launch_template.spot_unknown", "CF-EC2-003"),
     }
@@ -143,4 +163,7 @@ def test_terraform_public_ips(tmp_path: Path) -> None:
     code = {f.evidence.split(" ")[0]: f.suggested_code or "" for f in findings}
     assert "map_public_ip_on_launch = false" in code["aws_subnet.public"]
     assert "associate_public_ip_address = false" in code["aws_instance.public"]
+    assert "subnet_id" not in code["aws_instance.public"]  # changing it replaces the instance
+    mixed = next(f for f in findings if f.evidence.startswith("aws_launch_template.mixed"))
+    assert "network interface 1." in mixed.recommendation
     assert "network_interfaces {" in code["aws_launch_template.public"]

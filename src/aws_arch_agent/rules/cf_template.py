@@ -472,10 +472,11 @@ def _waf_finding(res: Resource, template_path: Path) -> Finding | None:
 
 
 def _cdk_generated_subnet(props: dict) -> bool:
-    """CDK tags the subnets ec2.Vpc creates; its public subnets map public IPs by design."""
+    """A public subnet that CDK ec2.Vpc creates: it maps public IPs by design."""
     tags = props.get("Tags")
     return isinstance(tags, list) and any(
-        isinstance(t, dict) and t.get("Key") == "aws-cdk:subnet-type" for t in tags
+        isinstance(t, dict) and t.get("Key") == "aws-cdk:subnet-type" and t.get("Value") == "Public"
+        for t in tags
     )
 
 
@@ -484,7 +485,7 @@ def _public_ip_interfaces(interfaces: Any) -> list[str]:
     out: list[str] = []
     for i, item in enumerate(interfaces if isinstance(interfaces, list) else []):
         if isinstance(item, dict) and not _is_intrinsic(item) and _flag(item.get("AssociatePublicIpAddress")):
-            index = item.get("DeviceIndex", i)
+            index = item.get("DeviceIndex")
             out.append(str(index) if type(index) in (str, int) else str(i))
     return out
 

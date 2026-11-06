@@ -851,7 +851,7 @@ _CLOUDFORMATION.update({
     # keep the other properties as they are
     NetworkInterfaces:
       - DeviceIndex: "0"
-        SubnetId: !Ref PrivateSubnet
+        # keep this interface's other keys (SubnetId, GroupSet, ...) as they are
         AssociatePublicIpAddress: false""",
     "CF-EC2-003:AWS::EC2::LaunchTemplate": """$name:
   Type: AWS::EC2::LaunchTemplate
@@ -860,6 +860,7 @@ _CLOUDFORMATION.update({
       # keep the other settings as they are
       NetworkInterfaces:
         - DeviceIndex: 0
+          # keep this interface's other keys as they are
           AssociatePublicIpAddress: false""",
 })
 _TERRAFORM.update({
@@ -870,7 +871,6 @@ _TERRAFORM.update({
     "CF-EC2-003": """resource "aws_instance" "$tf_name" {
   # keep the other arguments as they are
   associate_public_ip_address = false
-  subnet_id                   = aws_subnet.private.id
 }""",
     "CF-EC2-003:aws_launch_template": """resource "aws_launch_template" "$tf_name" {
   # keep the other arguments as they are
