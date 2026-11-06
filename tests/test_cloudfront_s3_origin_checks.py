@@ -40,6 +40,13 @@ def test_cloudformation_s3_origins(tmp_path: Path) -> None:
                              "CustomOriginConfig": {"OriginProtocolPolicy": "https-only"}}),
         "Website": _dist({"Id": "site", "DomainName": "b.s3-website.eu-north-1.amazonaws.com",
                           "CustomOriginConfig": {"OriginProtocolPolicy": "http-only"}}),
+        "WebsiteDash": _dist({"Id": "site", "DomainName": "b.s3-website-eu-west-1.amazonaws.com",
+                              "CustomOriginConfig": {"OriginProtocolPolicy": "http-only"}}),
+        # A bucket name with "s3-website" in it is still a REST origin.
+        "NamedLikeWebsite": _dist({"Id": "s3", "DomainName": "s3-website-assets.s3.amazonaws.com",
+                                   "CustomOriginConfig": {"OriginProtocolPolicy": "https-only"}}),
+        "Dualstack": _dist({"Id": "s3", "DomainName": "B.S3.DUALSTACK.eu-north-1.amazonaws.com",
+                            "CustomOriginConfig": {"OriginProtocolPolicy": "https-only"}}),
         "Api": _dist({"Id": "api", "DomainName": "api.example.com",
                       "CustomOriginConfig": {"OriginProtocolPolicy": "https-only"}}),
         "Intrinsic": _dist({"Fn::If": ["C", {}, {}]}),
@@ -49,6 +56,8 @@ def test_cloudformation_s3_origins(tmp_path: Path) -> None:
         "EmptyOai": "Medium",  # OriginAccessIdentity "" is no OAI
         "Oai": "Low",
         "DomainOnly": "Medium",
+        "NamedLikeWebsite": "Medium",
+        "Dualstack": "Medium",
     }
     oai = next(f for f in findings if f.evidence.startswith("Oai"))
     assert oai.title.endswith("legacy Origin Access Identity")
@@ -125,6 +134,27 @@ resource "aws_cloudfront_distribution" "oac_from_var" {
   }
 }
 
+resource "aws_cloudfront_distribution" "oai_from_var" {
+  enabled    = true
+  web_acl_id = "arn:w"
+  origin {
+    origin_id   = "s3"
+    domain_name = aws_s3_bucket.b.bucket_regional_domain_name
+    s3_origin_config {
+      origin_access_identity = var.oai_path
+    }
+  }
+}
+
+resource "aws_cloudfront_distribution" "template_domain" {
+  enabled    = true
+  web_acl_id = "arn:w"
+  origin {
+    origin_id   = "s3"
+    domain_name = "${aws_s3_bucket.b.bucket}.s3.amazonaws.com"
+  }
+}
+
 resource "aws_cloudfront_distribution" "website" {
   enabled    = true
   web_acl_id = "arn:w"
@@ -153,10 +183,13 @@ def test_terraform_s3_origins(tmp_path: Path) -> None:
     assert _by_name(findings) == {
         "aws_cloudfront_distribution.none": "Medium",
         "aws_cloudfront_distribution.oai": "Low",
+        "aws_cloudfront_distribution.template_domain": "Medium",
+        # oai_from_var: the OAI is unknown, so it is not reported.
     }
     attach_fixes(findings, "terraform")
     none = next(f for f in findings if f.evidence.startswith("aws_cloudfront_distribution.none"))
     assert "origin_access_control_id = aws_cloudfront_origin_access_control.none.id" in (none.suggested_code or "")
+    assert "keep the other arguments and origin blocks" in (none.suggested_code or "")
     assert "In CDK" not in none.recommendation
 
 

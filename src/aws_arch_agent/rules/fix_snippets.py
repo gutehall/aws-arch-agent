@@ -866,14 +866,14 @@ _CLOUDFORMATION.update({
   Type: AWS::CloudFront::Distribution
   Properties:
     DistributionConfig:
-      # keep the other settings as they are
+      # keep the other settings and the other origins as they are; change the S3 origin:
       Origins:
-        - Id: s3
-          DomainName: !GetAtt Bucket.RegionalDomainName
+        - Id: s3  # your S3 origin's Id
+          DomainName: !GetAtt MyBucket.RegionalDomainName  # your bucket
           S3OriginConfig:
             OriginAccessIdentity: ""  # no OAI
-          # an AWS::CloudFront::OriginAccessControl with OriginAccessControlOriginType: s3,
-          # SigningBehavior: always and SigningProtocol: sigv4
+          # add an AWS::CloudFront::OriginAccessControl named ${name}Oac with
+          # OriginAccessControlOriginType: s3, SigningBehavior: always, SigningProtocol: sigv4
           OriginAccessControlId: !GetAtt ${name}Oac.Id
 # Bucket policy: allow s3:GetObject to Service cloudfront.amazonaws.com
 # with Condition StringEquals AWS:SourceArn = the distribution ARN.""",
@@ -910,10 +910,10 @@ _TERRAFORM.update({
 }
 
 resource "aws_cloudfront_distribution" "$tf_name" {
-  # keep the other arguments as they are
+  # keep the other arguments and origin blocks as they are; change the S3 origin:
   origin {
-    origin_id                = "s3"
-    domain_name              = aws_s3_bucket.bucket.bucket_regional_domain_name
+    origin_id                = "s3"                                         # your S3 origin's id
+    domain_name              = aws_s3_bucket.my_bucket.bucket_regional_domain_name # your bucket
     origin_access_control_id = aws_cloudfront_origin_access_control.$tf_name.id
   }
 }

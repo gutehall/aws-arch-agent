@@ -339,21 +339,24 @@ def _cloudfront_findings(res: Resource, template_path: Path) -> List[Finding]:
 
 
 # S3 REST endpoints: bucket.s3.amazonaws.com, bucket.s3.eu-north-1.amazonaws.com,
-# bucket.s3-eu-north-1.amazonaws.com. Website endpoints (s3-website) cannot use OAC.
-_S3_REST_DOMAIN = re.compile(r"\.s3(?:[.-][a-z0-9-]+)?\.amazonaws\.com(?:\.cn)?$")
+# bucket.s3-eu-north-1.amazonaws.com, bucket.s3.dualstack.eu-north-1.amazonaws.com.
+_S3_REST_DOMAIN = re.compile(r"\.s3(?:[.-][a-z0-9-]+){0,2}\.amazonaws\.com(?:\.cn)?$", re.IGNORECASE)
+# Website endpoints (bucket.s3-website-eu-north-1..., bucket.s3-website.eu-north-1...) cannot use OAC.
+_S3_WEBSITE_DOMAIN = re.compile(r"\.s3-website[.-]", re.IGNORECASE)
 # Terraform bucket attributes that are an S3 REST domain.
 _S3_DOMAIN_ATTR = re.compile(r"\baws_s3_bucket\.[\w-]+\.bucket(?:_regional)?_domain_name\b")
 
 
 def _is_s3_origin(origin: dict) -> bool:
     domain = origin.get("DomainName")
-    if isinstance(domain, str) and "s3-website" in domain:
+    if isinstance(domain, str) and _S3_WEBSITE_DOMAIN.search(domain):
         return False
     if origin.get("S3OriginConfig") is not None:
         return True
-    if type(domain) is str:
-        return _S3_REST_DOMAIN.search(domain) is not None
-    return isinstance(domain, str) and _S3_DOMAIN_ATTR.search(domain) is not None  # Terraform reference
+    # A Terraform expression is a str subclass: a template string or a bucket attribute.
+    return isinstance(domain, str) and (
+        _S3_REST_DOMAIN.search(domain) is not None or _S3_DOMAIN_ATTR.search(domain) is not None
+    )
 
 
 def _s3_origin_access(origin: dict) -> str | None:
@@ -364,6 +367,8 @@ def _s3_origin_access(origin: dict) -> str | None:
     if isinstance(config, dict) and _is_intrinsic(config):
         return None
     oai = config.get("OriginAccessIdentity") if isinstance(config, dict) else None
+    if isinstance(oai, dict) and "Fn::Unresolved" in oai:  # a Terraform variable: unknown
+        return None
     if oai not in (None, ""):
         return "oai"
     return "none"
