@@ -165,3 +165,17 @@ def test_terraform_default_type_and_variables(tmp_path: Path) -> None:
     assert _tf(tmp_path, text) == []  # a gateway endpoint whose variable may name DynamoDB
     text = TF.replace("subnet_id = aws_subnet.public.id", 'subnet_id = aws_subnet.public.id\n  connectivity_type = "private"')
     assert _tf(tmp_path, text) == []
+
+
+def test_sub_list_form_and_data_source_service_names(tmp_path: Path) -> None:
+    sub_list = {"Fn::Sub": ["com.amazonaws.${Region}.s3", {"Region": {"Ref": "AWS::Region"}}]}
+    found = _cf(tmp_path, _vpc() | {"S3": _endpoint(sub_list)})
+    assert [f.id for f in found] == ["CF-VPC-003"]
+    # A service name from a data source cannot be read: it may be DynamoDB.
+    text = TF.replace('"com.amazonaws.${data.aws_region.current.name}.dynamodb"',
+                      "data.aws_vpc_endpoint_service.ddb.service_name")
+    text = text.replace('  vpc_endpoint_type = "Interface"\n', "")
+    assert _tf(tmp_path, text) == []
+    # An endpoint type from a variable may be Gateway.
+    text = TF.replace('vpc_endpoint_type = "Interface"', "vpc_endpoint_type = var.kind")
+    assert _tf(tmp_path, text) == []

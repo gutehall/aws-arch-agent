@@ -846,7 +846,7 @@ def _gateway_endpoint_findings(
             if any((service is None and gateway is not False) or (service == suffix and gateway is None)
                    for _, service, gateway in here):
                 continue  # an endpoint the scan cannot read may be this one
-            anchor = vpc or nat
+            anchor = vpc if vpc is not None else nat
             file, line, _ = at(anchor)
             where = "this VPC" if vpc is not None else "this template"
             out.append(Finding(
