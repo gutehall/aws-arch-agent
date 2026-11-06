@@ -276,6 +276,44 @@ CHECK_PROPERTIES: dict[str, frozenset[str]] = {
 }
 
 
+# Themes of each template check (DM3-551). Every check the module can emit is listed;
+# tests/test_themes.py fails when one is missing.
+_F, _SB, _ID, _DP, _NET, _RES, _OBS, _SUS = (
+    "finops", "security-baseline", "identity", "data-protection",
+    "network-exposure", "resilience", "observability", "sustainability",
+)
+CF_THEMES: dict[str, tuple[str, ...]] = {
+    "CF-ALB-001": (_OBS,), "CF-APIGW-001": (_OBS,), "CF-APIGW-002": (_OBS,),
+    "CF-APIGW-V2-001": (_OBS,), "CF-APIGW-V2-002": (_OBS,),
+    "CF-CF-001": (_DP, _NET), "CF-CF-002": (_DP, _NET), "CF-CF-003": (_NET,), "CF-CF-004": (_NET, _ID),
+    "CF-COG-001": (_ID,), "CF-COG-002": (_ID,), "CF-COG-003": (_ID,),
+    "CF-COST-002": (_F,), "CF-CT-001": (_OBS, _SB), "CF-CT-002": (_OBS,), "CF-CT-003": (_OBS, _DP),
+    "CF-CW-001": (_F, _DP), "CF-CW-002": (_DP,),
+    "CF-DDB-001": (_RES, _DP), "CF-DDB-002": (_DP,), "CF-DEL-001": (_DP, _RES), "CF-DOCDB-001": (_DP,),
+    "CF-EBS-001": (_DP,), "CF-EBS-002": (_F,), "CF-EC-001": (_DP,), "CF-EC-002": (_DP,),
+    "CF-EC2-001": (_SB, _ID), "CF-EC2-002": (_NET,), "CF-EC2-003": (_NET,),
+    "CF-ECR-001": (_SB,), "CF-ECR-002": (_SB,), "CF-ECR-003": (_SB, _F),
+    "CF-ECS-001": (_SB,), "CF-ECS-002": (_SB,), "CF-ECS-003": (_SB,), "CF-EFS-001": (_DP,),
+    "CF-EIP-001": (_F,), "CF-EKS-001": (_OBS,), "CF-EKS-002": (_NET,), "CF-EKS-003": (_DP,),
+    "CF-ENV-001": (_F,), "CF-ENV-002": (_F,), "CF-ENV-003": (_F,), "CF-ENV-004": (_F,),
+    "CF-ENV-005": (_F,), "CF-ENV-006": (_F,), "CF-FL-001": (_OBS, _NET),
+    "CF-GEN-001": (_F, _SUS), "CF-IAM-001": (_ID,), "CF-IAM-002": (_ID,), "CF-IAM-003": (_ID,),
+    "CF-IAM-004": (_ID,), "CF-IAM-005": (_ID,), "CF-IAM-006": (_ID,), "CF-IAM-007": (_ID,),
+    "CF-IAM-008": (_ID,), "CF-KIN-001": (_DP,), "CF-KMS-001": (_ID, _DP),
+    "CF-LAM-001": (_RES,), "CF-LAM-002": (_OBS,), "CF-LAM-003": (_SB,),
+    "CF-MSK-001": (_DP,), "CF-NEP-001": (_DP,), "CF-OS-001": (_DP,), "CF-OS-002": (_DP,),
+    "CF-PAR-001": (_DP, _ID), "CF-PAR-002": (_DP, _ID),
+    "CF-PERF-001": (_F, _SUS), "CF-PERF-002": (_RES,), "CF-PERF-003": (_F,), "CF-PERF-004": (_F,),
+    "CF-RDS-001": (_DP,), "CF-RDS-002": (_RES, _DP), "CF-RDS-003": (_RES,), "CF-RDS-004": (_NET,),
+    "CF-RDS-005": (_RES, _DP), "CF-RP-001": (_ID, _NET), "CF-RS-001": (_DP,),
+    "CF-S3-001": (_NET, _DP), "CF-S3-002": (_DP,), "CF-S3-003": (_RES, _DP), "CF-S3-004": (_OBS,),
+    "CF-S3-005": (_DP, _NET), "CF-SG-001": (_NET,), "CF-SM-001": (_DP, _ID), "CF-SNS-001": (_DP,),
+    "CF-SQS-001": (_DP,), "CF-SQS-002": (_RES,),
+    "CF-SUST-001": (_SUS, _F), "CF-SUST-002": (_SUS, _F), "CF-SUST-003": (_SUS, _F),
+    "CF-TAG-001": (_F,), "CF-VPC-001": (_NET, _F), "CF-WAF-001": (_NET,),
+}
+
+
 def _imds_finding(res: Resource, template_path: Path, options: Any, defers: bool) -> Finding | None:
     """CF-EC2-001 for one instance or launch template.
 

@@ -31,6 +31,8 @@
   .tabs { display: flex; gap: 4px; border-bottom: 1px solid var(--line); margin-bottom: 16px; }
   .tabs button { background: none; border: 0; border-bottom: 2px solid transparent; color: var(--muted);
                  padding: 8px 14px; font: inherit; cursor: pointer; }
+  .theme-filter { margin-left: auto; color: var(--muted); font-size: 0.9em; }
+  .theme-filter select { margin-left: 6px; background: var(--card, transparent); color: var(--fg); border: 1px solid var(--line); }
   .tabs button[aria-pressed="true"] { color: var(--fg); border-bottom-color: var(--fg); font-weight: 600; }
   .finding { border: 1px solid var(--line); border-radius: 8px; padding: 14px 16px; margin-bottom: 12px; }
   .finding header { display: flex; flex-wrap: wrap; align-items: baseline; gap: 6px 10px; }
@@ -80,6 +82,11 @@
     <ol>{% for fix in summary.top_fixes %}<li>{{ fix_line(fix) }}</li>{% endfor %}</ol>
     <h3>By pillar</h3>
     <ul>{% for row in summary.pillars %}<li>{{ pillar_line(row) }}</li>{% endfor %}</ul>
+    {% if summary.themes %}
+    <h3>By theme</h3>
+    <p class="meta">A finding can be in more than one theme.</p>
+    <ul>{% for row in summary.themes %}<li>{{ pillar_line(row) }}</li>{% endfor %}</ul>
+    {% endif %}
     {% if summary.quick_wins %}
     <h3>Quick wins</h3>
     <p class="meta">Low effort, with suggested code.</p>
@@ -141,11 +148,19 @@
     {% for sev in severities %}
     <button type="button" data-tab="{{ sev }}" aria-pressed="false" aria-controls="findings">{{ sev }} ({{ counts[sev] }})</button>
     {% endfor %}
+    {% if theme_counts %}
+    <label class="theme-filter">Theme
+      <select id="theme-filter" aria-controls="findings">
+        <option value="">All themes</option>
+        {% for name, n in theme_counts %}<option value="{{ name }}">{{ name }} ({{ n }})</option>{% endfor %}
+      </select>
+    </label>
+    {% endif %}
   </nav>
 
   <section id="findings" aria-live="polite">
     {% for f in findings %}
-    <article class="finding" data-severity="{{ f.severity }}"{% if f.baseline %} data-baseline="{{ f.baseline }}"{% endif %}>
+    <article class="finding" data-severity="{{ f.severity }}"{% if f.themes %} data-themes="{{ f.themes | join(' ') }}"{% endif %}{% if f.baseline %} data-baseline="{{ f.baseline }}"{% endif %}>
       <header>
         <span class="badge {{ f.severity }}">{{ f.severity }}</span>
         <span class="id">{{ f.id }}</span>
@@ -193,19 +208,28 @@
   var tabs = document.querySelectorAll(".tabs button");
   var items = document.querySelectorAll("#findings .finding");
   var empty = document.querySelector("#findings .empty");
+  var themeSelect = document.getElementById("theme-filter");
+  var want = "All";
+  function apply() {
+    var theme = themeSelect ? themeSelect.value : "";
+    var shown = 0;
+    items.forEach(function (item) {
+      var themes = (item.getAttribute("data-themes") || "").split(" ");
+      var show = (want === "All" || item.getAttribute("data-severity") === want)
+        && (theme === "" || themes.indexOf(theme) >= 0);
+      item.hidden = !show;
+      if (show) { shown += 1; }
+    });
+    empty.hidden = shown > 0;
+  }
   tabs.forEach(function (tab) {
     tab.addEventListener("click", function () {
-      var want = tab.getAttribute("data-tab");
-      var shown = 0;
+      want = tab.getAttribute("data-tab");
       tabs.forEach(function (t) { t.setAttribute("aria-pressed", t === tab ? "true" : "false"); });
-      items.forEach(function (item) {
-        var show = want === "All" || item.getAttribute("data-severity") === want;
-        item.hidden = !show;
-        if (show) { shown += 1; }
-      });
-      empty.hidden = shown > 0;
+      apply();
     });
   });
+  if (themeSelect) { themeSelect.addEventListener("change", apply); }
 })();
 </script>
 </body>

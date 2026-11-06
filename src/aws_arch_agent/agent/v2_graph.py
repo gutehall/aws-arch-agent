@@ -21,7 +21,7 @@ from aws_arch_agent.rules.fix_snippets import attach_fixes
 from aws_arch_agent.rules.registry import ALL_RULES
 from aws_arch_agent.rules.runner import filter_by_severity, run_all_rules
 from aws_arch_agent.pricing import DEFAULT_REGION, price_note, use_region
-from aws_arch_agent.rules import effort, environments, nonprod, stack_cost
+from aws_arch_agent.rules import effort, environments, nonprod, stack_cost, themes
 from aws_arch_agent.rules.tag_policy import TagPolicy, use_tag_policy
 from aws_arch_agent.report.markdown import render_markdown
 from aws_arch_agent.tools.cdk_synth import (
@@ -66,6 +66,8 @@ class State(TypedDict, total=False):
     rag_embedding_model: str
     iac: str
     price_region: str
+    theme_filter: List[str] | None
+    group_by: str
     rag: object
     synth_ok: bool
     synth_stdout: str
@@ -465,10 +467,15 @@ def node_report(state: State) -> State:
     findings = state.get("raw_findings", [])
     warnings = state.get("rule_warnings") or []
     effort.annotate(findings)  # the summary's quick wins need it
+    themes.annotate(findings)
+    wanted = state.get("theme_filter")
+    if wanted:
+        findings = themes.select(findings, wanted)
+        ctx.notes["themes"] = list(wanted)
     cost = stack_cost.summary(findings, Path(state["repo_path"]))
     if cost is not None:
         ctx.notes["cost"] = cost
-    base_report = render_markdown(ctx, findings, warnings=warnings)
+    base_report = render_markdown(ctx, findings, warnings=warnings, group_by=state.get("group_by") or "severity")
     synth_block = state.get("synth_summary", "")
     if state.get("templates_path"):
         synth_status = "Templates: provided (no synth)"
@@ -491,7 +498,7 @@ def node_report(state: State) -> State:
 
 {base_report}
 """
-    return {"final_report": final, "ctx": ctx}  # ctx carries the cost section
+    return {"final_report": final, "ctx": ctx, "raw_findings": findings}  # ctx carries the cost section
 
 
 def build_graph():
@@ -550,6 +557,8 @@ def analyze_v2(
     tag_policy: TagPolicy | None = None,
     environment_map: dict[str, str] | None = None,
     nonprod_max_size: str | None = None,
+    theme_filter: List[str] | None = None,
+    group_by: str = "severity",
 ) -> tuple[str, RepoContext, List[Finding], List[str]]:
     """Run V2 graph; return (final_report_md, ctx, findings, warnings)."""
     graph = build_graph()
@@ -570,6 +579,8 @@ def analyze_v2(
         "rag_embedding_model": rag_embedding_model or "",
         "iac": iac,
         "price_region": price_region,
+        "theme_filter": theme_filter,
+        "group_by": group_by,
     }
     with (
         use_region(price_region),

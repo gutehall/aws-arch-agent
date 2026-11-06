@@ -11,6 +11,7 @@ import yaml
 from aws_arch_agent.pricing import DEFAULT_REGION
 from aws_arch_agent.rules.estimates import SIZES
 from aws_arch_agent.rules.tag_policy import TagPolicy
+from aws_arch_agent.rules.themes import parse as parse_themes
 
 SeverityThreshold = Literal["high", "medium", "low", "none"]
 OutputFormat = Literal["markdown", "json", "sarif", "html"]
@@ -136,6 +137,20 @@ def nonprod_max_size(value: Any) -> str | None:
     return str(size)
 
 
+def themes_from(value: Any, key: str = "themes") -> list[str] | None:
+    """Config `themes` (or --theme): theme names a scan is limited to. None: every theme."""
+    if value is None:
+        return None
+    items = [value] if isinstance(value, str) else value
+    if not isinstance(items, list) or not all(isinstance(v, str) for v in items):
+        raise ConfigError(f"{key} must be a list of theme names, got {value!r}")
+    try:
+        names = parse_themes(items)
+    except ValueError as exc:
+        raise ConfigError(f"{key}: {exc}") from exc
+    return names or None
+
+
 def tag_policy_from(value: Any) -> TagPolicy | None:
     """Config `tags`: {required: [keys], allowed: {key: [values]}}. None when unset."""
     if value is None:
@@ -236,6 +251,8 @@ def load_config(
     rag_path: str | None = None,
     llm_mode: LLMMode | None = None,
     region: str | None = None,
+    themes: list[str] | None = None,
+    group_by: str | None = None,
 ) -> "RunConfig":
     """Load config from file and override with CLI flags that were passed.
 
@@ -321,6 +338,8 @@ def load_config(
         tag_policy=tag_policy_from(file_cfg.get("tags")),
         environments=environments_from(file_cfg.get("environments")),
         nonprod_max_size=nonprod_max_size(file_cfg.get("nonprod")),
+        themes=themes_from(themes, "--theme") if themes else themes_from(file_cfg.get("themes")),
+        group_by=_pick_choice(file_cfg, "group_by", group_by, "severity", ("severity", "theme")),
     )
 
 
@@ -347,6 +366,8 @@ class RunConfig:
         "tag_policy",
         "environments",
         "nonprod_max_size",
+        "themes",
+        "group_by",
     )
 
     def __init__(
@@ -371,6 +392,8 @@ class RunConfig:
         tag_policy: TagPolicy | None = None,
         environments: dict[str, str] | None = None,
         nonprod_max_size: str | None = None,
+        themes: list[str] | None = None,
+        group_by: str = "severity",
     ):
         self.format = format
         self.fail_on = fail_on
@@ -391,3 +414,5 @@ class RunConfig:
         self.tag_policy = tag_policy  # config tags.required; None turns the check off
         self.environments = environments  # config environments: match -> prod|staging|dev
         self.nonprod_max_size = nonprod_max_size  # config nonprod.max_instance_size
+        self.themes = themes  # config themes / --theme: limit the scan to these themes
+        self.group_by = group_by  # config group_by / --group-by: severity or theme

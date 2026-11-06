@@ -28,6 +28,7 @@ def render_sarif(ctx: RepoContext, findings: list[Finding], warnings: list[str] 
     for f in findings:
         if f.id not in rules:
             rules[f.id] = {
+                **({"properties": {"tags": list(f.themes)}} if f.themes else {}),
                 "id": f.id,
                 "name": f.id,
                 "shortDescription": {"text": f.title},
@@ -40,7 +41,7 @@ def render_sarif(ctx: RepoContext, findings: list[Finding], warnings: list[str] 
             "message": {"text": f.recommendation},
             "locations": [_location(f)],
         }
-        estimate = {
+        estimate: dict[str, Any] = {
             key: value for key, value in (
                 ("estimatedMonthlyCostUsd", f.monthly_cost_usd),
                 ("estimatedMonthlySavingsUsd", f.monthly_savings_usd),
@@ -49,6 +50,8 @@ def render_sarif(ctx: RepoContext, findings: list[Finding], warnings: list[str] 
         }
         if f.environment:
             estimate["environment"] = f.environment
+        if f.themes:
+            estimate["themes"] = list(f.themes)
         if estimate:
             result["properties"] = estimate
         results.append(result)

@@ -11,6 +11,7 @@ class S3PublicAccessNotBlocked(Rule):
     title = "S3 bucket may miss Block Public Access"
     category = "Security"
     severity = "High"
+    themes = ("network-exposure",)
 
     def run(self, repo_path: Path, language: str = "typescript") -> List[Finding]:
         # Heuristic: bucket declared but no blockPublicAccess config in same repo
@@ -37,6 +38,7 @@ class S3EncryptionMissing(Rule):
     title = "S3 bucket encryption explicitly disabled"
     category = "Security"
     severity = "Medium"
+    themes = ("data-protection",)
 
     def run(self, repo_path: Path, language: str = "typescript") -> List[Finding]:
         # SSE-S3 is the AWS default. Omitted encryption is not a finding.
@@ -72,6 +74,7 @@ class DynamoDbEncryptionMissing(Rule):
     title = "DynamoDB table may miss encryption"
     category = "Security"
     severity = "Medium"
+    themes = ("data-protection",)
 
     def run(self, repo_path: Path, language: str = "typescript") -> List[Finding]:
         ddb_pat = r'new\s+(dynamodb\.Table|Table)\(' if language == "typescript" else r'(dynamodb.Table|aws_dynamodb.Table)\('
@@ -91,6 +94,7 @@ class SqsEncryptionMissing(Rule):
     title = "SQS queue not encrypted"
     category = "Security"
     severity = "Medium"
+    themes = ("data-protection",)
 
     def run(self, repo_path: Path, language: str = "typescript") -> List[Finding]:
         sqs_pat = r'new\s+sqs\.Queue\(' if language == "typescript" else r'sqs\.Queue\('
@@ -114,6 +118,7 @@ class SnsEncryptionMissing(Rule):
     title = "SNS topic not encrypted"
     category = "Security"
     severity = "Medium"
+    themes = ("data-protection",)
 
     def run(self, repo_path: Path, language: str = "typescript") -> List[Finding]:
         sns_pat = r'new\s+sns\.Topic\(' if language == "typescript" else r'sns\.Topic\('
@@ -137,6 +142,7 @@ class EfsEncryptionMissing(Rule):
     title = "EFS encryption not enabled"
     category = "Security"
     severity = "High"
+    themes = ("data-protection",)
 
     def run(self, repo_path: Path, language: str = "typescript") -> List[Finding]:
         efs_pat = r'new\s+efs\.FileSystem\(' if language == "typescript" else r'efs\.FileSystem\('
@@ -164,6 +170,7 @@ class KinesisEncryption(Rule):
     title = "Kinesis stream encryption not enabled"
     category = "Security"
     severity = "Medium"
+    themes = ("data-protection",)
 
     def run(self, repo_path: Path, language: str = "typescript") -> List[Finding]:
         kinesis_pat = r'new\s+kinesis\.(Stream|CfnStream)\(' if language == "typescript" else r'kinesis\.(Stream|CfnStream)\('
@@ -191,6 +198,7 @@ class OpenSearchEncryption(Rule):
     title = "OpenSearch domain encryption not enabled"
     category = "Security"
     severity = "High"
+    themes = ("data-protection", "network-exposure",)
 
     def run(self, repo_path: Path, language: str = "typescript") -> List[Finding]:
         os_pat = r'new\s+opensearch\.(Domain|CfnDomain)\(' if language == "typescript" else r'opensearch\.(Domain|CfnDomain)\('
@@ -218,6 +226,7 @@ class OpenSearchFineGrainedAccess(Rule):
     title = "OpenSearch fine-grained access control not enabled"
     category = "Security"
     severity = "Medium"
+    themes = ("identity",)
 
     def run(self, repo_path: Path, language: str = "typescript") -> List[Finding]:
         os_pat = r'new\s+opensearch\.(Domain|CfnDomain)\(' if language == "typescript" else r'opensearch\.(Domain|CfnDomain)\('
@@ -245,6 +254,7 @@ class OpenSearchVpcOnly(Rule):
     title = "OpenSearch domain not in VPC"
     category = "Security"
     severity = "High"
+    themes = ("network-exposure",)
 
     def run(self, repo_path: Path, language: str = "typescript") -> List[Finding]:
         os_pat = r'new\s+opensearch\.(Domain|CfnDomain)\(' if language == "typescript" else r'opensearch\.(Domain|CfnDomain)\('
@@ -272,6 +282,7 @@ class AthenaEncryption(Rule):
     title = "Athena query result encryption not enabled"
     category = "Security"
     severity = "Medium"
+    themes = ("data-protection",)
 
     def run(self, repo_path: Path, language: str = "typescript") -> List[Finding]:
         athena_pat = r'new\s+athena\.(CfnWorkGroup|Workgroup)\(' if language == "typescript" else r'athena\.(CfnWorkGroup|Workgroup)\('
@@ -299,6 +310,7 @@ class GlueEncryption(Rule):
     title = "Glue job encryption not configured"
     category = "Security"
     severity = "Medium"
+    themes = ("data-protection",)
 
     def run(self, repo_path: Path, language: str = "typescript") -> List[Finding]:
         glue_pat = r'new\s+glue\.(Job|CfnJob)\(' if language == "typescript" else r'glue\.(Job|CfnJob)\('
@@ -326,6 +338,7 @@ class MskEncryption(Rule):
     title = "MSK cluster encryption not configured"
     category = "Security"
     severity = "High"
+    themes = ("data-protection",)
 
     def run(self, repo_path: Path, language: str = "typescript") -> List[Finding]:
         msk_pat = r'new\s+msk\.(Cluster|CfnCluster)\(' if language == "typescript" else r'msk\.(Cluster|CfnCluster)\('
@@ -353,6 +366,7 @@ class MskAuthentication(Rule):
     title = "MSK cluster client authentication not configured"
     category = "Security"
     severity = "High"
+    themes = ("identity",)
 
     def run(self, repo_path: Path, language: str = "typescript") -> List[Finding]:
         msk_pat = r'new\s+msk\.(Cluster|CfnCluster)\(' if language == "typescript" else r'msk\.(Cluster|CfnCluster)\('
@@ -380,6 +394,7 @@ class RedshiftEncryptionMissing(Rule):
     title = "Redshift cluster encryption not enabled"
     category = "Security"
     severity = "High"
+    themes = ("data-protection",)
 
     def run(self, repo_path: Path, language: str = "typescript") -> List[Finding]:
         rs_pat = r'new\s+redshift\.(Cluster|CfnCluster)\(' if language == "typescript" else r'redshift\.(Cluster|CfnCluster)\('
@@ -407,6 +422,7 @@ class DocumentDbEncryptionMissing(Rule):
     title = "DocumentDB cluster encryption not enabled"
     category = "Security"
     severity = "High"
+    themes = ("data-protection",)
 
     def run(self, repo_path: Path, language: str = "typescript") -> List[Finding]:
         docdb_pat = r'new\s+docdb\.(DatabaseCluster|CfnDBCluster)\(' if language == "typescript" else r'docdb\.(DatabaseCluster|CfnDBCluster)\('
@@ -434,6 +450,7 @@ class NeptuneEncryptionMissing(Rule):
     title = "Neptune database encryption not enabled"
     category = "Security"
     severity = "High"
+    themes = ("data-protection",)
 
     def run(self, repo_path: Path, language: str = "typescript") -> List[Finding]:
         neptune_pat = r'new\s+neptune\.(DatabaseCluster|CfnDBCluster)\(' if language == "typescript" else r'neptune\.(DatabaseCluster|CfnDBCluster)\('
@@ -461,6 +478,7 @@ class CloudWatchLogsKmsEncryption(Rule):
     title = "CloudWatch Logs not encrypted with KMS"
     category = "Security"
     severity = "Medium"
+    themes = ("data-protection", "observability",)
 
     def run(self, repo_path: Path, language: str = "typescript") -> List[Finding]:
         log_pat = r'new\s+logs\.(LogGroup|LogGroupBase)\(' if language == "typescript" else r'logs\.(LogGroup|LogGroupBase)\('
@@ -488,6 +506,7 @@ class BackupVaultEncryption(Rule):
     title = "Backup vault encryption not configured"
     category = "Security"
     severity = "Medium"
+    themes = ("data-protection", "resilience",)
 
     def run(self, repo_path: Path, language: str = "typescript") -> List[Finding]:
         vault_pat = r'new\s+backup\.(BackupVault|CfnBackupVault)\(' if language == "typescript" else r'backup\.(BackupVault|CfnBackupVault)\('
@@ -515,6 +534,7 @@ class RdsPubliclyAccessible(Rule):
     title = "RDS instance may be publicly accessible"
     category = "Security"
     severity = "High"
+    themes = ("network-exposure",)
 
     def run(self, repo_path: Path, language: str = "typescript") -> List[Finding]:
         rds_pat = r'new\s+rds\.(DatabaseInstance|DatabaseCluster)\(' if language == "typescript" else r'rds\.(DatabaseInstance|DatabaseCluster)\('

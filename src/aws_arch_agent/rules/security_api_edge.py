@@ -21,6 +21,7 @@ class ApiGatewayAuthMissing(Rule):
     title = "API Gateway missing authentication"
     category = "Security"
     severity = "High"
+    themes = ("identity", "network-exposure",)
 
     def run(self, repo_path: Path, language: str = "typescript") -> List[Finding]:
         api_pat = r'new\s+(apigateway\.(RestApi|HttpApi)|RestApi|HttpApi)\(' if language == "typescript" else r'(apigateway\.(RestApi|HttpApi)|RestApi|HttpApi)\('
@@ -48,6 +49,7 @@ class ApiGatewayTlsVersion(Rule):
     title = "API Gateway may not enforce TLS 1.2+"
     category = "Security"
     severity = "Medium"
+    themes = ("data-protection", "network-exposure",)
 
     def run(self, repo_path: Path, language: str = "typescript") -> List[Finding]:
         api_pat = r'new\s+(apigateway\.(RestApi|HttpApi|DomainName)|RestApi|HttpApi|DomainName)\(' if language == "typescript" else r'(apigateway\.(RestApi|HttpApi|DomainName)|RestApi|HttpApi|DomainName)\('
@@ -75,6 +77,7 @@ class AlbHttpsRedirect(Rule):
     title = "ALB/NLB not enforcing HTTPS redirect"
     category = "Security"
     severity = "High"
+    themes = ("data-protection",)
 
     def run(self, repo_path: Path, language: str = "typescript") -> List[Finding]:
         alb_pat = r'new\s+elbv2\.(ApplicationLoadBalancer|NetworkLoadBalancer)\(' if language == "typescript" else r'elbv2\.(ApplicationLoadBalancer|NetworkLoadBalancer)\('
@@ -99,6 +102,7 @@ class AlbSslPolicy(Rule):
     title = "ALB using insecure SSL/TLS policy"
     category = "Security"
     severity = "Medium"
+    themes = ("data-protection", "network-exposure",)
 
     def run(self, repo_path: Path, language: str = "typescript") -> List[Finding]:
         alb_pat = r'new\s+elbv2\.ApplicationLoadBalancer\(' if language == "typescript" else r'elbv2\.ApplicationLoadBalancer\('
@@ -121,6 +125,7 @@ class CloudFrontHttpsOnly(Rule):
     title = "CloudFront not enforcing HTTPS"
     category = "Security"
     severity = "High"
+    themes = ("data-protection", "network-exposure",)
 
     def run(self, repo_path: Path, language: str = "typescript") -> List[Finding]:
         cf_pat = r'new\s+cloudfront\.(Distribution|CloudFrontWebDistribution)\(' if language == "typescript" else r'cloudfront\.(Distribution|CloudFrontWebDistribution)\('
@@ -145,6 +150,7 @@ class CloudFrontLegacyTls(Rule):
     title = "CloudFront using legacy SSL/TLS"
     category = "Security"
     severity = "Medium"
+    themes = ("data-protection", "network-exposure",)
 
     def run(self, repo_path: Path, language: str = "typescript") -> List[Finding]:
         cf_pat = r'new\s+cloudfront\.(Distribution|CloudFrontWebDistribution)\(' if language == "typescript" else r'cloudfront\.(Distribution|CloudFrontWebDistribution)\('
@@ -172,6 +178,7 @@ class AppSyncLogging(Rule):
     title = "AppSync API logging not enabled"
     category = "Security"
     severity = "Low"
+    themes = ("observability", "security-baseline",)
 
     def run(self, repo_path: Path, language: str = "typescript") -> List[Finding]:
         appsync_pat = r'new\s+appsync\.(GraphqlApi|CfnGraphQLApi)\(' if language == "typescript" else r'appsync\.(GraphqlApi|CfnGraphQLApi)\('
@@ -199,6 +206,7 @@ class AppSyncWaf(Rule):
     title = "AppSync API not protected by WAF"
     category = "Security"
     severity = "Low"
+    themes = ("network-exposure",)
 
     def run(self, repo_path: Path, language: str = "typescript") -> List[Finding]:
         appsync_pat = r'new\s+appsync\.(GraphqlApi|CfnGraphQLApi)\(' if language == "typescript" else r'appsync\.(GraphqlApi|CfnGraphQLApi)\('

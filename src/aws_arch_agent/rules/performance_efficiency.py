@@ -27,6 +27,7 @@ class GravitonNotUsed(Rule):
     title = "Compute may not use Graviton/ARM (cost and performance)"
     category = "Performance Efficiency"
     severity = "Low"
+    themes = ("finops",)
 
     def run(self, repo_path: Path, language: str = "typescript") -> List[Finding]:
         # Lambda: ARCH_ARM64; EC2/ECS: arm64, graviton
@@ -53,6 +54,7 @@ class CachingHint(Rule):
     title = "No caching layer detected (performance)"
     category = "Performance Efficiency"
     severity = "Low"
+    themes = ("resilience",)
 
     def run(self, repo_path: Path, language: str = "typescript") -> List[Finding]:
         glob = code_glob(language)
@@ -71,6 +73,7 @@ class DynamoDbProvisionedCapacity(Rule):
     title = "DynamoDB table may use provisioned capacity (consider on-demand)"
     category = "Performance Efficiency"
     severity = "Low"
+    themes = ("finops",)
 
     def run(self, repo_path: Path, language: str = "typescript") -> List[Finding]:
         ddb_pat = r'new\s+(dynamodb\.Table|Table)\(' if language == "typescript" else r'(dynamodb.Table|aws_dynamodb.Table)\('
@@ -100,6 +103,7 @@ class ApiGatewayCaching(Rule):
     title = "API Gateway caching not enabled"
     category = "Performance Efficiency"
     severity = "Low"
+    themes = ("resilience",)
 
     def run(self, repo_path: Path, language: str = "typescript") -> List[Finding]:
         api_pat = r'new\s+(apigateway\.(RestApi|Stage)|RestApi)\(' if language == "typescript" else r'(apigateway\.(RestApi|Stage)|RestApi)\('
@@ -126,6 +130,7 @@ class LambdaMemoryOptimization(Rule):
     title = "Lambda memory not optimized (too low/high)"
     category = "Performance Efficiency"
     severity = "Low"
+    themes = ("finops",)
 
     def run(self, repo_path: Path, language: str = "typescript") -> List[Finding]:
         lambda_pat = r'new\s+(lambda\.Function|NodejsFunction|PythonFunction|DockerImageFunction)\(' if language == "typescript" else r'(lambda_.Function|aws_lambda_python_alpha.PythonFunction|aws_lambda.Function)\('
@@ -152,6 +157,7 @@ class CloudFrontCaching(Rule):
     title = "CloudFront caching strategy not optimized"
     category = "Performance Efficiency"
     severity = "Low"
+    themes = ("resilience",)
 
     def run(self, repo_path: Path, language: str = "typescript") -> List[Finding]:
         cf_pat = r'new\s+cloudfront\.(Distribution|CloudFrontWebDistribution)\(' if language == "typescript" else r'cloudfront\.(Distribution|CloudFrontWebDistribution)\('
@@ -178,6 +184,7 @@ class EcsTaskSizing(Rule):
     title = "ECS task sizing (CPU/memory) may need review"
     category = "Performance Efficiency"
     severity = "Low"
+    themes = ("finops",)
 
     def run(self, repo_path: Path, language: str = "typescript") -> List[Finding]:
         task_pat = r'new\s+ecs\.(FargateTaskDefinition|Ec2TaskDefinition)\(' if language == "typescript" else r'ecs\.(FargateTaskDefinition|Ec2TaskDefinition)\('
@@ -204,6 +211,7 @@ class RdsInstanceSizing(Rule):
     title = "RDS instance class may be oversized"
     category = "Performance Efficiency"
     severity = "Low"
+    themes = ("finops",)
 
     def run(self, repo_path: Path, language: str = "typescript") -> List[Finding]:
         # Look for large instance classes
@@ -228,6 +236,7 @@ class KinesisEnhancedFanout(Rule):
     title = "Kinesis enhanced fan-out not used"
     category = "Performance Efficiency"
     severity = "Low"
+    themes = ("resilience",)
 
     def run(self, repo_path: Path, language: str = "typescript") -> List[Finding]:
         kinesis_consumer = rg(repo_path, r'StreamConsumer|registerStreamConsumer', glob=code_glob(language))
@@ -252,6 +261,7 @@ class OpenSearchInstanceTypes(Rule):
     title = "OpenSearch instance types not optimized"
     category = "Performance Efficiency"
     severity = "Low"
+    themes = ("finops",)
 
     def run(self, repo_path: Path, language: str = "typescript") -> List[Finding]:
         os_pat = r'new\s+opensearch\.(Domain|CfnDomain)\(' if language == "typescript" else r'opensearch\.(Domain|CfnDomain)\('
@@ -278,6 +288,7 @@ class GlobalAcceleratorOptimization(Rule):
     title = "Global Accelerator not used for global traffic"
     category = "Performance Efficiency"
     severity = "Low"
+    themes = ("resilience",)
 
     def run(self, repo_path: Path, language: str = "typescript") -> List[Finding]:
         alb_pat = r'new\s+elbv2\.(ApplicationLoadBalancer|NetworkLoadBalancer)\(' if language == "typescript" else r'elbv2\.(ApplicationLoadBalancer|NetworkLoadBalancer)\('
@@ -303,6 +314,7 @@ class EfsPerformanceMode(Rule):
     title = "EFS performance mode not configured"
     category = "Performance Efficiency"
     severity = "Low"
+    themes = ("resilience",)
 
     def run(self, repo_path: Path, language: str = "typescript") -> List[Finding]:
         efs_pat = r'new\s+efs\.FileSystem\(' if language == "typescript" else r'efs\.FileSystem\('
@@ -329,6 +341,7 @@ class AppSyncCaching(Rule):
     title = "AppSync API caching not enabled"
     category = "Performance Efficiency"
     severity = "Low"
+    themes = ("resilience",)
 
     def run(self, repo_path: Path, language: str = "typescript") -> List[Finding]:
         appsync_pat = r'new\s+appsync\.(GraphqlApi|CfnGraphQLApi)\(' if language == "typescript" else r'appsync\.(GraphqlApi|CfnGraphQLApi)\('
@@ -355,6 +368,7 @@ class S3TransferAcceleration(Rule):
     title = "S3 Transfer Acceleration not enabled for global uploads"
     category = "Performance Efficiency"
     severity = "Low"
+    themes = ("resilience",)
 
     def run(self, repo_path: Path, language: str = "typescript") -> List[Finding]:
         s3_pat = r'new\s+s3\.(Bucket|CfnBucket)\(' if language == "typescript" else r's3\.(Bucket|CfnBucket)\('
@@ -380,6 +394,7 @@ class LambdaSnapStart(Rule):
     title = "Lambda SnapStart not enabled for Java functions"
     category = "Performance Efficiency"
     severity = "Low"
+    themes = ("resilience",)
 
     def run(self, repo_path: Path, language: str = "typescript") -> List[Finding]:
         java_lambda = rg(repo_path, r'Runtime\.JAVA|runtime.*java|JAVA_\d+', glob=code_glob(language))
@@ -404,6 +419,7 @@ class AuroraIoOptimized(Rule):
     title = "Aurora not using I/O-Optimized for high I/O workloads"
     category = "Performance Efficiency"
     severity = "Low"
+    themes = ("finops",)
 
     def run(self, repo_path: Path, language: str = "typescript") -> List[Finding]:
         aurora = rg(repo_path, r'DatabaseInstance|DatabaseCluster|rds\.', glob=code_glob(language))
@@ -428,6 +444,7 @@ class EbsIo2BlockExpress(Rule):
     title = "EBS io2 Block Express not used for high IOPS"
     category = "Performance Efficiency"
     severity = "Low"
+    themes = ("resilience",)
 
     def run(self, repo_path: Path, language: str = "typescript") -> List[Finding]:
         ebs = rg(repo_path, r'EbsDeviceVolumeType|volume_type|gp3|io1', glob=code_glob(language))
@@ -452,6 +469,7 @@ class CloudWatchContributorInsights(Rule):
     title = "CloudWatch Contributor Insights not enabled"
     category = "Performance Efficiency"
     severity = "Low"
+    themes = ("observability",)
 
     def run(self, repo_path: Path, language: str = "typescript") -> List[Finding]:
         dynamodb = rg(repo_path, r'dynamodb\.Table|DynamoDB', glob=code_glob(language))
@@ -476,6 +494,7 @@ class RdsProxyMissing(Rule):
     title = "RDS Proxy not used for connection pooling"
     category = "Performance Efficiency"
     severity = "Low"
+    themes = ("resilience",)
 
     def run(self, repo_path: Path, language: str = "typescript") -> List[Finding]:
         rds = rg(repo_path, r'rds\.(DatabaseInstance|DatabaseCluster)\(' if language == "typescript" else r'rds\.(DatabaseInstance|DatabaseCluster)\(', glob=code_glob(language))

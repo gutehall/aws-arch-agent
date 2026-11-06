@@ -12,6 +12,7 @@ class SpotNotConsidered(Rule):
     title = "Fleet may not use Spot for interruptible workloads"
     category = "Sustainability"
     severity = "Low"
+    themes = ("sustainability", "finops",)
 
     def run(self, repo_path: Path, language: str = "typescript") -> List[Finding]:
         ec2_ecs = rg(repo_path, r"Ec2Service|FargateService|ec2\.Instance|AutoScalingGroup", glob=code_glob(language))
@@ -36,6 +37,7 @@ class RightSizingHint(Rule):
     title = "Right-sizing and efficiency review recommended"
     category = "Sustainability"
     severity = "Low"
+    themes = ("sustainability", "finops",)
 
     def run(self, repo_path: Path, language: str = "typescript") -> List[Finding]:
         # Heuristic: fixed instance sizes without autoscaling
@@ -60,6 +62,7 @@ class ScheduledScalingMissing(Rule):
     title = "Scheduled scaling not configured for predictable patterns"
     category = "Sustainability"
     severity = "Low"
+    themes = ("sustainability",)
 
     def run(self, repo_path: Path, language: str = "typescript") -> List[Finding]:
         asg = rg(repo_path, r'AutoScalingGroup|addAutoScaling', glob=code_glob(language))
@@ -84,6 +87,7 @@ class AsyncProcessingHint(Rule):
     title = "Consider async processing for batch workloads"
     category = "Sustainability"
     severity = "Low"
+    themes = ("sustainability",)
 
     def run(self, repo_path: Path, language: str = "typescript") -> List[Finding]:
         lambda_pat = r'new\s+lambda\.Function\(' if language == "typescript" else r'lambda_.Function\('
@@ -110,6 +114,7 @@ class ManagedServicesPreference(Rule):
     title = "Consider managed services over self-managed"
     category = "Sustainability"
     severity = "Low"
+    themes = ("sustainability",)
 
     def run(self, repo_path: Path, language: str = "typescript") -> List[Finding]:
         ec2 = rg(repo_path, r'ec2\.Instance\(' if language == "typescript" else r'ec2\.Instance\(', glob=code_glob(language))
@@ -135,6 +140,7 @@ class CloudFrontCompression(Rule):
     title = "CloudFront compression not enabled"
     category = "Sustainability"
     severity = "Low"
+    themes = ("sustainability", "finops",)
 
     def run(self, repo_path: Path, language: str = "typescript") -> List[Finding]:
         cf_pat = r'new\s+cloudfront\.(Distribution|CloudFrontWebDistribution)\(' if language == "typescript" else r'cloudfront\.(Distribution|CloudFrontWebDistribution)\('
@@ -161,6 +167,7 @@ class LatestGenInstances(Rule):
     title = "Latest generation instance types not used"
     category = "Sustainability"
     severity = "Low"
+    themes = ("sustainability", "finops",)
 
     def run(self, repo_path: Path, language: str = "typescript") -> List[Finding]:
         legacy = rg(repo_path, r't2\.|m3\.|m4\.|c3\.|c4\.|r3\.|r4\.', glob=code_glob(language))

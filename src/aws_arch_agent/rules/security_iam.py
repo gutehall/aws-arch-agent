@@ -24,6 +24,7 @@ class IamWildcardAction(Rule):
     title = "IAM policy uses wildcard actions"
     category = "Security"
     severity = "High"
+    themes = ("identity",)
 
     def run(self, repo_path: Path, language: str = "typescript") -> List[Finding]:
         hits = rg(repo_path, _WILDCARD_ACTION, glob=code_glob(language))
@@ -48,6 +49,7 @@ class IamWildcardResource(Rule):
     title = "IAM policy uses wildcard resources"
     category = "Security"
     severity = "High"
+    themes = ("identity",)
 
     def run(self, repo_path: Path, language: str = "typescript") -> List[Finding]:
         hits = rg(repo_path, _WILDCARD_RESOURCE, glob=code_glob(language))
@@ -72,6 +74,7 @@ class IamAdministratorAccess(Rule):
     title = "IAM principal has full admin access"
     category = "Security"
     severity = "High"
+    themes = ("identity",)
 
     def run(self, repo_path: Path, language: str = "typescript") -> List[Finding]:
         suggested = (
@@ -112,6 +115,7 @@ class KmsKeyPolicyWildcard(Rule):
     title = "KMS key policy may use wildcard principal"
     category = "Security"
     severity = "High"
+    themes = ("identity", "data-protection",)
 
     def run(self, repo_path: Path, language: str = "typescript") -> List[Finding]:
         kms = rg(repo_path, r"kms\.(Key|Alias)|aws_kms\.(Key|Alias)|KMS", glob=code_glob(language))
@@ -134,6 +138,7 @@ class SecretsManagerRotation(Rule):
     title = "Secrets Manager rotation not enabled"
     category = "Security"
     severity = "Medium"
+    themes = ("data-protection",)
 
     def run(self, repo_path: Path, language: str = "typescript") -> List[Finding]:
         secret_pat = r'new\s+secretsmanager\.Secret\(' if language == "typescript" else r'secretsmanager\.Secret\('
@@ -161,6 +166,7 @@ class HardcodedSecrets(Rule):
     title = "Potential hardcoded credentials/secrets in code"
     category = "Security"
     severity = "High"
+    themes = ("identity", "data-protection",)
 
     def run(self, repo_path: Path, language: str = "typescript") -> List[Finding]:
         # Look for common patterns of hardcoded secrets
@@ -196,6 +202,7 @@ class LambdaEnvSecrets(Rule):
     title = "Lambda environment variables may contain secrets"
     category = "Security"
     severity = "Medium"
+    themes = ("data-protection",)
 
     def run(self, repo_path: Path, language: str = "typescript") -> List[Finding]:
         env_secrets = rg(repo_path, r'environment\s*:\s*\{[^}]*(password|secret|key|token)[^}]*\}', glob=code_glob(language))
@@ -220,6 +227,7 @@ class KmsKeyRotation(Rule):
     title = "KMS key rotation not enabled"
     category = "Security"
     severity = "Low"
+    themes = ("data-protection",)
 
     def run(self, repo_path: Path, language: str = "typescript") -> List[Finding]:
         kms_pat = r'new\s+kms\.Key\(' if language == "typescript" else r'kms\.Key\('
@@ -243,6 +251,7 @@ class SecurityHubNotEnabled(Rule):
     title = "Security Hub not enabled"
     category = "Security"
     severity = "Low"
+    themes = ("security-baseline",)
 
     def run(self, repo_path: Path, language: str = "typescript") -> List[Finding]:
         securityhub = rg(repo_path, r'CfnHub|securityhub\.CfnHub', glob=code_glob(language))
@@ -266,6 +275,7 @@ class GuardDutyNotEnabled(Rule):
     title = "GuardDuty not enabled"
     category = "Security"
     severity = "Low"
+    themes = ("observability", "security-baseline",)
 
     def run(self, repo_path: Path, language: str = "typescript") -> List[Finding]:
         guardduty = rg(repo_path, r'CfnDetector|guardduty\.CfnDetector', glob=code_glob(language))
@@ -289,6 +299,7 @@ class SsmParameterEncryption(Rule):
     title = "SSM Parameter Store not using SecureString"
     category = "Security"
     severity = "Medium"
+    themes = ("data-protection",)
 
     def run(self, repo_path: Path, language: str = "typescript") -> List[Finding]:
         ssm_pat = r'new\s+ssm\.(StringParameter|CfnParameter)\(' if language == "typescript" else r'ssm\.(StringParameter|CfnParameter)\('
@@ -316,6 +327,7 @@ class CognitoMfaMissing(Rule):
     title = "Cognito User Pool MFA not required"
     category = "Security"
     severity = "High"
+    themes = ("identity",)
 
     def run(self, repo_path: Path, language: str = "typescript") -> List[Finding]:
         cognito_pat = r'new\s+cognito\.UserPool\(' if language == "typescript" else r'cognito\.UserPool\('
@@ -343,6 +355,7 @@ class CognitoPasswordPolicy(Rule):
     title = "Cognito User Pool password policy may be weak"
     category = "Security"
     severity = "Medium"
+    themes = ("identity",)
 
     def run(self, repo_path: Path, language: str = "typescript") -> List[Finding]:
         cognito_pat = r'new\s+cognito\.UserPool\(' if language == "typescript" else r'cognito\.UserPool\('
@@ -362,6 +375,7 @@ class CognitoAdvancedSecurity(Rule):
     title = "Cognito advanced security features not enabled"
     category = "Security"
     severity = "Low"
+    themes = ("identity",)
 
     def run(self, repo_path: Path, language: str = "typescript") -> List[Finding]:
         cognito_pat = r'new\s+cognito\.UserPool\(' if language == "typescript" else r'cognito\.UserPool\('
@@ -389,6 +403,7 @@ class StackTerminationProtection(Rule):
     title = "Stack termination protection not enabled"
     category = "Security"
     severity = "Medium"
+    themes = ("resilience", "data-protection",)
 
     def run(self, repo_path: Path, language: str = "typescript") -> List[Finding]:
         stack_pat = r'class\s+\w+\s+extends\s+Stack|super\(scope.*Stack' if language == "typescript" else r'class.*Stack\)|Stack\(scope'
@@ -416,6 +431,7 @@ class MacieNotEnabled(Rule):
     title = "Amazon Macie not enabled for sensitive data discovery"
     category = "Security"
     severity = "Low"
+    themes = ("data-protection",)
 
     def run(self, repo_path: Path, language: str = "typescript") -> List[Finding]:
         s3_buckets = rg(repo_path, r'new\s+s3\.Bucket\(' if language == "typescript" else r's3\.Bucket\(', glob=code_glob(language))
