@@ -225,6 +225,9 @@ class _Block:
         self.file = file
         self.line = line
         self.data = data  # a `data` block, not a managed resource
+        # Addresses the block refers to, read from its raw arguments: normalizing turns an
+        # expression with var/count/each into UNRESOLVED and would drop the reference.
+        self.references: frozenset[str] = frozenset()
 
     @property
     def address(self) -> str:
@@ -356,9 +359,9 @@ def parse_tf_file(path: Path) -> tuple[list[_Block], list[str]]:
                     if not isinstance(body, dict):
                         continue
                     norm = normalize(body)
-                    blocks.append(
-                        _Block(rtype, name, norm, path, _find_line(text, rtype, name, is_json))
-                    )
+                    block = _Block(rtype, name, norm, path, _find_line(text, rtype, name, is_json))
+                    block.references = frozenset(_ADDRESS_REF.findall(json.dumps(body, default=str)))
+                    blocks.append(block)
 
     # Data sources the checks read: policy documents and managed policy lookups, so
     # references to them resolve.
@@ -1369,7 +1372,7 @@ def _to_resource(block: _Block) -> Resource:
         source_type=block.type,
         unresolved=unresolved,
         policies=_lifecycle_policies(block.body),
-        references=frozenset(_ADDRESS_REF.findall(json.dumps(block.body, default=str))),
+        references=block.references,
     )
 
 

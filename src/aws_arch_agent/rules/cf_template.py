@@ -613,9 +613,10 @@ def _gp2_finding(res: Resource, template_path: Path) -> Finding | None:
         evidence=f"{res.name} ({res.source_type})",
         recommendation=(
             ("VolumeType is gp2." if "VolumeType" in res.properties else "VolumeType is not set, so it is gp2.")
-            + " gp3 costs about 20% less per GB and includes 3,000 IOPS and 125 MB/s whatever "
-            "the size. Set VolumeType to gp3; for a volume over 1,000 GiB, set Iops to match "
-            "its gp2 baseline (3 per GiB). In CDK: volumeType: ec2.EbsDeviceVolumeType.GP3."
+            + " gp3 costs about 20% less per GB and includes 3,000 IOPS and 125 MB/s at any "
+            "size. Set VolumeType to gp3. Over 1,000 GiB, set Iops to keep the gp2 baseline "
+            "(3 per GiB); over 170 GiB, set Throughput if the workload needs more than 125 MB/s. "
+            "In CDK: volumeType: ec2.EbsDeviceVolumeType.GP3."
         ),
     )
     return estimates.apply(finding, estimates.gp2_volume(res.properties.get("Size")))

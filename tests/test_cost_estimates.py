@@ -274,3 +274,64 @@ def test_schema_documents_the_estimate_fields() -> None:
 @pytest.mark.parametrize("size,expected", [("100", 100), (100, 100), (True, None), ({"Ref": "S"}, None), ("1e3", None)])
 def test_literal_sizes(size, expected) -> None:
     assert estimates._literal_int(size) == expected
+
+
+def test_terraform_eip_references_through_expressions(tmp_path: Path) -> None:
+    """References inside count indexes, conditionals and templates still count as use."""
+    (tmp_path / "main.tf").write_text("""\
+resource "aws_eip" "counted" {
+  count  = 2
+  domain = "vpc"
+}
+
+resource "aws_nat_gateway" "counted" {
+  count         = 2
+  allocation_id = aws_eip.counted[count.index].id
+  subnet_id     = var.subnets[count.index]
+}
+
+resource "aws_eip" "maybe" {
+  domain = "vpc"
+}
+
+resource "aws_eip_association" "maybe" {
+  allocation_id = var.attach ? aws_eip.maybe.id : null
+  instance_id   = "i-1"
+}
+
+resource "aws_eip" "templated" {
+  domain = "vpc"
+}
+
+resource "aws_ssm_parameter" "ip" {
+  name  = "/app/ip"
+  type  = "String"
+  value = "${var.prefix}-${aws_eip.templated.public_ip}"
+}
+
+resource "aws_eip" "idle" {
+  domain = "vpc"
+}
+""", encoding="utf-8")
+    found = {f.evidence.split(" ")[0] for f in run_resource_checks(resources_from_terraform(tmp_path), tmp_path)
+             if f.id == "CF-EIP-001"}
+    assert found == {"aws_eip.idle"}
+
+
+def test_gp2_throughput_caveat_above_170_gib() -> None:
+    small, mid = estimates.gp2_volume(100), estimates.gp2_volume(500)
+    assert small is not None and "250 MB/s" not in small.basis
+    assert mid is not None and mid.monthly_savings_usd is not None
+    assert "gp2 can reach 250 MB/s above 170 GiB" in mid.basis
+
+
+def test_one_size_smaller_is_the_next_size_only(monkeypatch: pytest.MonkeyPatch) -> None:
+    """If the region lacks the next size down, no saving, rather than one from further down."""
+    real = pricing.price
+
+    def without_2xlarge(key: str, region: str = "us-east-1"):
+        return None if key == "ec2:m5.2xlarge" and region == "us-east-1" else real(key, region)
+
+    monkeypatch.setattr(estimates, "price", without_2xlarge)
+    est = estimates.ec2_instance("m5.4xlarge")
+    assert est is not None and est.monthly_cost_usd is not None and est.monthly_savings_usd is None

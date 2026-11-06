@@ -12,12 +12,14 @@ from dataclasses import dataclass
 from typing import Any
 
 from aws_arch_agent.models import Finding
-from aws_arch_agent.pricing import Price, current_region, price
+from aws_arch_agent.pricing import Price, current_region, price, regions
 
 HOURS_PER_MONTH = 730
 # gp3 includes 3,000 IOPS; a gp2 volume has 3 IOPS per GiB, so above 1,000 GiB gp2 has more
 # baseline IOPS than gp3 and matching it on gp3 costs extra.
 GP3_BASELINE_GIB = 1000
+# Up to 170 GiB gp2 gives 128 MiB/s, about gp3's included 125 MB/s; above it gp2 gives more.
+GP2_SMALL_THROUGHPUT_GIB = 170
 
 # Instance sizes from small to large, for "one size smaller".
 _SIZES = (
@@ -79,16 +81,21 @@ def _literal_int(value: Any) -> int | None:
 
 
 def _smaller(instance_type: str, prefix: str, key_for: Any) -> tuple[str, Price] | None:
-    """The next smaller size of the same family that the snapshot prices."""
+    """The size directly below in the same family (m5.4xlarge -> m5.2xlarge), priced here.
+
+    Families skip sizes (m5 has no 3xlarge), so "directly below" is the next size the
+    snapshot lists for the family in any region. If this region does not price that size,
+    there is no saving rather than one from a smaller size further down.
+    """
     match = re.fullmatch(rf"({re.escape(prefix)}[a-z0-9-]+)\.([a-z0-9]+)", instance_type)
     if not match or match.group(2) not in _SIZES:
         return None
     family, size = match.groups()
     for smaller in reversed(_SIZES[: _SIZES.index(size)]):
         candidate = f"{family}.{smaller}"
-        found = price(key_for(candidate), current_region())
-        if found is not None:
-            return candidate, found
+        if any(price(key_for(candidate), region) is not None for region in regions()):
+            found = price(key_for(candidate), current_region())
+            return (candidate, found) if found is not None else None
     return None
 
 
@@ -185,8 +192,13 @@ def gp2_volume(size: Any) -> Estimate | None:
     if gp3 is not None and gib <= GP3_BASELINE_GIB:
         saving = _round(cost - gib * gp3.usd)
         note = (
-            f" Saving on gp3 at {_unit_price(gp3)}/GB-month, whose included 3,000 IOPS and "
-            "125 MB/s match or exceed this volume's gp2 baseline."
+            f" Saving on gp3 at {_unit_price(gp3)}/GB-month, whose included 3,000 IOPS match or "
+            "exceed this volume's gp2 baseline."
+            + (
+                " gp3 includes 125 MB/s; gp2 can reach 250 MB/s above 170 GiB, so a volume that "
+                "needs that throughput pays for it on gp3 (not included in the saving)."
+                if gib > GP2_SMALL_THROUGHPUT_GIB else ""
+            )
         )
     elif gp3 is not None:
         note = (
