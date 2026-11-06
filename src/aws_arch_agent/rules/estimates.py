@@ -354,6 +354,12 @@ def downsize(kind: str, instance_type: str, size: str, props: dict | None = None
     )
 
 
+def nat_processing_price() -> str | None:
+    """The NAT gateway per-GB data processing price, with its source; None if not in the snapshot."""
+    gb = price("nat:gb", current_region())
+    return f"{_unit_price(gb)}/GB ({_where(gb)})" if gb else None
+
+
 def extra_nat_gateways(count: int) -> Estimate | None:
     """All NAT gateways' hours, and the saving with one shared NAT gateway."""
     total, one = nat_gateways(count), nat_gateways(1)

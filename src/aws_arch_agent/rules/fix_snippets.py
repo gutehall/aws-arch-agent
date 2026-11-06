@@ -263,6 +263,38 @@ _CLOUDFORMATION: dict[str, str] = {
     VpcEndpointType: Gateway
     RouteTableIds:
       - !Ref PrivateRouteTable""",
+    "CF-VPC-002": """S3GatewayEndpoint:
+  Type: AWS::EC2::VPCEndpoint
+  Properties:
+    VpcId: !Ref $name
+    ServiceName: !Sub com.amazonaws.$${AWS::Region}.s3
+    VpcEndpointType: Gateway
+    RouteTableIds:
+      - !Ref PrivateRouteTable""",
+    "CF-VPC-002:AWS::EC2::NatGateway": """S3GatewayEndpoint:
+  Type: AWS::EC2::VPCEndpoint
+  Properties:
+    VpcId: !Ref Vpc  # the VPC of the NAT gateway
+    ServiceName: !Sub com.amazonaws.$${AWS::Region}.s3
+    VpcEndpointType: Gateway
+    RouteTableIds:
+      - !Ref PrivateRouteTable""",
+    "CF-VPC-003": """DynamoDBGatewayEndpoint:
+  Type: AWS::EC2::VPCEndpoint
+  Properties:
+    VpcId: !Ref $name
+    ServiceName: !Sub com.amazonaws.$${AWS::Region}.dynamodb
+    VpcEndpointType: Gateway
+    RouteTableIds:
+      - !Ref PrivateRouteTable""",
+    "CF-VPC-003:AWS::EC2::NatGateway": """DynamoDBGatewayEndpoint:
+  Type: AWS::EC2::VPCEndpoint
+  Properties:
+    VpcId: !Ref Vpc  # the VPC of the NAT gateway
+    ServiceName: !Sub com.amazonaws.$${AWS::Region}.dynamodb
+    VpcEndpointType: Gateway
+    RouteTableIds:
+      - !Ref PrivateRouteTable""",
     "CF-FL-001": """VpcFlowLog:
   Type: AWS::EC2::FlowLog
   Properties:
@@ -509,6 +541,38 @@ resource "aws_security_group" "$tf_name" {
 resource "aws_vpc_endpoint" "s3" {
   vpc_id            = aws_vpc.$tf_name.id
   service_name      = "com.amazonaws.$${data.aws_region.current.name}.s3"
+  vpc_endpoint_type = "Gateway"
+  route_table_ids   = [aws_route_table.private.id]
+}""",
+    "CF-VPC-002": """data "aws_region" "current" {}
+
+resource "aws_vpc_endpoint" "s3" {
+  vpc_id            = aws_vpc.$tf_name.id
+  service_name      = "com.amazonaws.$${data.aws_region.current.name}.s3"
+  vpc_endpoint_type = "Gateway"
+  route_table_ids   = [aws_route_table.private.id]
+}""",
+    "CF-VPC-002:aws_nat_gateway": """data "aws_region" "current" {}
+
+resource "aws_vpc_endpoint" "s3" {
+  vpc_id            = aws_vpc.main.id # the VPC of the NAT gateway
+  service_name      = "com.amazonaws.$${data.aws_region.current.name}.s3"
+  vpc_endpoint_type = "Gateway"
+  route_table_ids   = [aws_route_table.private.id]
+}""",
+    "CF-VPC-003": """data "aws_region" "current" {}
+
+resource "aws_vpc_endpoint" "dynamodb" {
+  vpc_id            = aws_vpc.$tf_name.id
+  service_name      = "com.amazonaws.$${data.aws_region.current.name}.dynamodb"
+  vpc_endpoint_type = "Gateway"
+  route_table_ids   = [aws_route_table.private.id]
+}""",
+    "CF-VPC-003:aws_nat_gateway": """data "aws_region" "current" {}
+
+resource "aws_vpc_endpoint" "dynamodb" {
+  vpc_id            = aws_vpc.main.id # the VPC of the NAT gateway
+  service_name      = "com.amazonaws.$${data.aws_region.current.name}.dynamodb"
   vpc_endpoint_type = "Gateway"
   route_table_ids   = [aws_route_table.private.id]
 }""",
