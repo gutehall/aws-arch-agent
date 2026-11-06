@@ -2524,8 +2524,8 @@ def _store_repo_relative(findings: List[Finding], repo_path: Path | None) -> Non
 def drop_static_covered_by_cf(findings: List[Finding]) -> List[Finding]:
     """Drop a static finding when a CloudFormation finding already covers that control."""
     covered = {sid for f in findings for sid in CF_COVERS_STATIC.get(f.id, ())}
-    if tag_policy.active_policy() is not None:
-        # The templates were checked against the tag policy, which replaces the repo-wide guesses.
+    if tag_policy.policy_checked():
+        # Templates were checked against the tag policy, which replaces the repo-wide guesses.
         covered |= set(tag_policy.REPLACED_STATIC_RULES)
     if not covered:
         return findings

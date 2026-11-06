@@ -293,8 +293,8 @@ def analyze(
 
     if ctx_report.notes.get("tag_policy") == "not checked":
         console.print(
-            "tags.required is checked on templates, and this scan read CDK source only. "
-            "Run --mode v2 (cdk synth) to check the tag policy.",
+            "tags.required is checked on templates, and this scan read none "
+            "(CDK source is not a template: run --mode v2 to synth it).",
             style="yellow",
             markup=False,
         )

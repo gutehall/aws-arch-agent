@@ -167,17 +167,80 @@ resource "aws_autoscaling_group" "asg_missing" {
   min_size = 1
 }
 """)
-    assert set(found) == {"aws_s3_bucket.west", "aws_s3_bucket.bad_env", "aws_autoscaling_group.asg_missing"}
+    # aws_autoscaling_group does not take provider default_tags, so asg lacks CostCenter.
+    assert set(found) == {"aws_s3_bucket.west", "aws_s3_bucket.bad_env", "aws_autoscaling_group.asg",
+                          "aws_autoscaling_group.asg_missing"}
+    assert found["aws_autoscaling_group.asg"].recommendation.startswith(
+        "Missing required tags: CostCenter, Environment.")
     # The west provider has no default_tags.
     assert found["aws_s3_bucket.west"].recommendation.startswith("Missing required tags: CostCenter, Environment.")
     assert "Environment=staging" in found["aws_s3_bucket.bad_env"].recommendation
 
 
-def test_policy_replaces_the_repo_wide_tag_guesses() -> None:
+def test_policy_replaces_the_repo_wide_tag_guesses(tmp_path: Path) -> None:
     guesses = [Finding(id=i, title="t", recommendation="r") for i in ("BP-001", "COST-015", "SEC-005")]
     assert [f.id for f in drop_static_covered_by_cf(list(guesses))] == ["BP-001", "COST-015", "SEC-005"]
     with use_tag_policy(POLICY):
+        # No template read yet: the guesses stay.
+        assert [f.id for f in drop_static_covered_by_cf(list(guesses))] == ["BP-001", "COST-015", "SEC-005"]
+        bad = tmp_path / "bad.json"
+        bad.write_text("{not json", encoding="utf-8")
+        run_cf_rules_from_paths([bad], repo_path=tmp_path)
+        assert [f.id for f in drop_static_covered_by_cf(list(guesses))] == ["BP-001", "COST-015", "SEC-005"]
+        good = tmp_path / "good.json"
+        good.write_text(json.dumps({"Resources": {"B": _bucket(GOOD)}}), encoding="utf-8")
+        run_cf_rules_from_paths([good], repo_path=tmp_path)
         assert [f.id for f in drop_static_covered_by_cf(list(guesses))] == ["SEC-005"]
+    # The scope resets afterwards.
+    assert [f.id for f in drop_static_covered_by_cf(list(guesses))] == ["BP-001", "COST-015", "SEC-005"]
+
+
+def test_numeric_tag_values_are_their_text(tmp_path: Path) -> None:
+    path = tmp_path / "t.yaml"
+    path.write_text(
+        "Resources:\n"
+        "  Ok:\n    Type: AWS::S3::Bucket\n    Properties:\n      Tags:\n"
+        "        - {Key: CostCenter, Value: 1234}\n        - {Key: Owner, Value: o}\n"
+        "        - {Key: Environment, Value: dev}\n"
+        "  BadEnv:\n    Type: AWS::S3::Bucket\n    Properties:\n      Tags:\n"
+        "        - {Key: CostCenter, Value: 1}\n        - {Key: Owner, Value: o}\n"
+        "        - {Key: Environment, Value: 2024}\n",
+        encoding="utf-8")
+    with use_tag_policy(POLICY):
+        found = _tagged(run_cf_rules_from_paths([path], repo_path=tmp_path))
+    assert set(found) == {"BadEnv"}
+    assert "Environment=2024" in found["BadEnv"].recommendation
+
+
+def test_terraform_plan_tags_all_fills_unknown_tags(tmp_path: Path) -> None:
+    from aws_arch_agent.rules.terraform_model import load_plan_values
+
+    (tmp_path / "main.tf").write_text("""\
+provider "aws" {
+  default_tags {
+    tags = var.common_tags
+  }
+}
+
+resource "aws_s3_bucket" "logs" {
+  bucket = "logs"
+}
+
+resource "aws_s3_bucket" "data" {
+  bucket = "data"
+}
+""", encoding="utf-8")
+    plan = tmp_path / "plan.json"
+    plan.write_text(json.dumps({"planned_values": {"root_module": {"resources": [
+        {"address": "aws_s3_bucket.logs", "mode": "managed",
+         "values": {"bucket": "logs", "tags_all": {"CostCenter": "1", "Owner": "o", "Environment": "dev"}}},
+        {"address": "aws_s3_bucket.data", "mode": "managed",
+         "values": {"bucket": "data", "tags_all": {"CostCenter": "1"}}},
+    ]}}}), encoding="utf-8")
+    resources = resources_from_terraform(tmp_path, plan_values=load_plan_values(plan))
+    with use_tag_policy(POLICY):
+        found = _tagged(run_resource_checks(resources, tmp_path))
+    assert set(found) == {"aws_s3_bucket.data"}  # without the plan neither is judged
 
 
 def test_config(tmp_path: Path) -> None:
@@ -189,7 +252,8 @@ def test_config(tmp_path: Path) -> None:
     assert policy == TagPolicy(required=("CostCenter", "Owner"), allowed={"Environment": ("prod", "dev")})
     (tmp_path / ".aws-arch-agent.yaml").write_text("tags:\n  required: []\n", encoding="utf-8")
     assert load_config(tmp_path).tag_policy is None  # no required keys: off
-    for bad in ("tags: [a]\n", "tags:\n  require: [a]\n", "tags:\n  required: [a]\n  allowed: {Env: []}\n"):
+    for bad in ("tags: [a]\n", "tags:\n  require: [a]\n", "tags:\n  required: [a]\n  allowed: {Env: []}\n",
+                "tags:\n  required: [a]\n  allowed: []\n"):
         (tmp_path / ".aws-arch-agent.yaml").write_text(bad, encoding="utf-8")
         with pytest.raises(ConfigError, match="tags"):
             load_config(tmp_path)
@@ -221,4 +285,4 @@ def test_cli_scan_and_cdk_source_note(tmp_path: Path) -> None:
     (cdk / ".aws-arch-agent.yaml").write_text("tags:\n  required: [Owner]\n", encoding="utf-8")
     result = CliRunner().invoke(app, ["--repo", str(cdk), "--no-llm", "--out", str(tmp_path / "c.md")])
     assert result.exit_code == 0, result.output
-    assert "tags.required is checked on templates" in result.output
+    assert "tags.required is checked on templates, and this scan read none" in result.output

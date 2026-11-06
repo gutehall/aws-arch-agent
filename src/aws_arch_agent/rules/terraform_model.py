@@ -1645,6 +1645,12 @@ def resources_from_terraform(
             continue
         resource = _to_resource(block)
         resource.inherited_tags = _inherited_tags(block, default_tags)
+        planned_tags = (plan_values or {}).get(block.address, {}).get("tags_all")
+        if block.type in TF_TAGGABLE and isinstance(planned_tags, dict):
+            # The plan's tags_all is the resource's tags merged with default_tags: use it whole.
+            resource.properties["Tags"] = _tag_values(planned_tags) or {}
+            resource.unresolved = resource.unresolved - {"Tags"}
+            resource.inherited_tags = {}
         resources[resource.name] = resource
     _merge_s3_parts(blocks, resources)
     _merge_ecr_lifecycle(blocks, resources)

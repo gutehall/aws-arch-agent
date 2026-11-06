@@ -107,7 +107,9 @@ def tag_policy_from(value: Any) -> TagPolicy | None:
     if unknown:
         raise ConfigError(f"tags has unknown keys: {', '.join(sorted(unknown))} (use required, allowed)")
     required = _as_string_list(value.get("required"), "tags.required") or []
-    allowed_raw = value.get("allowed") or {}
+    allowed_raw = value.get("allowed")
+    if allowed_raw is None:
+        allowed_raw = {}
     if not isinstance(allowed_raw, dict):
         raise ConfigError(f"tags.allowed must be a mapping of tag key to values, got {allowed_raw!r}")
     allowed: dict[str, tuple[str, ...]] = {}

@@ -24,7 +24,7 @@ from aws_arch_agent.rules.terraform_model import (
 )
 from aws_arch_agent.rules.runner import filter_by_severity, run_all_rules
 from aws_arch_agent.pricing import DEFAULT_REGION, price_note, use_region
-from aws_arch_agent.rules.tag_policy import TagPolicy, use_tag_policy
+from aws_arch_agent.rules.tag_policy import TagPolicy, policy_checked, use_tag_policy
 from aws_arch_agent.report.markdown import render_markdown
 from aws_arch_agent.tools.llm import LLMClient
 from aws_arch_agent.tools.files import iter_files, read_text_safe
@@ -415,10 +415,9 @@ def analyze_v1(
             repo_path, max_files, rules_include, rules_exclude, severity_threshold, rules_org, iac,
             tf_plan,
         )
+        if tag_policy is not None:
+            ctx.notes["tag_policy"] = "checked" if policy_checked() else "not checked"
     ctx.notes["prices"] = price_note(price_region)
-    if tag_policy is not None:
-        templates_read = ctx.source in TEMPLATE_SOURCES or ctx.source in TERRAFORM_SOURCES
-        ctx.notes["tag_policy"] = "checked" if templates_read else "not checked"
 
     draft = render_markdown(ctx, findings, warnings=warnings)
     if not use_llm:

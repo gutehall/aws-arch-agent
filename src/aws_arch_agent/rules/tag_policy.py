@@ -76,21 +76,28 @@ TF_TAGGABLE: frozenset[str] = frozenset({
 })
 
 _active: TagPolicy | None = None
+_checked = False  # the active policy was applied to at least one template's resources
 
 
 def active_policy() -> TagPolicy | None:
     return _active
 
 
+def policy_checked() -> bool:
+    """True once the active policy ran on resources read from a template in this scan."""
+    return _active is not None and _checked
+
+
 @contextmanager
 def use_tag_policy(policy: TagPolicy | None) -> Iterator[None]:
     """Check resources against this policy for the duration of a scan (None: off)."""
-    global _active
-    previous, _active = _active, policy
+    global _active, _checked
+    previous = (_active, _checked)
+    _active, _checked = policy, False
     try:
         yield
     finally:
-        _active = previous
+        _active, _checked = previous
 
 
 class _Unknown:
@@ -100,6 +107,17 @@ class _Unknown:
 UNKNOWN = _Unknown()
 
 
+def _value(value: Any) -> Any:
+    """A tag value as AWS stores it: a YAML number or boolean is its text; others unknown."""
+    if type(value) is str:
+        return value
+    if isinstance(value, bool):
+        return "true" if value else "false"
+    if isinstance(value, (int, float)):
+        return str(value)
+    return UNKNOWN
+
+
 def _tag_map(raw: Any) -> dict[str, Any] | None:
     """{key: value} from a CloudFormation tag list or map; None when it cannot be read."""
     if raw is None:
@@ -107,7 +125,7 @@ def _tag_map(raw: Any) -> dict[str, Any] | None:
     if isinstance(raw, dict):
         if raw and all(k == "Ref" or k.startswith("Fn::") for k in raw):
             return None  # an intrinsic
-        return {str(k): (v if type(v) is str else UNKNOWN) for k, v in raw.items()}
+        return {str(k): _value(v) for k, v in raw.items()}
     if not isinstance(raw, list):
         return None
     out: dict[str, Any] = {}
@@ -117,8 +135,7 @@ def _tag_map(raw: Any) -> dict[str, Any] | None:
         key = item.get("Key")
         if type(key) is not str:
             return None  # a key from an intrinsic: any key may be set
-        value = item.get("Value")
-        out[key] = value if type(value) is str else UNKNOWN
+        out[key] = _value(item.get("Value"))
     return out
 
 
@@ -134,7 +151,9 @@ def _effective_tags(res: Resource) -> dict[str, Any] | None:
         return None
     if own is None:
         return None
-    return {**(res.inherited_tags or {}), **own}
+    # Provider default_tags apply to every resource with tags except aws_autoscaling_group.
+    inherited = {} if res.source_type == "aws_autoscaling_group" else (res.inherited_tags or {})
+    return {**inherited, **own}
 
 
 def is_taggable(res: Resource) -> bool:
@@ -143,9 +162,12 @@ def is_taggable(res: Resource) -> bool:
 
 def findings(resources: List[Resource], template_path: Path) -> List[Finding]:
     """CF-TAG-001 for each taggable resource that breaks the active policy."""
+    global _checked
     policy = _active
     if policy is None or not policy.required:
         return []
+    if resources:
+        _checked = True
     out: List[Finding] = []
     for res in resources:
         if res.malformed or not is_taggable(res):
