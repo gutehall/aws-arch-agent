@@ -838,6 +838,61 @@ _TERRAFORM.update({
 }""",
 })
 
+# CloudFront and WAF (DM3-526).
+_CLOUDFORMATION.update({
+    "CF-CF-001": """$name:
+  Type: AWS::CloudFront::Distribution
+  Properties:
+    DistributionConfig:
+      # keep the other settings as they are
+      DefaultCacheBehavior:
+        ViewerProtocolPolicy: redirect-to-https  # also on each CacheBehaviors entry""",
+    "CF-CF-002": """$name:
+  Type: AWS::CloudFront::Distribution
+  Properties:
+    DistributionConfig:
+      # keep the other settings as they are
+      ViewerCertificate:
+        AcmCertificateArn: !Ref Certificate
+        SslSupportMethod: sni-only
+        MinimumProtocolVersion: TLSv1.2_2021""",
+    "CF-CF-003": """$name:
+  Type: AWS::CloudFront::Distribution
+  Properties:
+    DistributionConfig:
+      # keep the other settings as they are
+      WebACLId: !GetAtt EdgeWebAcl.Arn  # an AWS::WAFv2::WebACL with Scope: CLOUDFRONT""",
+    "CF-WAF-001": """${name}WebAcl:
+  Type: AWS::WAFv2::WebACLAssociation
+  Properties:
+    ResourceArn: !Ref $name  # an API stage needs its ARN: !Sub arn:$${AWS::Partition}:apigateway:$${AWS::Region}::/restapis/<api-id>/stages/<stage>
+    WebACLArn: !GetAtt RegionalWebAcl.Arn  # an AWS::WAFv2::WebACL with Scope: REGIONAL""",
+})
+_TERRAFORM.update({
+    "CF-CF-001": """resource "aws_cloudfront_distribution" "$tf_name" {
+  # keep the other arguments as they are
+  default_cache_behavior {
+    viewer_protocol_policy = "redirect-to-https" # also on each ordered_cache_behavior
+  }
+}""",
+    "CF-CF-002": """resource "aws_cloudfront_distribution" "$tf_name" {
+  # keep the other arguments as they are
+  viewer_certificate {
+    acm_certificate_arn      = aws_acm_certificate.cert.arn
+    ssl_support_method       = "sni-only"
+    minimum_protocol_version = "TLSv1.2_2021"
+  }
+}""",
+    "CF-CF-003": """resource "aws_cloudfront_distribution" "$tf_name" {
+  # keep the other arguments as they are
+  web_acl_id = aws_wafv2_web_acl.edge.arn # scope = "CLOUDFRONT"
+}""",
+    "CF-WAF-001": """resource "aws_wafv2_web_acl_association" "$tf_name" {
+  resource_arn = $tf_type.$tf_name.arn
+  web_acl_arn  = aws_wafv2_web_acl.regional.arn # scope = "REGIONAL"
+}""",
+})
+
 # Lambda runtime (CF-LAM-003): the recommendation names the runtime to move to.
 _CLOUDFORMATION["CF-LAM-003"] = """$name:
   Type: AWS::Lambda::Function
