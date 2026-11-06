@@ -49,6 +49,8 @@ TF_TYPE_TO_CANONICAL: dict[str, str] = {
     "aws_docdb_cluster": "docdb_cluster",
     "aws_neptune_cluster": "neptune_cluster",
     "aws_msk_cluster": "msk_cluster",
+    "aws_wafv2_web_acl_association": "waf_association",
+    "aws_wafregional_web_acl_association": "waf_association",
     "aws_api_gateway_rest_api": "api_gateway_rest_api",
     "aws_api_gateway_stage": "api_gateway_stage",
     "aws_apigatewayv2_api": "apigatewayv2_api",
@@ -606,12 +608,64 @@ def _ingress_rule(rtype: str, body: dict) -> dict | None:
 
 
 def _lb(body: dict) -> dict:
+    props: dict = {}
+    _set(props, "Type", _v(body, "load_balancer_type"))
+    internal = _v(body, "internal")
+    if internal is not None:
+        props["Scheme"] = UNRESOLVED if internal is UNRESOLVED else (
+            "internal" if internal is True else "internet-facing")
     logs = _first_block(body, "access_logs")
     enabled = _v(logs, "enabled", False)  # provider default: false, even with a bucket
     if enabled is UNRESOLVED:
-        return {"LoadBalancerAttributes": UNRESOLVED}
+        props["LoadBalancerAttributes"] = UNRESOLVED
+        return props
     value = "true" if enabled is True else "false"
-    return {"LoadBalancerAttributes": [{"Key": "access_logs.s3.enabled", "Value": value}]}
+    props["LoadBalancerAttributes"] = [{"Key": "access_logs.s3.enabled", "Value": value}]
+    return props
+
+
+# Stands in for one value the scan cannot see, inside a structure whose other values are
+# known. Shaped like an intrinsic, so the CloudFormation checks skip it.
+_OPAQUE = {"Fn::Unresolved": "terraform"}
+
+
+def _known(value: Any) -> Any:
+    return _OPAQUE if value is UNRESOLVED else value
+
+
+def _cloudfront_distribution(body: dict) -> dict:
+    """The arguments CF-CF-001..003 read, in DistributionConfig shape.
+
+    An unknown value is kept as _OPAQUE, so it does not hide the other checks.
+    """
+    config: dict = {}
+    default = _first_block(body, "default_cache_behavior")
+    if default:
+        config["DefaultCacheBehavior"] = {"ViewerProtocolPolicy": _known(_v(default, "viewer_protocol_policy"))}
+    ordered = _blocks(body, "ordered_cache_behavior")
+    if ordered:
+        config["CacheBehaviors"] = [
+            {"PathPattern": _known(_v(b, "path_pattern")),
+             "ViewerProtocolPolicy": _known(_v(b, "viewer_protocol_policy"))}
+            for b in ordered
+        ]
+    cert = _first_block(body, "viewer_certificate")
+    if cert:
+        version = _v(cert, "minimum_protocol_version")
+        config["ViewerCertificate"] = {
+            "CloudFrontDefaultCertificate": _known(_v(cert, "cloudfront_default_certificate")),
+            **({} if version is None else {"MinimumProtocolVersion": _known(version)}),
+        }
+    web_acl = _ref(body, "web_acl_id")
+    if web_acl is not None:
+        config["WebACLId"] = _known(web_acl)
+    return {"DistributionConfig": config}
+
+
+def _waf_association(body: dict) -> dict:
+    props: dict = {}
+    _set(props, "ResourceArn", _known(_ref(body, "resource_arn")))
+    return props
 
 
 def _cloudtrail(body: dict) -> dict:
@@ -847,6 +901,9 @@ _ADAPTERS: dict[str, Callable[[dict], dict]] = {
     "aws_docdb_cluster": _storage_encrypted_cluster,
     "aws_neptune_cluster": _storage_encrypted_cluster,
     "aws_msk_cluster": _msk_cluster,
+    "aws_cloudfront_distribution": _cloudfront_distribution,
+    "aws_wafv2_web_acl_association": _waf_association,
+    "aws_wafregional_web_acl_association": _waf_association,
     "aws_sqs_queue_policy": _resource_policy,
     "aws_sns_topic_policy": _resource_policy,
     "aws_s3_bucket_policy": _resource_policy,
@@ -884,6 +941,9 @@ _BLOCK_PROPERTY: dict[str, str] = {
     "encrypt_at_rest": "EncryptionAtRestOptions",
     "node_to_node_encryption": "NodeToNodeEncryptionOptions",
     "encryption_info": "EncryptionInfo",
+    "default_cache_behavior": "DistributionConfig",
+    "ordered_cache_behavior": "DistributionConfig",
+    "viewer_certificate": "DistributionConfig",
 }
 
 

@@ -1,6 +1,7 @@
 """CloudFormation template-based rules (S3, RDS, ALB, CloudTrail, KMS, Lambda, DynamoDB, etc.) run after cdk synth."""
 from __future__ import annotations
 import json
+import re
 from pathlib import Path
 from typing import List, Any
 
@@ -23,6 +24,10 @@ CF_COVERS_STATIC: dict[str, tuple[str, ...]] = {
     "CF-EC2-001": ("SEC-066",),
     "CF-SNS-001": ("SEC-014",),
     "CF-LAM-003": ("SEC-068",),
+    "CF-CF-001": ("SEC-018",),
+    "CF-CF-002": ("SEC-019",),
+    "CF-CF-003": ("SEC-024",),
+    "CF-WAF-001": ("SEC-024",),
     "CF-EFS-001": ("SEC-037",),
     "CF-KIN-001": ("SEC-038",),
     "CF-EC-001": ("SEC-025",),
@@ -150,6 +155,7 @@ _PER_RESOURCE_TYPES = frozenset({
     "sns_topic", "ebs_volume", "efs_file_system", "kinesis_stream",
     "elasticache_replication_group", "launch_template",
     "opensearch_domain", "redshift_cluster", "docdb_cluster", "neptune_cluster", "msk_cluster",
+    "cloudfront_distribution",
 })
 
 
@@ -193,6 +199,10 @@ CHECK_PROPERTIES: dict[str, frozenset[str]] = {
         "CF-LAM-001": {"DeadLetterConfig"},
         "CF-LAM-002": {"TracingConfig"},
         "CF-LAM-003": {"Runtime", "PackageType"},
+        "CF-CF-001": {"DistributionConfig"},
+        "CF-CF-002": {"DistributionConfig"},
+        "CF-CF-003": {"DistributionConfig"},
+        "CF-WAF-001": {"Type", "Scheme"},
         "CF-PERF-001": {"Architectures"},
         "CF-DDB-001": {"PointInTimeRecoverySpecification"},
         "CF-DDB-002": {"SSESpecification"},
@@ -267,6 +277,116 @@ def _imds_finding(res: Resource, template_path: Path, options: Any, defers: bool
         ),
     )
 _IAM_TYPES = frozenset({"iam_policy", "iam_role", "iam_user", "iam_group"})
+
+# CloudFront security policies, oldest first. Below TLSv1.2_2021 allows weak TLS or ciphers.
+_CLOUDFRONT_TLS = (
+    "SSLv3", "TLSv1", "TLSv1_2016", "TLSv1.1_2016", "TLSv1.2_2018", "TLSv1.2_2019",
+    "TLSv1.2_2021", "TLSv1.2_2025", "TLSv1.3_2025",
+)
+_CLOUDFRONT_TLS_MIN = _CLOUDFRONT_TLS.index("TLSv1.2_2021")
+
+
+def _cloudfront_findings(res: Resource, template_path: Path) -> List[Finding]:
+    """CF-CF-001 (allow-all behavior), CF-CF-002 (old TLS policy), CF-CF-003 (no WebACLId).
+
+    Only literal values are judged. The default *.cloudfront.net certificate is not given
+    a TLS finding: its minimum protocol cannot be set.
+    """
+    config = res.properties.get("DistributionConfig")
+    if not isinstance(config, dict) or _is_intrinsic(config):
+        return []
+    out: List[Finding] = []
+
+    def add(fid: str, severity: Severity, title: str, recommendation: str) -> None:
+        out.append(Finding(
+            id=fid, title=title, severity=severity, category="Security",
+            file=res.file or str(template_path), line=res.line,
+            evidence=f"{res.name} ({res.source_type})", recommendation=recommendation,
+        ))
+
+    behaviors = [("default", config.get("DefaultCacheBehavior"))]
+    extra = config.get("CacheBehaviors")
+    for item in extra if isinstance(extra, list) else []:
+        path = item.get("PathPattern") if isinstance(item, dict) else None
+        behaviors.append((path if type(path) is str else "a path", item))
+    open_paths = [
+        name for name, b in behaviors
+        if isinstance(b, dict) and b.get("ViewerProtocolPolicy") == "allow-all"
+    ]
+    if open_paths:
+        add("CF-CF-001", "Medium", "CloudFront behavior allows plain HTTP",
+            f"Behaviors with ViewerProtocolPolicy allow-all: {', '.join(open_paths)}. "
+            "Set redirect-to-https or https-only (Security Hub CloudFront.3). "
+            "In CDK: viewerProtocolPolicy: ViewerProtocolPolicy.REDIRECT_TO_HTTPS.")
+
+    cert = config.get("ViewerCertificate")
+    if isinstance(cert, dict) and not _is_intrinsic(cert) and _flag(cert.get("CloudFrontDefaultCertificate")) is False:
+        version = cert.get("MinimumProtocolVersion", "TLSv1")  # the default with your own certificate
+        if type(version) is str and version in _CLOUDFRONT_TLS and _CLOUDFRONT_TLS.index(version) < _CLOUDFRONT_TLS_MIN:
+            add("CF-CF-002", "Medium", "CloudFront allows TLS older than TLSv1.2_2021",
+                f"MinimumProtocolVersion is {version}. Set TLSv1.2_2021 or newer "
+                "(Security Hub CloudFront.15). "
+                "In CDK: minimumProtocolVersion: SecurityPolicyProtocol.TLS_V1_2_2021.")
+
+    if config.get("WebACLId") is None:
+        add("CF-CF-003", "Low", "CloudFront distribution has no WAF web ACL",
+            "Set WebACLId to an AWS WAF web ACL (scope CLOUDFRONT) to filter common attacks "
+            "(Security Hub CloudFront.6). In CDK: webAclId on the Distribution.")
+    return out
+
+
+def _references(text: str, name: str) -> bool:
+    """True when a dumped ResourceArn refers to a resource by logical id or Terraform address."""
+    if "." in name:  # Terraform address: aws_lb.app -> aws_lb.app.arn, aws_lb.app[0].arn
+        return re.search(rf"(?<![\w.]){re.escape(name)}(?:\[[^\]]*\])?\.", text) is not None
+    return f'"{name}"' in text or f"${{{name}}}" in text or f"${{{name}." in text
+
+
+def _waf_coverage(resources: List[Resource]) -> tuple[set[str], bool]:
+    """Names of ALBs and API stages a WAF association in this template points at.
+
+    The second value is True when an association points at something the scan cannot
+    tie to a resource: it may then cover any of them.
+    """
+    targets = [r.name for r in resources if r.type in ("lb", "api_gateway_stage")]
+    covered: set[str] = set()
+    unlinked = False
+    for r in resources:
+        if r.type != "waf_association":
+            continue
+        arn = r.properties.get("ResourceArn")
+        text = arn if type(arn) is str else json.dumps(arn, default=str)
+        hits = {name for name in targets if _references(text, name)}
+        covered |= hits
+        unlinked = unlinked or not hits
+    return covered, unlinked
+
+
+def _waf_finding(res: Resource, template_path: Path) -> Finding | None:
+    """CF-WAF-001 for an internet-facing ALB or a REST API stage (callers check coverage)."""
+    props = res.properties
+    if res.type == "lb":
+        lb_type, scheme = props.get("Type", "application"), props.get("Scheme", "internet-facing")
+        if lb_type != "application" or scheme != "internet-facing":
+            return None  # NLB/GWLB cannot have WAF; internal ALBs are out of scope
+        what = "Application Load Balancer"
+    else:
+        what = "API Gateway REST API stage"
+    return Finding(
+        id="CF-WAF-001",
+        title=f"{what} has no WAF web ACL in this template",
+        severity="Low",
+        category="Security",
+        file=res.file or str(template_path),
+        line=res.line,
+        evidence=f"{res.name} ({res.source_type})",
+        recommendation=(
+            "No AWS::WAFv2::WebACLAssociation in this template points at it. If a web ACL is "
+            "not attached elsewhere, associate one to filter common attacks (Security Hub "
+            "ELB.16, APIGateway.4). In CDK: new wafv2.CfnWebACLAssociation."
+        ),
+    )
+
 
 def _runtime_finding(res: Resource, template_path: Path) -> Finding | None:
     """CF-LAM-003: a deprecated (High) or soon-deprecated (Low) Lambda runtime.
@@ -914,6 +1034,7 @@ def run_resource_checks(
     has_elasticache = count("elasticache_cluster", "elasticache_replication_group") > 0
     asg_count = count("autoscaling_group")
     cf_policies, cf_policy_unlinked = _cf_bucket_policies(resources)
+    waf_covered, waf_unlinked = _waf_coverage(resources)
     launch_templates_without_spot = 0
     first_lt_without_spot: Resource | None = None
     for r in resources:
@@ -1215,6 +1336,14 @@ def run_resource_checks(
                     findings.extend(_iam_findings(res, template_path))
                 if ctype == "iam_role":
                     findings.extend(_trust_findings(res, template_path))
+
+                # --- CloudFront and WAF ---
+                if ctype == "cloudfront_distribution":
+                    findings.extend(_cloudfront_findings(res, template_path))
+                if ctype in ("lb", "api_gateway_stage") and not waf_unlinked and logical_id not in waf_covered:
+                    waf = _waf_finding(res, template_path)
+                    if waf is not None:
+                        findings.append(waf)
 
                 # --- Encryption at rest / in transit for more data stores ---
                 findings.extend(_encryption_findings(res, template_path))
