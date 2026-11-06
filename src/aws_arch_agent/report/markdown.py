@@ -37,6 +37,47 @@ def estimate_lines(f: Finding) -> List[str]:
     return out
 
 
+def _usd(value: float) -> str:
+    return f"${value:,.2f}"
+
+
+def cost_section(ctx: RepoContext) -> List[str]:
+    """The estimated monthly cost section; empty when the scan priced no template."""
+    cost = ctx.notes.get("cost")
+    if not isinstance(cost, dict) or not cost.get("stacks"):
+        return []
+    when = f", AWS prices of {cost['snapshot_date']}" if cost.get("snapshot_date") else ""
+    out = [
+        "## Estimated Monthly Cost (estimate)",
+        f"{cost['basis']} Region {cost['region']}{when}.",
+        "",
+        "| Template / module | Resources priced | Estimated monthly cost |",
+        "|---|---:|---:|",
+    ]
+    for stack in cost["stacks"]:
+        out.append(f"| `{stack['name']}` | {stack['resources_priced']} | {_usd(stack['monthly_usd'])} |")
+    priced = sum(s["resources_priced"] for s in cost["stacks"])
+    out.append(f"| **Total** | {priced} | **{_usd(cost['total_monthly_usd'])}** |")
+    out.append("")
+    if cost.get("top_resources"):
+        out.append(f"Top {len(cost['top_resources'])} resources by estimated cost:")
+        for i, r in enumerate(cost["top_resources"], 1):
+            where = f"`{r['file']}`" + (f" (line {r['line']})" if r.get("line") else "")
+            out.append(f"{i}. `{r['name']}` ({r['type']}) in {where}: {_usd(r['monthly_usd'])}/month. {r['basis']}")
+        out.append("")
+    if cost.get("savings_findings"):
+        out.append(
+            f"Possible savings from {cost['savings_findings']} finding(s): "
+            f"**{_usd(cost['savings_monthly_usd'])}/month** (estimate; not subtracted from the total)."
+        )
+        out.append("")
+    if cost.get("not_priced"):
+        listed = ", ".join(f"{t} ×{n}" for t, n in cost["not_priced"].items())
+        out.append(f"Not priced (usage-based, or not in the price snapshot): {listed}.")
+        out.append("")
+    return out
+
+
 def render_markdown(ctx: RepoContext, findings: List[Finding], warnings: List[str] | None = None) -> str:
     """Build a full Markdown report (title, repo info, findings by severity, next actions)."""
     groups = _group(findings)
@@ -57,6 +98,7 @@ def render_markdown(ctx: RepoContext, findings: List[Finding], warnings: List[st
     lines.append("## Executive Summary")
     lines.append("This is an automated first-pass review. Always validate findings manually.")
     lines.append("")
+    lines.extend(cost_section(ctx))
 
     if warnings:
         lines.append("## Analysis Warnings")

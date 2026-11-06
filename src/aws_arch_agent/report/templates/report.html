@@ -72,6 +72,36 @@
   <p class="meta">Accepted findings stay in the report and do not fail the build.</p>
   {% endif %}
 
+  {% if cost and cost.stacks %}
+  <section class="cost" aria-label="Estimated monthly cost">
+    <h2>Estimated monthly cost (estimate)</h2>
+    <p class="meta">{{ cost.basis }} Region {{ cost.region }}{% if cost.snapshot_date %}, AWS prices of {{ cost.snapshot_date }}{% endif %}.</p>
+    <table>
+      <thead><tr><th>Template / module</th><th>Resources priced</th><th>Estimated monthly cost</th></tr></thead>
+      <tbody>
+        {% for s in cost.stacks %}
+        <tr><td><code>{{ s.name }}</code></td><td>{{ s.resources_priced }}</td><td>${{ "{:,.2f}".format(s.monthly_usd) }}</td></tr>
+        {% endfor %}
+        <tr><td><b>Total</b></td><td>{{ cost.stacks | sum(attribute="resources_priced") }}</td><td><b>${{ "{:,.2f}".format(cost.total_monthly_usd) }}</b></td></tr>
+      </tbody>
+    </table>
+    {% if cost.top_resources %}
+    <h3>Top resources by estimated cost</h3>
+    <ol>
+      {% for r in cost.top_resources %}
+      <li><code>{{ r.name }}</code> ({{ r.type }}) in <code>{{ r.file }}</code>{% if r.line %} (line {{ r.line }}){% endif %}: ${{ "{:,.2f}".format(r.monthly_usd) }}/month. {{ r.basis }}</li>
+      {% endfor %}
+    </ol>
+    {% endif %}
+    {% if cost.savings_findings %}
+    <p>Possible savings from {{ cost.savings_findings }} finding(s): <b>${{ "{:,.2f}".format(cost.savings_monthly_usd) }}/month</b> (estimate; not subtracted from the total).</p>
+    {% endif %}
+    {% if cost.not_priced %}
+    <p class="meta">Not priced (usage-based, or not in the price snapshot): {% for t, n in cost.not_priced.items() %}{{ t }} ×{{ n }}{% if not loop.last %}, {% endif %}{% endfor %}.</p>
+    {% endif %}
+  </section>
+  {% endif %}
+
   <section class="counts" aria-label="Summary">
     {% for sev in severities %}
     <div class="count {{ sev }}"><div class="n">{{ counts[sev] }}</div><div class="label">{{ sev }}</div></div>
