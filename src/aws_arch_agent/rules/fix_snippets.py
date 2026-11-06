@@ -839,12 +839,12 @@ _TERRAFORM.update({
 })
 
 # Secret template parameters (DM3-537): resolve the secret where it is used.
-_CF_SECRET_REFERENCE = """Database:
-  Type: AWS::RDS::DBInstance
+_CF_SECRET_REFERENCE = """MyResource:
+  Type: AWS::Service::Resource  # the resource that uses $name
   Properties:
-    # keep the other properties as they are; instead of !Ref $name:
-    MasterUserPassword: "{{resolve:secretsmanager:my-db-secret:SecretString:password}}"
-    # or let RDS keep it: ManageMasterUserPassword: true"""
+    # instead of !Ref $name, resolve the secret where it is used
+    TheSecretProperty: "{{resolve:secretsmanager:my-secret:SecretString:my-key}}"
+    # or "{{resolve:ssm-secure:/my/parameter}}" where the property supports it"""
 _CLOUDFORMATION["CF-PAR-001"] = _CF_SECRET_REFERENCE
 _CLOUDFORMATION["CF-PAR-002"] = _CF_SECRET_REFERENCE
 _TF_SECRET_REFERENCE = """data "aws_secretsmanager_secret_version" "db" {

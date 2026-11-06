@@ -34,27 +34,37 @@ def test_secret_parameters(tmp_path: Path) -> None:
         "PasswordLength": {"Type": "Number", "Default": 32},
         "DbPasswordParam": {"Type": "AWS::SSM::Parameter::Value<String>", "Default": "/db/password"},
         "AdminPasswd": {"Type": "String", "NoEcho": False},
+        "AdminPasswordParam": {"Type": "String"},  # holds the value despite the suffix
+        "DbPasswords": {"Type": "List<AWS::SSM::Parameter::Value<String>>", "Default": "/a,/b"},
+        "SigningSecret": {"Type": "String", "Default": False},  # not a committed secret
+        "Pin": {"Type": "Number"},
     })
     assert _found(findings) == {
         ("DbPassword", "CF-PAR-001"),
-        ("ApiKey", "CF-PAR-001"),
-        ("ApiKey", "CF-PAR-002"),
+        ("ApiKey", "CF-PAR-002"),  # one finding: the Default is the bigger problem
         ("ClientSecret", "CF-PAR-002"),  # NoEcho hides it in the console, not in the repo
         ("AdminPasswd", "CF-PAR-001"),
+        ("AdminPasswordParam", "CF-PAR-001"),
+        ("SigningSecret", "CF-PAR-001"),
     }
     severity = {f.id: f.severity for f in findings}
     assert severity == {"CF-PAR-001": "Medium", "CF-PAR-002": "High"}
     assert all("{{resolve:secretsmanager:" in f.recommendation for f in findings)
+    api_key = next(f for f in findings if f.evidence.startswith("ApiKey"))
+    assert "NoEcho is not true" in api_key.recommendation
 
 
 @pytest.mark.parametrize("name", ["DbPassword", "Passphrase", "SlackToken", "STRIPE_API_KEY",
-                                  "PrivateKey", "SmtpCredentials", "AwsAccessKey", "OAuthClientSecret"])
+                                  "PrivateKey", "SmtpCredentials", "AwsAccessKey", "OAuthClientSecret",
+                                  "DoorPasscode", "VpnSharedKey", "DbConnectionString"])
 def test_secret_names(tmp_path: Path, name: str) -> None:
     assert _found(_params(tmp_path, {name: {"Type": "String"}})) == {(name, "CF-PAR-001")}
 
 
 @pytest.mark.parametrize("name", ["Stage", "TokenTtl", "SecretName", "ApiKeyId", "PasswordPolicy",
-                                  "SecretRotationDays", "TokenUrl"])
+                                  "SecretRotationDays", "TokenUrl", "TokenizerModel", "TokenAudience",
+                                  "TokenIssuer", "PasswordMinLength", "PasswordRequireSymbols",
+                                  "PasswordComplexity"])
 def test_names_that_describe_a_secret_are_not_reported(tmp_path: Path, name: str) -> None:
     assert _params(tmp_path, {name: {"Type": "String"}}) == []
 
@@ -64,3 +74,4 @@ def test_fix_points_at_a_dynamic_reference(tmp_path: Path) -> None:
                             "cloudformation")
     assert all("{{resolve:secretsmanager:" in (f.suggested_code or "") for f in findings)
     assert all("instead of !Ref DbPassword" in (f.suggested_code or "") for f in findings)
+    assert all("In CDK" not in f.recommendation for f in findings)  # raw template: hint dropped
