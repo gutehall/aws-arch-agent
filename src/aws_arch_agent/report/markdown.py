@@ -3,6 +3,7 @@ from __future__ import annotations
 from datetime import datetime
 from typing import List, Dict
 from aws_arch_agent.models import Finding, RepoContext
+from aws_arch_agent.report.summary import build_summary, markdown_lines
 
 
 def _group(findings: List[Finding]) -> Dict[str, List[Finding]]:
@@ -96,6 +97,7 @@ def render_markdown(ctx: RepoContext, findings: List[Finding], warnings: List[st
         lines.append(f"- Prices: {prices}")
     lines.append(f"- Generated: {now}")
     lines.append("")
+    lines.extend(markdown_lines(build_summary(findings)))
     lines.append("## Executive Summary")
     lines.append("This is an automated first-pass review. Always validate findings manually.")
     lines.append("")

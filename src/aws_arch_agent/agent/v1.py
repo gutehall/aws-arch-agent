@@ -24,7 +24,7 @@ from aws_arch_agent.rules.terraform_model import (
 )
 from aws_arch_agent.rules.runner import filter_by_severity, run_all_rules
 from aws_arch_agent.pricing import DEFAULT_REGION, price_note, use_region
-from aws_arch_agent.rules import stack_cost
+from aws_arch_agent.rules import effort, stack_cost
 from aws_arch_agent.rules.tag_policy import TagPolicy, policy_checked, use_tag_policy
 from aws_arch_agent.report.markdown import render_markdown
 from aws_arch_agent.tools.llm import LLMClient
@@ -394,6 +394,7 @@ def _collect_findings(
     if tf_plan is not None and source not in TERRAFORM_SOURCES:
         warnings.append(f"--tf-plan applies only to a Terraform scan (source is {source}); ignored")
     findings = filter_by_severity(findings, severity_threshold)
+    effort.annotate(findings)
     return ctx, findings, warnings
 
 

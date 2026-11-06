@@ -5,6 +5,7 @@ from typing import Literal, List, Dict, Any
 
 
 Severity = Literal["High", "Medium", "Low"]
+Effort = Literal["low", "medium", "high"]
 IacSource = Literal["cdk", "cloudformation", "terraform", "mixed"]
 
 
@@ -25,6 +26,9 @@ class Finding(BaseModel):
     monthly_cost_usd: float | None = None
     monthly_savings_usd: float | None = None
     estimate_basis: str | None = None
+    # How much work the fix is (DM3-550): low = one property, applied in place; high = the
+    # resource is replaced or redesigned. Set from rules/effort.py.
+    effort: Effort = "medium"
 
 
 class RepoContext(BaseModel):
