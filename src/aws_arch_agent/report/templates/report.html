@@ -62,6 +62,7 @@
     <span>Repo: <b>{{ repo }}</b></span>
     <span>Source: <b>{{ source }}</b></span>
     <span>Files scanned: <b>{{ files_scanned }}</b></span>
+    {% if prices %}<span>Prices: <b>{{ prices }}</b></span>{% endif %}
     <span>Generated: <b>{{ generated }}</b></span>
     {% if baseline %}
     <span>Baseline: <b>{{ baseline.accepted }} accepted, {{ baseline.new }} new</b></span>
