@@ -1,4 +1,5 @@
 """Docs stay aligned with the scanner."""
+import re
 from pathlib import Path
 
 from aws_arch_agent.rules.registry import ALL_RULES
@@ -47,3 +48,12 @@ def test_operational_excellence_count_matches_the_registry() -> None:
     assert f"# Operational Excellence ({count} rules)" in (
         ROOT / "src" / "aws_arch_agent" / "rules" / "registry.py"
     ).read_text(encoding="utf-8")
+
+
+def test_rule_reference_count_matches_the_registry_and_lists_each_rule_once() -> None:
+    text = (ROOT / "docs" / "CF_RULES.md").read_text(encoding="utf-8")
+    assert f"**{len(ALL_RULES)} static analysis rules**" in text
+    static = text.split("## CloudFormation", 1)[0]
+    listed = re.findall(r"^- ([A-Z]+-\d+):", static, flags=re.MULTILINE)
+    dupes = sorted({rule_id for rule_id in listed if listed.count(rule_id) > 1})
+    assert dupes == []
