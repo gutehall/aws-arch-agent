@@ -26,6 +26,9 @@ TF_TYPE_TO_CANONICAL: dict[str, str] = {
     "aws_s3_bucket": "s3_bucket",
     "aws_db_instance": "db_instance",
     "aws_rds_cluster": "rds_cluster",
+    "aws_rds_cluster_instance": "db_instance",
+    "aws_db_parameter_group": "db_parameter_group",
+    "aws_rds_cluster_parameter_group": "rds_cluster_parameter_group",
     "aws_instance": "instance",
     "aws_launch_template": "launch_template",
     "aws_security_group": "security_group",
@@ -571,6 +574,8 @@ def _lifecycle_rules(rules: list[dict]) -> Any:
 
 
 def _db(body: dict) -> dict:
+    """aws_db_instance, aws_rds_cluster and aws_rds_cluster_instance (an Aurora member: it
+    has cluster_identifier, like a CloudFormation DBInstance with DBClusterIdentifier)."""
     props: dict = {}
     for tf_key, cf_key in (
         ("storage_encrypted", "StorageEncrypted"),
@@ -579,10 +584,45 @@ def _db(body: dict) -> dict:
         ("deletion_protection", "DeletionProtection"),
         ("publicly_accessible", "PubliclyAccessible"),
         ("instance_class", "DBInstanceClass"),
+        ("db_cluster_instance_class", "DBClusterInstanceClass"),
         ("cluster_identifier", "DBClusterIdentifier"),
+        ("engine_version", "EngineVersion"),
+        ("monitoring_interval", "MonitoringInterval"),
+        ("iam_database_authentication_enabled", "EnableIAMDatabaseAuthentication"),
+        ("auto_minor_version_upgrade", "AutoMinorVersionUpgrade"),
+        ("copy_tags_to_snapshot", "CopyTagsToSnapshot"),
+        ("enabled_cloudwatch_logs_exports", "EnableCloudwatchLogsExports"),
+        ("port", "Port"),
+        ("username", "MasterUsername"),
+        ("master_username", "MasterUsername"),
+        ("snapshot_identifier", "SnapshotIdentifier"),
+        ("replicate_source_db", "SourceDBInstanceIdentifier"),
+        ("parameter_group_name", "DBParameterGroupName"),
+        ("db_cluster_parameter_group_name", "DBClusterParameterGroupName"),
     ):
         _set(props, cf_key, body.get(tf_key))
     _set(props, "Engine", _v(body, "engine"))
+    return props
+
+
+def _db_parameter_group(body: dict) -> dict:
+    """aws_db_parameter_group / aws_rds_cluster_parameter_group: name, family and the
+    parameters as a CloudFormation Parameters map (CF-RDS-006)."""
+    props: dict = {}
+    _set(props, "Name", _v(body, "name"))
+    _set(props, "Family", _v(body, "family"))
+    if "parameter" in _dynamic_names(body):
+        props["Parameters"] = UNRESOLVED
+        return props
+    params: dict = {}
+    for item in _blocks(body, "parameter"):
+        name, value = _v(item, "name"), _v(item, "value")
+        if name is UNRESOLVED:
+            props["Parameters"] = UNRESOLVED
+            return props
+        if isinstance(name, str):
+            params[name] = _OPAQUE if value is UNRESOLVED else value
+    props["Parameters"] = params
     return props
 
 
@@ -1383,6 +1423,9 @@ _ADAPTERS: dict[str, Callable[[dict], dict]] = {
     "aws_s3_bucket": _s3_bucket,
     "aws_db_instance": _db,
     "aws_rds_cluster": _db,
+    "aws_rds_cluster_instance": _db,
+    "aws_db_parameter_group": _db_parameter_group,
+    "aws_rds_cluster_parameter_group": _db_parameter_group,
     "aws_instance": _instance,
     "aws_subnet": _subnet,
     "aws_launch_template": _launch_template,

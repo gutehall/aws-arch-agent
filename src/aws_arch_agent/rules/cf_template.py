@@ -99,6 +99,9 @@ CF_COVERS_STATIC: dict[str, tuple[str, ...]] = {
     "CF-RDS-002": ("REL-002",),
     "CF-RDS-004": ("SEC-064",),
     "CF-RDS-005": ("REL-030",),
+    "CF-RDS-006": ("SEC-021",),
+    "CF-RDS-007": ("OPS-009",),
+    "CF-RDS-014": ("COST-010",),
     "CF-S3-003": ("REL-031",),
     "CF-KMS-001": ("SEC-007",),
     # Checks every ELBv2 load balancer, so NLBs too.
@@ -251,6 +254,7 @@ _PER_RESOURCE_TYPES = frozenset({
     "security_group_egress_rule", "network_acl_entry", "network_acl", "transit_gateway",
     "lb_listener", "lb_target_group", "elb",
 })
+# Parameter groups only feed CF-RDS-006; they have no checks of their own.
 
 
 # Properties each per-resource check reads. A finding is dropped when any of them is unresolved.
@@ -266,6 +270,15 @@ CHECK_PROPERTIES: dict[str, frozenset[str]] = {
         "CF-RDS-003": {"MultiAZ", "DBClusterIdentifier"},
         "CF-RDS-005": {"DeletionProtection", "DBClusterIdentifier"},
         "CF-RDS-004": {"PubliclyAccessible"},
+        "CF-RDS-006": set(),  # _ssl_enforced reads the group and skips what it cannot read
+        "CF-RDS-007": {"MonitoringInterval"},
+        "CF-RDS-008": {"EnableIAMDatabaseAuthentication", "Engine", "DBClusterIdentifier"},
+        "CF-RDS-009": {"AutoMinorVersionUpgrade"},
+        "CF-RDS-010": {"CopyTagsToSnapshot", "DBClusterIdentifier", "Engine"},
+        "CF-RDS-011": {"EnableCloudwatchLogsExports", "DBClusterIdentifier", "Engine"},
+        "CF-RDS-012": {"Port", "Engine", "DBClusterIdentifier", "SnapshotIdentifier"},
+        "CF-RDS-013": {"MasterUsername", "Engine", "DBClusterIdentifier"},
+        "CF-RDS-014": {"DBInstanceClass", "DBClusterInstanceClass", "Engine"},
         "CF-PERF-003": {"DBInstanceClass"},
         "CF-PERF-004": {"InstanceType"},
         "CF-EC2-001": {"MetadataOptions", "LaunchTemplate", "LaunchTemplateData"},
@@ -400,6 +413,9 @@ CF_THEMES: dict[str, tuple[str, ...]] = {
     "CF-PAR-001": (_DP, _ID), "CF-PAR-002": (_DP, _ID),
     "CF-PERF-001": (_F, _SUS), "CF-PERF-002": (_RES,), "CF-PERF-003": (_F,), "CF-PERF-004": (_F,),
     "CF-RDS-001": (_DP,), "CF-RDS-002": (_RES, _DP), "CF-RDS-003": (_RES,), "CF-RDS-004": (_NET,),
+    "CF-RDS-006": (_DP, _NET), "CF-RDS-007": (_OBS,), "CF-RDS-008": (_ID,), "CF-RDS-009": (_SB,),
+    "CF-RDS-010": (_F,), "CF-RDS-011": (_OBS,), "CF-RDS-012": (_NET,), "CF-RDS-013": (_ID,),
+    "CF-RDS-014": (_F, _SUS),
     "CF-RDS-005": (_RES, _DP), "CF-RP-001": (_ID, _NET), "CF-RS-001": (_DP,),
     "CF-S3-001": (_NET, _DP), "CF-S3-002": (_DP,), "CF-S3-003": (_RES, _DP), "CF-S3-004": (_OBS,),
     "CF-S3-006": (_F, _DP), "CF-S3-007": (_F,), "CF-DDB-003": (_F, _RES),
@@ -880,6 +896,172 @@ def _points_at(res: Resource, key: str, target: Resource) -> bool:
         return _references(text, target.name)
     return target.name in res.references
 
+
+
+# Engine family -> (default port, parameter that enforces TLS, values that turn it on).
+_RDS_ENGINES: dict[str, tuple[int, str, tuple[str, ...]]] = {
+    "aurora-postgresql": (5432, "rds.force_ssl", ("1",)),
+    "aurora-mysql": (3306, "require_secure_transport", ("on", "1", "true")),
+    "aurora": (3306, "require_secure_transport", ("on", "1", "true")),
+    "postgres": (5432, "rds.force_ssl", ("1",)),
+    "mysql": (3306, "require_secure_transport", ("on", "1", "true")),
+    "mariadb": (3306, "require_secure_transport", ("on", "1", "true")),
+    "sqlserver": (1433, "rds.force_ssl", ("1",)),
+    "oracle": (1521, "", ()),  # TLS is an option group setting, not read
+    "db2": (50000, "", ()),
+}
+# Engines with IAM database authentication and Graviton (db.*g) instance classes.
+_RDS_OPEN_SOURCE = ("aurora", "mysql", "mariadb", "postgres")
+_DEFAULT_DB_USERS = frozenset({"admin", "postgres", "root", "sa", "administrator", "master", "awsuser"})
+_GRAVITON_CLASS = re.compile(r"^db\.[a-z]+\d+g[a-z]*\.")
+
+
+def _rds_engine(props: dict) -> str | None:
+    """The engine family key in _RDS_ENGINES, or None when unknown."""
+    engine = props.get("Engine")
+    if not isinstance(engine, str):
+        return None
+    engine = engine.strip().lower()
+    for family in _RDS_ENGINES:  # aurora-* before aurora, before the plain engines
+        if engine == family or engine.startswith(family + "-"):
+            return family
+    return None
+
+
+def _major_version(value: Any) -> int | None:
+    if isinstance(value, (int, float)):
+        return int(value)
+    if isinstance(value, str):
+        match = re.match(r"\s*(\d+)", value)
+        return int(match.group(1)) if match else None
+    return None
+
+
+def _ssl_enforced(res: Resource, family: str, param_groups: List[Resource]) -> bool | None:
+    """True when the linked parameter group turns TLS on, False when it does not (or no
+    group / a default group is linked), None when the group cannot be read.
+
+    RDS for PostgreSQL 15 and later sets rds.force_ssl=1 in its default parameter groups,
+    and a custom group starts from those defaults, so only an explicit 0 turns it off.
+    """
+    _port, name, on = _RDS_ENGINES[family]
+    key = "DBClusterParameterGroupName" if res.type == "rds_cluster" else "DBParameterGroupName"
+    if key in res.unresolved or "EngineVersion" in res.unresolved:
+        return None
+    on_by_default = family == "postgres" and (_major_version(res.properties.get("EngineVersion")) or 0) >= 15
+    linked = res.properties.get(key)
+    if linked is None or (isinstance(linked, str) and linked.lower().startswith("default.")):
+        return on_by_default
+    group = next((g for g in param_groups if _points_at(res, key, g) or (
+        isinstance(linked, str) and g.properties.get("Name") == linked)), None)
+    if group is None or group.malformed or "Parameters" in group.unresolved:
+        return None
+    params = group.properties.get("Parameters")
+    if not isinstance(params, dict) or _is_intrinsic(params):
+        return None
+    if name not in params:
+        return on_by_default
+    value = params[name]
+    if isinstance(value, bool):
+        value = "1" if value else "0"
+    if not isinstance(value, (str, int)):
+        return None
+    return str(value).strip().lower() in on
+
+
+def _rds_settings_findings(
+    res: Resource, template_path: Path, param_groups: List[Resource]
+) -> List[Finding]:
+    """CF-RDS-006..014 on a DB instance or cluster.
+
+    An Aurora member instance (DBClusterIdentifier) takes its engine settings from the
+    cluster, so it is judged only for what is set per instance: enhanced monitoring, minor
+    version upgrades and the instance class.
+    """
+    props = res.properties
+    instance = res.type == "db_instance"
+    member = instance and "DBClusterIdentifier" in props
+    restored = any(k in props for k in ("SnapshotIdentifier", "DBSnapshotIdentifier",
+                                         "SourceDBInstanceIdentifier", "SourceDBClusterIdentifier"))
+    family = _rds_engine(props)
+    open_source = family is not None and family.startswith(_RDS_OPEN_SOURCE)
+    aurora = family is not None and family.startswith("aurora")
+    out: List[Finding] = []
+
+    def add(check_id: str, title: str, severity: Severity, category: str, recommendation: str) -> None:
+        out.append(Finding(
+            id=check_id, title=title, severity=severity, category=category,
+            file=res.file or str(template_path), line=res.line,
+            evidence=f"{res.name} ({res.source_type})", recommendation=recommendation,
+        ))
+
+    owns_settings = not member and not (instance and aurora)
+    if owns_settings and family is not None and _RDS_ENGINES[family][1]:
+        if _ssl_enforced(res, family, param_groups) is False:
+            param = _RDS_ENGINES[family][1]
+            value = "1" if param == "rds.force_ssl" else "ON"
+            group = "DB cluster parameter group" if res.type == "rds_cluster" else "DB parameter group"
+            add("CF-RDS-006", "RDS does not require TLS connections", "Medium", "Security",
+                f"Link a {group} that sets {param} to {value}, so clients cannot connect in clear "
+                "text. A default parameter group does not set it. In CDK: parameters: "
+                f"{{ '{param}': '{value}' }} on an rds.ParameterGroup.")
+
+    if instance:
+        interval = props.get("MonitoringInterval")
+        if interval is None or interval in (0, "0"):
+            add("CF-RDS-007", "RDS enhanced monitoring not enabled", "Low", "Operational Excellence",
+                "Set MonitoringInterval (for example 60) and MonitoringRoleArn, so OS metrics are "
+                "collected for the DB instance (Security Hub RDS.6). In CDK: monitoringInterval: "
+                "Duration.seconds(60).")
+
+    if owns_settings and open_source and props.get("EnableIAMDatabaseAuthentication") is not True:
+        control = "RDS.12" if res.type == "rds_cluster" else "RDS.10"
+        add("CF-RDS-008", "RDS IAM database authentication not enabled", "Low", "Security",
+            "Set EnableIAMDatabaseAuthentication: true, so apps can connect with short-lived IAM "
+            f"tokens instead of a stored password (Security Hub {control}). In CDK: "
+            "iamAuthentication: true.")
+
+    if props.get("AutoMinorVersionUpgrade") is False:
+        add("CF-RDS-009", "RDS automatic minor version upgrades are off", "Low", "Security",
+            "Set AutoMinorVersionUpgrade: true, so security patches in minor engine versions are "
+            "applied in the maintenance window (Security Hub RDS.13).")
+
+    if owns_settings and props.get("CopyTagsToSnapshot") is not True:
+        control = "RDS.16" if res.type == "rds_cluster" else "RDS.17"
+        add("CF-RDS-010", "RDS does not copy tags to snapshots", "Low", "Operational Excellence",
+            "Set CopyTagsToSnapshot: true, so snapshots carry the owner and cost tags (Security Hub "
+            f"{control}). In CDK: copyTagsToSnapshot: true.")
+
+    if owns_settings and family is not None:
+        exports = props.get("EnableCloudwatchLogsExports")
+        if exports is None or exports == []:
+            add("CF-RDS-011", "RDS logs are not exported to CloudWatch Logs", "Low", "Operational Excellence",
+                "Set EnableCloudwatchLogsExports to the engine's logs (for example postgresql, or "
+                "error, general and slowquery for MySQL), so they are kept and searchable (Security "
+                "Hub RDS.9). In CDK: cloudwatchLogsExports.")
+
+    if owns_settings and family is not None and not restored:
+        port = props.get("Port")
+        default_port = _RDS_ENGINES[family][0]
+        if port is None or str(port).strip() == str(default_port):
+            add("CF-RDS-012", "RDS uses the engine's default port", "Low", "Security",
+                f"Set Port to something other than {default_port}. It does not stop a targeted "
+                "attack, but it drops much automated scanning (Security Hub RDS.23). In CDK: port.")
+        user = props.get("MasterUsername")
+        if isinstance(user, str) and user.strip().lower() in _DEFAULT_DB_USERS:
+            control = "RDS.24" if res.type == "rds_cluster" else "RDS.25"
+            add("CF-RDS-013", "RDS uses a default master username", "Low", "Security",
+                f"MasterUsername is {user!r}, a name attackers try first. Use a custom name (Security "
+                f"Hub {control}). It can only be set when the database is created. In CDK: "
+                "credentials: rds.Credentials.fromGeneratedSecret('<custom name>').")
+
+    db_class = props.get("DBInstanceClass") if instance else props.get("DBClusterInstanceClass")
+    if open_source and isinstance(db_class, str) and db_class.startswith("db.") \
+            and db_class != "db.serverless" and not _GRAVITON_CLASS.match(db_class):
+        add("CF-RDS-014", "RDS instance class is not Graviton", "Low", "Cost Optimization",
+            f"{db_class} is x86. The Graviton class of the same size (db.r7g, db.m7g, db.t4g) costs "
+            "less for the same work on this engine. In CDK: ec2.InstanceClass.R7G or M7G.")
+    return out
 
 
 # A value the scan cannot read: an intrinsic, or a Terraform expression.
@@ -2451,6 +2633,7 @@ def _run_resource_checks(
     eips_in_use = _eips_in_use(resources)
     autoscaled, autoscaling_unlinked = _autoscaled_tables(resources)
     sgs_with_egress_rules, egress_unlinked = _egress_rule_targets(resources)
+    param_groups = [r for r in resources if r.type in ("db_parameter_group", "rds_cluster_parameter_group")]
     launch_templates_without_spot = 0
     first_lt_without_spot: Resource | None = None
     for r in resources:
@@ -2685,6 +2868,10 @@ def _run_resource_checks(
                             recommendation="Review InstanceType against actual workload; consider right-sizing or autoscaling to match load.",
                         ))
                         estimates.apply(findings[-1], estimates.ec2_instance(props.get("InstanceType")))
+
+                # --- RDS and Aurora settings beyond CF-RDS-001..005 ---
+                if ctype in ("db_instance", "rds_cluster"):
+                    findings.extend(_rds_settings_findings(res, template_path, param_groups))
 
                 # --- Load balancers: ELBv2 attributes, listeners, target groups, Classic ---
                 if ctype in ("lb", "lb_listener", "lb_target_group", "elb"):

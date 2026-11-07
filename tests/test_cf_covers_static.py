@@ -146,6 +146,12 @@ PAIRS: list[tuple[str, str, dict, str]] = [
     ("CF-ALB-007", "REL-007", {"Type": "AWS::ElasticLoadBalancingV2::TargetGroup", "Properties": {
         "Protocol": "HTTP", "Port": 80}},
      "new elbv2.ApplicationTargetGroup(this, 'Tg', { vpc, port: 80 });"),
+    ("CF-RDS-006", "SEC-021", _db(Engine="mysql", DBParameterGroupName="default.mysql8.0"),
+     f'new rds.DatabaseInstance(this, "DB", {{ {_DB_ENGINE} }});'),
+    ("CF-RDS-007", "OPS-009", _db(Engine="mysql"),
+     f'new rds.DatabaseInstance(this, "DB", {{ {_DB_ENGINE} }});'),
+    ("CF-RDS-014", "COST-010", _db(Engine="postgres", DBInstanceClass="db.m5.large"),
+     f'new rds.DatabaseInstance(this, "DB", {{ {_DB_ENGINE} }});'),
     ("CF-COST-002", "COST-006",
      {"Type": "AWS::EC2::NatGateway", "Properties": {"SubnetId": {"Ref": "Public"}}},
      "new ec2.Vpc(this, 'Vpc', { natGateways: 1 });"),

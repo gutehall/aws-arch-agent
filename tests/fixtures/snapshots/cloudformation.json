@@ -35,6 +35,20 @@
     "evidence": "Database (AWS::RDS::DBInstance)"
   },
   {
+    "id": "CF-RDS-007",
+    "severity": "Low",
+    "file": "stack.yaml",
+    "line": null,
+    "evidence": "Database (AWS::RDS::DBInstance)"
+  },
+  {
+    "id": "CF-RDS-010",
+    "severity": "Low",
+    "file": "stack.yaml",
+    "line": null,
+    "evidence": "Database (AWS::RDS::DBInstance)"
+  },
+  {
     "id": "CF-S3-001",
     "severity": "High",
     "file": "stack.yaml",

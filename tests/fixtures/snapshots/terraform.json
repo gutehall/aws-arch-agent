@@ -35,6 +35,20 @@
     "evidence": "aws_db_instance.database (aws_db_instance)"
   },
   {
+    "id": "CF-RDS-007",
+    "severity": "Low",
+    "file": "main.tf",
+    "line": 24,
+    "evidence": "aws_db_instance.database (aws_db_instance)"
+  },
+  {
+    "id": "CF-RDS-010",
+    "severity": "Low",
+    "file": "main.tf",
+    "line": 24,
+    "evidence": "aws_db_instance.database (aws_db_instance)"
+  },
+  {
     "id": "CF-S3-001",
     "severity": "High",
     "file": "main.tf",

@@ -15,6 +15,8 @@ CF_TYPE_TO_CANONICAL: dict[str, str] = {
     "AWS::S3::Bucket": "s3_bucket",
     "AWS::RDS::DBInstance": "db_instance",
     "AWS::RDS::DBCluster": "rds_cluster",
+    "AWS::RDS::DBParameterGroup": "db_parameter_group",
+    "AWS::RDS::DBClusterParameterGroup": "rds_cluster_parameter_group",
     "AWS::EC2::Instance": "instance",
     "AWS::EC2::LaunchTemplate": "launch_template",
     "AWS::EC2::SecurityGroup": "security_group",

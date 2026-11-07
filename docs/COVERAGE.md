@@ -17,7 +17,6 @@ Which CDK rules have a template check, and which AWS Foundational Security Best 
 
 | Work | Adds template checks for |
 | -- | -- |
-| `rds` | More RDS and Aurora settings |
 | `lambda` | Lambda access, secrets and limits |
 | `api-gateway` | API Gateway auth, TLS, throttling and caching |
 | `ci-cd` | CodeBuild and CodePipeline |
@@ -41,7 +40,7 @@ Which CDK rules have a template check, and which AWS Foundational Security Best 
 
 ## CDK rules
 
-172 rules: 62 covered, 6 partial, 65 planned, 10 account, 5 cdk-only, 24 advice.
+172 rules: 65 covered, 6 partial, 62 planned, 10 account, 5 cdk-only, 24 advice.
 
 | Rule | Title | Template check | Status | Note |
 | -- | -- | -- | -- | -- |
@@ -65,7 +64,7 @@ Which CDK rules have a template check, and which AWS Foundational Security Best 
 | SEC-018 | CloudFront not enforcing HTTPS | `CF-CF-001` | `covered` |  |
 | SEC-019 | CloudFront using legacy SSL/TLS | `CF-CF-002` | `covered` |  |
 | SEC-020 | ECS task definition not using read-only root filesystem | `CF-ECS-002` | `covered` |  |
-| SEC-021 | RDS not enforcing SSL/TLS connections |  | `planned: rds` |  |
+| SEC-021 | RDS not enforcing SSL/TLS connections | `CF-RDS-006` | `covered` |  |
 | SEC-022 | VPC endpoints missing (security & cost improvement) | `CF-VPC-001` | `covered` |  |
 | SEC-023 | KMS key rotation not enabled |  | `planned: kms-ssm` |  |
 | SEC-024 | WAF not enabled on ALB/API Gateway/CloudFront | `CF-CF-003`, `CF-WAF-001` | `covered` |  |
@@ -153,7 +152,7 @@ Which CDK rules have a template check, and which AWS Foundational Security Best 
 | COST-007 | S3 Intelligent-Tiering not enabled | `CF-S3-007` | `covered` |  |
 | COST-008 | EBS volumes using gp2 instead of gp3 | `CF-EBS-002` | `covered` |  |
 | COST-009 | ElastiCache may benefit from reserved nodes |  | `account` | Reserved nodes are bought for the account. |
-| COST-010 | RDS not using Graviton instances |  | `planned: rds` |  |
+| COST-010 | RDS not using Graviton instances | `CF-RDS-014` | `covered` |  |
 | COST-011 | CloudFront using all edge locations (Price Class All) |  | `planned: cloudfront` |  |
 | COST-012 | Elastic IP allocated but may not be used | `CF-EIP-001` | `covered` |  |
 | COST-013 | S3 lifecycle policy not configured for cost optimization | `CF-S3-006` | `covered` |  |
@@ -175,7 +174,7 @@ Which CDK rules have a template check, and which AWS Foundational Security Best 
 | OPS-006 | ALB/NLB access logs not enabled | `CF-ALB-001` | `covered` |  |
 | OPS-007 | CloudFront access logging not enabled |  | `planned: cloudfront` |  |
 | OPS-008 | ECS container insights not enabled |  | `planned: containers` |  |
-| OPS-009 | RDS enhanced monitoring not enabled |  | `planned: rds` |  |
+| OPS-009 | RDS enhanced monitoring not enabled | `CF-RDS-007` | `covered` |  |
 | OPS-010 | CloudWatch alarms not configured for critical resources |  | `planned: alarms` |  |
 | OPS-011 | No SNS topics for alarm notifications |  | `planned: alarms` |  |
 | OPS-012 | Step Functions not using X-Ray tracing |  | `planned: error-handling` |  |
@@ -348,19 +347,19 @@ Controls a template can show. Account-level controls (for example S3.1, EC2.7 an
 | RDS.2 | `CF-RDS-004` | `AWS::RDS::DBInstance` |
 | RDS.3 | `CF-RDS-001` | `AWS::RDS::DBInstance` |
 | RDS.5 | `CF-RDS-003` | `AWS::RDS::DBInstance` |
-| RDS.6 | `planned: rds` | `AWS::RDS::DBInstance` |
+| RDS.6 | `CF-RDS-007` | `AWS::RDS::DBInstance` |
 | RDS.7 | `CF-RDS-005` | `AWS::RDS::DBCluster` |
 | RDS.8 | `CF-RDS-005` | `AWS::RDS::DBInstance` |
-| RDS.9 | `planned: rds` | `AWS::RDS::DBInstance` |
-| RDS.10 | `planned: rds` | `AWS::RDS::DBInstance` |
+| RDS.9 | `CF-RDS-011` | `AWS::RDS::DBInstance` |
+| RDS.10 | `CF-RDS-008` | `AWS::RDS::DBInstance` |
 | RDS.11 | `CF-RDS-002` | `AWS::RDS::DBInstance` |
-| RDS.12 | `planned: rds` | `AWS::RDS::DBCluster` |
-| RDS.13 | `planned: rds` | `AWS::RDS::DBInstance` |
-| RDS.16 | `planned: rds` | `AWS::RDS::DBCluster` |
-| RDS.17 | `planned: rds` | `AWS::RDS::DBInstance` |
-| RDS.23 | `planned: rds` | `AWS::RDS::DBInstance`, `AWS::RDS::DBCluster` |
-| RDS.24 | `planned: rds` | `AWS::RDS::DBCluster` |
-| RDS.25 | `planned: rds` | `AWS::RDS::DBInstance` |
+| RDS.12 | `CF-RDS-008` | `AWS::RDS::DBCluster` |
+| RDS.13 | `CF-RDS-009` | `AWS::RDS::DBInstance` |
+| RDS.16 | `CF-RDS-010` | `AWS::RDS::DBCluster` |
+| RDS.17 | `CF-RDS-010` | `AWS::RDS::DBInstance` |
+| RDS.23 | `CF-RDS-012` | `AWS::RDS::DBInstance`, `AWS::RDS::DBCluster` |
+| RDS.24 | `CF-RDS-013` | `AWS::RDS::DBCluster` |
+| RDS.25 | `CF-RDS-013` | `AWS::RDS::DBInstance` |
 | RDS.27 | `CF-RDS-001` | `AWS::RDS::DBCluster` |
 | Redshift.1 | `planned: warehouses` | `AWS::Redshift::Cluster` |
 | Redshift.3 | `planned: warehouses` | `AWS::Redshift::Cluster` |

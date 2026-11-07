@@ -1141,6 +1141,85 @@ _CLOUDFORMATION["CF-EBS-002"] = """$name:
     VolumeType: gp3
     # over 1,000 GiB: Iops: <3 x size in GiB> to keep the gp2 baseline"""
 # Unused Elastic IPs: delete the resource to release it, or attach it.
+_CLOUDFORMATION["CF-RDS-006"] = """DbParameterGroup:
+  Type: AWS::RDS::DBParameterGroup
+  Properties:
+    Family: postgres16  # match the engine
+    Description: Require TLS
+    Parameters:
+      rds.force_ssl: "1"  # MySQL and MariaDB: require_secure_transport: "ON"
+# Then on $name: DBParameterGroupName: !Ref DbParameterGroup
+#   (a cluster: AWS::RDS::DBClusterParameterGroup and DBClusterParameterGroupName)"""
+_CLOUDFORMATION["CF-RDS-007"] = """$name:
+  Type: AWS::RDS::DBInstance
+  Properties:
+    MonitoringInterval: 60
+    MonitoringRoleArn: !GetAtt RdsMonitoringRole.Arn"""
+_CLOUDFORMATION["CF-RDS-008"] = """$name:
+  Type: AWS::RDS::DBInstance
+  Properties:
+    EnableIAMDatabaseAuthentication: true"""
+_CLOUDFORMATION["CF-RDS-009"] = """$name:
+  Type: AWS::RDS::DBInstance
+  Properties:
+    AutoMinorVersionUpgrade: true"""
+_CLOUDFORMATION["CF-RDS-010"] = """$name:
+  Type: AWS::RDS::DBInstance
+  Properties:
+    CopyTagsToSnapshot: true"""
+_CLOUDFORMATION["CF-RDS-011"] = """$name:
+  Type: AWS::RDS::DBInstance
+  Properties:
+    EnableCloudwatchLogsExports:
+      - postgresql  # MySQL: error, general, slowquery"""
+_CLOUDFORMATION["CF-RDS-012"] = """$name:
+  Type: AWS::RDS::DBInstance
+  Properties:
+    Port: "5433"  # not the engine default"""
+_CLOUDFORMATION["CF-RDS-013"] = """$name:
+  Type: AWS::RDS::DBInstance
+  Properties:
+    # Set only when the database is created: a new name means a new database.
+    MasterUsername: app_owner"""
+_CLOUDFORMATION["CF-RDS-014"] = """$name:
+  Type: AWS::RDS::DBInstance
+  Properties:
+    DBInstanceClass: db.r7g.large  # the Graviton class of the same size"""
+_TERRAFORM["CF-RDS-006"] = """resource "aws_db_parameter_group" "require_tls" {
+  family = "postgres16" # match the engine
+  parameter {
+    name  = "rds.force_ssl" # MySQL and MariaDB: require_secure_transport = "ON"
+    value = "1"
+  }
+}
+# Then on $tf_type.$tf_name: parameter_group_name = aws_db_parameter_group.require_tls.name
+# (a cluster: aws_rds_cluster_parameter_group and db_cluster_parameter_group_name)"""
+_TERRAFORM["CF-RDS-007"] = """resource "$tf_type" "$tf_name" {
+  monitoring_interval = 60
+  monitoring_role_arn = aws_iam_role.rds_monitoring.arn
+}"""
+_TERRAFORM["CF-RDS-008"] = """resource "$tf_type" "$tf_name" {
+  iam_database_authentication_enabled = true
+}"""
+_TERRAFORM["CF-RDS-009"] = """resource "$tf_type" "$tf_name" {
+  auto_minor_version_upgrade = true
+}"""
+_TERRAFORM["CF-RDS-010"] = """resource "$tf_type" "$tf_name" {
+  copy_tags_to_snapshot = true
+}"""
+_TERRAFORM["CF-RDS-011"] = """resource "$tf_type" "$tf_name" {
+  enabled_cloudwatch_logs_exports = ["postgresql"] # MySQL: error, general, slowquery
+}"""
+_TERRAFORM["CF-RDS-012"] = """resource "$tf_type" "$tf_name" {
+  port = 5433 # not the engine default
+}"""
+_TERRAFORM["CF-RDS-013"] = """resource "$tf_type" "$tf_name" {
+  # Set only when the database is created: a new name means a new database.
+  username = "app_owner" # aws_rds_cluster: master_username
+}"""
+_TERRAFORM["CF-RDS-014"] = """resource "$tf_type" "$tf_name" {
+  instance_class = "db.r7g.large" # the Graviton class of the same size
+}"""
 _CLOUDFORMATION["CF-ALB-002"] = """$name:
   Type: AWS::ElasticLoadBalancingV2::Listener
   Properties:

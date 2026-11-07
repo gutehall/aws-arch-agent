@@ -282,6 +282,7 @@ CloudFormation template rules run when the agent has access to template files. T
 
 - **S3**: CF-S3-001 (PublicAccessBlock), CF-S3-002 (encryption), CF-S3-003 (versioning), CF-S3-004 (server access logging), CF-S3-005 (no bucket policy in the template denies `s3:*` when `aws:SecureTransport` is false; Terraform reads `aws_s3_bucket_policy`, CDK `enforceSSL: true` clears it)
 - **RDS**: CF-RDS-001 (StorageEncrypted), CF-RDS-002 (BackupRetentionPeriod), CF-RDS-003 (MultiAZ), CF-RDS-004 (PubliclyAccessible), CF-RDS-005 (DeletionProtection), CF-PERF-003 (large instance right-sizing)
+- **RDS and Aurora settings** (`AWS::RDS::DBInstance`, `AWS::RDS::DBCluster`, their parameter groups; Terraform `aws_db_instance`, `aws_rds_cluster`, `aws_rds_cluster_instance`, `aws_db_parameter_group`, `aws_rds_cluster_parameter_group`). An Aurora member instance takes its engine settings from the cluster, so it is judged only for CF-RDS-007, CF-RDS-009 and CF-RDS-014. A database restored from a snapshot or a replica is not judged for its port or username. CF-RDS-006 (Medium): the linked parameter group does not set `rds.force_ssl` to 1 (PostgreSQL, SQL Server, Aurora PostgreSQL) or `require_secure_transport` to ON (MySQL, MariaDB, Aurora MySQL). No group, or a `default.*` group, does not enforce TLS, except on RDS for PostgreSQL 15 and later, whose defaults set `rds.force_ssl=1`. Oracle and Db2 set TLS in an option group, which is not read. A group the scan cannot read is not judged. CF-RDS-007 (Low, Security Hub RDS.6): `MonitoringInterval` unset or 0. CF-RDS-008 (Low, RDS.10 / RDS.12): IAM database authentication off, on MySQL, MariaDB, PostgreSQL and Aurora. CF-RDS-009 (Low, RDS.13): `AutoMinorVersionUpgrade: false`. CF-RDS-010 (Low, RDS.16 / RDS.17): `CopyTagsToSnapshot` not true. CF-RDS-011 (Low, RDS.9): no `EnableCloudwatchLogsExports`. CF-RDS-012 (Low, RDS.23): the engine's default port, set or by default. CF-RDS-013 (Low, RDS.24 / RDS.25): a literal default `MasterUsername` (`admin`, `postgres`, `root`, `sa`, ...); a username from a Secrets Manager reference is not read. CF-RDS-014 (Low): an x86 instance class on an engine with Graviton classes. In V2, CF-RDS-006, CF-RDS-007 and CF-RDS-014 replace SEC-021, OPS-009 and COST-010
 - **ALB / NLB** (`AWS::ElasticLoadBalancingV2::LoadBalancer`, `Listener`, `TargetGroup`; Terraform `aws_lb`, `aws_lb_listener`, `aws_lb_target_group` and the `aws_alb*` aliases): CF-ALB-001 (access logs off, Low, Security Hub ELB.5), CF-ALB-002 (HTTP listener whose default action does not redirect to HTTPS, Medium, ELB.1), CF-ALB-003 (HTTPS or TLS listener with a policy that allows TLS 1.0 or 1.1, Medium; no `SslPolicy` counts, because CloudFormation, CDK and Terraform then use `ELBSecurityPolicy-2016-08`), CF-ALB-004 (ALB keeps invalid HTTP headers, Low, ELB.4), CF-ALB-005 (no deletion protection, Low, ELB.6), CF-ALB-006 (ALB desync mitigation mode `monitor`, Low, ELB.12), CF-ALB-007 (target group with health checks off, or an HTTP/HTTPS target group with no `HealthCheckPath`, Low; Lambda targets are skipped). An attribute or policy set from a parameter is not judged. In V2, CF-ALB-002, CF-ALB-003 and CF-ALB-007 replace SEC-011, SEC-012 and REL-007
 - **Classic Load Balancer** (`AWS::ElasticLoadBalancing::LoadBalancer`, `aws_elb`): CF-CLB-001 (only HTTP or TCP listeners, Medium, ELB.3), CF-CLB-002 (an HTTPS or SSL listener with an IAM server certificate, not ACM, Low, ELB.2), CF-CLB-003 (access logs off, Low, ELB.5), CF-CLB-004 (cross-zone load balancing off, Low, ELB.9; off by default in CloudFormation, on by default in Terraform), CF-CLB-005 (connection draining off, Low, ELB.7)
 - **CloudTrail**: CF-CT-001 (log file validation), CF-CT-002 (multi-region), CF-CT-003 (KMS encryption)
@@ -340,11 +341,11 @@ CloudFormation template rules run when the agent has access to template files. T
 
 | Pillar | CF rule IDs |
 |--------|-------------|
-| Operational Excellence | CF-S3-004, CF-CT-001, CF-CT-002, CF-FL-001, CF-EKS-001, CF-TGW-002 |
-| Security | CF-S3-001, CF-S3-002, CF-S3-005, CF-RDS-001, CF-RDS-004, CF-CT-003, CF-KMS-001, CF-RP-001, CF-EC2-001, CF-EKS-002, CF-EKS-003, CF-IAM-001, CF-IAM-002, CF-IAM-003, CF-IAM-004, CF-IAM-005, CF-IAM-006, CF-IAM-007, CF-IAM-008, CF-ALB-002, CF-ALB-003, CF-ALB-004, CF-ALB-006, CF-CLB-001, CF-CLB-002, CF-SG-001, CF-SG-002, CF-SG-003, CF-NACL-001, CF-TGW-001, CF-CW-002, CF-SQS-001, CF-DDB-002, CF-LAM-003, CF-SNS-001, CF-EBS-001, CF-EFS-001, CF-KIN-001, CF-EC-001, CF-EC-002, CF-OS-001, CF-OS-002, CF-RS-001, CF-DOCDB-001, CF-NEP-001, CF-MSK-001, CF-CF-001, CF-CF-002, CF-CF-003, CF-CF-004, CF-WAF-001, CF-EC2-002, CF-EC2-003, CF-PAR-001, CF-PAR-002, CF-ECR-001, CF-ECR-002, CF-ECR-003, CF-ECS-001, CF-ECS-002, CF-ECS-003, CF-SM-001, CF-COG-001, CF-COG-002, CF-COG-003 |
+| Operational Excellence | CF-S3-004, CF-RDS-007, CF-RDS-010, CF-RDS-011, CF-CT-001, CF-CT-002, CF-FL-001, CF-EKS-001, CF-TGW-002 |
+| Security | CF-S3-001, CF-S3-002, CF-S3-005, CF-RDS-001, CF-RDS-004, CF-RDS-006, CF-RDS-008, CF-RDS-009, CF-RDS-012, CF-RDS-013, CF-CT-003, CF-KMS-001, CF-RP-001, CF-EC2-001, CF-EKS-002, CF-EKS-003, CF-IAM-001, CF-IAM-002, CF-IAM-003, CF-IAM-004, CF-IAM-005, CF-IAM-006, CF-IAM-007, CF-IAM-008, CF-ALB-002, CF-ALB-003, CF-ALB-004, CF-ALB-006, CF-CLB-001, CF-CLB-002, CF-SG-001, CF-SG-002, CF-SG-003, CF-NACL-001, CF-TGW-001, CF-CW-002, CF-SQS-001, CF-DDB-002, CF-LAM-003, CF-SNS-001, CF-EBS-001, CF-EFS-001, CF-KIN-001, CF-EC-001, CF-EC-002, CF-OS-001, CF-OS-002, CF-RS-001, CF-DOCDB-001, CF-NEP-001, CF-MSK-001, CF-CF-001, CF-CF-002, CF-CF-003, CF-CF-004, CF-WAF-001, CF-EC2-002, CF-EC2-003, CF-PAR-001, CF-PAR-002, CF-ECR-001, CF-ECR-002, CF-ECR-003, CF-ECS-001, CF-ECS-002, CF-ECS-003, CF-SM-001, CF-COG-001, CF-COG-002, CF-COG-003 |
 | Reliability | CF-S3-003, CF-RDS-002, CF-RDS-003, CF-RDS-005, CF-LAM-001, CF-DDB-001, CF-SQS-002, CF-DEL-001, CF-NAT-001, CF-ALB-005, CF-ALB-007, CF-CLB-004, CF-CLB-005 |
 | Performance Efficiency | CF-PERF-001, CF-PERF-002, CF-PERF-003, CF-PERF-004 |
-| Cost Optimization | CF-CW-001, CF-COST-002, CF-EBS-002, CF-EIP-001, CF-TAG-001, CF-ENV-001, CF-ENV-002, CF-ENV-003, CF-ENV-004, CF-ENV-005, CF-ENV-006, CF-GEN-001, CF-S3-006, CF-S3-007, CF-DDB-003, CF-VPC-002, CF-VPC-003 |
+| Cost Optimization | CF-CW-001, CF-RDS-014, CF-COST-002, CF-EBS-002, CF-EIP-001, CF-TAG-001, CF-ENV-001, CF-ENV-002, CF-ENV-003, CF-ENV-004, CF-ENV-005, CF-ENV-006, CF-GEN-001, CF-S3-006, CF-S3-007, CF-DDB-003, CF-VPC-002, CF-VPC-003 |
 | Sustainability | CF-SUST-001, CF-SUST-002, CF-SUST-003 |
 | Observability (reported under Operational Excellence) | CF-ALB-001, CF-CLB-003, CF-LAM-002, CF-APIGW-001, CF-APIGW-002, CF-APIGW-V2-001, CF-APIGW-V2-002 |
 | Best Practices | CF-VPC-001 |
@@ -479,6 +480,15 @@ Every rule has one or more themes, which cut across pillars: `finops`, `security
 | CF-RDS-003 | resilience |
 | CF-RDS-004 | network-exposure |
 | CF-RDS-005 | resilience, data-protection |
+| CF-RDS-006 | data-protection, network-exposure |
+| CF-RDS-007 | observability |
+| CF-RDS-008 | identity |
+| CF-RDS-009 | security-baseline |
+| CF-RDS-010 | finops |
+| CF-RDS-011 | observability |
+| CF-RDS-012 | network-exposure |
+| CF-RDS-013 | identity |
+| CF-RDS-014 | finops, sustainability |
 | CF-RP-001 | identity, network-exposure |
 | CF-RS-001 | data-protection |
 | CF-S3-001 | network-exposure, data-protection |
