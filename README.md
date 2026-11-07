@@ -53,10 +53,10 @@ aws-arch-agent --repo . --no-llm --update-baseline
 aws-arch-agent --repo . --no-llm --fail-on high --enforce-baseline
 ```
 
-Or use the composite GitHub Action:
+Or use the composite GitHub Action, pinned to a release:
 
 ```yaml
-- uses: gutehall/aws-arch-agent/.github/actions/aws-arch-agent@main
+- uses: gutehall/aws-arch-agent/.github/actions/aws-arch-agent@v0.1.0
   with:
     repo: .
     fail-on: high
@@ -64,6 +64,14 @@ Or use the composite GitHub Action:
     no-llm: "true"
     enforce-baseline: "true"
 ```
+
+The tag is the rule set. `@main` moves every time a check merges, so a pipeline using `fail-on` or a baseline can start failing without any change on your side. Pin a tag and upgrade on purpose:
+
+- **Patch** (`v0.1.x`): fixes only.
+- **Minor** (`v0.x.0`): can add new checks, so new findings may appear.
+- **Major** (`vX.0.0`): can change CLI flags or the report schema.
+
+Releases and notes: [GitHub releases](https://github.com/gutehall/aws-arch-agent/releases) and [CHANGELOG.md](CHANGELOG.md).
 
 ## Modes
 
