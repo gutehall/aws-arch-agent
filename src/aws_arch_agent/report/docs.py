@@ -74,6 +74,7 @@ _SERVICES: list[tuple[str, str, str]] = [
     (r"\bGlobal Accelerator\b", "AWS Global Accelerator", "/global-accelerator/latest/dg/"),
     (r"\bRoute 53\b", "Amazon Route 53", "/Route53/latest/DeveloperGuide/"),
     (r"\bACM\b|\bcertificate\b", "AWS Certificate Manager", "/acm/latest/userguide/"),
+    (r"\bClassic Load Balancers?\b", "Classic Load Balancers", "/elasticloadbalancing/latest/classic/"),
     (r"\bALB\b|\bload balancer\b", "Application Load Balancers", "/elasticloadbalancing/latest/application/"),
     (r"\bNLB\b", "Network Load Balancers", "/elasticloadbalancing/latest/network/"),
     (r"\bStorage Lens\b", "Amazon S3 Storage Lens", "/AmazonS3/latest/userguide/storage_lens.html"),

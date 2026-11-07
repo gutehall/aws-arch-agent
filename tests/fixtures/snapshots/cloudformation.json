@@ -21,6 +21,13 @@
     "evidence": "Template has 1 VPC(s) and 0 FlowLog(s)"
   },
   {
+    "id": "CF-LAM-006",
+    "severity": "Low",
+    "file": "stack.yaml",
+    "line": null,
+    "evidence": "Worker (AWS::Lambda::Function)"
+  },
+  {
     "id": "CF-PERF-002",
     "severity": "Low",
     "file": "stack.yaml",
@@ -30,6 +37,20 @@
   {
     "id": "CF-RDS-003",
     "severity": "Medium",
+    "file": "stack.yaml",
+    "line": null,
+    "evidence": "Database (AWS::RDS::DBInstance)"
+  },
+  {
+    "id": "CF-RDS-007",
+    "severity": "Low",
+    "file": "stack.yaml",
+    "line": null,
+    "evidence": "Database (AWS::RDS::DBInstance)"
+  },
+  {
+    "id": "CF-RDS-010",
+    "severity": "Low",
     "file": "stack.yaml",
     "line": null,
     "evidence": "Database (AWS::RDS::DBInstance)"

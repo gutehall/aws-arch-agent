@@ -1141,6 +1141,406 @@ _CLOUDFORMATION["CF-EBS-002"] = """$name:
     VolumeType: gp3
     # over 1,000 GiB: Iops: <3 x size in GiB> to keep the gp2 baseline"""
 # Unused Elastic IPs: delete the resource to release it, or attach it.
+_CLOUDFORMATION["CF-LAM-004"] = """$name:
+  Type: AWS::Lambda::Url
+  Properties:
+    TargetFunctionArn: !GetAtt Function.Arn
+    AuthType: AWS_IAM"""
+_CLOUDFORMATION["CF-LAM-005"] = """$name:
+  Type: AWS::Lambda::Function
+  Properties:
+    Environment:
+      Variables:
+        DB_SECRET_ARN: !Ref DbSecret  # read the value at runtime with GetSecretValue"""
+_CLOUDFORMATION["CF-LAM-006"] = """$name:
+  Type: AWS::Lambda::Function
+  Properties:
+    ReservedConcurrentExecutions: 50  # what the function and its downstreams can take"""
+_CLOUDFORMATION["CF-LAM-007"] = """$name:
+  Type: AWS::Lambda::Function
+  Properties:
+    Timeout: 30  # what one batch needs; behind API Gateway, just above its 29 s limit"""
+_CLOUDFORMATION["CF-LAM-008"] = """$name:
+  Type: AWS::Lambda::Function
+  Properties:
+    VpcConfig:
+      SubnetIds:  # private subnets in at least two AZs
+        - !Ref PrivateSubnetA
+        - !Ref PrivateSubnetB
+      SecurityGroupIds:
+        - !Ref FunctionSecurityGroup"""
+_TERRAFORM["CF-LAM-004"] = """resource "aws_lambda_function_url" "$tf_name" {
+  function_name      = aws_lambda_function.example.function_name
+  authorization_type = "AWS_IAM"
+}"""
+_TERRAFORM["CF-LAM-005"] = """resource "aws_lambda_function" "$tf_name" {
+  environment {
+    variables = {
+      DB_SECRET_ARN = aws_secretsmanager_secret.db.arn # read the value at runtime
+    }
+  }
+}"""
+_TERRAFORM["CF-LAM-006"] = """resource "aws_lambda_function" "$tf_name" {
+  reserved_concurrent_executions = 50 # what the function and its downstreams can take
+}"""
+_TERRAFORM["CF-LAM-007"] = """resource "aws_lambda_function" "$tf_name" {
+  timeout = 30 # what one batch needs; behind API Gateway, just above its 29 s limit
+}"""
+_TERRAFORM["CF-LAM-008"] = """resource "aws_lambda_function" "$tf_name" {
+  vpc_config {
+    subnet_ids         = [aws_subnet.private_a.id, aws_subnet.private_b.id] # two AZs or more
+    security_group_ids = [aws_security_group.function.id]
+  }
+}"""
+_CLOUDFORMATION["CF-RDS-006"] = """DbParameterGroup:
+  Type: AWS::RDS::DBParameterGroup
+  Properties:
+    Family: postgres16  # match the engine
+    Description: Require TLS
+    Parameters:
+      rds.force_ssl: "1"  # MySQL and MariaDB: require_secure_transport: "ON"
+# Then on $name: DBParameterGroupName: !Ref DbParameterGroup
+#   (a cluster: AWS::RDS::DBClusterParameterGroup and DBClusterParameterGroupName)"""
+_CLOUDFORMATION["CF-RDS-007"] = """$name:
+  Type: AWS::RDS::DBInstance
+  Properties:
+    MonitoringInterval: 60
+    MonitoringRoleArn: !GetAtt RdsMonitoringRole.Arn"""
+_CLOUDFORMATION["CF-RDS-008"] = """$name:
+  Type: AWS::RDS::DBInstance
+  Properties:
+    EnableIAMDatabaseAuthentication: true"""
+_CLOUDFORMATION["CF-RDS-009"] = """$name:
+  Type: AWS::RDS::DBInstance
+  Properties:
+    AutoMinorVersionUpgrade: true"""
+_CLOUDFORMATION["CF-RDS-010"] = """$name:
+  Type: AWS::RDS::DBInstance
+  Properties:
+    CopyTagsToSnapshot: true"""
+_CLOUDFORMATION["CF-RDS-011"] = """$name:
+  Type: AWS::RDS::DBInstance
+  Properties:
+    EnableCloudwatchLogsExports:
+      - postgresql  # MySQL: error, general, slowquery"""
+_CLOUDFORMATION["CF-RDS-012"] = """$name:
+  Type: AWS::RDS::DBInstance
+  Properties:
+    Port: "5433"  # not the engine default"""
+_CLOUDFORMATION["CF-RDS-013"] = """$name:
+  Type: AWS::RDS::DBInstance
+  Properties:
+    # Set only when the database is created: a new name means a new database.
+    MasterUsername: app_owner"""
+_CLOUDFORMATION["CF-RDS-014"] = """$name:
+  Type: AWS::RDS::DBInstance
+  Properties:
+    DBInstanceClass: db.r7g.large  # the Graviton class of the same size"""
+_TERRAFORM["CF-RDS-006"] = """resource "aws_db_parameter_group" "require_tls" {
+  family = "postgres16" # match the engine
+  parameter {
+    name  = "rds.force_ssl" # MySQL and MariaDB: require_secure_transport = "ON"
+    value = "1"
+  }
+}
+# Then on $tf_type.$tf_name: parameter_group_name = aws_db_parameter_group.require_tls.name
+# (a cluster: aws_rds_cluster_parameter_group and db_cluster_parameter_group_name)"""
+_TERRAFORM["CF-RDS-007"] = """resource "$tf_type" "$tf_name" {
+  monitoring_interval = 60
+  monitoring_role_arn = aws_iam_role.rds_monitoring.arn
+}"""
+_TERRAFORM["CF-RDS-008"] = """resource "$tf_type" "$tf_name" {
+  iam_database_authentication_enabled = true
+}"""
+_TERRAFORM["CF-RDS-009"] = """resource "$tf_type" "$tf_name" {
+  auto_minor_version_upgrade = true
+}"""
+_TERRAFORM["CF-RDS-010"] = """resource "$tf_type" "$tf_name" {
+  copy_tags_to_snapshot = true
+}"""
+_TERRAFORM["CF-RDS-011"] = """resource "$tf_type" "$tf_name" {
+  enabled_cloudwatch_logs_exports = ["postgresql"] # MySQL: error, general, slowquery
+}"""
+_TERRAFORM["CF-RDS-012"] = """resource "$tf_type" "$tf_name" {
+  port = 5433 # not the engine default
+}"""
+_TERRAFORM["CF-RDS-013"] = """resource "$tf_type" "$tf_name" {
+  # Set only when the database is created: a new name means a new database.
+  username = "app_owner" # aws_rds_cluster: master_username
+}"""
+_TERRAFORM["CF-RDS-014"] = """resource "$tf_type" "$tf_name" {
+  instance_class = "db.r7g.large" # the Graviton class of the same size
+}"""
+_CLOUDFORMATION["CF-ALB-002"] = """$name:
+  Type: AWS::ElasticLoadBalancingV2::Listener
+  Properties:
+    LoadBalancerArn: !Ref LoadBalancer
+    Protocol: HTTP
+    Port: 80
+    DefaultActions:
+      - Type: redirect
+        RedirectConfig:
+          Protocol: HTTPS
+          Port: "443"
+          StatusCode: HTTP_301"""
+_CLOUDFORMATION["CF-ALB-003"] = """$name:
+  Type: AWS::ElasticLoadBalancingV2::Listener
+  Properties:
+    SslPolicy: ELBSecurityPolicy-TLS13-1-2-2021-06"""
+_CLOUDFORMATION["CF-ALB-004"] = """$name:
+  Type: AWS::ElasticLoadBalancingV2::LoadBalancer
+  Properties:
+    LoadBalancerAttributes:
+      - Key: routing.http.drop_invalid_header_fields.enabled
+        Value: 'true'"""
+_CLOUDFORMATION["CF-ALB-005"] = """$name:
+  Type: AWS::ElasticLoadBalancingV2::LoadBalancer
+  Properties:
+    LoadBalancerAttributes:
+      - Key: deletion_protection.enabled
+        Value: 'true'"""
+_CLOUDFORMATION["CF-ALB-006"] = """$name:
+  Type: AWS::ElasticLoadBalancingV2::LoadBalancer
+  Properties:
+    LoadBalancerAttributes:
+      - Key: routing.http.desync_mitigation_mode
+        Value: defensive"""
+_CLOUDFORMATION["CF-ALB-007"] = """$name:
+  Type: AWS::ElasticLoadBalancingV2::TargetGroup
+  Properties:
+    HealthCheckEnabled: true
+    HealthCheckPath: /health  # an endpoint that checks the app and its dependencies"""
+_CLOUDFORMATION["CF-CLB-001"] = """$name:
+  Type: AWS::ElasticLoadBalancing::LoadBalancer
+  Properties:
+    Listeners:
+      - LoadBalancerPort: "443"
+        InstancePort: "80"
+        Protocol: HTTPS
+        SSLCertificateId: !Ref Certificate  # an AWS::CertificateManager::Certificate"""
+_CLOUDFORMATION["CF-CLB-002"] = _CLOUDFORMATION["CF-CLB-001"]
+_CLOUDFORMATION["CF-CLB-003"] = """$name:
+  Type: AWS::ElasticLoadBalancing::LoadBalancer
+  Properties:
+    AccessLoggingPolicy:
+      Enabled: true
+      EmitInterval: 60
+      S3BucketName: !Ref LogBucket"""
+_CLOUDFORMATION["CF-CLB-004"] = """$name:
+  Type: AWS::ElasticLoadBalancing::LoadBalancer
+  Properties:
+    CrossZone: true"""
+_CLOUDFORMATION["CF-CLB-005"] = """$name:
+  Type: AWS::ElasticLoadBalancing::LoadBalancer
+  Properties:
+    ConnectionDrainingPolicy:
+      Enabled: true
+      Timeout: 300"""
+_TERRAFORM["CF-ALB-002"] = """resource "aws_lb_listener" "$tf_name" {
+  load_balancer_arn = aws_lb.example.arn
+  port              = 80
+  protocol          = "HTTP"
+  default_action {
+    type = "redirect"
+    redirect {
+      protocol    = "HTTPS"
+      port        = "443"
+      status_code = "HTTP_301"
+    }
+  }
+}"""
+_TERRAFORM["CF-ALB-003"] = """resource "aws_lb_listener" "$tf_name" {
+  ssl_policy = "ELBSecurityPolicy-TLS13-1-2-2021-06"
+}"""
+_TERRAFORM["CF-ALB-004"] = """resource "aws_lb" "$tf_name" {
+  drop_invalid_header_fields = true
+}"""
+_TERRAFORM["CF-ALB-005"] = """resource "aws_lb" "$tf_name" {
+  enable_deletion_protection = true
+}"""
+_TERRAFORM["CF-ALB-006"] = """resource "aws_lb" "$tf_name" {
+  desync_mitigation_mode = "defensive"
+}"""
+_TERRAFORM["CF-ALB-007"] = """resource "aws_lb_target_group" "$tf_name" {
+  health_check {
+    enabled = true
+    path    = "/health" # an endpoint that checks the app and its dependencies
+  }
+}"""
+_TERRAFORM["CF-CLB-001"] = """resource "aws_elb" "$tf_name" {
+  listener {
+    lb_port            = 443
+    lb_protocol        = "https"
+    instance_port      = 80
+    instance_protocol  = "http"
+    ssl_certificate_id = aws_acm_certificate.example.arn
+  }
+}"""
+_TERRAFORM["CF-CLB-002"] = _TERRAFORM["CF-CLB-001"]
+_TERRAFORM["CF-CLB-003"] = """resource "aws_elb" "$tf_name" {
+  access_logs {
+    bucket   = aws_s3_bucket.logs.id
+    interval = 60
+    enabled  = true
+  }
+}"""
+_TERRAFORM["CF-CLB-004"] = """resource "aws_elb" "$tf_name" {
+  cross_zone_load_balancing = true
+}"""
+_TERRAFORM["CF-CLB-005"] = """resource "aws_elb" "$tf_name" {
+  connection_draining         = true
+  connection_draining_timeout = 300
+}"""
+
+_CLOUDFORMATION["CF-SG-002"] = """$name:
+  Type: AWS::EC2::SecurityGroup
+  Properties:
+    # Replace the all-ports 0.0.0.0/0 (or ::/0) entry with the ports the service needs.
+    SecurityGroupIngress:
+      - IpProtocol: tcp
+        FromPort: 443
+        ToPort: 443
+        CidrIp: 0.0.0.0/0"""
+_CLOUDFORMATION["CF-SG-002:AWS::EC2::SecurityGroupIngress"] = """$name:
+  Type: AWS::EC2::SecurityGroupIngress
+  Properties:
+    GroupId: !Ref SecurityGroup
+    IpProtocol: tcp  # one protocol and port, not -1
+    FromPort: 443
+    ToPort: 443
+    CidrIp: 0.0.0.0/0"""
+_CLOUDFORMATION["CF-SG-003"] = """$name:
+  Type: AWS::EC2::SecurityGroup
+  Properties:
+    # Replace the allow-all rule (or the AWS default) with what the workload calls.
+    SecurityGroupEgress:
+      - IpProtocol: tcp
+        FromPort: 443
+        ToPort: 443
+        DestinationPrefixListId: pl-12345678  # e.g. the S3 prefix list, or a VPC CIDR"""
+_CLOUDFORMATION["CF-SG-003:AWS::EC2::SecurityGroupEgress"] = """$name:
+  Type: AWS::EC2::SecurityGroupEgress
+  Properties:
+    GroupId: !Ref SecurityGroup
+    IpProtocol: tcp
+    FromPort: 443
+    ToPort: 443
+    CidrIp: 10.0.0.0/16  # a known destination, not 0.0.0.0/0 on every port"""
+_CLOUDFORMATION["CF-NACL-001"] = """$name:
+  Type: AWS::EC2::NetworkAclEntry
+  Properties:
+    NetworkAclId: !Ref NetworkAcl
+    RuleNumber: 100
+    Protocol: 6
+    RuleAction: allow
+    Egress: false
+    CidrBlock: 10.0.0.0/16  # a known range, not 0.0.0.0/0 or ::/0
+    PortRange:
+      From: 22
+      To: 22"""
+_CLOUDFORMATION["CF-NAT-001"] = """# One NAT gateway per AZ: add one in the second AZ's public subnet, and point that AZ's
+# private route table at it.
+NatGatewayB:
+  Type: AWS::EC2::NatGateway
+  Properties:
+    SubnetId: !Ref PublicSubnetB
+    AllocationId: !GetAtt NatEipB.AllocationId"""
+_CLOUDFORMATION["CF-TGW-001"] = """$name:
+  Type: AWS::EC2::TransitGateway
+  Properties:
+    AutoAcceptSharedAttachments: disable"""
+_CLOUDFORMATION["CF-TGW-002"] = """TransitGatewayFlowLog:
+  Type: AWS::EC2::FlowLog
+  Properties:
+    ResourceType: TransitGateway
+    ResourceId: !Ref $name
+    LogDestinationType: s3
+    LogDestination: !GetAtt FlowLogBucket.Arn"""
+_TERRAFORM["CF-SG-002"] = """# Replace the all-ports 0.0.0.0/0 (or ::/0) ingress with the ports the service needs.
+resource "aws_security_group" "$tf_name" {
+  ingress {
+    protocol    = "tcp"
+    from_port   = 443
+    to_port     = 443
+    cidr_blocks = ["0.0.0.0/0"]
+  }
+}"""
+_TERRAFORM["CF-SG-002:aws_security_group_rule"] = """resource "aws_security_group_rule" "$tf_name" {
+  type              = "ingress"
+  security_group_id = aws_security_group.example.id
+  protocol          = "tcp" # one protocol and port, not -1
+  from_port         = 443
+  to_port           = 443
+  cidr_blocks       = ["0.0.0.0/0"]
+}"""
+_TERRAFORM["CF-SG-002:aws_vpc_security_group_ingress_rule"] = """resource "aws_vpc_security_group_ingress_rule" "$tf_name" {
+  security_group_id = aws_security_group.example.id
+  ip_protocol       = "tcp" # one protocol and port, not -1
+  from_port         = 443
+  to_port           = 443
+  cidr_ipv4         = "0.0.0.0/0"
+}"""
+_TERRAFORM["CF-SG-003"] = """# Replace the allow-all egress with what the workload calls.
+resource "aws_security_group" "$tf_name" {
+  egress {
+    protocol        = "tcp"
+    from_port       = 443
+    to_port         = 443
+    prefix_list_ids = [aws_vpc_endpoint.s3.prefix_list_id] # or a VPC CIDR
+  }
+}"""
+_TERRAFORM["CF-SG-003:aws_security_group_rule"] = """resource "aws_security_group_rule" "$tf_name" {
+  type              = "egress"
+  security_group_id = aws_security_group.example.id
+  protocol          = "tcp"
+  from_port         = 443
+  to_port           = 443
+  cidr_blocks       = ["10.0.0.0/16"] # a known destination, not 0.0.0.0/0 on every port
+}"""
+_TERRAFORM["CF-SG-003:aws_vpc_security_group_egress_rule"] = """resource "aws_vpc_security_group_egress_rule" "$tf_name" {
+  security_group_id = aws_security_group.example.id
+  ip_protocol       = "tcp"
+  from_port         = 443
+  to_port           = 443
+  cidr_ipv4         = "10.0.0.0/16" # a known destination, not 0.0.0.0/0 on every port
+}"""
+_TERRAFORM["CF-NACL-001"] = """resource "aws_network_acl_rule" "$tf_name" {
+  network_acl_id = aws_network_acl.example.id
+  rule_number    = 100
+  egress         = false
+  protocol       = "tcp"
+  rule_action    = "allow"
+  cidr_block     = "10.0.0.0/16" # a known range, not 0.0.0.0/0 or ::/0
+  from_port      = 22
+  to_port        = 22
+}"""
+_TERRAFORM["CF-NACL-001:aws_network_acl"] = """resource "aws_network_acl" "$tf_name" {
+  vpc_id = aws_vpc.example.id
+  ingress {
+    rule_no    = 100
+    protocol   = "tcp"
+    action     = "allow"
+    cidr_block = "10.0.0.0/16" # a known range, not 0.0.0.0/0 or ::/0
+    from_port  = 22
+    to_port    = 22
+  }
+}"""
+_TERRAFORM["CF-NAT-001"] = """# One NAT gateway per AZ, each in that AZ's public subnet. Route each private subnet
+# to the NAT gateway in its own AZ.
+resource "aws_nat_gateway" "$tf_name" {
+  for_each      = aws_subnet.public
+  subnet_id     = each.value.id
+  allocation_id = aws_eip.nat[each.key].id
+}"""
+_TERRAFORM["CF-TGW-001"] = """resource "aws_ec2_transit_gateway" "$tf_name" {
+  auto_accept_shared_attachments = "disable"
+}"""
+_TERRAFORM["CF-TGW-002"] = """resource "aws_flow_log" "$tf_name" {
+  transit_gateway_id   = aws_ec2_transit_gateway.$tf_name.id
+  log_destination_type = "s3"
+  log_destination      = aws_s3_bucket.flow_logs.arn
+}"""
+
 _CLOUDFORMATION["CF-EIP-001"] = """# Not needed: delete $name to release the address. Needed: attach it.
 ${name}Association:
   Type: AWS::EC2::EIPAssociation

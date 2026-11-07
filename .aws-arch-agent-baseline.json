@@ -238,6 +238,18 @@
     },
     {
       "id": "SEC-003",
+      "file": "src/aws_arch_agent/rules/fix_snippets.py",
+      "evidence_hash": "40ddfe5cd90af1a7",
+      "logical_id": "from_port      = 22"
+    },
+    {
+      "id": "SEC-003",
+      "file": "src/aws_arch_agent/rules/fix_snippets.py",
+      "evidence_hash": "b934aa70e81ca5ae",
+      "logical_id": "from_port  = 22"
+    },
+    {
+      "id": "SEC-003",
       "file": "src/aws_arch_agent/rules/security_network.py",
       "line": 15
     },
