@@ -65,18 +65,24 @@ def test_rule_reference_count_matches_the_registry_and_lists_each_rule_once() ->
     assert set(listed) - {"OPS-024"} == {rule.id for rule in ALL_RULES}
 
 
+def _pins_action_to_current_release(text: str) -> bool:
+    """The action example uses exactly @v<version>, not @main or a suffixed tag."""
+    pin = rf"\.github/actions/aws-arch-agent@v{re.escape(__version__)}(?![\w.+-])"
+    return re.search(pin, text) is not None and "aws-arch-agent@main" not in text
+
+
 def test_readme_pins_the_action_to_the_current_release() -> None:
     readme = (ROOT / "README.md").read_text(encoding="utf-8")
-    assert f".github/actions/aws-arch-agent@v{__version__}" in readme
+    assert _pins_action_to_current_release(readme)
     assert f'pip install "git+https://github.com/gutehall/aws-arch-agent@v{__version__}"' in readme
-    assert f"releases/tag/v{__version__}" in readme
-    assert "aws-arch-agent@main" not in readme
+    assert f"releases/tag/v{__version__})" in readme
 
 
 def test_reference_pins_the_action_and_lists_every_cli_option() -> None:
     text = (ROOT / "docs" / "REFERENCE.md").read_text(encoding="utf-8")
-    assert f".github/actions/aws-arch-agent@v{__version__}" in text
+    assert _pins_action_to_current_release(text)
+    rows = re.findall(r"^\| (`-[^|]*)\|", text, re.MULTILINE)
     for param in get_command(app).params:
         for opt in param.opts:
             if opt.startswith("--"):
-                assert f"`{opt}`" in text, opt
+                assert any(f"`{opt}`" in row for row in rows), f"{opt} has no CLI table row"
