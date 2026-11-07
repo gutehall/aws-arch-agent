@@ -24,7 +24,8 @@ SECRET_REFERENCE = re.compile(
 )
 # Counts and limits named after a secret word, such as MaxTokens or min_password_age.
 # Case-sensitive, so the next word must start a new word: MinioSecretKey is a secret.
-SECRET_LIMIT = re.compile(r"^(?:max|Max|MAX|min|Min|MIN)(?:imum|IMUM)?(?:_|[A-Z0-9])")
+# An upper-case name needs the separator: MAX_TOKENS is a limit, MINIO_SECRET_KEY is not.
+SECRET_LIMIT = re.compile(r"^(?:(?:max|Max|min|Min)(?:imum)?(?:_|[A-Z0-9])|(?:MAX|MIN)(?:IMUM)?_)")
 
 
 def is_secret_name(name: str) -> bool:

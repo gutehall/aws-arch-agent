@@ -106,7 +106,9 @@ def test_egress_open_to_the_internet(tmp_path: Path) -> None:
     assert found == {"CF-SG-003": {"CdkDefault", "AwsDefault"}}
 
 
-def test_a_standalone_egress_rule_replaces_the_default(tmp_path: Path) -> None:
+def test_a_standalone_egress_rule_does_not_remove_the_default(tmp_path: Path) -> None:
+    """AWS adds the allow-all rule when the group is created with no egress rules; a
+    standalone SecurityGroupEgress is added afterwards and leaves it in place."""
     found = _cf(tmp_path, {
         "Sg": _sg([]),
         "Out": {"Type": "AWS::EC2::SecurityGroupEgress", "Properties": {
@@ -116,17 +118,7 @@ def test_a_standalone_egress_rule_replaces_the_default(tmp_path: Path) -> None:
             "GroupId": {"Fn::GetAtt": ["Sg", "GroupId"]}, "IpProtocol": "-1",
             "CidrIp": "0.0.0.0/0"}},
     })
-    assert found == {"CF-SG-003": {"OpenOut"}}
-
-
-def test_an_egress_rule_on_an_unknown_group_may_be_any_of_them(tmp_path: Path) -> None:
-    found = _cf(tmp_path, {
-        "Sg": _sg([]),
-        "Out": {"Type": "AWS::EC2::SecurityGroupEgress", "Properties": {
-            "GroupId": {"Ref": "GroupParam"}, "IpProtocol": "tcp", "FromPort": 443,
-            "ToPort": 443, "CidrIp": "10.0.0.0/16"}},
-    })
-    assert found == {}
+    assert found == {"CF-SG-003": {"Sg", "OpenOut"}}
 
 
 # --- Network ACLs ----------------------------------------------------------------
@@ -211,6 +203,16 @@ def test_transit_gateway_auto_accept_and_flow_logs(tmp_path: Path) -> None:
             "LogDestinationType": "s3", "LogDestination": "arn:aws:s3:::logs"}},
     })
     assert found == {"CF-TGW-001": {"Open"}, "CF-TGW-002": {"Open"}}
+
+
+def test_an_attachment_flow_log_does_not_hide_the_gateway(tmp_path: Path) -> None:
+    found = _cf(tmp_path, {
+        "Tgw": {"Type": "AWS::EC2::TransitGateway", "Properties": {}},
+        "Log": {"Type": "AWS::EC2::FlowLog", "Properties": {
+            "ResourceType": "TransitGatewayAttachment", "ResourceId": "tgw-attach-1"}},
+        "Inbound": _entry(Egress="False"),  # a string false is still inbound
+    })
+    assert found == {"CF-TGW-002": {"Tgw"}, "CF-NACL-001": {"Inbound"}}
 
 
 def test_a_flow_log_on_an_unknown_gateway_counts_for_all(tmp_path: Path) -> None:

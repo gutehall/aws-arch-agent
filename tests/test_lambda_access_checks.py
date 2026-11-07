@@ -37,6 +37,8 @@ def _fn(**props: object) -> dict:
 
 def test_secret_names_and_values() -> None:
     assert is_secret_name("DB_PASSWORD") and is_secret_name("ApiKey") and is_secret_name("GITHUB_TOKEN")
+    assert is_secret_name("MINIO_SECRET_KEY") and is_secret_name("MINT_API_KEY")
+    assert not is_secret_name("MAX_TOKENS") and not is_secret_name("MIN_PASSWORD_LENGTH")
     assert not is_secret_name("DB_SECRET_ARN") and not is_secret_name("TOKEN_URL")
     assert not is_secret_name("TABLE_NAME") and not is_secret_name("MaxTokens")
     assert is_literal_secret("hunter2-but-longer")

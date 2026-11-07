@@ -961,12 +961,21 @@ def _ssl_enforced(res: Resource, family: str, param_groups: List[Resource]) -> b
     key = "DBClusterParameterGroupName" if res.type == "rds_cluster" else "DBParameterGroupName"
     if key in res.unresolved or "EngineVersion" in res.unresolved:
         return None
-    on_by_default = family == "postgres" and (_major_version(res.properties.get("EngineVersion")) or 0) >= 15
     linked = res.properties.get(key)
-    if linked is None or (isinstance(linked, str) and linked.lower().startswith("default.")):
-        return on_by_default
-    group = next((g for g in param_groups if _points_at(res, key, g) or (
+    default_group = linked is None or (isinstance(linked, str) and linked.lower().startswith("default."))
+    group = None if default_group else next((g for g in param_groups if _points_at(res, key, g) or (
         isinstance(linked, str) and g.properties.get("Name") == linked)), None)
+    # PostgreSQL's major version, from EngineVersion or the group family (postgres16). With
+    # neither, AWS picks the current default major, which is 15 or later: unknown here.
+    major = _major_version(res.properties.get("EngineVersion"))
+    if major is None and group is not None:
+        major = _major_version(re.sub(r"^\D+", "", str(group.properties.get("Family", ""))))
+    if family == "postgres" and major is None:
+        on_by_default: bool | None = None
+    else:
+        on_by_default = family == "postgres" and major is not None and major >= 15
+    if default_group:
+        return on_by_default
     if group is None or group.malformed or "Parameters" in group.unresolved:
         return None
     params = group.properties.get("Parameters")
@@ -1118,7 +1127,8 @@ def _redirects_to_https(actions: Any) -> bool | None:
             return None
         if kind.lower() != "redirect":
             continue
-        protocol = (action.get("RedirectConfig") or {}).get("Protocol")
+        config = action.get("RedirectConfig")
+        protocol = config.get("Protocol") if isinstance(config, dict) else None
         if not isinstance(protocol, str):
             return None
         if protocol.upper() == "HTTPS":
@@ -1127,14 +1137,14 @@ def _redirects_to_https(actions: Any) -> bool | None:
 
 
 def _is_acm_certificate(value: Any) -> bool | None:
-    """True for an ACM certificate ARN, False for an IAM server certificate, None when the
-    value cannot be read (a Ref to a parameter, an import)."""
-    if isinstance(value, str):
-        return ":acm:" in value
-    text = json.dumps(value, default=str)
-    if ":acm:" in text:
+    """True for an ACM certificate, False for an IAM server certificate, None when the
+    value cannot be read (a Ref to a parameter, an import, a name).
+
+    A Terraform reference names the resource type (aws_acm_certificate.web.arn)."""
+    text = value if isinstance(value, str) else json.dumps(value, default=str)
+    if ":acm:" in text or "aws_acm_certificate" in text:
         return True
-    if ":iam:" in text and "server-certificate" in text:
+    if (":iam:" in text and "server-certificate" in text) or "aws_iam_server_certificate" in text:
         return False
     return None
 
@@ -1222,8 +1232,8 @@ def _load_balancer_findings(res: Resource, template_path: Path) -> List[Finding]
     if res.type == "elb":
         listeners = props.get("Listeners")
         listeners = [x for x in listeners if isinstance(x, dict)] if isinstance(listeners, list) else []
-        protocols = [x.get("Protocol").upper() for x in listeners if isinstance(x.get("Protocol"), str)]
-        if protocols and all(p in ("HTTP", "TCP") for p in protocols):
+        protocols = [x.get("Protocol") for x in listeners]
+        if protocols and all(isinstance(p, str) and p.upper() in ("HTTP", "TCP") for p in protocols):
             add("CF-CLB-001", "Classic Load Balancer has no HTTPS or SSL listener", "Medium", "Security",
                 "Add an HTTPS or SSL listener with a certificate and stop serving clear text (Security "
                 "Hub ELB.3). Better: move to an Application or Network Load Balancer.")
@@ -1379,24 +1389,6 @@ def _sg_rules_of(res: Resource, key: str) -> list[dict]:
     return [res.properties]
 
 
-def _egress_rule_targets(resources: List[Resource]) -> tuple[set[str], bool]:
-    """Names of security groups a standalone CloudFormation egress rule points at, and
-    whether one points at something the scan cannot tie to a group (it may be any of them).
-
-    Such a rule replaces the default allow-all egress of the group it is on.
-    """
-    groups = [r for r in resources if r.type == "security_group"]
-    targets: set[str] = set()
-    unlinked = False
-    for rule in resources:
-        if rule.type != "security_group_egress_rule" or not rule.source_type.startswith("AWS::"):
-            continue
-        hit = [g.name for g in groups if _points_at(rule, "GroupId", g)]
-        targets.update(hit)
-        unlinked = unlinked or not hit
-    return targets, unlinked
-
-
 def _security_group_findings(
     res: Resource, template_path: Path, default_egress_open: bool
 ) -> List[Finding]:
@@ -1404,8 +1396,9 @@ def _security_group_findings(
     security group or a standalone ingress or egress rule.
 
     A rule open on every port is reported as CF-SG-002 only, not also as CF-SG-001. A
-    CloudFormation group with no SecurityGroupEgress and no standalone egress rule keeps
-    the AWS default, which allows all outbound traffic. Terraform removes that default.
+    CloudFormation group created with no SecurityGroupEgress gets the AWS default rule,
+    which allows all outbound traffic; a standalone AWS::EC2::SecurityGroupEgress is added
+    after creation and does not remove it. Terraform removes that default.
     """
     out: List[Finding] = []
 
@@ -1459,7 +1452,8 @@ _NACL_PORTS = (22, 3389)
 def _nacl_entry_opens_admin_port(entry: dict) -> bool | None:
     """True when an inbound allow entry opens 22 or 3389 to the internet. None when a value
     it needs is not a literal."""
-    if entry.get("Egress") not in (None, False, "false"):
+    egress = entry.get("Egress")
+    if not (egress is None or egress is False or (isinstance(egress, str) and egress.lower() == "false")):
         return False
     action = entry.get("RuleAction")
     if type(action) is not str:
@@ -1591,8 +1585,10 @@ def _tgw_flow_log_findings(
     out: List[Finding] = []
     for tgw in gateways:
         tied = [log for log in logs if _points_at(log, "ResourceId", tgw)]
-        unlinked = any("ResourceId" in log.unresolved or not any(
-            _points_at(log, "ResourceId", g) for g in gateways) for log in logs)
+        # A gateway log the scan cannot tie may be this one. An attachment log is not.
+        unlinked = any("ResourceId" in log.unresolved or (
+            log.properties.get("ResourceType") == "TransitGateway"
+            and not any(_points_at(log, "ResourceId", g) for g in gateways)) for log in logs)
         if tied or unlinked:
             continue
         file, line, _ = at(tgw)
@@ -2750,7 +2746,6 @@ def _run_resource_checks(
     rotated, rotation_unlinked = _rotation_coverage(resources)
     eips_in_use = _eips_in_use(resources)
     autoscaled, autoscaling_unlinked = _autoscaled_tables(resources)
-    sgs_with_egress_rules, egress_unlinked = _egress_rule_targets(resources)
     param_groups = [r for r in resources if r.type in ("db_parameter_group", "rds_cluster_parameter_group")]
     launch_templates_without_spot = 0
     first_lt_without_spot: Resource | None = None
@@ -3189,9 +3184,7 @@ def _run_resource_checks(
                 if ctype in ("security_group", "security_group_ingress_rule", "security_group_egress_rule"):
                     findings.extend(_security_group_findings(
                         res, template_path, default_egress_open=(
-                            ctype == "security_group" and res.source_type.startswith("AWS::")
-                            and not egress_unlinked and logical_id not in sgs_with_egress_rules
-                        )))
+                            ctype == "security_group" and res.source_type.startswith("AWS::"))))
                 if ctype in ("network_acl_entry", "network_acl"):
                     findings.extend(_nacl_findings(res, template_path))
                 if ctype == "transit_gateway" and props.get("AutoAcceptSharedAttachments") == "enable":

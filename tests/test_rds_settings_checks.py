@@ -78,11 +78,17 @@ def test_tls_by_engine_and_version(tmp_path: Path) -> None:
         "PgOff": {"Type": "AWS::RDS::DBParameterGroup", "Properties": {
             "Family": "postgres16", "Description": "x", "Parameters": {"rds.force_ssl": 0}}},
         "Unread": _db(DBParameterGroupName={"Ref": "GroupParam"}),
+        # No version: AWS picks the current major (15+), whose default enforces TLS.
+        "PgNoVersion": _db(Engine="postgres", EngineVersion=None, DBParameterGroupName=None, Port="5433"),
+        "PgFamily14": _db(Engine="postgres", EngineVersion=None, Port="5433",
+                          DBParameterGroupName={"Ref": "Pg14Params"}),
+        "Pg14Params": {"Type": "AWS::RDS::DBParameterGroup", "Properties": {
+            "Family": "postgres14", "Description": "x", "Parameters": {"work_mem": "64"}}},
         "Oracle": _db(Engine="oracle-se2", DBParameterGroupName=None, Port="1522",
                       DBInstanceClass="db.m5.large"),
     })
     # PostgreSQL 15+ defaults to rds.force_ssl=1; Oracle sets TLS in an option group.
-    assert found["CF-RDS-006"] == {"Pg14", "Pg16Off"}
+    assert found["CF-RDS-006"] == {"Pg14", "Pg16Off", "PgFamily14"}
     # Oracle has no IAM database authentication or Graviton classes.
     assert "Oracle" not in found.get("CF-RDS-008", set()) | found.get("CF-RDS-014", set())
 

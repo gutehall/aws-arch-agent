@@ -187,6 +187,34 @@ resource "aws_lb_target_group" "checked" {
     path = "/health"
   }
 }
+resource "aws_elb" "acm" {
+  cross_zone_load_balancing = true
+  connection_draining       = true
+  listener {
+    instance_port      = 80
+    instance_protocol  = "http"
+    lb_port            = 443
+    lb_protocol        = "https"
+    ssl_certificate_id = aws_acm_certificate.web.arn
+  }
+  access_logs {
+    bucket = "logs"
+  }
+}
+resource "aws_elb" "iam" {
+  cross_zone_load_balancing = true
+  connection_draining       = true
+  listener {
+    instance_port      = 80
+    instance_protocol  = "http"
+    lb_port            = 443
+    lb_protocol        = "https"
+    ssl_certificate_id = aws_iam_server_certificate.web.arn
+  }
+  access_logs {
+    bucket = "logs"
+  }
+}
 resource "aws_elb" "legacy" {
   listener {
     instance_port     = 80
@@ -207,6 +235,7 @@ def test_terraform_load_balancers(tmp_path: Path) -> None:
         "CF-ALB-005": {"aws_lb.app"},
         "CF-ALB-007": {"aws_lb_target_group.web"},
         "CF-CLB-001": {"aws_elb.legacy"},
+        "CF-CLB-002": {"aws_elb.iam"},  # a reference to aws_acm_certificate is ACM
         "CF-CLB-003": {"aws_elb.legacy"},
         "CF-CLB-005": {"aws_elb.legacy"},  # cross-zone is on by default in Terraform
     }
