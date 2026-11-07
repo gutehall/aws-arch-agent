@@ -167,7 +167,7 @@ def test_reports_show_the_cost_section(tmp_path: Path) -> None:
     out_md = tmp_path / "r.md"
     result = runner.invoke(app, ["--repo", str(repo), "--no-llm", "--out", str(out_md)])
     assert result.exit_code == 0, result.output
-    md = out_md.read_text()
+    md = out_md.read_text(encoding="utf-8")
     assert "## Estimated Monthly Cost (estimate)" in md
     assert f"| `stack.json` | us-east-1 | 6 | **${total:,.2f}** |".replace("**", "") in md
     assert f"| **Total** | | 6 | **${total:,.2f}** |" in md
@@ -178,13 +178,13 @@ def test_reports_show_the_cost_section(tmp_path: Path) -> None:
     out_json = tmp_path / "r.json"
     result = runner.invoke(app, ["--repo", str(repo), "--no-llm", "--format", "json", "--out", str(out_json)])
     assert result.exit_code == 0, result.output
-    cost = json.loads(out_json.read_text())["context"]["notes"]["cost"]
+    cost = json.loads(out_json.read_text(encoding="utf-8"))["context"]["notes"]["cost"]
     assert cost["total_monthly_usd"] == total and cost["not_priced"]["AWS::S3::Bucket"] == 1
 
     out_html = tmp_path / "r.html"
     result = runner.invoke(app, ["--repo", str(repo), "--no-llm", "--format", "html", "--out", str(out_html)])
     assert result.exit_code == 0, result.output
-    html = out_html.read_text()
+    html = out_html.read_text(encoding="utf-8")
     assert "Estimated monthly cost (estimate)" in html and f"${total:,.2f}" in html
     assert "AWS::Lambda::Function ×1" in html
 

@@ -86,7 +86,7 @@ def test_unresolved_intrinsics_stay_non_findings(tmp_path: Path) -> None:
 def test_synth_fixture_findings_are_stable() -> None:
     """cdk synth output goes through the model with the same ids and evidence as before."""
     findings = run_cf_rules(FIXTURE, repo_path=FIXTURE.parent)
-    doc = json.loads((FIXTURE / "MinimalStack.template.json").read_text())
+    doc = json.loads((FIXTURE / "MinimalStack.template.json").read_text(encoding="utf-8"))
     cf_types = {r["Type"] for r in doc["Resources"].values()}
     for f in findings:
         assert f.id.startswith("CF-")

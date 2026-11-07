@@ -5,6 +5,7 @@ from typing import Any, List, cast
 import subprocess
 import json
 import os
+import shutil
 
 from aws_arch_agent.tools.cfn_yaml import is_cf_template, load_cfn_yaml
 from aws_arch_agent.tools.files import DEFAULT_EXCLUDES
@@ -40,7 +41,9 @@ def run_cdk_synth(
     and the reason in stderr. Callers must not treat those cases as an exception.
     """
     env = os.environ.copy()
-    cmd: List[str] = ["npx", "cdk", "synth", "--quiet"]
+    # On Windows npx is npx.cmd, which subprocess does not find by bare name.
+    npx = shutil.which("npx") or "npx"
+    cmd: List[str] = [npx, "cdk", "synth", "--quiet"]
     if app:
         cmd += ["--app", app]
     elif language == "python":
@@ -53,6 +56,8 @@ def run_cdk_synth(
             cwd=str(repo_path),
             capture_output=True,
             text=True,
+            encoding="utf-8",
+            errors="replace",
             timeout=timeout_s,
             check=False,
             env=env,

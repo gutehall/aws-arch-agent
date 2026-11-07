@@ -138,7 +138,7 @@ def test_cli_default_v1_reports_template_findings(tmp_path: Path) -> None:
         app, ["--repo", str(tmp_path), "--no-llm", "--format", "json", "--out", str(out)]
     )
     assert result.exit_code == 0, result.output
-    data = json.loads(out.read_text())
+    data = json.loads(out.read_text(encoding="utf-8"))
     assert data["context"]["source"] == "cloudformation"
     assert any(f["id"] == "CF-S3-001" for f in data["findings"])
 
