@@ -67,7 +67,7 @@ Releases let consumers pin a rule set. These rules are settled; follow them rath
   - **Patch** — fixes only.
   - If a release mixes these, the largest bump wins.
 - **Where releases come from:** always `main`, as a `vX.Y.Z` tag plus GitHub release notes. Not every merge gets a release; cut one when there is something worth pinning.
-- **One number everywhere:** the tag, `version` in `pyproject.toml`, and `__version__` in `src/aws_arch_agent/__init__.py` must match. Bump both files in a PR before tagging.
+- **One number everywhere:** the tag and the package version must match. The version lives only in `__version__` in `src/aws_arch_agent/__init__.py`; `pyproject.toml` reads it from there, and `aws-arch-agent --version` prints it. Bump it in a PR before tagging.
 - **Tags are immutable:** never force-push or move a tag. If a release is wrong, fix it on `main` and cut the next patch.
 - PyPI publishing is out of scope for now.
 
