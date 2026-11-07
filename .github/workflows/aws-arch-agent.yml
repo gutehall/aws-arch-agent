@@ -113,7 +113,9 @@ jobs:
           node-version: "20"
 
       - name: Install ripgrep
-        run: choco install ripgrep -y --no-progress
+        run: |
+          choco install ripgrep -y --no-progress
+          rg --version  # fail here, not as a skipped test, if rg is not on PATH
 
       - name: Install Python dependencies
         run: |
