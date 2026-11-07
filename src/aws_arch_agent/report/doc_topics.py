@@ -1228,7 +1228,6 @@ RULE_TOPICS: dict[str, str] = {
     "OPS-021": "cw_dashboards",
     "OPS-022": "tagging",
     "OPS-023": "ssm_tier",
-    "OPS-024": "lambda_reserved",
     "OPS-025": "s3_replication_metrics",
     "PERF-001": "graviton_ec2",
     "PERF-002": "caching",

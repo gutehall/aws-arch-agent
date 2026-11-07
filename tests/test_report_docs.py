@@ -48,12 +48,14 @@ def test_unknown_category_falls_back_to_framework() -> None:
     assert links[-1]["url"].endswith("/wellarchitected/latest/framework/welcome.html")
 
 
-def test_every_rule_gets_aws_docs_links() -> None:
+def test_every_rule_gets_its_mapped_docs_links() -> None:
     for rule in ALL_RULES:
-        links = doc_links(_finding(rule.title, rule.category))
-        assert links, rule.id
-        for link in links:
-            assert re.fullmatch(r"https://docs\.aws\.amazon\.com/[\w./-]*", link["url"]), rule.id
+        finding = Finding(id=rule.id, title=rule.title, category=rule.category, recommendation="r")
+        label, path, wa_label, wa_path = TOPICS[RULE_TOPICS[rule.id]]
+        assert doc_links(finding) == [
+            {"label": label, "url": "https://docs.aws.amazon.com" + path},
+            {"label": wa_label, "url": "https://docs.aws.amazon.com" + wa_path},
+        ], rule.id
 
 
 def test_every_pillar_used_by_rules_has_a_page() -> None:
@@ -68,9 +70,12 @@ def _template_check_ids() -> set[str]:
     return found
 
 
-def test_every_rule_and_template_check_has_a_topic() -> None:
-    ids = {rule.id for rule in ALL_RULES} | _template_check_ids()
+def test_every_rule_and_template_check_has_a_topic_and_no_other_ids_do() -> None:
+    template_ids = _template_check_ids()
+    assert len(template_ids) >= 99  # the regex still finds the template checks
+    ids = {rule.id for rule in ALL_RULES} | template_ids
     assert sorted(ids - set(RULE_TOPICS)) == []
+    assert sorted(set(RULE_TOPICS) - ids) == []
 
 
 def test_every_topic_is_used_and_every_rule_points_at_a_topic() -> None:

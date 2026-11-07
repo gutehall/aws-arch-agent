@@ -4,7 +4,7 @@
 Run by hand after editing the map, or now and then because AWS moves pages; a scan never
 calls the network.
 
-    python scripts/check_doc_links.py
+    python scripts/check_doc_links.py      # after pip install -e . (or PYTHONPATH=src)
 
 docs.aws.amazon.com answers a missing page with a redirect to the guide's start page, so a
 page passes only when it answers 200 without a redirect. An #anchor must appear as an id on
@@ -12,6 +12,7 @@ the page. Exits 1 and lists the broken URLs when any fail.
 """
 from __future__ import annotations
 
+import re
 import sys
 import time
 import urllib.error
@@ -38,10 +39,13 @@ def _fetch(path: str) -> tuple[bool | None, str]:
         with _OPENER.open(request, timeout=20) as response:
             if response.status != 200:
                 return False, f"status {response.status}"
-            if anchor and f'id="{anchor}"' not in response.read().decode("utf-8", "replace"):
+            body = response.read().decode("utf-8", "replace") if anchor else ""
+            if anchor and not re.search(rf"""\b(?:id|name)=["']{re.escape(anchor)}["']""", body):
                 return False, f"no #{anchor} on the page"
             return True, ""
     except urllib.error.HTTPError as exc:
+        if exc.code == 429 or exc.code >= 500:
+            return None, f"status {exc.code}"  # throttled or server error: retry
         if 300 <= exc.code < 500:
             return False, f"status {exc.code} {exc.headers.get('Location') or ''}".strip()
         return None, f"status {exc.code}"
