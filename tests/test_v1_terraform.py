@@ -125,7 +125,7 @@ def test_cli_sarif_has_hcl_location(tmp_path: Path) -> None:
         app, ["--repo", str(tmp_path), "--no-llm", "--format", "sarif", "--out", str(out)]
     )
     assert result.exit_code == 0, result.output
-    results = json.loads(out.read_text())["runs"][0]["results"]
+    results = json.loads(out.read_text(encoding="utf-8"))["runs"][0]["results"]
     s3 = next(r for r in results if r["ruleId"] == "CF-S3-001")
     loc = s3["locations"][0]["physicalLocation"]
     assert loc["artifactLocation"]["uri"] == "infra/main.tf"
@@ -211,7 +211,7 @@ def test_missing_tf_plan_is_a_warning_and_the_scan_runs(tmp_path: Path) -> None:
         "--tf-plan", str(tmp_path / "missing.json"),
     ])
     assert result.exit_code == 2, result.output
-    report = json.loads(out.read_text())
+    report = json.loads(out.read_text(encoding="utf-8"))
     assert any("missing.json" in w for w in report["warnings"])
     assert any(f["id"] == "CF-S3-001" for f in report["findings"])
 
@@ -225,7 +225,7 @@ def test_cli_tf_plan(tmp_path: Path) -> None:
         "--tf-plan", str(plan),
     ])
     assert result.exit_code == 0, result.output
-    assert any(f["id"] == "CF-RDS-001" for f in json.loads(out.read_text())["findings"])
+    assert any(f["id"] == "CF-RDS-001" for f in json.loads(out.read_text(encoding="utf-8"))["findings"])
 
 
 def test_cli_tf_plan_is_v1_only(tmp_path: Path) -> None:

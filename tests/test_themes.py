@@ -80,7 +80,7 @@ def _scan(tmp_path: Path, *args: str) -> dict:
     result = CliRunner().invoke(app, ["--repo", str(tmp_path), "--no-llm", "--format", "json",
                                       "--out", str(out), *args])
     assert result.exit_code == 0, result.output
-    return json.loads(out.read_text())
+    return json.loads(out.read_text(encoding="utf-8"))
 
 
 def test_theme_finops_returns_only_cost_findings(tmp_path: Path) -> None:
@@ -139,7 +139,7 @@ def test_html_theme_filter(tmp_path: Path) -> None:
     out = tmp_path / "r.html"
     result = CliRunner().invoke(app, ["--repo", str(tmp_path), "--no-llm", "--format", "html", "--out", str(out)])
     assert result.exit_code == 0, result.output
-    html = out.read_text()
+    html = out.read_text(encoding="utf-8")
     assert 'id="theme-filter"' in html and '<option value="finops">finops (' in html
     assert 'data-themes="finops"' in html
 

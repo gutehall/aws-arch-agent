@@ -242,13 +242,13 @@ def test_report_states_the_price_region(tmp_path: Path) -> None:
     result = CliRunner().invoke(app, ["--repo", str(tmp_path), "--no-llm", "--out", str(out)])
     assert result.exit_code == 0, result.output
     date = pricing.snapshot_date("us-east-1")
-    assert f"- Prices: on-demand, us-east-1 (default; AWS price list of {date})" in out.read_text()
+    assert f"- Prices: on-demand, us-east-1 (default; AWS price list of {date})" in out.read_text(encoding="utf-8")
 
     out_json = tmp_path / "report.json"
     result = CliRunner().invoke(app, ["--repo", str(tmp_path), "--no-llm", "--format", "json",
                                       "--region", "eu-north-1", "--out", str(out_json)])
     assert result.exit_code == 0, result.output
-    notes = json.loads(out_json.read_text())["context"]["notes"]
+    notes = json.loads(out_json.read_text(encoding="utf-8"))["context"]["notes"]
     north = pricing.snapshot_date("eu-north-1")
     assert notes["prices"] == {
         "region": "eu-north-1", "snapshot_date": north,
@@ -259,7 +259,7 @@ def test_report_states_the_price_region(tmp_path: Path) -> None:
     result = CliRunner().invoke(app, ["--repo", str(tmp_path), "--no-llm", "--format", "html",
                                       "--region", "ap-south-2", "--out", str(out_html)])
     assert result.exit_code == 0, result.output
-    assert "not in the price snapshot" in out_html.read_text()
+    assert "not in the price snapshot" in out_html.read_text(encoding="utf-8")
     assert "No prices for region ap-south-2" in result.output
 
 

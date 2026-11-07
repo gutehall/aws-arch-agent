@@ -274,7 +274,7 @@ def test_cli_scan_and_cdk_source_note(tmp_path: Path) -> None:
     out = tmp_path / "r.json"
     result = CliRunner().invoke(app, ["--repo", str(tmp_path), "--no-llm", "--format", "json", "--out", str(out)])
     assert result.exit_code == 0, result.output
-    ids = [f["id"] for f in json.loads(out.read_text())["findings"]]
+    ids = [f["id"] for f in json.loads(out.read_text(encoding="utf-8"))["findings"]]
     assert ids.count("CF-TAG-001") == 1
 
     cdk = tmp_path / "cdk"

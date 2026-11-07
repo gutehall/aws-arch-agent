@@ -72,7 +72,7 @@ def _scan(repo: Path) -> list[dict]:
     out = repo / "r.json"
     result = CliRunner().invoke(app, ["--repo", str(repo), "--no-llm", "--format", "json", "--out", str(out)])
     assert result.exit_code == 0, result.output
-    return json.loads(out.read_text())["findings"]
+    return json.loads(out.read_text(encoding="utf-8"))["findings"]
 
 
 
