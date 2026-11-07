@@ -9,6 +9,7 @@ import typer
 from rich.console import Console
 from rich.panel import Panel
 
+from aws_arch_agent import __version__
 from aws_arch_agent.agent.v1 import IAC_CHOICES, IacError, analyze_v1, resolve_source
 from aws_arch_agent.baseline import (
     DEFAULT_BASELINE_NAME,
@@ -125,6 +126,12 @@ def _fail(message: str) -> NoReturn:
     raise typer.Exit(code=1)
 
 
+def _print_version(value: bool) -> None:
+    if value:
+        typer.echo(__version__)
+        raise typer.Exit()
+
+
 @app.command()
 def analyze(
     ctx: typer.Context,
@@ -167,6 +174,10 @@ def analyze(
     ),
     group_by: str = typer.Option(
         "severity", "--group-by", help="Group Markdown findings by severity (default) or theme"
+    ),
+    version: bool = typer.Option(
+        False, "--version", callback=_print_version, is_eager=True,
+        help="Print the version and exit",
     ),
 ):
     """Run architecture review on a CDK repo (V1 or V2 mode) and write report."""
