@@ -2,6 +2,9 @@
 requires = ["hatchling>=1.25.0"]
 build-backend = "hatchling.build"
 
+[tool.hatch.version]
+path = "src/aws_arch_agent/__init__.py"
+
 [tool.hatch.build.targets.wheel]
 packages = ["src/aws_arch_agent"]
 
@@ -10,7 +13,7 @@ packages = ["src/aws_arch_agent"]
 
 [project]
 name = "aws-arch-agent"
-version = "0.1.0"
+dynamic = ["version"]
 description = "Local-first AWS Well-Architected review for CDK, CloudFormation, and Terraform code."
 readme = "README.md"
 requires-python = ">=3.11"
