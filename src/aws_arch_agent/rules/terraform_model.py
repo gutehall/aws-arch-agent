@@ -26,11 +26,22 @@ TF_TYPE_TO_CANONICAL: dict[str, str] = {
     "aws_s3_bucket": "s3_bucket",
     "aws_db_instance": "db_instance",
     "aws_rds_cluster": "rds_cluster",
+    "aws_rds_cluster_instance": "db_instance",
+    "aws_db_parameter_group": "db_parameter_group",
+    "aws_rds_cluster_parameter_group": "rds_cluster_parameter_group",
     "aws_instance": "instance",
     "aws_launch_template": "launch_template",
     "aws_security_group": "security_group",
     "aws_vpc_security_group_ingress_rule": "security_group_ingress_rule",
-    "aws_security_group_rule": "security_group_ingress_rule",  # type = "ingress" only
+    "aws_vpc_security_group_egress_rule": "security_group_egress_rule",
+    # type = "egress" maps to security_group_egress_rule in _to_resource.
+    "aws_security_group_rule": "security_group_ingress_rule",
+    "aws_network_acl": "network_acl",
+    "aws_network_acl_rule": "network_acl_entry",
+    "aws_ec2_transit_gateway": "transit_gateway",
+    "aws_route": "route",
+    "aws_route_table": "route_table",
+    "aws_route_table_association": "route_table_association",
     "aws_vpc": "vpc",
     "aws_subnet": "subnet",
     "aws_vpc_endpoint": "vpc_endpoint",
@@ -39,6 +50,11 @@ TF_TYPE_TO_CANONICAL: dict[str, str] = {
     "aws_eip": "eip",
     "aws_lb": "lb",
     "aws_alb": "lb",
+    "aws_lb_listener": "lb_listener",
+    "aws_alb_listener": "lb_listener",
+    "aws_lb_target_group": "lb_target_group",
+    "aws_alb_target_group": "lb_target_group",
+    "aws_elb": "elb",
     "aws_cloudtrail": "cloudtrail",
     "aws_kms_key": "kms_key",
     "aws_lambda_function": "lambda_function",
@@ -93,6 +109,8 @@ TF_TYPE_TO_CANONICAL: dict[str, str] = {
     "aws_secretsmanager_secret_rotation": "secretsmanager_secret_rotation",
     "aws_cognito_user_pool": "cognito_user_pool",
     "aws_lambda_permission": "lambda_permission",
+    "aws_lambda_function_url": "lambda_url",
+    "aws_lambda_event_source_mapping": "lambda_event_source_mapping",
     # Holds ProvisionedConcurrencyConfig, like AWS::Lambda::Alias (CF-ENV-002).
     "aws_lambda_provisioned_concurrency_config": "lambda_alias",
     "aws_iam_user": "iam_user",
@@ -558,6 +576,8 @@ def _lifecycle_rules(rules: list[dict]) -> Any:
 
 
 def _db(body: dict) -> dict:
+    """aws_db_instance, aws_rds_cluster and aws_rds_cluster_instance (an Aurora member: it
+    has cluster_identifier, like a CloudFormation DBInstance with DBClusterIdentifier)."""
     props: dict = {}
     for tf_key, cf_key in (
         ("storage_encrypted", "StorageEncrypted"),
@@ -566,10 +586,45 @@ def _db(body: dict) -> dict:
         ("deletion_protection", "DeletionProtection"),
         ("publicly_accessible", "PubliclyAccessible"),
         ("instance_class", "DBInstanceClass"),
+        ("db_cluster_instance_class", "DBClusterInstanceClass"),
         ("cluster_identifier", "DBClusterIdentifier"),
+        ("engine_version", "EngineVersion"),
+        ("monitoring_interval", "MonitoringInterval"),
+        ("iam_database_authentication_enabled", "EnableIAMDatabaseAuthentication"),
+        ("auto_minor_version_upgrade", "AutoMinorVersionUpgrade"),
+        ("copy_tags_to_snapshot", "CopyTagsToSnapshot"),
+        ("enabled_cloudwatch_logs_exports", "EnableCloudwatchLogsExports"),
+        ("port", "Port"),
+        ("username", "MasterUsername"),
+        ("master_username", "MasterUsername"),
+        ("snapshot_identifier", "SnapshotIdentifier"),
+        ("replicate_source_db", "SourceDBInstanceIdentifier"),
+        ("parameter_group_name", "DBParameterGroupName"),
+        ("db_cluster_parameter_group_name", "DBClusterParameterGroupName"),
     ):
         _set(props, cf_key, body.get(tf_key))
     _set(props, "Engine", _v(body, "engine"))
+    return props
+
+
+def _db_parameter_group(body: dict) -> dict:
+    """aws_db_parameter_group / aws_rds_cluster_parameter_group: name, family and the
+    parameters as a CloudFormation Parameters map (CF-RDS-006)."""
+    props: dict = {}
+    _set(props, "Name", _v(body, "name"))
+    _set(props, "Family", _v(body, "family"))
+    if "parameter" in _dynamic_names(body):
+        props["Parameters"] = UNRESOLVED
+        return props
+    params: dict = {}
+    for item in _blocks(body, "parameter"):
+        name, value = _v(item, "name"), _v(item, "value")
+        if name is UNRESOLVED:
+            props["Parameters"] = UNRESOLVED
+            return props
+        if isinstance(name, str):
+            params[name] = _OPAQUE if value is UNRESOLVED else value
+    props["Parameters"] = params
     return props
 
 
@@ -654,6 +709,8 @@ def _launch_template(body: dict) -> dict:
 def _subnet(body: dict) -> dict:
     props: dict = {}
     _set(props, "MapPublicIpOnLaunch", _v(body, "map_public_ip_on_launch"))
+    _set(props, "AvailabilityZone", _v(body, "availability_zone"))
+    _set(props, "AvailabilityZoneId", _v(body, "availability_zone_id"))
     return props
 
 
@@ -794,46 +851,98 @@ def _ingress_entries(rule: dict) -> Any:
     return entries
 
 
-def _security_group(body: dict) -> dict:
-    if "ingress" in _dynamic_names(body):
-        return {"SecurityGroupIngress": UNRESOLVED}
-    ingress: list = []
-    for rule in _blocks(body, "ingress"):
+def _sg_rules(body: dict, kind: str) -> Any:
+    """Inline ingress or egress blocks as CloudFormation rule entries, or UNRESOLVED."""
+    if kind in _dynamic_names(body):
+        return UNRESOLVED
+    rules: list = []
+    for rule in _blocks(body, kind):
         entries = _ingress_entries(rule)
         if entries is UNRESOLVED:
-            return {"SecurityGroupIngress": UNRESOLVED}
-        ingress.extend(entries)
-    return {"SecurityGroupIngress": ingress}
+            return UNRESOLVED
+        rules.extend(entries)
+    return rules
 
 
-def _ingress_rule(rtype: str, body: dict) -> dict | None:
-    """aws_vpc_security_group_ingress_rule, or aws_security_group_rule with type ingress."""
+def _security_group(body: dict) -> dict:
+    """Terraform removes the AWS default allow-all egress, so no egress block means none."""
+    return {
+        "SecurityGroupIngress": _sg_rules(body, "ingress"),
+        "SecurityGroupEgress": _sg_rules(body, "egress"),
+    }
+
+
+def _sg_rule(rtype: str, body: dict) -> tuple[str, dict] | None:
+    """aws_security_group_rule, aws_vpc_security_group_ingress_rule or _egress_rule as
+    (canonical type, CloudFormation-shaped props)."""
     if rtype == "aws_security_group_rule":
         kind = _v(body, "type")
         if kind is UNRESOLVED:
-            return {"CidrIp": UNRESOLVED}
-        if kind != "ingress":
+            return "security_group_ingress_rule", {"CidrIp": UNRESOLVED}
+        canonical = {"ingress": "security_group_ingress_rule",
+                     "egress": "security_group_egress_rule"}.get(kind)
+        if canonical is None:
             return None
         entries = _ingress_entries(body)
         if entries is UNRESOLVED:
-            return {"CidrIp": UNRESOLVED}
+            return canonical, {"CidrIp": UNRESOLVED}
         open_entry = next(
             (e for e in entries if e.get("CidrIp") == "0.0.0.0/0" or e.get("CidrIpv6") == "::/0"),
             entries[0] if entries else {},
         )
-        return dict(open_entry)
+        return canonical, dict(open_entry)
+    canonical = TF_TYPE_TO_CANONICAL[rtype]
     props: dict = {}
     _set(props, "CidrIp", _v(body, "cidr_ipv4"))
     _set(props, "CidrIpv6", _v(body, "cidr_ipv6"))
     ip_protocol = _v(body, "ip_protocol")
     if ip_protocol is UNRESOLVED:
-        return {"CidrIp": UNRESOLVED}
+        return canonical, {"CidrIp": UNRESOLVED}
     if ip_protocol in ("-1", -1):
         props["FromPort"] = props["ToPort"] = None
     else:
         props["FromPort"] = _v(body, "from_port")
         props["ToPort"] = _v(body, "to_port")
+    return canonical, props
+
+
+def _nacl_entry(body: dict, egress: Any) -> dict:
+    """One aws_network_acl_rule, or an inline aws_network_acl ingress/egress block, in the
+    AWS::EC2::NetworkAclEntry shape."""
+    props: dict = {"Egress": egress}
+    _set(props, "RuleAction", _v(body, "rule_action", _v(body, "action")))
+    _set(props, "CidrBlock", _v(body, "cidr_block"))
+    _set(props, "Ipv6CidrBlock", _v(body, "ipv6_cidr_block"))
+    _set(props, "Protocol", _v(body, "protocol"))
+    low, high = _v(body, "from_port"), _v(body, "to_port")
+    if low is not None or high is not None:
+        props["PortRange"] = UNRESOLVED if UNRESOLVED in (low, high) else {"From": low, "To": high}
     return props
+
+
+def _network_acl_rule(body: dict) -> dict:
+    return _nacl_entry(body, _v(body, "egress", False))
+
+
+def _network_acl(body: dict) -> dict:
+    """aws_network_acl: inline ingress blocks as Entries (CF-NACL-001)."""
+    if "ingress" in _dynamic_names(body):
+        return {"Entries": UNRESOLVED}
+    return {"Entries": [_nacl_entry(rule, False) for rule in _blocks(body, "ingress")]}
+
+
+def _transit_gateway(body: dict) -> dict:
+    props: dict = {}
+    _set(props, "AutoAcceptSharedAttachments", _v(body, "auto_accept_shared_attachments"))
+    return props
+
+
+def _flow_log(body: dict) -> dict:
+    """aws_flow_log on a transit gateway, in the AWS::EC2::FlowLog shape (CF-TGW-002)."""
+    tgw = _ref(body, "transit_gateway_id")
+    if tgw is None:
+        return {}
+    return {"ResourceType": "TransitGateway", "ResourceId": tgw}
 
 
 def _lb(body: dict) -> dict:
@@ -844,12 +953,78 @@ def _lb(body: dict) -> dict:
         props["Scheme"] = UNRESOLVED if internal is UNRESOLVED else (
             "internal" if internal is True else "internet-facing")
     logs = _first_block(body, "access_logs")
-    enabled = _v(logs, "enabled", False)  # provider default: false, even with a bucket
-    if enabled is UNRESOLVED:
-        props["LoadBalancerAttributes"] = UNRESOLVED
+    attributes = []
+    # Provider defaults: logs off (even with a bucket), headers kept, no deletion
+    # protection, desync mode defensive.
+    for key, value in (
+        ("access_logs.s3.enabled", _v(logs, "enabled", False)),
+        ("routing.http.drop_invalid_header_fields.enabled", _v(body, "drop_invalid_header_fields", False)),
+        ("deletion_protection.enabled", _v(body, "enable_deletion_protection", False)),
+        ("routing.http.desync_mitigation_mode", _v(body, "desync_mitigation_mode", "defensive")),
+    ):
+        if value is UNRESOLVED:
+            value = _OPAQUE
+        elif isinstance(value, bool):
+            value = "true" if value else "false"
+        attributes.append({"Key": key, "Value": value})
+    props["LoadBalancerAttributes"] = attributes
+    return props
+
+
+def _lb_listener(body: dict) -> dict:
+    """aws_lb_listener in the AWS::ElasticLoadBalancingV2::Listener shape: protocol, TLS
+    policy and default actions (CF-ALB-002, CF-ALB-003)."""
+    props: dict = {}
+    _set(props, "Protocol", _v(body, "protocol"))
+    _set(props, "SslPolicy", _v(body, "ssl_policy"))
+    if "default_action" in _dynamic_names(body):
+        props["DefaultActions"] = UNRESOLVED
         return props
-    value = "true" if enabled is True else "false"
-    props["LoadBalancerAttributes"] = [{"Key": "access_logs.s3.enabled", "Value": value}]
+    actions = []
+    for action in _blocks(body, "default_action"):
+        kind = _v(action, "type")
+        item: dict = {"Type": _OPAQUE if kind is UNRESOLVED else kind}
+        redirect = _first_block(action, "redirect")
+        if redirect:
+            protocol = _v(redirect, "protocol", "#{protocol}")
+            item["RedirectConfig"] = {"Protocol": _OPAQUE if protocol is UNRESOLVED else protocol}
+        actions.append(item)
+    props["DefaultActions"] = actions
+    return props
+
+
+def _lb_target_group(body: dict) -> dict:
+    """aws_lb_target_group: protocol, target type and health check (CF-ALB-007)."""
+    props: dict = {}
+    _set(props, "Protocol", _v(body, "protocol"))
+    _set(props, "TargetType", _v(body, "target_type", "instance"))
+    if "health_check" in _dynamic_names(body):
+        props["HealthCheckEnabled"] = UNRESOLVED
+        return props
+    check = _first_block(body, "health_check")
+    _set(props, "HealthCheckEnabled", _v(check, "enabled"))
+    _set(props, "HealthCheckPath", _v(check, "path"))
+    return props
+
+
+def _elb(body: dict) -> dict:
+    """aws_elb in the AWS::ElasticLoadBalancing::LoadBalancer shape (CF-CLB-001..005).
+    Provider defaults: cross-zone on, connection draining off, access logs on when the
+    block is present."""
+    props: dict = {}
+    if "listener" in _dynamic_names(body):
+        props["Listeners"] = UNRESOLVED
+    else:
+        props["Listeners"] = [
+            {"Protocol": _v(item, "lb_protocol"), "SSLCertificateId": _ref(item, "ssl_certificate_id")}
+            for item in _blocks(body, "listener")
+        ]
+    if "access_logs" in _dynamic_names(body):
+        props["AccessLoggingPolicy"] = UNRESOLVED
+    elif _blocks(body, "access_logs"):
+        props["AccessLoggingPolicy"] = {"Enabled": _v(_first_block(body, "access_logs"), "enabled", True)}
+    props["CrossZone"] = _v(body, "cross_zone_load_balancing", True)
+    props["ConnectionDrainingPolicy"] = {"Enabled": _v(body, "connection_draining", False)}
     return props
 
 
@@ -1085,6 +1260,30 @@ def _lambda(body: dict) -> dict:
     _set(props, "Architectures", _v(body, "architectures"))
     _set(props, "Runtime", _v(body, "runtime"))
     _set(props, "PackageType", _v(body, "package_type"))
+    # Provider defaults: 3 second timeout, -1 (no reserved concurrency).
+    _set(props, "Timeout", _v(body, "timeout", 3))
+    reserved = _v(body, "reserved_concurrent_executions", -1)
+    if reserved not in (-1, "-1"):
+        props["ReservedConcurrentExecutions"] = reserved
+    if "environment" in _dynamic_names(body):
+        props["Environment"] = UNRESOLVED
+    else:
+        variables = _first_block(body, "environment").get("variables")
+        if isinstance(variables, dict):
+            # One value from var/local must not hide the literal ones (CF-LAM-005).
+            props["Environment"] = {"Variables": {
+                k: _OPAQUE if v is UNRESOLVED else v for k, v in variables.items()}}
+        elif variables is not None:
+            props["Environment"] = UNRESOLVED
+    vpc = _first_block(body, "vpc_config")
+    if vpc:
+        props["VpcConfig"] = {"SubnetIds": _ref(vpc, "subnet_ids")}
+    return props
+
+
+def _lambda_url(body: dict) -> dict:
+    props: dict = {}
+    _set(props, "AuthType", _v(body, "authorization_type"))
     return props
 
 
@@ -1250,12 +1449,20 @@ _ADAPTERS: dict[str, Callable[[dict], dict]] = {
     "aws_s3_bucket": _s3_bucket,
     "aws_db_instance": _db,
     "aws_rds_cluster": _db,
+    "aws_rds_cluster_instance": _db,
+    "aws_db_parameter_group": _db_parameter_group,
+    "aws_rds_cluster_parameter_group": _db_parameter_group,
     "aws_instance": _instance,
     "aws_subnet": _subnet,
     "aws_launch_template": _launch_template,
     "aws_security_group": _security_group,
     "aws_lb": _lb,
     "aws_alb": _lb,
+    "aws_lb_listener": _lb_listener,
+    "aws_alb_listener": _lb_listener,
+    "aws_lb_target_group": _lb_target_group,
+    "aws_alb_target_group": _lb_target_group,
+    "aws_elb": _elb,
     "aws_cloudtrail": _cloudtrail,
     "aws_kms_key": _kms_key,
     "aws_lambda_function": _lambda,
@@ -1277,6 +1484,10 @@ _ADAPTERS: dict[str, Callable[[dict], dict]] = {
     "aws_ebs_volume": _ebs_volume,
     "aws_eip": _eip,
     "aws_nat_gateway": _nat_gateway,
+    "aws_network_acl": _network_acl,
+    "aws_network_acl_rule": _network_acl_rule,
+    "aws_ec2_transit_gateway": _transit_gateway,
+    "aws_flow_log": _flow_log,
     "aws_vpc_endpoint": _vpc_endpoint,
     "aws_efs_file_system": _efs_file_system,
     "aws_kinesis_stream": _kinesis_stream,
@@ -1302,6 +1513,7 @@ _ADAPTERS: dict[str, Callable[[dict], dict]] = {
     "aws_secretsmanager_secret_rotation": _secret_rotation,
     "aws_cognito_user_pool": _cognito_user_pool,
     "aws_lambda_permission": _lambda_permission,
+    "aws_lambda_function_url": _lambda_url,
     "aws_iam_role_policy_attachment": _policy_attachment,
     "aws_iam_user_policy_attachment": _policy_attachment,
     "aws_iam_group_policy_attachment": _policy_attachment,
@@ -1327,6 +1539,7 @@ _BLOCK_PROPERTY: dict[str, str] = {
     # Not LaunchTemplateData: an unknown metadata block must not hide the Spot check.
     "metadata_options": "MetadataOptions",
     "ingress": "SecurityGroupIngress",
+    "egress": "SecurityGroupEgress",
     "access_logs": "LoadBalancerAttributes",
     "dead_letter_config": "DeadLetterConfig",
     "tracing_config": "TracingConfig",
@@ -1529,12 +1742,10 @@ def _resource_tags(block: _Block) -> Any:
 
 def _to_resource(block: _Block) -> Resource:
     canonical = TF_TYPE_TO_CANONICAL.get(block.type)
-    if block.type == "aws_security_group_rule":
-        props = _ingress_rule(block.type, block.body)
-        if props is None:  # egress rule: no check covers it
-            canonical, props = None, {}
-    elif block.type == "aws_vpc_security_group_ingress_rule":
-        props = _ingress_rule(block.type, block.body) or {}
+    if block.type in ("aws_security_group_rule", "aws_vpc_security_group_ingress_rule",
+                      "aws_vpc_security_group_egress_rule"):
+        rule = _sg_rule(block.type, block.body)
+        canonical, props = rule if rule is not None else (None, {})
     else:
         adapter = _ADAPTERS.get(block.type)
         props = adapter(block.body) if adapter else {}

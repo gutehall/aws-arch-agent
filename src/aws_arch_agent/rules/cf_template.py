@@ -6,6 +6,7 @@ from pathlib import Path
 from typing import Any, Callable, List
 
 from aws_arch_agent.models import Finding, Severity
+from aws_arch_agent.rules.secret_names import is_literal_secret, is_secret_name
 from aws_arch_agent.rules import (
     environments,
     estimates,
@@ -24,7 +25,12 @@ from aws_arch_agent.tools.cfn_yaml import parse_template_text
 from aws_arch_agent.tools.paths import to_repo_relative
 
 # Sensitive ports for security group checks (SSH, RDP, Postgres, MySQL, Mongo)
-SENSITIVE_PORTS = {22, 3389, 3306, 5432, 27017}
+# Ports CF-SG-001 reports when open to the internet: SSH, RDP, databases (Security Hub
+# EC2.13, EC2.14) and the high-risk ports of Security Hub EC2.19.
+SENSITIVE_PORTS = {
+    20, 21, 22, 23, 25, 110, 135, 143, 445, 1433, 1434, 3000, 3306, 3389, 4333, 5000, 5432,
+    5500, 5601, 8080, 8088, 8888, 9200, 9300, 27017,
+}
 
 # Static rule dropped when the CF rule already reported that control.
 CF_COVERS_STATIC: dict[str, tuple[str, ...]] = {
@@ -69,6 +75,72 @@ CF_COVERS_STATIC: dict[str, tuple[str, ...]] = {
     "CF-IAM-003": ("SEC-002",),
     # Action "*" on Resource "*" is reported once, as admin, so it covers both wildcards.
     "CF-IAM-008": ("SEC-067", "SEC-001", "SEC-002"),
+    "CF-SQS-001": ("SEC-013",),
+    "CF-SQS-002": ("REL-008",),
+    # Sensitive ports include SSH (SEC-003) and the DB ports (SEC-004). CF-SG-002 is the
+    # same rule open on every port, reported instead of CF-SG-001.
+    "CF-SG-001": ("SEC-003", "SEC-004"),
+    "CF-SG-002": ("SEC-003", "SEC-004"),
+    "CF-SG-003": ("SEC-054",),
+    "CF-NAT-001": ("REL-012",),
+    "CF-TGW-002": ("OPS-016",),
+    "CF-DDB-001": ("REL-004",),
+    "CF-DDB-002": ("SEC-008",),
+    # RetentionDays.INFINITE synthesises to a log group with no RetentionInDays.
+    "CF-CW-001": ("COST-001",),
+    "CF-CW-002": ("SEC-062",),
+    "CF-APIGW-001": ("OPS-005",),
+    "CF-APIGW-V2-001": ("OPS-005",),
+    # OPS-003 looks at API Gateway and Lambda only, which these three checks cover.
+    "CF-APIGW-002": ("OPS-003",),
+    "CF-APIGW-V2-002": ("OPS-003",),
+    "CF-LAM-002": ("OPS-003",),
+    # Reports every function without a DLQ, a superset of REL-003 (no DLQ and no onFailure).
+    "CF-LAM-001": ("REL-003",),
+    "CF-LAM-004": ("SEC-057",),
+    "CF-LAM-005": ("SEC-017", "BP-002"),
+    "CF-LAM-006": ("REL-027",),
+    "CF-LAM-007": ("REL-009",),
+    "CF-RDS-002": ("REL-002",),
+    "CF-RDS-004": ("SEC-064",),
+    "CF-RDS-005": ("REL-030",),
+    "CF-RDS-006": ("SEC-021",),
+    "CF-RDS-007": ("OPS-009",),
+    "CF-RDS-014": ("COST-010",),
+    "CF-S3-003": ("REL-031",),
+    "CF-KMS-001": ("SEC-007",),
+    # Checks every ELBv2 load balancer, so NLBs too.
+    "CF-ALB-001": ("OPS-006",),
+    "CF-ALB-002": ("SEC-011",),
+    "CF-ALB-003": ("SEC-012",),
+    "CF-ALB-007": ("REL-007",),
+    # COST-006 is a NAT gateway with no VPC endpoints: CF-COST-002 reports every NAT
+    # gateway, and CF-VPC-002/003 the missing S3 and DynamoDB gateway endpoints.
+    "CF-COST-002": ("COST-006",),
+    "CF-VPC-002": ("COST-006",),
+    "CF-VPC-003": ("COST-006",),
+}
+
+# Template checks that name a CDK rule's control but cover only part of it, so the CDK
+# finding stays. Each value is (CDK rules, why the pair is not in CF_COVERS_STATIC).
+CF_PARTLY_COVERS_STATIC: dict[str, tuple[tuple[str, ...], str]] = {
+    "CF-RDS-003": (("REL-001",), "checks DB instances only; REL-001 also flags DatabaseCluster"),
+    "CF-PERF-001": (("PERF-001",), "checks Lambda only; PERF-001 also flags EC2 and ECS"),
+    "CF-PERF-002": (("PERF-002",), "API Gateway and Lambda only; PERF-002 also counts load "
+                    "balancers, API caches and DAX"),
+    "CF-PERF-003": (("PERF-008",), "RDS only; PERF-008 matches any large instanceType"),
+    "CF-PERF-004": (("PERF-008",), "EC2 only; PERF-008 matches any large instanceType"),
+    "CF-SUST-001": (("SUST-001",), "Auto Scaling groups only; SUST-001 also flags EC2 "
+                    "instances and ECS services"),
+    "CF-SUST-002": (("SUST-001",), "Fargate only; SUST-001 also flags EC2 instances"),
+    "CF-SUST-003": (("SUST-001",), "launch templates only; SUST-001 also flags ECS services"),
+    "CF-CT-001": (("OPS-001",), "checks an existing trail; OPS-001 reports no trail at all"),
+    "CF-CT-002": (("OPS-001",), "checks an existing trail; OPS-001 reports no trail at all"),
+    "CF-CT-003": (("OPS-001",), "checks an existing trail; OPS-001 reports no trail at all"),
+    "CF-NACL-001": (("SEC-055",), "checks ACL entries that open 22 or 3389; SEC-055 reports a "
+                    "VPC with no custom network ACL"),
+    # Not a gap: tag_policy.REPLACED_STATIC_RULES drops BP-001 once the policy ran.
+    "CF-TAG-001": (("BP-001",), "replaced through tag_policy.REPLACED_STATIC_RULES"),
 }
 
 
@@ -184,7 +256,10 @@ _PER_RESOURCE_TYPES = frozenset({
     "cloudfront_distribution", "subnet", "ecs_task_definition",
     "secretsmanager_secret", "cognito_user_pool", "eip", "launch_configuration",
     "elasticache_cluster", "scalable_target",
+    "security_group_egress_rule", "network_acl_entry", "network_acl", "transit_gateway",
+    "lb_listener", "lb_target_group", "elb", "lambda_url",
 })
+# Parameter groups only feed CF-RDS-006; they have no checks of their own.
 
 
 # Properties each per-resource check reads. A finding is dropped when any of them is unresolved.
@@ -200,10 +275,30 @@ CHECK_PROPERTIES: dict[str, frozenset[str]] = {
         "CF-RDS-003": {"MultiAZ", "DBClusterIdentifier"},
         "CF-RDS-005": {"DeletionProtection", "DBClusterIdentifier"},
         "CF-RDS-004": {"PubliclyAccessible"},
+        "CF-RDS-006": set(),  # _ssl_enforced reads the group and skips what it cannot read
+        "CF-RDS-007": {"MonitoringInterval"},
+        "CF-RDS-008": {"EnableIAMDatabaseAuthentication", "Engine", "DBClusterIdentifier"},
+        "CF-RDS-009": {"AutoMinorVersionUpgrade"},
+        "CF-RDS-010": {"CopyTagsToSnapshot", "DBClusterIdentifier", "Engine"},
+        "CF-RDS-011": {"EnableCloudwatchLogsExports", "DBClusterIdentifier", "Engine"},
+        "CF-RDS-012": {"Port", "Engine", "DBClusterIdentifier", "SnapshotIdentifier"},
+        "CF-RDS-013": {"MasterUsername", "Engine", "DBClusterIdentifier"},
+        "CF-RDS-014": {"DBInstanceClass", "DBClusterInstanceClass", "Engine"},
         "CF-PERF-003": {"DBInstanceClass"},
         "CF-PERF-004": {"InstanceType"},
         "CF-EC2-001": {"MetadataOptions", "LaunchTemplate", "LaunchTemplateData"},
         "CF-ALB-001": {"LoadBalancerAttributes"},
+        "CF-ALB-002": {"Protocol", "DefaultActions"},
+        "CF-ALB-003": {"Protocol", "SslPolicy"},
+        "CF-ALB-004": {"LoadBalancerAttributes", "Type"},
+        "CF-ALB-005": {"LoadBalancerAttributes"},
+        "CF-ALB-006": {"LoadBalancerAttributes", "Type"},
+        "CF-ALB-007": {"Protocol", "TargetType", "HealthCheckEnabled", "HealthCheckPath"},
+        "CF-CLB-001": {"Listeners"},
+        "CF-CLB-002": {"Listeners"},
+        "CF-CLB-003": {"AccessLoggingPolicy"},
+        "CF-CLB-004": {"CrossZone"},
+        "CF-CLB-005": {"ConnectionDrainingPolicy"},
         "CF-CT-001": {"EnableLogFileValidation"},
         "CF-CT-002": {"IsMultiRegionTrail"},
         "CF-CT-003": {"KmsKeyId"},
@@ -227,6 +322,12 @@ CHECK_PROPERTIES: dict[str, frozenset[str]] = {
         "CF-LAM-001": {"DeadLetterConfig"},
         "CF-LAM-002": {"TracingConfig"},
         "CF-LAM-003": {"Runtime", "PackageType"},
+        "CF-LAM-004": {"AuthType"},
+        "CF-LAM-005": {"Environment"},
+        "CF-LAM-006": {"ReservedConcurrentExecutions"},
+        # Template-level: they read Timeout, VpcConfig and references and skip the unknown.
+        "CF-LAM-007": set(),
+        "CF-LAM-008": set(),
         "CF-CF-001": {"DistributionConfig"},
         "CF-CF-002": {"DistributionConfig"},
         "CF-CF-003": {"DistributionConfig"},
@@ -257,6 +358,14 @@ CHECK_PROPERTIES: dict[str, frozenset[str]] = {
         "CF-DDB-001": {"PointInTimeRecoverySpecification"},
         "CF-DDB-002": {"SSESpecification"},
         "CF-SG-001": {"SecurityGroupIngress", "CidrIp", "CidrIpv6", "FromPort", "ToPort"},
+        "CF-SG-002": {"SecurityGroupIngress", "CidrIp", "CidrIpv6", "FromPort", "ToPort", "IpProtocol"},
+        "CF-SG-003": {"SecurityGroupEgress", "CidrIp", "CidrIpv6", "FromPort", "ToPort", "IpProtocol"},
+        "CF-NACL-001": {"Entries", "Egress", "RuleAction", "CidrBlock", "Ipv6CidrBlock",
+                        "Protocol", "PortRange"},
+        "CF-TGW-001": {"AutoAcceptSharedAttachments"},
+        # Template-level: they read AZs and references and skip what they cannot read.
+        "CF-NAT-001": set(),
+        "CF-TGW-002": set(),
         "CF-CW-001": {"RetentionInDays"},
         "CF-CW-002": {"KmsKeyId"},
         "CF-SQS-001": {"SqsManagedSseEnabled", "KmsMasterKeyId"},
@@ -290,7 +399,10 @@ _F, _SB, _ID, _DP, _NET, _RES, _OBS, _SUS = (
     "network-exposure", "resilience", "observability", "sustainability",
 )
 CF_THEMES: dict[str, tuple[str, ...]] = {
-    "CF-ALB-001": (_OBS,), "CF-APIGW-001": (_OBS,), "CF-APIGW-002": (_OBS,),
+    "CF-ALB-001": (_OBS,), "CF-ALB-002": (_DP, _NET), "CF-ALB-003": (_DP, _NET),
+    "CF-ALB-004": (_NET,), "CF-ALB-005": (_RES,), "CF-ALB-006": (_NET,), "CF-ALB-007": (_RES,),
+    "CF-CLB-001": (_DP, _NET), "CF-CLB-002": (_DP,), "CF-CLB-003": (_OBS,), "CF-CLB-004": (_RES,),
+    "CF-CLB-005": (_RES,), "CF-APIGW-001": (_OBS,), "CF-APIGW-002": (_OBS,),
     "CF-APIGW-V2-001": (_OBS,), "CF-APIGW-V2-002": (_OBS,),
     "CF-CF-001": (_DP, _NET), "CF-CF-002": (_DP, _NET), "CF-CF-003": (_NET,), "CF-CF-004": (_NET, _ID),
     "CF-COG-001": (_ID,), "CF-COG-002": (_ID,), "CF-COG-003": (_ID,),
@@ -308,14 +420,20 @@ CF_THEMES: dict[str, tuple[str, ...]] = {
     "CF-IAM-004": (_ID,), "CF-IAM-005": (_ID,), "CF-IAM-006": (_ID,), "CF-IAM-007": (_ID,),
     "CF-IAM-008": (_ID,), "CF-KIN-001": (_DP,), "CF-KMS-001": (_ID, _DP),
     "CF-LAM-001": (_RES,), "CF-LAM-002": (_OBS,), "CF-LAM-003": (_SB,),
+    "CF-LAM-004": (_ID, _NET), "CF-LAM-005": (_DP, _ID), "CF-LAM-006": (_RES,),
+    "CF-LAM-007": (_RES,), "CF-LAM-008": (_RES,),
     "CF-MSK-001": (_DP,), "CF-NEP-001": (_DP,), "CF-OS-001": (_DP,), "CF-OS-002": (_DP,),
     "CF-PAR-001": (_DP, _ID), "CF-PAR-002": (_DP, _ID),
     "CF-PERF-001": (_F, _SUS), "CF-PERF-002": (_RES,), "CF-PERF-003": (_F,), "CF-PERF-004": (_F,),
     "CF-RDS-001": (_DP,), "CF-RDS-002": (_RES, _DP), "CF-RDS-003": (_RES,), "CF-RDS-004": (_NET,),
+    "CF-RDS-006": (_DP, _NET), "CF-RDS-007": (_OBS,), "CF-RDS-008": (_ID,), "CF-RDS-009": (_SB,),
+    "CF-RDS-010": (_F,), "CF-RDS-011": (_OBS,), "CF-RDS-012": (_NET,), "CF-RDS-013": (_ID,),
+    "CF-RDS-014": (_F, _SUS),
     "CF-RDS-005": (_RES, _DP), "CF-RP-001": (_ID, _NET), "CF-RS-001": (_DP,),
     "CF-S3-001": (_NET, _DP), "CF-S3-002": (_DP,), "CF-S3-003": (_RES, _DP), "CF-S3-004": (_OBS,),
     "CF-S3-006": (_F, _DP), "CF-S3-007": (_F,), "CF-DDB-003": (_F, _RES),
-    "CF-S3-005": (_DP, _NET), "CF-SG-001": (_NET,), "CF-SM-001": (_DP, _ID), "CF-SNS-001": (_DP,),
+    "CF-S3-005": (_DP, _NET), "CF-SG-001": (_NET,), "CF-SG-002": (_NET,), "CF-SG-003": (_NET,),
+    "CF-NACL-001": (_NET,), "CF-NAT-001": (_RES,), "CF-TGW-001": (_NET, _ID), "CF-TGW-002": (_OBS, _NET), "CF-SM-001": (_DP, _ID), "CF-SNS-001": (_DP,),
     "CF-SQS-001": (_DP,), "CF-SQS-002": (_RES,),
     "CF-SUST-001": (_SUS, _F), "CF-SUST-002": (_SUS, _F), "CF-SUST-003": (_SUS, _F),
     "CF-TAG-001": (_F,), "CF-VPC-001": (_NET, _F), "CF-VPC-002": (_F,), "CF-VPC-003": (_F,), "CF-WAF-001": (_NET,),
@@ -790,6 +908,705 @@ def _points_at(res: Resource, key: str, target: Resource) -> bool:
         text = value if type(value) is str else json.dumps(value, default=str)
         return _references(text, target.name)
     return target.name in res.references
+
+
+
+# Engine family -> (default port, parameter that enforces TLS, values that turn it on).
+_RDS_ENGINES: dict[str, tuple[int, str, tuple[str, ...]]] = {
+    "aurora-postgresql": (5432, "rds.force_ssl", ("1",)),
+    "aurora-mysql": (3306, "require_secure_transport", ("on", "1", "true")),
+    "aurora": (3306, "require_secure_transport", ("on", "1", "true")),
+    "postgres": (5432, "rds.force_ssl", ("1",)),
+    "mysql": (3306, "require_secure_transport", ("on", "1", "true")),
+    "mariadb": (3306, "require_secure_transport", ("on", "1", "true")),
+    "sqlserver": (1433, "rds.force_ssl", ("1",)),
+    "oracle": (1521, "", ()),  # TLS is an option group setting, not read
+    "db2": (50000, "", ()),
+}
+# Engines with IAM database authentication and Graviton (db.*g) instance classes.
+_RDS_OPEN_SOURCE = ("aurora", "mysql", "mariadb", "postgres")
+_DEFAULT_DB_USERS = frozenset({"admin", "postgres", "root", "sa", "administrator", "master", "awsuser"})
+_GRAVITON_CLASS = re.compile(r"^db\.[a-z]+\d+g[a-z]*\.")
+
+
+def _rds_engine(props: dict) -> str | None:
+    """The engine family key in _RDS_ENGINES, or None when unknown."""
+    engine = props.get("Engine")
+    if not isinstance(engine, str):
+        return None
+    engine = engine.strip().lower()
+    for family in _RDS_ENGINES:  # aurora-* before aurora, before the plain engines
+        if engine == family or engine.startswith(family + "-"):
+            return family
+    return None
+
+
+def _major_version(value: Any) -> int | None:
+    if isinstance(value, (int, float)):
+        return int(value)
+    if isinstance(value, str):
+        match = re.match(r"\s*(\d+)", value)
+        return int(match.group(1)) if match else None
+    return None
+
+
+def _ssl_enforced(res: Resource, family: str, param_groups: List[Resource]) -> bool | None:
+    """True when the linked parameter group turns TLS on, False when it does not (or no
+    group / a default group is linked), None when the group cannot be read.
+
+    RDS for PostgreSQL 15 and later sets rds.force_ssl=1 in its default parameter groups,
+    and a custom group starts from those defaults, so only an explicit 0 turns it off.
+    """
+    _port, name, on = _RDS_ENGINES[family]
+    key = "DBClusterParameterGroupName" if res.type == "rds_cluster" else "DBParameterGroupName"
+    if key in res.unresolved or "EngineVersion" in res.unresolved:
+        return None
+    linked = res.properties.get(key)
+    default_group = linked is None or (isinstance(linked, str) and linked.lower().startswith("default."))
+    group = None if default_group else next((g for g in param_groups if _points_at(res, key, g) or (
+        isinstance(linked, str) and g.properties.get("Name") == linked)), None)
+    # PostgreSQL's major version, from EngineVersion or the group family (postgres16). With
+    # neither, AWS picks the current default major, which is 15 or later: unknown here.
+    major = _major_version(res.properties.get("EngineVersion"))
+    if major is None and group is not None:
+        major = _major_version(re.sub(r"^\D+", "", str(group.properties.get("Family", ""))))
+    if family == "postgres" and major is None:
+        on_by_default: bool | None = None
+    else:
+        on_by_default = family == "postgres" and major is not None and major >= 15
+    if default_group:
+        return on_by_default
+    if group is None or group.malformed or "Parameters" in group.unresolved:
+        return None
+    params = group.properties.get("Parameters")
+    if not isinstance(params, dict) or _is_intrinsic(params):
+        return None
+    if name not in params:
+        return on_by_default
+    value = params[name]
+    if isinstance(value, bool):
+        value = "1" if value else "0"
+    if not isinstance(value, (str, int)):
+        return None
+    return str(value).strip().lower() in on
+
+
+def _rds_settings_findings(
+    res: Resource, template_path: Path, param_groups: List[Resource]
+) -> List[Finding]:
+    """CF-RDS-006..014 on a DB instance or cluster.
+
+    An Aurora member instance (DBClusterIdentifier) takes its engine settings from the
+    cluster, so it is judged only for what is set per instance: enhanced monitoring, minor
+    version upgrades and the instance class.
+    """
+    props = res.properties
+    instance = res.type == "db_instance"
+    member = instance and "DBClusterIdentifier" in props
+    restored = any(k in props for k in ("SnapshotIdentifier", "DBSnapshotIdentifier",
+                                         "SourceDBInstanceIdentifier", "SourceDBClusterIdentifier"))
+    family = _rds_engine(props)
+    open_source = family is not None and family.startswith(_RDS_OPEN_SOURCE)
+    aurora = family is not None and family.startswith("aurora")
+    out: List[Finding] = []
+
+    def add(check_id: str, title: str, severity: Severity, category: str, recommendation: str) -> None:
+        out.append(Finding(
+            id=check_id, title=title, severity=severity, category=category,
+            file=res.file or str(template_path), line=res.line,
+            evidence=f"{res.name} ({res.source_type})", recommendation=recommendation,
+        ))
+
+    owns_settings = not member and not (instance and aurora)
+    if owns_settings and family is not None and _RDS_ENGINES[family][1]:
+        if _ssl_enforced(res, family, param_groups) is False:
+            param = _RDS_ENGINES[family][1]
+            value = "1" if param == "rds.force_ssl" else "ON"
+            group = "DB cluster parameter group" if res.type == "rds_cluster" else "DB parameter group"
+            add("CF-RDS-006", "RDS does not require TLS connections", "Medium", "Security",
+                f"Link a {group} that sets {param} to {value}, so clients cannot connect in clear "
+                "text. A default parameter group does not set it. In CDK: parameters: "
+                f"{{ '{param}': '{value}' }} on an rds.ParameterGroup.")
+
+    if instance:
+        interval = props.get("MonitoringInterval")
+        if interval is None or interval in (0, "0"):
+            add("CF-RDS-007", "RDS enhanced monitoring not enabled", "Low", "Operational Excellence",
+                "Set MonitoringInterval (for example 60) and MonitoringRoleArn, so OS metrics are "
+                "collected for the DB instance (Security Hub RDS.6). In CDK: monitoringInterval: "
+                "Duration.seconds(60).")
+
+    if owns_settings and open_source and props.get("EnableIAMDatabaseAuthentication") is not True:
+        control = "RDS.12" if res.type == "rds_cluster" else "RDS.10"
+        add("CF-RDS-008", "RDS IAM database authentication not enabled", "Low", "Security",
+            "Set EnableIAMDatabaseAuthentication: true, so apps can connect with short-lived IAM "
+            f"tokens instead of a stored password (Security Hub {control}). In CDK: "
+            "iamAuthentication: true.")
+
+    if props.get("AutoMinorVersionUpgrade") is False:
+        add("CF-RDS-009", "RDS automatic minor version upgrades are off", "Low", "Security",
+            "Set AutoMinorVersionUpgrade: true, so security patches in minor engine versions are "
+            "applied in the maintenance window (Security Hub RDS.13).")
+
+    if owns_settings and props.get("CopyTagsToSnapshot") is not True:
+        control = "RDS.16" if res.type == "rds_cluster" else "RDS.17"
+        add("CF-RDS-010", "RDS does not copy tags to snapshots", "Low", "Operational Excellence",
+            "Set CopyTagsToSnapshot: true, so snapshots carry the owner and cost tags (Security Hub "
+            f"{control}). In CDK: copyTagsToSnapshot: true.")
+
+    if owns_settings and family is not None:
+        exports = props.get("EnableCloudwatchLogsExports")
+        if exports is None or exports == []:
+            add("CF-RDS-011", "RDS logs are not exported to CloudWatch Logs", "Low", "Operational Excellence",
+                "Set EnableCloudwatchLogsExports to the engine's logs (for example postgresql, or "
+                "error, general and slowquery for MySQL), so they are kept and searchable (Security "
+                "Hub RDS.9). In CDK: cloudwatchLogsExports.")
+
+    if owns_settings and family is not None and not restored:
+        port = props.get("Port")
+        default_port = _RDS_ENGINES[family][0]
+        if port is None or str(port).strip() == str(default_port):
+            add("CF-RDS-012", "RDS uses the engine's default port", "Low", "Security",
+                f"Set Port to something other than {default_port}. It does not stop a targeted "
+                "attack, but it drops much automated scanning (Security Hub RDS.23). In CDK: port.")
+        user = props.get("MasterUsername")
+        if isinstance(user, str) and user.strip().lower() in _DEFAULT_DB_USERS:
+            control = "RDS.24" if res.type == "rds_cluster" else "RDS.25"
+            add("CF-RDS-013", "RDS uses a default master username", "Low", "Security",
+                f"MasterUsername is {user!r}, a name attackers try first. Use a custom name (Security "
+                f"Hub {control}). It can only be set when the database is created. In CDK: "
+                "credentials: rds.Credentials.fromGeneratedSecret('<custom name>').")
+
+    db_class = props.get("DBInstanceClass") if instance else props.get("DBClusterInstanceClass")
+    if open_source and isinstance(db_class, str) and db_class.startswith("db.") \
+            and db_class != "db.serverless" and not _GRAVITON_CLASS.match(db_class):
+        add("CF-RDS-014", "RDS instance class is not Graviton", "Low", "Cost Optimization",
+            f"{db_class} is x86. The Graviton class of the same size (db.r7g, db.m7g, db.t4g) costs "
+            "less for the same work on this engine. In CDK: ec2.InstanceClass.R7G or M7G.")
+    return out
+
+
+# A value the scan cannot read: an intrinsic, or a Terraform expression.
+_UNKNOWN = object()
+
+
+def _lb_attribute(attrs: Any, key: str) -> Any:
+    """An ELBv2 LoadBalancerAttributes value as lower-case text, None when not set, or
+    _UNKNOWN when the list or the value is not a literal."""
+    if attrs is None:
+        return None
+    if not isinstance(attrs, list):
+        return _UNKNOWN
+    for item in attrs:
+        if not isinstance(item, dict) or item.get("Key") != key:
+            continue
+        value = item.get("Value")
+        if isinstance(value, bool):
+            return "true" if value else "false"
+        return value.strip().lower() if isinstance(value, str) else _UNKNOWN
+    return None
+
+
+# ELBv2 security policies that allow TLS 1.0 or 1.1. ELBSecurityPolicy-2016-08 is also
+# what CloudFormation, the CLI, CDK and Terraform use when SslPolicy is not set.
+_WEAK_ELB_POLICY = re.compile(
+    r"^ELBSecurityPolicy-(?:2015-05|2016-08|FS-2018-06|TLS-1-[01]-|FS-1-1-|TLS13-1-[01]-)"
+)
+_DEFAULT_ELB_POLICY = "ELBSecurityPolicy-2016-08"
+
+
+def _redirects_to_https(actions: Any) -> bool | None:
+    """True when a listener's default action redirects to HTTPS. None when unreadable."""
+    if not isinstance(actions, list):
+        return None if actions is not None else False
+    for action in actions:
+        if not isinstance(action, dict):
+            return None
+        kind = action.get("Type")
+        if not isinstance(kind, str):
+            return None
+        if kind.lower() != "redirect":
+            continue
+        config = action.get("RedirectConfig")
+        protocol = config.get("Protocol") if isinstance(config, dict) else None
+        if not isinstance(protocol, str):
+            return None
+        if protocol.upper() == "HTTPS":
+            return True
+    return False
+
+
+def _is_acm_certificate(value: Any) -> bool | None:
+    """True for an ACM certificate, False for an IAM server certificate, None when the
+    value cannot be read (a Ref to a parameter, an import, a name).
+
+    A Terraform reference names the resource type (aws_acm_certificate.web.arn)."""
+    text = value if isinstance(value, str) else json.dumps(value, default=str)
+    if ":acm:" in text or "aws_acm_certificate" in text:
+        return True
+    if (":iam:" in text and "server-certificate" in text) or "aws_iam_server_certificate" in text:
+        return False
+    return None
+
+
+def _flag_off(block: Any, key: str) -> bool:
+    """True when a {key: bool} setting is missing or false; False when it is on or when the
+    block or the value is an intrinsic the scan cannot read."""
+    if block is None:
+        return True
+    if not isinstance(block, dict) or _is_intrinsic(block):
+        return False
+    value = block.get(key)
+    if value is None or value is False:
+        return True
+    return isinstance(value, str) and value.strip().lower() == "false"
+
+
+def _load_balancer_findings(res: Resource, template_path: Path) -> List[Finding]:
+    """ELBv2 load balancers (CF-ALB-001, 004, 005, 006), listeners (CF-ALB-002, 003),
+    target groups (CF-ALB-007) and Classic Load Balancers (CF-CLB-001..005)."""
+    props = res.properties
+    out: List[Finding] = []
+
+    def add(check_id: str, title: str, severity: Severity, category: str, recommendation: str) -> None:
+        out.append(Finding(
+            id=check_id, title=title, severity=severity, category=category,
+            file=res.file or str(template_path), line=res.line,
+            evidence=f"{res.name} ({res.source_type})", recommendation=recommendation,
+        ))
+
+    if res.type == "lb":
+        attrs = props.get("LoadBalancerAttributes")
+        kind = props.get("Type", "application")
+        if _lb_attribute(attrs, "access_logs.s3.enabled") in (None, "false"):
+            add("CF-ALB-001", "ALB access logs not enabled (template-level)", "Low", "Observability",
+                "Consider enabling access logs to S3 for audit and incident analysis, balanced against "
+                "cost (Security Hub ELB.5).")
+        if kind == "application" and _lb_attribute(
+                attrs, "routing.http.drop_invalid_header_fields.enabled") in (None, "false"):
+            add("CF-ALB-004", "ALB does not drop invalid HTTP headers", "Low", "Security",
+                "Set the attribute routing.http.drop_invalid_header_fields.enabled to true, so headers "
+                "that do not match the HTTP spec are removed before they reach the targets (Security "
+                "Hub ELB.4). In Terraform: drop_invalid_header_fields = true.")
+        if _lb_attribute(attrs, "deletion_protection.enabled") in (None, "false"):
+            add("CF-ALB-005", "Load balancer deletion protection not enabled", "Low", "Reliability",
+                "Set the attribute deletion_protection.enabled to true for production load balancers, so "
+                "they cannot be deleted by mistake (Security Hub ELB.6). In CDK: deletionProtection: true.")
+        if kind == "application" and _lb_attribute(attrs, "routing.http.desync_mitigation_mode") == "monitor":
+            add("CF-ALB-006", "ALB desync mitigation mode is monitor", "Low", "Security",
+                "Set routing.http.desync_mitigation_mode to defensive (the default) or strictest. Monitor "
+                "lets requests that may be HTTP desync attacks through (Security Hub ELB.12).")
+
+    if res.type == "lb_listener":
+        protocol = props.get("Protocol")
+        protocol = protocol.upper() if isinstance(protocol, str) else None
+        if protocol == "HTTP" and _redirects_to_https(props.get("DefaultActions")) is False:
+            add("CF-ALB-002", "HTTP listener does not redirect to HTTPS", "Medium", "Security",
+                "Make the HTTP listener's default action a redirect to HTTPS (port 443, HTTP_301), so "
+                "no request is served in clear text (Security Hub ELB.1). In CDK: redirectHTTP: true, or "
+                "ListenerAction.redirect({ protocol: 'HTTPS', port: '443' }).")
+        if protocol in ("HTTPS", "TLS"):
+            policy = props.get("SslPolicy", _DEFAULT_ELB_POLICY)
+            if isinstance(policy, str) and _WEAK_ELB_POLICY.match(policy):
+                unset = "SslPolicy" not in props
+                add("CF-ALB-003", "Listener TLS policy allows TLS 1.0 or 1.1", "Medium", "Security",
+                    ("No SslPolicy is set, so the listener uses ELBSecurityPolicy-2016-08, which allows "
+                     "TLS 1.0. " if unset else f"{policy} allows TLS below 1.2. ")
+                    + "Set SslPolicy to ELBSecurityPolicy-TLS13-1-2-2021-06 or newer. In CDK: "
+                    "sslPolicy: elbv2.SslPolicy.RECOMMENDED_TLS.")
+
+    if res.type == "lb_target_group" and props.get("TargetType", "instance") != "lambda":
+        protocol = props.get("Protocol")
+        enabled = props.get("HealthCheckEnabled")
+        if enabled is False or (isinstance(enabled, str) and enabled.lower() == "false"):
+            add("CF-ALB-007", "Target group health checks are off", "Low", "Reliability",
+                "Turn health checks on, so the load balancer stops sending traffic to failed targets. "
+                "In CDK: healthCheck: { enabled: true, path: '/health' }.")
+        elif isinstance(protocol, str) and protocol.upper() in ("HTTP", "HTTPS") \
+                and "HealthCheckPath" not in props:
+            add("CF-ALB-007", "Target group has no health check path", "Low", "Reliability",
+                "Set HealthCheckPath to an endpoint that checks the app and its dependencies. The "
+                "default is /, which often only shows that the web server is up. In CDK: "
+                "healthCheck: { path: '/health' }.")
+
+    if res.type == "elb":
+        listeners = props.get("Listeners")
+        listeners = [x for x in listeners if isinstance(x, dict)] if isinstance(listeners, list) else []
+        protocols = [x.get("Protocol") for x in listeners]
+        if protocols and all(isinstance(p, str) and p.upper() in ("HTTP", "TCP") for p in protocols):
+            add("CF-CLB-001", "Classic Load Balancer has no HTTPS or SSL listener", "Medium", "Security",
+                "Add an HTTPS or SSL listener with a certificate and stop serving clear text (Security "
+                "Hub ELB.3). Better: move to an Application or Network Load Balancer.")
+        if any(_is_acm_certificate(x.get("SSLCertificateId")) is False for x in listeners
+               if str(x.get("Protocol", "")).upper() in ("HTTPS", "SSL")):
+            add("CF-CLB-002", "Classic Load Balancer uses an IAM server certificate", "Low", "Security",
+                "Use a certificate from AWS Certificate Manager, which renews it for you (Security Hub ELB.2).")
+        if _flag_off(props.get("AccessLoggingPolicy"), "Enabled"):
+            add("CF-CLB-003", "Classic Load Balancer access logs not enabled", "Low", "Observability",
+                "Set AccessLoggingPolicy with Enabled: true and an S3 bucket (Security Hub ELB.5).")
+        if _flag_off({"Enabled": props["CrossZone"]} if "CrossZone" in props else None, "Enabled"):
+            add("CF-CLB-004", "Classic Load Balancer cross-zone load balancing is off", "Low", "Reliability",
+                "Set CrossZone: true, so each AZ's nodes spread traffic over targets in every AZ "
+                "(Security Hub ELB.9). It is off by default in CloudFormation.")
+        if _flag_off(props.get("ConnectionDrainingPolicy"), "Enabled"):
+            add("CF-CLB-005", "Classic Load Balancer connection draining is off", "Low", "Reliability",
+                "Set ConnectionDrainingPolicy with Enabled: true, so in-flight requests finish when a "
+                "target is removed (Security Hub ELB.7).")
+    return out
+
+
+def _lambda_access_findings(res: Resource, template_path: Path) -> List[Finding]:
+    """CF-LAM-004 (function URL with no auth), CF-LAM-005 (secret in an environment
+    variable) and CF-LAM-006 (no reserved concurrency)."""
+    props = res.properties
+    out: List[Finding] = []
+
+    def add(check_id: str, title: str, severity: Severity, category: str, recommendation: str) -> None:
+        out.append(Finding(
+            id=check_id, title=title, severity=severity, category=category,
+            file=res.file or str(template_path), line=res.line,
+            evidence=f"{res.name} ({res.source_type})", recommendation=recommendation,
+        ))
+
+    if res.type == "lambda_url":
+        if props.get("AuthType") == "NONE":
+            add("CF-LAM-004", "Lambda function URL has no authentication", "High", "Security",
+                "AuthType NONE makes the function a public endpoint anyone can call. Set AuthType: "
+                "AWS_IAM and sign requests, or put API Gateway with an authorizer in front. In CDK: "
+                "authType: lambda.FunctionUrlAuthType.AWS_IAM.")
+        return out
+
+    env = props.get("Environment")
+    variables = env.get("Variables") if isinstance(env, dict) else None
+    if isinstance(variables, dict) and not _is_intrinsic(variables):
+        names = sorted(k for k, v in variables.items() if is_secret_name(str(k)) and is_literal_secret(v))
+        if names:
+            add("CF-LAM-005", "Lambda environment variable holds a secret", "High", "Security",
+                f"{', '.join(names)} look like secrets set as literal values, so they are in the "
+                "template, the console and the function configuration. Store them in Secrets "
+                "Manager or SSM Parameter Store (SecureString) and read them at runtime; pass "
+                "only the secret's ARN or name in the environment.")
+
+    if props.get("ReservedConcurrentExecutions") is None:
+        add("CF-LAM-006", "Lambda function has no reserved concurrency", "Low", "Reliability",
+            "Set ReservedConcurrentExecutions on functions that must keep capacity, or that must "
+            "not exhaust the account's concurrency or a downstream database. In CDK: "
+            "reservedConcurrentExecutions.")
+    return out
+
+
+def _lambda_wiring_findings(resources: List[Resource], template_path: Path) -> List[Finding]:
+    """CF-LAM-007: the 3 second default timeout on a function an event source mapping
+    polls for, or the 900 second maximum behind API Gateway (which stops waiting at 29
+    seconds). CF-LAM-008: a VPC function whose subnets are all in one AZ (Security Hub
+    Lambda.5).
+
+    API Gateway is read from AWS::Lambda::Permission with principal apigateway.amazonaws.com.
+    A subnet that is not in this template, or whose AZ cannot be read, is not judged.
+    """
+    functions = [r for r in resources if r.type == "lambda_function" and not r.malformed]
+    if not functions:
+        return []
+    mappings = [r for r in resources if r.type == "lambda_event_source_mapping" and not r.malformed]
+    api_permissions = [
+        r for r in resources if r.type == "lambda_permission" and not r.malformed
+        and isinstance(r.properties.get("Principal"), str)
+        and r.properties["Principal"].startswith("apigateway.")
+    ]
+    subnets = [r for r in resources if r.type == "subnet" and not r.malformed]
+    out: List[Finding] = []
+
+    def finding(fn: Resource, check_id: str, title: str, severity: Severity, recommendation: str) -> Finding:
+        return Finding(id=check_id, title=title, severity=severity, category="Reliability",
+                       file=fn.file or str(template_path), line=fn.line,
+                       evidence=f"{fn.name} ({fn.source_type})", recommendation=recommendation)
+
+    for fn in functions:
+        timeout = None if "Timeout" in fn.unresolved else fn.properties.get("Timeout", 3)
+        polled = any(_points_at(m, "FunctionName", fn) for m in mappings)
+        behind_api = any(_points_at(p, "FunctionName", fn) for p in api_permissions)
+        if polled and timeout in (3, "3"):
+            out.append(finding(
+                fn, "CF-LAM-007", "Lambda timeout left at the 3 second default for a queue or stream", "Low", (
+                    "An event source mapping polls for this function, and a batch that takes longer "
+                    "than 3 seconds fails and is retried. Set Timeout to what a batch needs, and set "
+                    "the SQS visibility timeout to at least 6 times that. In CDK: timeout.")))
+        elif behind_api and timeout in (900, "900"):
+            out.append(finding(
+                fn, "CF-LAM-007", "Lambda timeout is 900 seconds behind API Gateway", "Low", (
+                    "API Gateway stops waiting after 29 seconds by default, so a 15 minute timeout "
+                    "only keeps failed calls running and billed. Set Timeout just above the API "
+                    "timeout. In CDK: timeout: Duration.seconds(30).")))
+
+        vpc = fn.properties.get("VpcConfig")
+        ids = vpc.get("SubnetIds") if isinstance(vpc, dict) and "VpcConfig" not in fn.unresolved else None
+        if not isinstance(ids, list) or not ids:
+            continue
+        azs: set[str] = set()
+        for item in ids:
+            text = item if type(item) is str else json.dumps(item, default=str)
+            subnet = next((s for s in subnets if _references(text, s.name)), None)
+            az = _az_key(subnet) if subnet is not None else None
+            if az is None:
+                azs = set()
+                break
+            azs.add(az)
+        if len(azs) == 1:
+            out.append(finding(
+                fn, "CF-LAM-008", "Lambda function in a VPC uses subnets in one AZ", "Medium", (
+                    "All of this function's subnets are in one Availability Zone, so an AZ failure "
+                    "stops it. Give it subnets in at least two AZs (Security Hub Lambda.5). In CDK: "
+                    "vpcSubnets: { subnetType: ec2.SubnetType.PRIVATE_WITH_EGRESS }.")))
+    return out
+
+
+_WORLD_V4, _WORLD_V6 = "0.0.0.0/0", "::/0"
+_ALL_PROTOCOLS = ("-1", -1, "all")
+
+
+def _open_to_world(rule: dict, v4: str = "CidrIp", v6: str = "CidrIpv6") -> bool:
+    """True when a rule's literal CIDR is the whole IPv4 or IPv6 internet."""
+    cidr, cidr6 = rule.get(v4), rule.get(v6)
+    return (type(cidr) is str and cidr.strip() == _WORLD_V4) or (
+        type(cidr6) is str and cidr6.strip() == _WORLD_V6)
+
+
+def _all_ports(rule: dict) -> bool:
+    """True for protocol -1, or a port range that spans every port. An intrinsic is not."""
+    if rule.get("IpProtocol") in _ALL_PROTOCOLS:
+        return True
+    low, high = rule.get("FromPort"), rule.get("ToPort")
+    if low is None and high is None:
+        return rule.get("IpProtocol") is None  # Terraform protocol -1 drops both ports
+    return low in (0, "0") and high in (65535, "65535")
+
+
+def _sg_rules_of(res: Resource, key: str) -> list[dict]:
+    """The rules of a security group (inline list) or of one standalone rule resource."""
+    if res.type == "security_group":
+        rules = res.properties.get(key)
+        return [r for r in rules if isinstance(r, dict)] if isinstance(rules, list) else []
+    return [res.properties]
+
+
+def _security_group_findings(
+    res: Resource, template_path: Path, default_egress_open: bool
+) -> List[Finding]:
+    """CF-SG-001 (sensitive port), CF-SG-002 (all ports) and CF-SG-003 (all egress) on a
+    security group or a standalone ingress or egress rule.
+
+    A rule open on every port is reported as CF-SG-002 only, not also as CF-SG-001. A
+    CloudFormation group created with no SecurityGroupEgress gets the AWS default rule,
+    which allows all outbound traffic; a standalone AWS::EC2::SecurityGroupEgress is added
+    after creation and does not remove it. Terraform removes that default.
+    """
+    out: List[Finding] = []
+
+    def finding(check_id: str, title: str, severity: Severity, recommendation: str) -> Finding:
+        return Finding(
+            id=check_id, title=title, severity=severity, category="Security",
+            file=res.file or str(template_path), line=res.line,
+            evidence=f"{res.name} ({res.source_type})", recommendation=recommendation,
+        )
+
+    if res.type != "security_group_egress_rule":
+        open_in = [r for r in _sg_rules_of(res, "SecurityGroupIngress") if _open_to_world(r)]
+        if any(_all_ports(r) for r in open_in):
+            out.append(finding(
+                "CF-SG-002", "Security group allows all inbound traffic from 0.0.0.0/0 or ::/0", "High",
+                (
+                    "Remove the rule that opens every port to the internet, and allow only the "
+                    "ports the service needs, usually 80 and 443 (Security Hub EC2.18). "
+                    "Reach admin ports through Session Manager or a VPN instead."
+                ),
+            ))
+        elif any(_port_in_sensitive(r.get("FromPort"), r.get("ToPort")) for r in open_in):
+            out.append(finding(
+                "CF-SG-001", "Security group allows 0.0.0.0/0 or ::/0 on sensitive port", "High",
+                (
+                    "Restrict ingress to specific CIDRs or security groups. Do not open SSH (22), "
+                    "RDP (3389), database ports or other high-risk ports such as 21, 23, 445 or "
+                    "8080 to the internet (Security Hub EC2.13, EC2.14, EC2.19)."
+                ),
+            ))
+    if res.type != "security_group_ingress_rule":
+        egress = _sg_rules_of(res, "SecurityGroupEgress")
+        default_open = default_egress_open and "SecurityGroupEgress" not in res.properties
+        if default_open or any(_open_to_world(r) and _all_ports(r) for r in egress):
+            out.append(finding(
+                "CF-SG-003", "Security group allows all outbound traffic to 0.0.0.0/0", "Low",
+                (
+                    ("No SecurityGroupEgress is set, so AWS keeps its default rule that allows all "
+                     "outbound traffic. " if default_open else "")
+                    + "Allow egress only to the ports and destinations the workload calls, such as "
+                    "443 to a VPC endpoint or prefix list. In CDK: allowAllOutbound: false, then "
+                    "connections.allowTo(...)."
+                ),
+            ))
+    return out
+
+
+_NACL_PORTS = (22, 3389)
+
+
+def _nacl_entry_opens_admin_port(entry: dict) -> bool | None:
+    """True when an inbound allow entry opens 22 or 3389 to the internet. None when a value
+    it needs is not a literal."""
+    egress = entry.get("Egress")
+    if not (egress is None or egress is False or (isinstance(egress, str) and egress.lower() == "false")):
+        return False
+    action = entry.get("RuleAction")
+    if type(action) is not str:
+        return None
+    if action.lower() != "allow" or not _open_to_world(entry, "CidrBlock", "Ipv6CidrBlock"):
+        return False
+    protocol = entry.get("Protocol")
+    if protocol in _ALL_PROTOCOLS:
+        return True
+    if str(protocol).lower() not in ("6", "17", "tcp", "udp"):
+        return None if isinstance(protocol, dict) else False
+    ports = entry.get("PortRange")
+    if not isinstance(ports, dict) or _is_intrinsic(ports):
+        return None
+    low, high = ports.get("From"), ports.get("To")
+    if low is None or high is None:
+        return None
+    try:
+        return any(int(low) <= p <= int(high) for p in _NACL_PORTS)
+    except (TypeError, ValueError):
+        return None
+
+
+def _nacl_findings(res: Resource, template_path: Path) -> List[Finding]:
+    """CF-NACL-001: a network ACL entry, or a Terraform aws_network_acl ingress block, that
+    allows 22 or 3389 from the internet. Rule order is not read: a lower-numbered deny
+    entry may still block the traffic."""
+    if res.type == "network_acl":
+        entries = res.properties.get("Entries")
+        entries = [e for e in entries if isinstance(e, dict)] if isinstance(entries, list) else []
+    else:
+        entries = [res.properties]
+    if not any(_nacl_entry_opens_admin_port(e) for e in entries):
+        return []
+    return [Finding(
+        id="CF-NACL-001",
+        title="Network ACL allows SSH or RDP from 0.0.0.0/0 or ::/0",
+        severity="Medium",
+        category="Security",
+        file=res.file or str(template_path),
+        line=res.line,
+        evidence=f"{res.name} ({res.source_type})",
+        recommendation=(
+            "Allow port 22 and 3389 only from known CIDRs, or deny them, in the network ACL "
+            "(Security Hub EC2.21). Security groups still apply, but the ACL is the subnet-wide "
+            "layer."
+        ),
+    )]
+
+
+def _az_key(subnet: Resource) -> str | None:
+    """The subnet's Availability Zone as a comparable key, or None when it is not set or
+    cannot be read. CDK writes {"Fn::Select": [i, {"Fn::GetAZs": ""}]}, one i per AZ."""
+    for key in ("AvailabilityZone", "AvailabilityZoneId"):
+        if key in subnet.unresolved:
+            return None
+        value = subnet.properties.get(key)
+        if value is not None:
+            return json.dumps(value, sort_keys=True, default=str)
+    return None
+
+
+def _nat_single_az_findings(
+    resources: List[Resource], template_path: Path,
+    at: Callable[[Resource | None], tuple[str, int | None, str]],
+) -> List[Finding]:
+    """CF-NAT-001: one NAT gateway that private subnets in more than one AZ route through.
+
+    The route tables that send traffic to the NAT gateway are found from AWS::EC2::Route
+    (or Terraform inline routes), and their subnets from the route table associations. A
+    subnet whose AZ cannot be read is not counted.
+    """
+    nats = [r for r in resources if r.type == "nat_gateway" and not r.malformed]
+    if not nats:
+        return []
+    routes = [r for r in resources if r.type == "route" and not r.malformed]
+    tables = [r for r in resources if r.type == "route_table" and not r.malformed]
+    links = [r for r in resources if r.type == "route_table_association" and not r.malformed]
+    subnets = [r for r in resources if r.type == "subnet" and not r.malformed]
+    out: List[Finding] = []
+    for nat in nats:
+        served = [t for t in tables if _points_at(t, "Routes", nat) or any(
+            _points_at(route, "NatGatewayId", nat) and _points_at(route, "RouteTableId", t)
+            for route in routes)]
+        azs: set[str] = set()
+        for table in served:
+            for link in links:
+                if not _points_at(link, "RouteTableId", table):
+                    continue
+                for subnet in subnets:
+                    if _points_at(link, "SubnetId", subnet):
+                        az = _az_key(subnet)
+                        if az is not None:
+                            azs.add(az)
+        if len(azs) < 2:
+            continue
+        file, line, _ = at(nat)
+        out.append(Finding(
+            id="CF-NAT-001",
+            title="One NAT gateway serves private subnets in several Availability Zones",
+            severity="Medium",
+            category="Reliability",
+            file=file,
+            line=line,
+            evidence=f"{nat.name} ({nat.source_type})",
+            recommendation=(
+                f"Private subnets in {len(azs)} AZs route through this NAT gateway. If its AZ fails, private subnets in the other AZs lose their route "
+                "to the internet. Put one NAT gateway in each AZ and route each private subnet to "
+                "the one in its own AZ. In CDK: natGateways equal to maxAzs. In dev, one NAT "
+                "gateway may be an accepted saving."
+            ),
+        ))
+    return out
+
+
+def _tgw_flow_log_findings(
+    resources: List[Resource], template_path: Path,
+    at: Callable[[Resource | None], tuple[str, int | None, str]],
+) -> List[Finding]:
+    """CF-TGW-002: a transit gateway that no AWS::EC2::FlowLog / aws_flow_log points at.
+    A transit gateway flow log the scan cannot tie to a gateway counts for all of them."""
+    gateways = [r for r in resources if r.type == "transit_gateway" and not r.malformed]
+    if not gateways:
+        return []
+    logs = [
+        r for r in resources if r.type == "flow_log" and not r.malformed
+        and r.properties.get("ResourceType") in ("TransitGateway", "TransitGatewayAttachment")
+    ]
+    out: List[Finding] = []
+    for tgw in gateways:
+        tied = [log for log in logs if _points_at(log, "ResourceId", tgw)]
+        # A gateway log the scan cannot tie may be this one. An attachment log is not.
+        unlinked = any("ResourceId" in log.unresolved or (
+            log.properties.get("ResourceType") == "TransitGateway"
+            and not any(_points_at(log, "ResourceId", g) for g in gateways)) for log in logs)
+        if tied or unlinked:
+            continue
+        file, line, _ = at(tgw)
+        out.append(Finding(
+            id="CF-TGW-002",
+            title="Transit gateway has no flow logs",
+            severity="Low",
+            category="Operational Excellence",
+            file=file,
+            line=line,
+            evidence=f"{tgw.name} ({tgw.source_type})",
+            recommendation=(
+                "Add an AWS::EC2::FlowLog with ResourceType: TransitGateway and ResourceId set to "
+                "this gateway, so traffic between attached VPCs can be traced. In Terraform: "
+                "aws_flow_log with transit_gateway_id."
+            ),
+        ))
+    return out
 
 
 def _gateway_endpoint_findings(
@@ -1929,6 +2746,7 @@ def _run_resource_checks(
     rotated, rotation_unlinked = _rotation_coverage(resources)
     eips_in_use = _eips_in_use(resources)
     autoscaled, autoscaling_unlinked = _autoscaled_tables(resources)
+    param_groups = [r for r in resources if r.type in ("db_parameter_group", "rds_cluster_parameter_group")]
     launch_templates_without_spot = 0
     first_lt_without_spot: Resource | None = None
     for r in resources:
@@ -2164,26 +2982,13 @@ def _run_resource_checks(
                         ))
                         estimates.apply(findings[-1], estimates.ec2_instance(props.get("InstanceType")))
 
-                # --- ALB access logs (heuristic) ---
-                if ctype == "lb":
-                    attrs = props.get("LoadBalancerAttributes")
-                    # CDK may represent as list of {Key, Value}
-                    has_logs = False
-                    if isinstance(attrs, list):
-                        for a in attrs:
-                            if a.get("Key") == "access_logs.s3.enabled" and str(a.get("Value")).lower() == "true":
-                                has_logs = True
-                    if not has_logs:
-                        findings.append(Finding(
-                            id="CF-ALB-001",
-                            title="ALB access logs not enabled (template-level)",
-                            severity="Low",
-                            category="Observability",
-                            file=res.file or str(template_path),
-                            line=res.line,
-                            evidence=f"{logical_id} ({rtype})",
-                            recommendation="Consider enabling ALB access logs to S3 for audit and incident analysis (balance against cost).",
-                        ))
+                # --- RDS and Aurora settings beyond CF-RDS-001..005 ---
+                if ctype in ("db_instance", "rds_cluster"):
+                    findings.extend(_rds_settings_findings(res, template_path, param_groups))
+
+                # --- Load balancers: ELBv2 attributes, listeners, target groups, Classic ---
+                if ctype in ("lb", "lb_listener", "lb_target_group", "elb"):
+                    findings.extend(_load_balancer_findings(res, template_path))
 
                 # --- CloudTrail ---
                 if ctype == "cloudtrail":
@@ -2302,6 +3107,8 @@ def _run_resource_checks(
                         findings.append(public)
 
                 # --- Lambda ---
+                if ctype in ("lambda_function", "lambda_url"):
+                    findings.extend(_lambda_access_findings(res, template_path))
                 if ctype == "lambda_function":
                     deprecated = _runtime_finding(res, template_path)
                     if deprecated is not None:
@@ -2373,40 +3180,28 @@ def _run_resource_checks(
                             recommendation="Enable SSESpecification (SSEEnabled or SSEType: KMS) for encryption at rest.",
                         ))
 
-                # --- Security groups: open to 0.0.0.0/0 on sensitive ports ---
-                if ctype == "security_group":
-                    ingress = props.get("SecurityGroupIngress") or []
-                    if isinstance(ingress, list):
-                        for rule in ingress:
-                            cidr = (rule.get("CidrIp") or "").strip()
-                            cidr6 = (rule.get("CidrIpv6") or "").strip()
-                            if (cidr == "0.0.0.0/0" or cidr6 == "::/0") and _port_in_sensitive(rule.get("FromPort"), rule.get("ToPort")):
-                                findings.append(Finding(
-                                    id="CF-SG-001",
-                                    title="Security group allows 0.0.0.0/0 or ::/0 on sensitive port",
-                                    severity="High",
-                                    category="Security",
-                                    file=res.file or str(template_path),
-                                    line=res.line,
-                                    evidence=f"{logical_id} ({rtype})",
-                                    recommendation="Restrict ingress to specific CIDRs; avoid 0.0.0.0/0 on SSH (22), RDP (3389), DB ports.",
-                                ))
-                                break
-                if ctype == "security_group_ingress_rule":
-                    cidr = (props.get("CidrIp") or "").strip()
-                    cidr6 = (props.get("CidrIpv6") or "").strip()
-                    if cidr == "0.0.0.0/0" or cidr6 == "::/0":
-                        if _port_in_sensitive(props.get("FromPort"), props.get("ToPort")):
-                            findings.append(Finding(
-                                id="CF-SG-001",
-                                title="Security group ingress allows 0.0.0.0/0 or ::/0 on sensitive port",
-                                severity="High",
-                                category="Security",
-                                file=res.file or str(template_path),
-                                line=res.line,
-                                evidence=f"{logical_id} ({rtype})",
-                                recommendation="Restrict to specific CIDRs; avoid 0.0.0.0/0 on SSH, RDP, DB ports.",
-                            ))
+                # --- Security groups, network ACLs and transit gateways ---
+                if ctype in ("security_group", "security_group_ingress_rule", "security_group_egress_rule"):
+                    findings.extend(_security_group_findings(
+                        res, template_path, default_egress_open=(
+                            ctype == "security_group" and res.source_type.startswith("AWS::"))))
+                if ctype in ("network_acl_entry", "network_acl"):
+                    findings.extend(_nacl_findings(res, template_path))
+                if ctype == "transit_gateway" and props.get("AutoAcceptSharedAttachments") == "enable":
+                    findings.append(Finding(
+                        id="CF-TGW-001",
+                        title="Transit gateway accepts shared attachments automatically",
+                        severity="Medium",
+                        category="Security",
+                        file=res.file or str(template_path),
+                        line=res.line,
+                        evidence=f"{logical_id} ({rtype})",
+                        recommendation=(
+                            "Set AutoAcceptSharedAttachments: disable, so a VPC from an account the "
+                            "gateway is shared with is attached only once you accept it "
+                            "(Security Hub EC2.23). In Terraform: auto_accept_shared_attachments = \"disable\"."
+                        ),
+                    ))
 
                 # --- CloudWatch Logs ---
                 if ctype == "cloudwatch_log_group":
@@ -2701,6 +3496,13 @@ def _run_resource_checks(
     # --- Gateway endpoints: S3 and DynamoDB through a NAT gateway (CF-VPC-002/003) ---
     findings.extend(_gateway_endpoint_findings(resources, template_path, _at))
 
+    # --- Lambda timeouts against their triggers, and VPC functions in one AZ ---
+    findings.extend(_lambda_wiring_findings(resources, template_path))
+
+    # --- Network: one NAT gateway for several AZs, transit gateways without flow logs ---
+    findings.extend(_nat_single_az_findings(resources, template_path, _at))
+    findings.extend(_tgw_flow_log_findings(resources, template_path, _at))
+
     # --- Launch template Spot (template-level: LTs without Spot when no ASG) ---
     if launch_templates_without_spot > 0 and asg_count == 0:
         findings.append(Finding(
@@ -2726,25 +3528,6 @@ def _run_resource_checks(
     return environments.apply(list(dedup.values()), template_path, resources)
 
 
-# A parameter name that holds a secret (DbPassword, ApiKey, GithubToken, ...).
-_SECRET_NAME = re.compile(
-    r"pass(?:word|wd|phrase|code)|pwd|secret|token(?!iz)|api_?key|private_?key|credential|"
-    r"auth_?key|access_?key|signing_?key|shared_?key|client_?secret|connection_?string",
-    re.IGNORECASE,
-)
-# Names that point at a secret or describe one, without holding it (DbSecretArn, KeyName,
-# PasswordMinLength, TokenIssuer). A secret parameter named *Param still holds the value.
-_SECRET_REFERENCE = re.compile(
-    r"(?:arn|name|id|length|policy|ttl|expiry|expiration|rotation|version|path|prefix|type|"
-    r"enabled|count|url|uri|header|duration|days|audience|issuer|complexity|validity|format|"
-    r"symbols|numbers|uppercase|lowercase|require\w*|tokens|limit|size)$",
-    re.IGNORECASE,
-)
-# Counts and limits named after a secret word, such as MaxTokens or min_password_age.
-# Case-sensitive, so the next word must start a new word: MinioSecretKey is a secret.
-_SECRET_LIMIT = re.compile(r"^(?:max|Max|MAX|min|Min|MIN)(?:imum|IMUM)?(?:_|[A-Z0-9])")
-
-
 def _parameter_findings(template_path: Path, doc: dict) -> List[Finding]:
     """CF-PAR-001 (secret-named parameter without NoEcho) and CF-PAR-002 (with a Default).
 
@@ -2756,7 +3539,7 @@ def _parameter_findings(template_path: Path, doc: dict) -> List[Finding]:
     for name, body in params.items() if isinstance(params, dict) else []:
         if type(name) is not str or not isinstance(body, dict):
             continue
-        if not _is_secret_name(name):
+        if not is_secret_name(name):
             continue
         ptype = body.get("Type")
         if type(ptype) is str and "AWS::SSM::Parameter" in ptype:  # incl. List<AWS::SSM::...>
@@ -2806,14 +3589,6 @@ def _parameter_findings(template_path: Path, doc: dict) -> List[Finding]:
     return out
 
 
-def _is_secret_name(name: str) -> bool:
-    return (
-        bool(_SECRET_NAME.search(name))
-        and not _SECRET_REFERENCE.search(name)
-        and not _SECRET_LIMIT.match(name)
-    )
-
-
 def _committed(default: Any) -> bool:
     """A default that puts a value in the repo: a non-empty string, a number, or a
     non-empty list or map."""
@@ -2839,7 +3614,7 @@ def terraform_variable_findings(variables: List[TfVariable]) -> List[Finding]:
     )
     out: List[Finding] = []
     for var in variables:
-        if not _is_secret_name(var.name):
+        if not is_secret_name(var.name):
             continue
         sensitive_flag = _flag(var.sensitive)
         sensitive = sensitive_flag is True
