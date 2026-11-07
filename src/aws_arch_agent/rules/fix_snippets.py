@@ -1141,6 +1141,111 @@ _CLOUDFORMATION["CF-EBS-002"] = """$name:
     VolumeType: gp3
     # over 1,000 GiB: Iops: <3 x size in GiB> to keep the gp2 baseline"""
 # Unused Elastic IPs: delete the resource to release it, or attach it.
+_CLOUDFORMATION["CF-APIGW-003"] = """$name:
+  Type: AWS::ApiGateway::Method
+  Properties:
+    AuthorizationType: COGNITO_USER_POOLS  # or AWS_IAM, CUSTOM
+    AuthorizerId: !Ref Authorizer"""
+_CLOUDFORMATION["CF-APIGW-004"] = """$name:
+  Type: AWS::ApiGateway::RestApi
+  Properties:
+    SecurityPolicy: TLS_1_2  # AWS::ApiGateway::DomainName takes the same setting"""
+_CLOUDFORMATION["CF-APIGW-005"] = """$name:
+  Type: AWS::ApiGateway::Stage
+  Properties:
+    MethodSettings:
+      - ResourcePath: "/*"
+        HttpMethod: "*"
+        ThrottlingRateLimit: 100
+        ThrottlingBurstLimit: 200"""
+_CLOUDFORMATION["CF-APIGW-006"] = """$name:
+  Type: AWS::ApiGateway::Method
+  Properties:
+    RequestValidatorId: !Ref BodyValidator  # AWS::ApiGateway::RequestValidator, ValidateRequestBody: true
+    RequestModels:
+      application/json: !Ref RequestModel"""
+_CLOUDFORMATION["CF-APIGW-007"] = """$name:
+  Type: AWS::ApiGateway::Stage
+  Properties:
+    MethodSettings:
+      - ResourcePath: "/*"
+        HttpMethod: "*"
+        CachingEnabled: true
+        CacheDataEncrypted: true"""
+_CLOUDFORMATION["CF-APIGW-008"] = """$name:
+  Type: AWS::ApiGateway::Stage
+  Properties:
+    CacheClusterEnabled: true
+    CacheClusterSize: "0.5"
+    MethodSettings:
+      - ResourcePath: "/~1items/GET"  # the cacheable GET methods
+        HttpMethod: GET
+        CachingEnabled: true
+        CacheDataEncrypted: true"""
+_CLOUDFORMATION["CF-APIGW-009"] = """$name:
+  Type: AWS::ApiGateway::Stage
+  Properties:
+    ClientCertificateId: !Ref BackendClientCertificate  # AWS::ApiGateway::ClientCertificate"""
+_CLOUDFORMATION["CF-APIGW-V2-003"] = """$name:
+  Type: AWS::ApiGatewayV2::Route
+  Properties:
+    AuthorizationType: JWT  # or AWS_IAM, CUSTOM
+    AuthorizerId: !Ref JwtAuthorizer"""
+_CLOUDFORMATION["CF-APIGW-V2-004"] = """$name:
+  Type: AWS::ApiGatewayV2::Stage
+  Properties:
+    DefaultRouteSettings:
+      ThrottlingRateLimit: 100
+      ThrottlingBurstLimit: 200"""
+_TERRAFORM["CF-APIGW-003"] = """resource "aws_api_gateway_method" "$tf_name" {
+  authorization = "COGNITO_USER_POOLS" # or AWS_IAM, CUSTOM
+  authorizer_id = aws_api_gateway_authorizer.example.id
+}"""
+_TERRAFORM["CF-APIGW-004"] = """resource "$tf_type" "$tf_name" {
+  security_policy = "TLS_1_2"
+}"""
+_TERRAFORM["CF-APIGW-005"] = """resource "aws_api_gateway_method_settings" "$tf_name" {
+  rest_api_id = aws_api_gateway_rest_api.example.id
+  stage_name  = aws_api_gateway_stage.$tf_name.stage_name
+  method_path = "*/*"
+  settings {
+    throttling_rate_limit  = 100
+    throttling_burst_limit = 200
+  }
+}"""
+_TERRAFORM["CF-APIGW-006"] = """resource "aws_api_gateway_method" "$tf_name" {
+  request_validator_id = aws_api_gateway_request_validator.body.id
+  request_models = {
+    "application/json" = aws_api_gateway_model.request.name
+  }
+}"""
+_TERRAFORM["CF-APIGW-007"] = """resource "aws_api_gateway_method_settings" "$tf_name" {
+  rest_api_id = aws_api_gateway_rest_api.example.id
+  stage_name  = aws_api_gateway_stage.$tf_name.stage_name
+  method_path = "*/*"
+  settings {
+    caching_enabled      = true
+    cache_data_encrypted = true
+  }
+}"""
+_TERRAFORM["CF-APIGW-008"] = """resource "aws_api_gateway_stage" "$tf_name" {
+  cache_cluster_enabled = true
+  cache_cluster_size    = "0.5"
+}
+# Then turn caching_enabled on for the cacheable GET methods in aws_api_gateway_method_settings."""
+_TERRAFORM["CF-APIGW-009"] = """resource "aws_api_gateway_stage" "$tf_name" {
+  client_certificate_id = aws_api_gateway_client_certificate.backend.id
+}"""
+_TERRAFORM["CF-APIGW-V2-003"] = """resource "aws_apigatewayv2_route" "$tf_name" {
+  authorization_type = "JWT" # or AWS_IAM, CUSTOM
+  authorizer_id      = aws_apigatewayv2_authorizer.jwt.id
+}"""
+_TERRAFORM["CF-APIGW-V2-004"] = """resource "aws_apigatewayv2_stage" "$tf_name" {
+  default_route_settings {
+    throttling_rate_limit  = 100
+    throttling_burst_limit = 200
+  }
+}"""
 _CLOUDFORMATION["CF-LAM-004"] = """$name:
   Type: AWS::Lambda::Url
   Properties:
