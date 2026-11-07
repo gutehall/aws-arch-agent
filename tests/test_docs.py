@@ -65,4 +65,4 @@ def test_rule_reference_count_matches_the_registry_and_lists_each_rule_once() ->
 def test_readme_pins_the_action_to_the_current_release() -> None:
     readme = (ROOT / "README.md").read_text(encoding="utf-8")
     assert f".github/actions/aws-arch-agent@v{__version__}" in readme
-    assert "aws-arch-agent@main\n" not in readme
+    assert "aws-arch-agent@main" not in readme

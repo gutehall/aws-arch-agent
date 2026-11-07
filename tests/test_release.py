@@ -63,6 +63,19 @@ def test_bad_tags_fail(tmp_path: Path, tag: str, version: str, message: str) -> 
         release_notes.notes_for(tag, _repo(tmp_path, version))
 
 
+def test_empty_section_fails(tmp_path: Path) -> None:
+    repo = _repo(tmp_path, "0.2.0", "# Changelog\n\n## v0.2.0 - 2026-12-01\n\n## v0.1.0\n\n- x\n")
+    with pytest.raises(release_notes.ReleaseNotesError, match="is empty"):
+        release_notes.notes_for("v0.2.0", repo)
+
+
+def test_missing_package_version_fails(tmp_path: Path) -> None:
+    repo = _repo(tmp_path, "0.1.0")
+    (repo / "src" / "aws_arch_agent" / "__init__.py").write_text("", encoding="utf-8")
+    with pytest.raises(release_notes.ReleaseNotesError, match="no __version__"):
+        release_notes.notes_for("v0.1.0", repo)
+
+
 def test_current_version_has_notes() -> None:
     assert release_notes.notes_for(f"v{__version__}").strip()
 
@@ -81,6 +94,9 @@ def test_workflow_runs_on_version_tags_and_never_touches_tags() -> None:
     assert "git tag" not in text
     assert "git push" not in text
     assert "--clobber" not in text
+    assert "--tags" not in text
+    assert "--force" not in text
+    assert "refs/tags" not in text
     assert "gh release edit" not in text
     assert "gh release view" in text
     assert "--verify-tag" in text
