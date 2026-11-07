@@ -1,5 +1,5 @@
-"""Encryption checks in templates: SNS, EBS, EFS, Kinesis, ElastiCache (DM3-525) and
-OpenSearch, Redshift, DocumentDB, Neptune, MSK (DM3-552)."""
+"""Encryption checks in templates: SNS, EBS, EFS, Kinesis, ElastiCache and
+OpenSearch, Redshift, DocumentDB, Neptune, MSK."""
 import json
 from pathlib import Path
 
@@ -261,7 +261,7 @@ def test_terraform_fixes(tmp_path: Path) -> None:
     assert all("In CDK" not in f.recommendation for f in findings)
 
 
-# --- OpenSearch, Redshift, DocumentDB, Neptune, MSK (DM3-552) ----------------------
+# --- OpenSearch, Redshift, DocumentDB, Neptune, MSK ----------------------
 
 IDS2 = {"CF-OS-001", "CF-OS-002", "CF-RS-001", "CF-DOCDB-001", "CF-NEP-001", "CF-MSK-001"}
 

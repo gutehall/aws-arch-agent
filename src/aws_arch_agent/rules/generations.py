@@ -1,4 +1,4 @@
-"""Previous-generation instance families (DM3-547).
+"""Previous-generation instance families.
 
 CF-GEN-001 flags a previous-generation type on an EC2 instance, launch template, launch
 configuration, Auto Scaling group override, RDS instance, ElastiCache cluster or

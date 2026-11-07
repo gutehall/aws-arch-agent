@@ -1,4 +1,4 @@
-"""Opening summary: top fixes, one line per pillar, quick wins (DM3-550)."""
+"""Opening summary: top fixes, one line per pillar, quick wins."""
 import json
 from pathlib import Path
 

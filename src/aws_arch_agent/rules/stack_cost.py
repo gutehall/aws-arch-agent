@@ -1,4 +1,4 @@
-"""Estimated monthly cost per template or Terraform root module (DM3-542).
+"""Estimated monthly cost per template or Terraform root module.
 
 Every resource the price snapshot covers is priced, not only those with findings. This is
 an approximation in the style of Infracost: on-demand prices only, 730 hours a month, and

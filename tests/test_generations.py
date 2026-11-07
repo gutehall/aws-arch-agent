@@ -1,4 +1,4 @@
-"""CF-GEN-001: previous-generation instance families (DM3-547)."""
+"""CF-GEN-001: previous-generation instance families."""
 import json
 from pathlib import Path
 

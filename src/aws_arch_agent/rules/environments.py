@@ -1,4 +1,4 @@
-"""Which environment a stack is for, and rules that depend on it (DM3-544).
+"""Which environment a stack is for, and rules that depend on it.
 
 A stack is one CloudFormation template (cdk synth output included) or one Terraform root
 module. Its environment is, in order:
@@ -41,7 +41,7 @@ _WORDS: dict[str, Environment] = {
 RULE_POLICY: dict[str, dict[Environment, Severity | None]] = {
     # Production durability advice that is wrong for a throwaway stack.
     # Multi-AZ and retain-on-delete are prod-only: CF-ENV-001 says the opposite in dev and
-    # staging (DM3-545), so no stack gets both pieces of advice.
+    # staging, so no stack gets both pieces of advice.
     "CF-RDS-003": {"dev": None, "staging": None},  # Multi-AZ
     "CF-RDS-005": {"dev": None},           # deletion protection
     "CF-DEL-001": {"dev": None, "staging": None},  # retain on delete

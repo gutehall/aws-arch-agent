@@ -1,4 +1,4 @@
-"""Rule themes (DM3-551): concerns that cut across pillars.
+"""Rule themes: concerns that cut across pillars.
 
 A FinOps lead or a security reviewer reads one theme instead of the whole report. Each
 rule has one or more themes. CDK source rules declare them in their class (`themes = ...`);

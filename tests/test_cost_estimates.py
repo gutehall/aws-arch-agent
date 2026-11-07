@@ -1,4 +1,4 @@
-"""Monthly cost estimates on cost findings (DM3-541)."""
+"""Monthly cost estimates on cost findings."""
 import json
 from pathlib import Path
 

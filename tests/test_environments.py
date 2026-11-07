@@ -1,4 +1,4 @@
-"""Which environment a stack is for (DM3-544)."""
+"""Which environment a stack is for."""
 import json
 from pathlib import Path
 
@@ -54,7 +54,7 @@ def test_config_overrides_detection(tmp_path: Path) -> None:
     findings = _scan(repo)
     assert {f["file"]: f["environment"] for f in findings} == {
         "infra/dev/stack.json": "prod", "infra/prod/stack.json": "staging"}
-    # Multi-AZ advice is prod-only (DM3-545): the dev dir is configured as prod, prod as staging.
+    # Multi-AZ advice is prod-only: the dev dir is configured as prod, prod as staging.
     assert {f["file"] for f in findings if f["id"] == "CF-RDS-003"} == {"infra/dev/stack.json"}
 
 

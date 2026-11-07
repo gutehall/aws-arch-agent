@@ -761,7 +761,7 @@ _TERRAFORM["CF-RP-001:aws_lambda_permission"] = """resource "aws_lambda_permissi
   source_account = data.aws_caller_identity.current.account_id
 }"""
 
-# Encryption at rest / in transit (DM3-525).
+# Encryption at rest / in transit.
 _CLOUDFORMATION.update({
     "CF-SNS-001": """$name:
   Type: AWS::SNS::Topic
@@ -834,7 +834,7 @@ _TERRAFORM.update({
 }""",
 })
 
-# Encryption, part 2 (DM3-552).
+# Encryption, part 2.
 _CLOUDFORMATION.update({
     "CF-OS-001": """$name:
   Type: AWS::OpenSearchService::Domain
@@ -902,7 +902,7 @@ _TERRAFORM.update({
 }""",
 })
 
-# Secret template parameters (DM3-537): resolve the secret where it is used.
+# Secret template parameters: resolve the secret where it is used.
 _CF_SECRET_REFERENCE = """MyResource:
   Type: AWS::Service::Resource  # the resource that uses $name
   Properties:
@@ -922,7 +922,7 @@ resource "aws_db_instance" "db" {
 }"""
 _TERRAFORM["CF-PAR-001"] = _TF_SECRET_REFERENCE
 _TERRAFORM["CF-PAR-002"] = _TF_SECRET_REFERENCE
-# Terraform variables (DM3-553): evidence "var.<name> (variable)".
+# Terraform variables: evidence "var.<name> (variable)".
 _TERRAFORM["CF-PAR-001:variable"] = """variable "$tf_name" {
   # keep the other arguments (type, description, validation) as they are
   sensitive = true
@@ -939,7 +939,7 @@ _TERRAFORM["CF-PAR-002:variable"] = """variable "$tf_name" {
 # Better: no variable at all. Read the secret where it is used:
 # data "aws_secretsmanager_secret_version" "$tf_name" { secret_id = "my-secret" }"""
 
-# Required tag policy (DM3-543). The keys are an example: use the ones in tags.required.
+# Required tag policy. The keys are an example: use the ones in tags.required.
 _CF_TAGS = """$name:
   Type: $type
   Properties:
@@ -964,7 +964,7 @@ _TERRAFORM["CF-TAG-001"] = """resource "$tf_type" "$tf_name" {
 
 # Or once for every resource: provider "aws" { default_tags { tags = { CostCenter = "1234" } } }"""
 
-# S3 storage classes, DynamoDB autoscaling, launch template gp2 (DM3-548).
+# S3 storage classes, DynamoDB autoscaling, launch template gp2.
 _CLOUDFORMATION.update({
     "CF-S3-006": """$name:
   Type: AWS::S3::Bucket
@@ -1058,7 +1058,7 @@ _TERRAFORM.update({
 }""",
 })
 
-# Previous-generation instance families (DM3-547). The finding names the type to use.
+# Previous-generation instance families. The finding names the type to use.
 _CLOUDFORMATION.update({
     "CF-GEN-001": """$name:
   Type: $type
@@ -1091,7 +1091,7 @@ _TERRAFORM.update({
 }""",
 })
 
-# Production-grade spend in non-production stacks (DM3-545).
+# Production-grade spend in non-production stacks.
 _CLOUDFORMATION.update({
     "CF-ENV-001": """$name:
   Type: AWS::RDS::DBInstance
@@ -1133,14 +1133,14 @@ _TERRAFORM.update({
 }""",
 })
 
-# gp2 volumes (DM3-541).
+# gp2 volumes.
 _CLOUDFORMATION["CF-EBS-002"] = """$name:
   Type: AWS::EC2::Volume
   Properties:
     # keep the other properties as they are
     VolumeType: gp3
     # over 1,000 GiB: Iops: <3 x size in GiB> to keep the gp2 baseline"""
-# Unused Elastic IPs (DM3-541): delete the resource to release it, or attach it.
+# Unused Elastic IPs: delete the resource to release it, or attach it.
 _CLOUDFORMATION["CF-EIP-001"] = """# Not needed: delete $name to release the address. Needed: attach it.
 ${name}Association:
   Type: AWS::EC2::EIPAssociation
@@ -1158,7 +1158,7 @@ _TERRAFORM["CF-EBS-002"] = """resource "aws_ebs_volume" "$tf_name" {
   # over 1,000 GiB: iops = <3 x size in GiB> to keep the gp2 baseline
 }"""
 
-# Secrets Manager rotation and Cognito user pools (DM3-528).
+# Secrets Manager rotation and Cognito user pools.
 _CLOUDFORMATION.update({
     "CF-SM-001": """${name}Rotation:
   Type: AWS::SecretsManager::RotationSchedule
@@ -1228,7 +1228,7 @@ _TERRAFORM.update({
 }""",
 })
 
-# ECR repositories and ECS task definitions (DM3-527).
+# ECR repositories and ECS task definitions.
 _CLOUDFORMATION.update({
     "CF-ECR-001": """$name:
   Type: AWS::ECR::Repository
@@ -1323,7 +1323,7 @@ _TERRAFORM.update({
 }""",
 })
 
-# Stateful resources deleted with the stack (DM3-539).
+# Stateful resources deleted with the stack.
 _CLOUDFORMATION.update({
     "CF-DEL-001": """$name:
   Type: $type
@@ -1345,7 +1345,7 @@ _TERRAFORM.update({
 }""",
 })
 
-# Public IPs (DM3-534).
+# Public IPs.
 _CLOUDFORMATION.update({
     "CF-EC2-002": """$name:
   Type: AWS::EC2::Subnet
@@ -1387,7 +1387,7 @@ _TERRAFORM.update({
 }""",
 })
 
-# CloudFront and WAF (DM3-526).
+# CloudFront and WAF.
 _CLOUDFORMATION.update({
     "CF-CF-001": """$name:
   Type: AWS::CloudFront::Distribution

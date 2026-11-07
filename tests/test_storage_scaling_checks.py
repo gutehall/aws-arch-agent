@@ -1,5 +1,5 @@
 """CF-S3-006/007 (S3 storage classes), CF-DDB-003 (DynamoDB autoscaling) and gp2 launch
-template block devices (CF-EBS-002) (DM3-548)."""
+template block devices (CF-EBS-002)."""
 import json
 from pathlib import Path
 

@@ -49,7 +49,7 @@ class Rule(ABC):
     title: str
     category: str
     severity: str
-    # One or more of rules.themes.THEMES (DM3-551). Set on every rule; a test enforces it.
+    # One or more of rules.themes.THEMES. Set on every rule; a test enforces it.
     themes: ClassVar[tuple[str, ...]] = ()
     exclude_globs: ClassVar[tuple[str, ...]] = DEFAULT_EXCLUDE_GLOBS
 

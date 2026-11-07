@@ -1,4 +1,4 @@
-"""How much work each rule's fix is (DM3-550). Rules not listed are medium.
+"""How much work each rule's fix is. Rules not listed are medium.
 
 low: one property or attribute, changed in place without replacing the resource or
 breaking callers (versioning, retention, tracing, gp2 -> gp3, NoEcho, a tag).

@@ -1,4 +1,4 @@
-"""CF-DEL-001: stateful resources whose data is deleted with the stack (DM3-539)."""
+"""CF-DEL-001: stateful resources whose data is deleted with the stack."""
 import json
 from pathlib import Path
 
@@ -213,7 +213,7 @@ resource "aws_sqs_queue" "q" {
 
 
 def _tf(tmp_path: Path) -> list[Finding]:
-    # A neutral module directory: pytest's own ("test_...") would read as a dev stack (DM3-544).
+    # A neutral module directory: pytest's own ("test_...") would read as a dev stack.
     module = tmp_path / "infra"
     module.mkdir(exist_ok=True)
     (module / "main.tf").write_text(DELETION_TF, encoding="utf-8")

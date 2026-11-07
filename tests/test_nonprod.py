@@ -1,4 +1,4 @@
-"""Production-grade spend in non-production stacks (DM3-545)."""
+"""Production-grade spend in non-production stacks."""
 import json
 from pathlib import Path
 

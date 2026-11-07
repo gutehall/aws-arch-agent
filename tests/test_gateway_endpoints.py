@@ -1,4 +1,4 @@
-"""CF-VPC-002 / CF-VPC-003: S3 and DynamoDB traffic through a NAT gateway (DM3-546)."""
+"""CF-VPC-002 / CF-VPC-003: S3 and DynamoDB traffic through a NAT gateway."""
 import json
 from pathlib import Path
 

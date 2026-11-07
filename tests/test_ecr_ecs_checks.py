@@ -1,4 +1,4 @@
-"""CF-ECR-* (ECR repositories) and CF-ECS-* (ECS task definitions) (DM3-527)."""
+"""CF-ECR-* (ECR repositories) and CF-ECS-* (ECS task definitions)."""
 import json
 from pathlib import Path
 

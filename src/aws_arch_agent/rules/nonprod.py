@@ -1,4 +1,4 @@
-"""Production-grade spend in non-production stacks (DM3-545).
+"""Production-grade spend in non-production stacks.
 
 These checks run only when a stack resolves to dev or staging (rules/environments.py).
 They flag settings copied from production that a dev or staging stack pays for without

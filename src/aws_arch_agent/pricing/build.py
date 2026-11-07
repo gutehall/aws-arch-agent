@@ -1,4 +1,4 @@
-"""Build the offline price snapshot from AWS Price List bulk offer files (DM3-540).
+"""Build the offline price snapshot from AWS Price List bulk offer files.
 
 Not used at scan time: scripts/refresh_prices.py downloads the offers and calls this.
 Only the SKUs the cost rules use are kept. The output depends only on the offer files,

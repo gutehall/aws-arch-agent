@@ -1,4 +1,4 @@
-"""Estimated monthly cost per stack in the report (DM3-542)."""
+"""Estimated monthly cost per stack in the report."""
 import json
 from pathlib import Path
 

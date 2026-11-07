@@ -1,4 +1,4 @@
-"""Offline AWS price snapshot (DM3-540)."""
+"""Offline AWS price snapshot."""
 import csv
 import importlib.util
 import io

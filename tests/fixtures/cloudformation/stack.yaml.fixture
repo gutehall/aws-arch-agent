@@ -1,5 +1,5 @@
 AWSTemplateFormatVersion: "2010-09-09"
-Description: Regression fixture for raw CloudFormation scans (DM3-517).
+Description: Regression fixture for raw CloudFormation scans.
 Parameters:
   Env:
     Type: String
