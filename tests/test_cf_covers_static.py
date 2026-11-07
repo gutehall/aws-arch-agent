@@ -57,6 +57,28 @@ _PUBLIC_KEY = {"Type": "AWS::KMS::Key", "Properties": {"KeyPolicy": {
     "Statement": [{"Effect": "Allow", "Principal": "*", "Action": "kms:*", "Resource": "*"}],
 }}}
 
+def _ref(name: str) -> dict:
+    return {"Ref": name}
+
+
+def _az(i: int) -> dict:
+    return {"Fn::Select": [i, {"Fn::GetAZs": ""}]}
+
+
+# One NAT gateway that private subnets in two AZs route through, as CDK natGateways: 1.
+_ONE_NAT_TWO_AZS: dict = {
+    "Public": {"Type": "AWS::EC2::Subnet", "Properties": {"VpcId": "vpc-1", "AvailabilityZone": _az(0)}},
+    "Nat": {"Type": "AWS::EC2::NatGateway", "Properties": {"SubnetId": _ref("Public")}},
+    **{f"Private{i}": {"Type": "AWS::EC2::Subnet",
+                       "Properties": {"VpcId": "vpc-1", "AvailabilityZone": _az(i)}} for i in (0, 1)},
+    **{f"Table{i}": {"Type": "AWS::EC2::RouteTable", "Properties": {"VpcId": "vpc-1"}} for i in (0, 1)},
+    **{f"Assoc{i}": {"Type": "AWS::EC2::SubnetRouteTableAssociation", "Properties": {
+        "RouteTableId": _ref(f"Table{i}"), "SubnetId": _ref(f"Private{i}")}} for i in (0, 1)},
+    **{f"Route{i}": {"Type": "AWS::EC2::Route", "Properties": {
+        "RouteTableId": _ref(f"Table{i}"), "DestinationCidrBlock": "0.0.0.0/0",
+        "NatGatewayId": _ref("Nat")}} for i in (0, 1)},
+}
+
 _DB_ENGINE = "engine: rds.DatabaseInstanceEngine.postgres({ version: rds.PostgresEngineVersion.VER_16 })"
 _FN = (
     'new lambda.Function(this, "Fn", { runtime: lambda.Runtime.NODEJS_22_X, '
@@ -100,6 +122,19 @@ PAIRS: list[tuple[str, str, dict, str]] = [
     ("CF-ALB-001", "OPS-006",
      {"Type": "AWS::ElasticLoadBalancingV2::LoadBalancer", "Properties": {"Type": "network"}},
      "new elbv2.NetworkLoadBalancer(this, 'Nlb', { vpc });"),
+    ("CF-SG-002", "SEC-003", {"Type": "AWS::EC2::SecurityGroup", "Properties": {
+        "GroupDescription": "sg",
+        "SecurityGroupIngress": [{"IpProtocol": "-1", "CidrIp": "0.0.0.0/0"}],
+        "SecurityGroupEgress": [{"IpProtocol": "tcp", "FromPort": 443, "ToPort": 443,
+                                 "CidrIp": "10.0.0.0/16"}],
+    }}, "sg.addIngressRule(ec2.Peer.anyIpv4(), ec2.Port.tcp(22));"),
+    ("CF-SG-003", "SEC-054", {"Type": "AWS::EC2::SecurityGroup", "Properties": {
+        "GroupDescription": "sg",
+        "SecurityGroupEgress": [{"IpProtocol": "-1", "CidrIp": "0.0.0.0/0"}],
+    }}, "new ec2.SecurityGroup(this, 'Sg', { vpc, allowAllOutbound: true });"),
+    ("CF-NAT-001", "REL-012", _ONE_NAT_TWO_AZS, "new ec2.Vpc(this, 'Vpc', { natGateways: 1 });"),
+    ("CF-TGW-002", "OPS-016", {"Type": "AWS::EC2::TransitGateway", "Properties": {}},
+     "new ec2.CfnTransitGateway(this, 'Tgw', {});"),
     ("CF-COST-002", "COST-006",
      {"Type": "AWS::EC2::NatGateway", "Properties": {"SubnetId": {"Ref": "Public"}}},
      "new ec2.Vpc(this, 'Vpc', { natGateways: 1 });"),
@@ -113,7 +148,8 @@ def _scan(tmp_path: Path, rule_id: str, resource: dict, source: str) -> list:
     (lib / "stack.ts").write_text(source + "\n", encoding="utf-8")
     template = tmp_path / "cdk.out" / "Stack.template.json"
     template.parent.mkdir()
-    template.write_text(json.dumps({"Resources": {"Res": resource}}), encoding="utf-8")
+    resources = resource if "Type" not in resource else {"Res": resource}  # or several
+    template.write_text(json.dumps({"Resources": resources}), encoding="utf-8")
     static = RULE_BY_ID[rule_id].run(tmp_path, "typescript")
     cf = run_cf_rules_from_paths([template], repo_path=tmp_path)
     return static + cf
@@ -161,6 +197,7 @@ KNOWN_SAME_CONTROL: list[tuple[str, str]] = [
     ("CF-CT-002", "OPS-001"),
     ("CF-CT-003", "OPS-001"),
     ("CF-TAG-001", "BP-001"),
+    ("CF-NACL-001", "SEC-055"),
 ]
 
 # Title words that do not name a control.

@@ -17,7 +17,6 @@ Which CDK rules have a template check, and which AWS Foundational Security Best 
 
 | Work | Adds template checks for |
 | -- | -- |
-| `network` | Security groups, network ACLs, NAT and Transit Gateway |
 | `load-balancers` | Load balancers (ALB, NLB, Classic) |
 | `rds` | More RDS and Aurora settings |
 | `lambda` | Lambda access, secrets and limits |
@@ -43,14 +42,14 @@ Which CDK rules have a template check, and which AWS Foundational Security Best 
 
 ## CDK rules
 
-172 rules: 56 covered, 5 partial, 72 planned, 10 account, 5 cdk-only, 24 advice.
+172 rules: 59 covered, 6 partial, 68 planned, 10 account, 5 cdk-only, 24 advice.
 
 | Rule | Title | Template check | Status | Note |
 | -- | -- | -- | -- | -- |
 | SEC-001 | IAM policy uses wildcard actions | `CF-IAM-001`, `CF-IAM-002`, `CF-IAM-008` | `covered` |  |
 | SEC-002 | IAM policy uses wildcard resources | `CF-IAM-003`, `CF-IAM-008` | `covered` |  |
-| SEC-003 | Security Group allows SSH from 0.0.0.0/0 | `CF-SG-001` | `covered` |  |
-| SEC-004 | Security Group exposes common DB ports to 0.0.0.0/0 | `CF-SG-001` | `covered` |  |
+| SEC-003 | Security Group allows SSH from 0.0.0.0/0 | `CF-SG-001`, `CF-SG-002` | `covered` |  |
+| SEC-004 | Security Group exposes common DB ports to 0.0.0.0/0 | `CF-SG-001`, `CF-SG-002` | `covered` |  |
 | SEC-005 | S3 bucket may miss Block Public Access | `CF-S3-001` | `covered` |  |
 | SEC-006 | S3 bucket encryption explicitly disabled | `CF-S3-002` | `covered` |  |
 | SEC-007 | KMS key policy may use wildcard principal | `CF-KMS-001` | `covered` |  |
@@ -100,8 +99,8 @@ Which CDK rules have a template check, and which AWS Foundational Security Best 
 | SEC-051 | Transfer Family server logging not enabled |  | `planned: app-services` |  |
 | SEC-052 | CodePipeline artifact encryption not enabled |  | `planned: ci-cd` |  |
 | SEC-053 | CodeBuild project using privileged mode |  | `planned: ci-cd` |  |
-| SEC-054 | Security Group egress too permissive (0.0.0.0/0) |  | `planned: network` |  |
-| SEC-055 | Network ACLs not configured |  | `planned: network` |  |
+| SEC-054 | Security Group egress too permissive (0.0.0.0/0) | `CF-SG-003` | `covered` |  |
+| SEC-055 | Network ACLs not configured | `CF-NACL-001` | `partial` | CF-NACL-001 checks entries that open 22 or 3389; SEC-055 reports a VPC with no custom network ACL. |
 | SEC-056 | Stack termination protection not enabled |  | `cdk-only` | Termination protection is a stack setting, not in the template. |
 | SEC-057 | Lambda function URL without authentication |  | `planned: lambda` |  |
 | SEC-058 | ECS task may run as root user | `CF-ECS-003` | `covered` |  |
@@ -126,7 +125,7 @@ Which CDK rules have a template check, and which AWS Foundational Security Best 
 | REL-009 | Lambda timeout may be too low or too high |  | `planned: lambda` |  |
 | REL-010 | Lambda not in VPC when accessing RDS/ElastiCache |  | `advice` | Whether a function needs the VPC depends on what it calls. |
 | REL-011 | RDS read replicas missing for read-heavy workloads |  | `advice` | Read replicas depend on read load. |
-| REL-012 | NAT Gateway single point of failure (need multi-AZ) |  | `planned: network` |  |
+| REL-012 | NAT Gateway single point of failure (need multi-AZ) | `CF-NAT-001` | `covered` |  |
 | REL-013 | AWS Backup vault not configured |  | `planned: backup` |  |
 | REL-014 | Cross-region backup replication missing |  | `planned: backup` |  |
 | REL-015 | Step Functions retry/catch not configured |  | `planned: error-handling` |  |
@@ -184,7 +183,7 @@ Which CDK rules have a template check, and which AWS Foundational Security Best 
 | OPS-013 | EventBridge rules not using DLQ |  | `planned: error-handling` |  |
 | OPS-014 | AWS Config not enabled |  | `account` | AWS Config is an account service. account-baseline checks a recorder the repo defines. |
 | OPS-015 | Glue job CloudWatch metrics not enabled |  | `planned: analytics` |  |
-| OPS-016 | Transit Gateway flow logs not enabled |  | `planned: network` |  |
+| OPS-016 | Transit Gateway flow logs not enabled | `CF-TGW-002` | `covered` |  |
 | OPS-017 | CodePipeline notifications not configured |  | `planned: ci-cd` |  |
 | OPS-018 | App Runner observability not configured |  | `planned: app-services` |  |
 | OPS-019 | Glue job bookmarks not enabled |  | `planned: analytics` |  |
@@ -278,10 +277,10 @@ Controls a template can show. Account-level controls (for example S3.1, EC2.7 an
 | EC2.13 | `CF-SG-001` | `AWS::EC2::SecurityGroup` |
 | EC2.14 | `CF-SG-001` | `AWS::EC2::SecurityGroup` |
 | EC2.15 | `CF-EC2-002` | `AWS::EC2::Subnet` |
-| EC2.18 | `planned: network` | `AWS::EC2::SecurityGroup` |
-| EC2.19 | `planned: network` | `AWS::EC2::SecurityGroup` |
-| EC2.21 | `planned: network` | `AWS::EC2::NetworkAclEntry` |
-| EC2.23 | `planned: network` | `AWS::EC2::TransitGateway` |
+| EC2.18 | `CF-SG-002` | `AWS::EC2::SecurityGroup` |
+| EC2.19 | `CF-SG-001` | `AWS::EC2::SecurityGroup` |
+| EC2.21 | `CF-NACL-001` | `AWS::EC2::NetworkAclEntry` |
+| EC2.23 | `CF-TGW-001` | `AWS::EC2::TransitGateway` |
 | ECR.1 | `CF-ECR-001` | `AWS::ECR::Repository` |
 | ECR.2 | `CF-ECR-002` | `AWS::ECR::Repository` |
 | ECR.3 | `CF-ECR-003` | `AWS::ECR::Repository` |

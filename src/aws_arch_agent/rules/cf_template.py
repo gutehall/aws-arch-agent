@@ -24,7 +24,12 @@ from aws_arch_agent.tools.cfn_yaml import parse_template_text
 from aws_arch_agent.tools.paths import to_repo_relative
 
 # Sensitive ports for security group checks (SSH, RDP, Postgres, MySQL, Mongo)
-SENSITIVE_PORTS = {22, 3389, 3306, 5432, 27017}
+# Ports CF-SG-001 reports when open to the internet: SSH, RDP, databases (Security Hub
+# EC2.13, EC2.14) and the high-risk ports of Security Hub EC2.19.
+SENSITIVE_PORTS = {
+    20, 21, 22, 23, 25, 110, 135, 143, 445, 1433, 1434, 3000, 3306, 3389, 4333, 5000, 5432,
+    5500, 5601, 8080, 8088, 8888, 9200, 9300, 27017,
+}
 
 # Static rule dropped when the CF rule already reported that control.
 CF_COVERS_STATIC: dict[str, tuple[str, ...]] = {
@@ -71,8 +76,13 @@ CF_COVERS_STATIC: dict[str, tuple[str, ...]] = {
     "CF-IAM-008": ("SEC-067", "SEC-001", "SEC-002"),
     "CF-SQS-001": ("SEC-013",),
     "CF-SQS-002": ("REL-008",),
-    # Sensitive ports include SSH (SEC-003) and the DB ports (SEC-004).
+    # Sensitive ports include SSH (SEC-003) and the DB ports (SEC-004). CF-SG-002 is the
+    # same rule open on every port, reported instead of CF-SG-001.
     "CF-SG-001": ("SEC-003", "SEC-004"),
+    "CF-SG-002": ("SEC-003", "SEC-004"),
+    "CF-SG-003": ("SEC-054",),
+    "CF-NAT-001": ("REL-012",),
+    "CF-TGW-002": ("OPS-016",),
     "CF-DDB-001": ("REL-004",),
     "CF-DDB-002": ("SEC-008",),
     # RetentionDays.INFINITE synthesises to a log group with no RetentionInDays.
@@ -116,6 +126,8 @@ CF_PARTLY_COVERS_STATIC: dict[str, tuple[tuple[str, ...], str]] = {
     "CF-CT-001": (("OPS-001",), "checks an existing trail; OPS-001 reports no trail at all"),
     "CF-CT-002": (("OPS-001",), "checks an existing trail; OPS-001 reports no trail at all"),
     "CF-CT-003": (("OPS-001",), "checks an existing trail; OPS-001 reports no trail at all"),
+    "CF-NACL-001": (("SEC-055",), "checks ACL entries that open 22 or 3389; SEC-055 reports a "
+                    "VPC with no custom network ACL"),
     # Not a gap: tag_policy.REPLACED_STATIC_RULES drops BP-001 once the policy ran.
     "CF-TAG-001": (("BP-001",), "replaced through tag_policy.REPLACED_STATIC_RULES"),
 }
@@ -233,6 +245,7 @@ _PER_RESOURCE_TYPES = frozenset({
     "cloudfront_distribution", "subnet", "ecs_task_definition",
     "secretsmanager_secret", "cognito_user_pool", "eip", "launch_configuration",
     "elasticache_cluster", "scalable_target",
+    "security_group_egress_rule", "network_acl_entry", "network_acl", "transit_gateway",
 })
 
 
@@ -306,6 +319,14 @@ CHECK_PROPERTIES: dict[str, frozenset[str]] = {
         "CF-DDB-001": {"PointInTimeRecoverySpecification"},
         "CF-DDB-002": {"SSESpecification"},
         "CF-SG-001": {"SecurityGroupIngress", "CidrIp", "CidrIpv6", "FromPort", "ToPort"},
+        "CF-SG-002": {"SecurityGroupIngress", "CidrIp", "CidrIpv6", "FromPort", "ToPort", "IpProtocol"},
+        "CF-SG-003": {"SecurityGroupEgress", "CidrIp", "CidrIpv6", "FromPort", "ToPort", "IpProtocol"},
+        "CF-NACL-001": {"Entries", "Egress", "RuleAction", "CidrBlock", "Ipv6CidrBlock",
+                        "Protocol", "PortRange"},
+        "CF-TGW-001": {"AutoAcceptSharedAttachments"},
+        # Template-level: they read AZs and references and skip what they cannot read.
+        "CF-NAT-001": set(),
+        "CF-TGW-002": set(),
         "CF-CW-001": {"RetentionInDays"},
         "CF-CW-002": {"KmsKeyId"},
         "CF-SQS-001": {"SqsManagedSseEnabled", "KmsMasterKeyId"},
@@ -364,7 +385,8 @@ CF_THEMES: dict[str, tuple[str, ...]] = {
     "CF-RDS-005": (_RES, _DP), "CF-RP-001": (_ID, _NET), "CF-RS-001": (_DP,),
     "CF-S3-001": (_NET, _DP), "CF-S3-002": (_DP,), "CF-S3-003": (_RES, _DP), "CF-S3-004": (_OBS,),
     "CF-S3-006": (_F, _DP), "CF-S3-007": (_F,), "CF-DDB-003": (_F, _RES),
-    "CF-S3-005": (_DP, _NET), "CF-SG-001": (_NET,), "CF-SM-001": (_DP, _ID), "CF-SNS-001": (_DP,),
+    "CF-S3-005": (_DP, _NET), "CF-SG-001": (_NET,), "CF-SG-002": (_NET,), "CF-SG-003": (_NET,),
+    "CF-NACL-001": (_NET,), "CF-NAT-001": (_RES,), "CF-TGW-001": (_NET, _ID), "CF-TGW-002": (_OBS, _NET), "CF-SM-001": (_DP, _ID), "CF-SNS-001": (_DP,),
     "CF-SQS-001": (_DP,), "CF-SQS-002": (_RES,),
     "CF-SUST-001": (_SUS, _F), "CF-SUST-002": (_SUS, _F), "CF-SUST-003": (_SUS, _F),
     "CF-TAG-001": (_F,), "CF-VPC-001": (_NET, _F), "CF-VPC-002": (_F,), "CF-VPC-003": (_F,), "CF-WAF-001": (_NET,),
@@ -839,6 +861,270 @@ def _points_at(res: Resource, key: str, target: Resource) -> bool:
         text = value if type(value) is str else json.dumps(value, default=str)
         return _references(text, target.name)
     return target.name in res.references
+
+
+
+_WORLD_V4, _WORLD_V6 = "0.0.0.0/0", "::/0"
+_ALL_PROTOCOLS = ("-1", -1, "all")
+
+
+def _open_to_world(rule: dict, v4: str = "CidrIp", v6: str = "CidrIpv6") -> bool:
+    """True when a rule's literal CIDR is the whole IPv4 or IPv6 internet."""
+    cidr, cidr6 = rule.get(v4), rule.get(v6)
+    return (type(cidr) is str and cidr.strip() == _WORLD_V4) or (
+        type(cidr6) is str and cidr6.strip() == _WORLD_V6)
+
+
+def _all_ports(rule: dict) -> bool:
+    """True for protocol -1, or a port range that spans every port. An intrinsic is not."""
+    if rule.get("IpProtocol") in _ALL_PROTOCOLS:
+        return True
+    low, high = rule.get("FromPort"), rule.get("ToPort")
+    if low is None and high is None:
+        return rule.get("IpProtocol") is None  # Terraform protocol -1 drops both ports
+    return low in (0, "0") and high in (65535, "65535")
+
+
+def _sg_rules_of(res: Resource, key: str) -> list[dict]:
+    """The rules of a security group (inline list) or of one standalone rule resource."""
+    if res.type == "security_group":
+        rules = res.properties.get(key)
+        return [r for r in rules if isinstance(r, dict)] if isinstance(rules, list) else []
+    return [res.properties]
+
+
+def _egress_rule_targets(resources: List[Resource]) -> tuple[set[str], bool]:
+    """Names of security groups a standalone CloudFormation egress rule points at, and
+    whether one points at something the scan cannot tie to a group (it may be any of them).
+
+    Such a rule replaces the default allow-all egress of the group it is on.
+    """
+    groups = [r for r in resources if r.type == "security_group"]
+    targets: set[str] = set()
+    unlinked = False
+    for rule in resources:
+        if rule.type != "security_group_egress_rule" or not rule.source_type.startswith("AWS::"):
+            continue
+        hit = [g.name for g in groups if _points_at(rule, "GroupId", g)]
+        targets.update(hit)
+        unlinked = unlinked or not hit
+    return targets, unlinked
+
+
+def _security_group_findings(
+    res: Resource, template_path: Path, default_egress_open: bool
+) -> List[Finding]:
+    """CF-SG-001 (sensitive port), CF-SG-002 (all ports) and CF-SG-003 (all egress) on a
+    security group or a standalone ingress or egress rule.
+
+    A rule open on every port is reported as CF-SG-002 only, not also as CF-SG-001. A
+    CloudFormation group with no SecurityGroupEgress and no standalone egress rule keeps
+    the AWS default, which allows all outbound traffic. Terraform removes that default.
+    """
+    out: List[Finding] = []
+
+    def finding(check_id: str, title: str, severity: Severity, recommendation: str) -> Finding:
+        return Finding(
+            id=check_id, title=title, severity=severity, category="Security",
+            file=res.file or str(template_path), line=res.line,
+            evidence=f"{res.name} ({res.source_type})", recommendation=recommendation,
+        )
+
+    if res.type != "security_group_egress_rule":
+        open_in = [r for r in _sg_rules_of(res, "SecurityGroupIngress") if _open_to_world(r)]
+        if any(_all_ports(r) for r in open_in):
+            out.append(finding(
+                "CF-SG-002", "Security group allows all inbound traffic from 0.0.0.0/0 or ::/0", "High",
+                (
+                    "Remove the rule that opens every port to the internet, and allow only the "
+                    "ports the service needs, usually 80 and 443 (Security Hub EC2.18). "
+                    "Reach admin ports through Session Manager or a VPN instead."
+                ),
+            ))
+        elif any(_port_in_sensitive(r.get("FromPort"), r.get("ToPort")) for r in open_in):
+            out.append(finding(
+                "CF-SG-001", "Security group allows 0.0.0.0/0 or ::/0 on sensitive port", "High",
+                (
+                    "Restrict ingress to specific CIDRs or security groups. Do not open SSH (22), "
+                    "RDP (3389), database ports or other high-risk ports such as 21, 23, 445 or "
+                    "8080 to the internet (Security Hub EC2.13, EC2.14, EC2.19)."
+                ),
+            ))
+    if res.type != "security_group_ingress_rule":
+        egress = _sg_rules_of(res, "SecurityGroupEgress")
+        default_open = default_egress_open and "SecurityGroupEgress" not in res.properties
+        if default_open or any(_open_to_world(r) and _all_ports(r) for r in egress):
+            out.append(finding(
+                "CF-SG-003", "Security group allows all outbound traffic to 0.0.0.0/0", "Low",
+                (
+                    ("No SecurityGroupEgress is set, so AWS keeps its default rule that allows all "
+                     "outbound traffic. " if default_open else "")
+                    + "Allow egress only to the ports and destinations the workload calls, such as "
+                    "443 to a VPC endpoint or prefix list. In CDK: allowAllOutbound: false, then "
+                    "connections.allowTo(...)."
+                ),
+            ))
+    return out
+
+
+_NACL_PORTS = (22, 3389)
+
+
+def _nacl_entry_opens_admin_port(entry: dict) -> bool | None:
+    """True when an inbound allow entry opens 22 or 3389 to the internet. None when a value
+    it needs is not a literal."""
+    if entry.get("Egress") not in (None, False, "false"):
+        return False
+    action = entry.get("RuleAction")
+    if type(action) is not str:
+        return None
+    if action.lower() != "allow" or not _open_to_world(entry, "CidrBlock", "Ipv6CidrBlock"):
+        return False
+    protocol = entry.get("Protocol")
+    if protocol in _ALL_PROTOCOLS:
+        return True
+    if str(protocol).lower() not in ("6", "17", "tcp", "udp"):
+        return None if isinstance(protocol, dict) else False
+    ports = entry.get("PortRange")
+    if not isinstance(ports, dict) or _is_intrinsic(ports):
+        return None
+    low, high = ports.get("From"), ports.get("To")
+    if low is None or high is None:
+        return None
+    try:
+        return any(int(low) <= p <= int(high) for p in _NACL_PORTS)
+    except (TypeError, ValueError):
+        return None
+
+
+def _nacl_findings(res: Resource, template_path: Path) -> List[Finding]:
+    """CF-NACL-001: a network ACL entry, or a Terraform aws_network_acl ingress block, that
+    allows 22 or 3389 from the internet. Rule order is not read: a lower-numbered deny
+    entry may still block the traffic."""
+    if res.type == "network_acl":
+        entries = res.properties.get("Entries")
+        entries = [e for e in entries if isinstance(e, dict)] if isinstance(entries, list) else []
+    else:
+        entries = [res.properties]
+    if not any(_nacl_entry_opens_admin_port(e) for e in entries):
+        return []
+    return [Finding(
+        id="CF-NACL-001",
+        title="Network ACL allows SSH or RDP from 0.0.0.0/0 or ::/0",
+        severity="Medium",
+        category="Security",
+        file=res.file or str(template_path),
+        line=res.line,
+        evidence=f"{res.name} ({res.source_type})",
+        recommendation=(
+            "Allow port 22 and 3389 only from known CIDRs, or deny them, in the network ACL "
+            "(Security Hub EC2.21). Security groups still apply, but the ACL is the subnet-wide "
+            "layer."
+        ),
+    )]
+
+
+def _az_key(subnet: Resource) -> str | None:
+    """The subnet's Availability Zone as a comparable key, or None when it is not set or
+    cannot be read. CDK writes {"Fn::Select": [i, {"Fn::GetAZs": ""}]}, one i per AZ."""
+    for key in ("AvailabilityZone", "AvailabilityZoneId"):
+        if key in subnet.unresolved:
+            return None
+        value = subnet.properties.get(key)
+        if value is not None:
+            return json.dumps(value, sort_keys=True, default=str)
+    return None
+
+
+def _nat_single_az_findings(
+    resources: List[Resource], template_path: Path,
+    at: Callable[[Resource | None], tuple[str, int | None, str]],
+) -> List[Finding]:
+    """CF-NAT-001: one NAT gateway that private subnets in more than one AZ route through.
+
+    The route tables that send traffic to the NAT gateway are found from AWS::EC2::Route
+    (or Terraform inline routes), and their subnets from the route table associations. A
+    subnet whose AZ cannot be read is not counted.
+    """
+    nats = [r for r in resources if r.type == "nat_gateway" and not r.malformed]
+    if not nats:
+        return []
+    routes = [r for r in resources if r.type == "route" and not r.malformed]
+    tables = [r for r in resources if r.type == "route_table" and not r.malformed]
+    links = [r for r in resources if r.type == "route_table_association" and not r.malformed]
+    subnets = [r for r in resources if r.type == "subnet" and not r.malformed]
+    out: List[Finding] = []
+    for nat in nats:
+        served = [t for t in tables if _points_at(t, "Routes", nat) or any(
+            _points_at(route, "NatGatewayId", nat) and _points_at(route, "RouteTableId", t)
+            for route in routes)]
+        azs: set[str] = set()
+        for table in served:
+            for link in links:
+                if not _points_at(link, "RouteTableId", table):
+                    continue
+                for subnet in subnets:
+                    if _points_at(link, "SubnetId", subnet):
+                        az = _az_key(subnet)
+                        if az is not None:
+                            azs.add(az)
+        if len(azs) < 2:
+            continue
+        file, line, _ = at(nat)
+        out.append(Finding(
+            id="CF-NAT-001",
+            title="One NAT gateway serves private subnets in several Availability Zones",
+            severity="Medium",
+            category="Reliability",
+            file=file,
+            line=line,
+            evidence=f"{nat.name} ({nat.source_type})",
+            recommendation=(
+                f"Private subnets in {len(azs)} AZs route through this NAT gateway. If its AZ fails, private subnets in the other AZs lose their route "
+                "to the internet. Put one NAT gateway in each AZ and route each private subnet to "
+                "the one in its own AZ. In CDK: natGateways equal to maxAzs. In dev, one NAT "
+                "gateway may be an accepted saving."
+            ),
+        ))
+    return out
+
+
+def _tgw_flow_log_findings(
+    resources: List[Resource], template_path: Path,
+    at: Callable[[Resource | None], tuple[str, int | None, str]],
+) -> List[Finding]:
+    """CF-TGW-002: a transit gateway that no AWS::EC2::FlowLog / aws_flow_log points at.
+    A transit gateway flow log the scan cannot tie to a gateway counts for all of them."""
+    gateways = [r for r in resources if r.type == "transit_gateway" and not r.malformed]
+    if not gateways:
+        return []
+    logs = [
+        r for r in resources if r.type == "flow_log" and not r.malformed
+        and r.properties.get("ResourceType") in ("TransitGateway", "TransitGatewayAttachment")
+    ]
+    out: List[Finding] = []
+    for tgw in gateways:
+        tied = [log for log in logs if _points_at(log, "ResourceId", tgw)]
+        unlinked = any("ResourceId" in log.unresolved or not any(
+            _points_at(log, "ResourceId", g) for g in gateways) for log in logs)
+        if tied or unlinked:
+            continue
+        file, line, _ = at(tgw)
+        out.append(Finding(
+            id="CF-TGW-002",
+            title="Transit gateway has no flow logs",
+            severity="Low",
+            category="Operational Excellence",
+            file=file,
+            line=line,
+            evidence=f"{tgw.name} ({tgw.source_type})",
+            recommendation=(
+                "Add an AWS::EC2::FlowLog with ResourceType: TransitGateway and ResourceId set to "
+                "this gateway, so traffic between attached VPCs can be traced. In Terraform: "
+                "aws_flow_log with transit_gateway_id."
+            ),
+        ))
+    return out
 
 
 def _gateway_endpoint_findings(
@@ -1978,6 +2264,7 @@ def _run_resource_checks(
     rotated, rotation_unlinked = _rotation_coverage(resources)
     eips_in_use = _eips_in_use(resources)
     autoscaled, autoscaling_unlinked = _autoscaled_tables(resources)
+    sgs_with_egress_rules, egress_unlinked = _egress_rule_targets(resources)
     launch_templates_without_spot = 0
     first_lt_without_spot: Resource | None = None
     for r in resources:
@@ -2422,40 +2709,30 @@ def _run_resource_checks(
                             recommendation="Enable SSESpecification (SSEEnabled or SSEType: KMS) for encryption at rest.",
                         ))
 
-                # --- Security groups: open to 0.0.0.0/0 on sensitive ports ---
-                if ctype == "security_group":
-                    ingress = props.get("SecurityGroupIngress") or []
-                    if isinstance(ingress, list):
-                        for rule in ingress:
-                            cidr = (rule.get("CidrIp") or "").strip()
-                            cidr6 = (rule.get("CidrIpv6") or "").strip()
-                            if (cidr == "0.0.0.0/0" or cidr6 == "::/0") and _port_in_sensitive(rule.get("FromPort"), rule.get("ToPort")):
-                                findings.append(Finding(
-                                    id="CF-SG-001",
-                                    title="Security group allows 0.0.0.0/0 or ::/0 on sensitive port",
-                                    severity="High",
-                                    category="Security",
-                                    file=res.file or str(template_path),
-                                    line=res.line,
-                                    evidence=f"{logical_id} ({rtype})",
-                                    recommendation="Restrict ingress to specific CIDRs; avoid 0.0.0.0/0 on SSH (22), RDP (3389), DB ports.",
-                                ))
-                                break
-                if ctype == "security_group_ingress_rule":
-                    cidr = (props.get("CidrIp") or "").strip()
-                    cidr6 = (props.get("CidrIpv6") or "").strip()
-                    if cidr == "0.0.0.0/0" or cidr6 == "::/0":
-                        if _port_in_sensitive(props.get("FromPort"), props.get("ToPort")):
-                            findings.append(Finding(
-                                id="CF-SG-001",
-                                title="Security group ingress allows 0.0.0.0/0 or ::/0 on sensitive port",
-                                severity="High",
-                                category="Security",
-                                file=res.file or str(template_path),
-                                line=res.line,
-                                evidence=f"{logical_id} ({rtype})",
-                                recommendation="Restrict to specific CIDRs; avoid 0.0.0.0/0 on SSH, RDP, DB ports.",
-                            ))
+                # --- Security groups, network ACLs and transit gateways ---
+                if ctype in ("security_group", "security_group_ingress_rule", "security_group_egress_rule"):
+                    findings.extend(_security_group_findings(
+                        res, template_path, default_egress_open=(
+                            ctype == "security_group" and res.source_type.startswith("AWS::")
+                            and not egress_unlinked and logical_id not in sgs_with_egress_rules
+                        )))
+                if ctype in ("network_acl_entry", "network_acl"):
+                    findings.extend(_nacl_findings(res, template_path))
+                if ctype == "transit_gateway" and props.get("AutoAcceptSharedAttachments") == "enable":
+                    findings.append(Finding(
+                        id="CF-TGW-001",
+                        title="Transit gateway accepts shared attachments automatically",
+                        severity="Medium",
+                        category="Security",
+                        file=res.file or str(template_path),
+                        line=res.line,
+                        evidence=f"{logical_id} ({rtype})",
+                        recommendation=(
+                            "Set AutoAcceptSharedAttachments: disable, so a VPC from an account the "
+                            "gateway is shared with is attached only once you accept it "
+                            "(Security Hub EC2.23). In Terraform: auto_accept_shared_attachments = \"disable\"."
+                        ),
+                    ))
 
                 # --- CloudWatch Logs ---
                 if ctype == "cloudwatch_log_group":
@@ -2749,6 +3026,10 @@ def _run_resource_checks(
 
     # --- Gateway endpoints: S3 and DynamoDB through a NAT gateway (CF-VPC-002/003) ---
     findings.extend(_gateway_endpoint_findings(resources, template_path, _at))
+
+    # --- Network: one NAT gateway for several AZs, transit gateways without flow logs ---
+    findings.extend(_nat_single_az_findings(resources, template_path, _at))
+    findings.extend(_tgw_flow_log_findings(resources, template_path, _at))
 
     # --- Launch template Spot (template-level: LTs without Spot when no ASG) ---
     if launch_templates_without_spot > 0 and asg_count == 0:

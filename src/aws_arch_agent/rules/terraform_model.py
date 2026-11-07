@@ -30,7 +30,15 @@ TF_TYPE_TO_CANONICAL: dict[str, str] = {
     "aws_launch_template": "launch_template",
     "aws_security_group": "security_group",
     "aws_vpc_security_group_ingress_rule": "security_group_ingress_rule",
-    "aws_security_group_rule": "security_group_ingress_rule",  # type = "ingress" only
+    "aws_vpc_security_group_egress_rule": "security_group_egress_rule",
+    # type = "egress" maps to security_group_egress_rule in _to_resource.
+    "aws_security_group_rule": "security_group_ingress_rule",
+    "aws_network_acl": "network_acl",
+    "aws_network_acl_rule": "network_acl_entry",
+    "aws_ec2_transit_gateway": "transit_gateway",
+    "aws_route": "route",
+    "aws_route_table": "route_table",
+    "aws_route_table_association": "route_table_association",
     "aws_vpc": "vpc",
     "aws_subnet": "subnet",
     "aws_vpc_endpoint": "vpc_endpoint",
@@ -654,6 +662,8 @@ def _launch_template(body: dict) -> dict:
 def _subnet(body: dict) -> dict:
     props: dict = {}
     _set(props, "MapPublicIpOnLaunch", _v(body, "map_public_ip_on_launch"))
+    _set(props, "AvailabilityZone", _v(body, "availability_zone"))
+    _set(props, "AvailabilityZoneId", _v(body, "availability_zone_id"))
     return props
 
 
@@ -794,46 +804,98 @@ def _ingress_entries(rule: dict) -> Any:
     return entries
 
 
-def _security_group(body: dict) -> dict:
-    if "ingress" in _dynamic_names(body):
-        return {"SecurityGroupIngress": UNRESOLVED}
-    ingress: list = []
-    for rule in _blocks(body, "ingress"):
+def _sg_rules(body: dict, kind: str) -> Any:
+    """Inline ingress or egress blocks as CloudFormation rule entries, or UNRESOLVED."""
+    if kind in _dynamic_names(body):
+        return UNRESOLVED
+    rules: list = []
+    for rule in _blocks(body, kind):
         entries = _ingress_entries(rule)
         if entries is UNRESOLVED:
-            return {"SecurityGroupIngress": UNRESOLVED}
-        ingress.extend(entries)
-    return {"SecurityGroupIngress": ingress}
+            return UNRESOLVED
+        rules.extend(entries)
+    return rules
 
 
-def _ingress_rule(rtype: str, body: dict) -> dict | None:
-    """aws_vpc_security_group_ingress_rule, or aws_security_group_rule with type ingress."""
+def _security_group(body: dict) -> dict:
+    """Terraform removes the AWS default allow-all egress, so no egress block means none."""
+    return {
+        "SecurityGroupIngress": _sg_rules(body, "ingress"),
+        "SecurityGroupEgress": _sg_rules(body, "egress"),
+    }
+
+
+def _sg_rule(rtype: str, body: dict) -> tuple[str, dict] | None:
+    """aws_security_group_rule, aws_vpc_security_group_ingress_rule or _egress_rule as
+    (canonical type, CloudFormation-shaped props)."""
     if rtype == "aws_security_group_rule":
         kind = _v(body, "type")
         if kind is UNRESOLVED:
-            return {"CidrIp": UNRESOLVED}
-        if kind != "ingress":
+            return "security_group_ingress_rule", {"CidrIp": UNRESOLVED}
+        canonical = {"ingress": "security_group_ingress_rule",
+                     "egress": "security_group_egress_rule"}.get(kind)
+        if canonical is None:
             return None
         entries = _ingress_entries(body)
         if entries is UNRESOLVED:
-            return {"CidrIp": UNRESOLVED}
+            return canonical, {"CidrIp": UNRESOLVED}
         open_entry = next(
             (e for e in entries if e.get("CidrIp") == "0.0.0.0/0" or e.get("CidrIpv6") == "::/0"),
             entries[0] if entries else {},
         )
-        return dict(open_entry)
+        return canonical, dict(open_entry)
+    canonical = TF_TYPE_TO_CANONICAL[rtype]
     props: dict = {}
     _set(props, "CidrIp", _v(body, "cidr_ipv4"))
     _set(props, "CidrIpv6", _v(body, "cidr_ipv6"))
     ip_protocol = _v(body, "ip_protocol")
     if ip_protocol is UNRESOLVED:
-        return {"CidrIp": UNRESOLVED}
+        return canonical, {"CidrIp": UNRESOLVED}
     if ip_protocol in ("-1", -1):
         props["FromPort"] = props["ToPort"] = None
     else:
         props["FromPort"] = _v(body, "from_port")
         props["ToPort"] = _v(body, "to_port")
+    return canonical, props
+
+
+def _nacl_entry(body: dict, egress: Any) -> dict:
+    """One aws_network_acl_rule, or an inline aws_network_acl ingress/egress block, in the
+    AWS::EC2::NetworkAclEntry shape."""
+    props: dict = {"Egress": egress}
+    _set(props, "RuleAction", _v(body, "rule_action", _v(body, "action")))
+    _set(props, "CidrBlock", _v(body, "cidr_block"))
+    _set(props, "Ipv6CidrBlock", _v(body, "ipv6_cidr_block"))
+    _set(props, "Protocol", _v(body, "protocol"))
+    low, high = _v(body, "from_port"), _v(body, "to_port")
+    if low is not None or high is not None:
+        props["PortRange"] = UNRESOLVED if UNRESOLVED in (low, high) else {"From": low, "To": high}
     return props
+
+
+def _network_acl_rule(body: dict) -> dict:
+    return _nacl_entry(body, _v(body, "egress", False))
+
+
+def _network_acl(body: dict) -> dict:
+    """aws_network_acl: inline ingress blocks as Entries (CF-NACL-001)."""
+    if "ingress" in _dynamic_names(body):
+        return {"Entries": UNRESOLVED}
+    return {"Entries": [_nacl_entry(rule, False) for rule in _blocks(body, "ingress")]}
+
+
+def _transit_gateway(body: dict) -> dict:
+    props: dict = {}
+    _set(props, "AutoAcceptSharedAttachments", _v(body, "auto_accept_shared_attachments"))
+    return props
+
+
+def _flow_log(body: dict) -> dict:
+    """aws_flow_log on a transit gateway, in the AWS::EC2::FlowLog shape (CF-TGW-002)."""
+    tgw = _ref(body, "transit_gateway_id")
+    if tgw is None:
+        return {}
+    return {"ResourceType": "TransitGateway", "ResourceId": tgw}
 
 
 def _lb(body: dict) -> dict:
@@ -1277,6 +1339,10 @@ _ADAPTERS: dict[str, Callable[[dict], dict]] = {
     "aws_ebs_volume": _ebs_volume,
     "aws_eip": _eip,
     "aws_nat_gateway": _nat_gateway,
+    "aws_network_acl": _network_acl,
+    "aws_network_acl_rule": _network_acl_rule,
+    "aws_ec2_transit_gateway": _transit_gateway,
+    "aws_flow_log": _flow_log,
     "aws_vpc_endpoint": _vpc_endpoint,
     "aws_efs_file_system": _efs_file_system,
     "aws_kinesis_stream": _kinesis_stream,
@@ -1327,6 +1393,7 @@ _BLOCK_PROPERTY: dict[str, str] = {
     # Not LaunchTemplateData: an unknown metadata block must not hide the Spot check.
     "metadata_options": "MetadataOptions",
     "ingress": "SecurityGroupIngress",
+    "egress": "SecurityGroupEgress",
     "access_logs": "LoadBalancerAttributes",
     "dead_letter_config": "DeadLetterConfig",
     "tracing_config": "TracingConfig",
@@ -1529,12 +1596,10 @@ def _resource_tags(block: _Block) -> Any:
 
 def _to_resource(block: _Block) -> Resource:
     canonical = TF_TYPE_TO_CANONICAL.get(block.type)
-    if block.type == "aws_security_group_rule":
-        props = _ingress_rule(block.type, block.body)
-        if props is None:  # egress rule: no check covers it
-            canonical, props = None, {}
-    elif block.type == "aws_vpc_security_group_ingress_rule":
-        props = _ingress_rule(block.type, block.body) or {}
+    if block.type in ("aws_security_group_rule", "aws_vpc_security_group_ingress_rule",
+                      "aws_vpc_security_group_egress_rule"):
+        rule = _sg_rule(block.type, block.body)
+        canonical, props = rule if rule is not None else (None, {})
     else:
         adapter = _ADAPTERS.get(block.type)
         props = adapter(block.body) if adapter else {}

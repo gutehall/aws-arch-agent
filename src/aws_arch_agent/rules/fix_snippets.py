@@ -1141,6 +1141,155 @@ _CLOUDFORMATION["CF-EBS-002"] = """$name:
     VolumeType: gp3
     # over 1,000 GiB: Iops: <3 x size in GiB> to keep the gp2 baseline"""
 # Unused Elastic IPs: delete the resource to release it, or attach it.
+_CLOUDFORMATION["CF-SG-002"] = """$name:
+  Type: AWS::EC2::SecurityGroup
+  Properties:
+    # Replace the all-ports 0.0.0.0/0 (or ::/0) entry with the ports the service needs.
+    SecurityGroupIngress:
+      - IpProtocol: tcp
+        FromPort: 443
+        ToPort: 443
+        CidrIp: 0.0.0.0/0"""
+_CLOUDFORMATION["CF-SG-002:AWS::EC2::SecurityGroupIngress"] = """$name:
+  Type: AWS::EC2::SecurityGroupIngress
+  Properties:
+    GroupId: !Ref SecurityGroup
+    IpProtocol: tcp  # one protocol and port, not -1
+    FromPort: 443
+    ToPort: 443
+    CidrIp: 0.0.0.0/0"""
+_CLOUDFORMATION["CF-SG-003"] = """$name:
+  Type: AWS::EC2::SecurityGroup
+  Properties:
+    # Replace the allow-all rule (or the AWS default) with what the workload calls.
+    SecurityGroupEgress:
+      - IpProtocol: tcp
+        FromPort: 443
+        ToPort: 443
+        DestinationPrefixListId: pl-12345678  # e.g. the S3 prefix list, or a VPC CIDR"""
+_CLOUDFORMATION["CF-SG-003:AWS::EC2::SecurityGroupEgress"] = """$name:
+  Type: AWS::EC2::SecurityGroupEgress
+  Properties:
+    GroupId: !Ref SecurityGroup
+    IpProtocol: tcp
+    FromPort: 443
+    ToPort: 443
+    CidrIp: 10.0.0.0/16  # a known destination, not 0.0.0.0/0 on every port"""
+_CLOUDFORMATION["CF-NACL-001"] = """$name:
+  Type: AWS::EC2::NetworkAclEntry
+  Properties:
+    NetworkAclId: !Ref NetworkAcl
+    RuleNumber: 100
+    Protocol: 6
+    RuleAction: allow
+    Egress: false
+    CidrBlock: 10.0.0.0/16  # a known range, not 0.0.0.0/0 or ::/0
+    PortRange:
+      From: 22
+      To: 22"""
+_CLOUDFORMATION["CF-NAT-001"] = """# One NAT gateway per AZ: add one in the second AZ's public subnet, and point that AZ's
+# private route table at it.
+NatGatewayB:
+  Type: AWS::EC2::NatGateway
+  Properties:
+    SubnetId: !Ref PublicSubnetB
+    AllocationId: !GetAtt NatEipB.AllocationId"""
+_CLOUDFORMATION["CF-TGW-001"] = """$name:
+  Type: AWS::EC2::TransitGateway
+  Properties:
+    AutoAcceptSharedAttachments: disable"""
+_CLOUDFORMATION["CF-TGW-002"] = """TransitGatewayFlowLog:
+  Type: AWS::EC2::FlowLog
+  Properties:
+    ResourceType: TransitGateway
+    ResourceId: !Ref $name
+    LogDestinationType: s3
+    LogDestination: !GetAtt FlowLogBucket.Arn"""
+_TERRAFORM["CF-SG-002"] = """# Replace the all-ports 0.0.0.0/0 (or ::/0) ingress with the ports the service needs.
+resource "aws_security_group" "$tf_name" {
+  ingress {
+    protocol    = "tcp"
+    from_port   = 443
+    to_port     = 443
+    cidr_blocks = ["0.0.0.0/0"]
+  }
+}"""
+_TERRAFORM["CF-SG-002:aws_security_group_rule"] = """resource "aws_security_group_rule" "$tf_name" {
+  type              = "ingress"
+  security_group_id = aws_security_group.example.id
+  protocol          = "tcp" # one protocol and port, not -1
+  from_port         = 443
+  to_port           = 443
+  cidr_blocks       = ["0.0.0.0/0"]
+}"""
+_TERRAFORM["CF-SG-002:aws_vpc_security_group_ingress_rule"] = """resource "aws_vpc_security_group_ingress_rule" "$tf_name" {
+  security_group_id = aws_security_group.example.id
+  ip_protocol       = "tcp" # one protocol and port, not -1
+  from_port         = 443
+  to_port           = 443
+  cidr_ipv4         = "0.0.0.0/0"
+}"""
+_TERRAFORM["CF-SG-003"] = """# Replace the allow-all egress with what the workload calls.
+resource "aws_security_group" "$tf_name" {
+  egress {
+    protocol        = "tcp"
+    from_port       = 443
+    to_port         = 443
+    prefix_list_ids = [aws_vpc_endpoint.s3.prefix_list_id] # or a VPC CIDR
+  }
+}"""
+_TERRAFORM["CF-SG-003:aws_security_group_rule"] = """resource "aws_security_group_rule" "$tf_name" {
+  type              = "egress"
+  security_group_id = aws_security_group.example.id
+  protocol          = "tcp"
+  from_port         = 443
+  to_port           = 443
+  cidr_blocks       = ["10.0.0.0/16"] # a known destination, not 0.0.0.0/0 on every port
+}"""
+_TERRAFORM["CF-SG-003:aws_vpc_security_group_egress_rule"] = """resource "aws_vpc_security_group_egress_rule" "$tf_name" {
+  security_group_id = aws_security_group.example.id
+  ip_protocol       = "tcp"
+  from_port         = 443
+  to_port           = 443
+  cidr_ipv4         = "10.0.0.0/16" # a known destination, not 0.0.0.0/0 on every port
+}"""
+_TERRAFORM["CF-NACL-001"] = """resource "aws_network_acl_rule" "$tf_name" {
+  network_acl_id = aws_network_acl.example.id
+  rule_number    = 100
+  egress         = false
+  protocol       = "tcp"
+  rule_action    = "allow"
+  cidr_block     = "10.0.0.0/16" # a known range, not 0.0.0.0/0 or ::/0
+  from_port      = 22
+  to_port        = 22
+}"""
+_TERRAFORM["CF-NACL-001:aws_network_acl"] = """resource "aws_network_acl" "$tf_name" {
+  vpc_id = aws_vpc.example.id
+  ingress {
+    rule_no    = 100
+    protocol   = "tcp"
+    action     = "allow"
+    cidr_block = "10.0.0.0/16" # a known range, not 0.0.0.0/0 or ::/0
+    from_port  = 22
+    to_port    = 22
+  }
+}"""
+_TERRAFORM["CF-NAT-001"] = """# One NAT gateway per AZ, each in that AZ's public subnet. Route each private subnet
+# to the NAT gateway in its own AZ.
+resource "aws_nat_gateway" "$tf_name" {
+  for_each      = aws_subnet.public
+  subnet_id     = each.value.id
+  allocation_id = aws_eip.nat[each.key].id
+}"""
+_TERRAFORM["CF-TGW-001"] = """resource "aws_ec2_transit_gateway" "$tf_name" {
+  auto_accept_shared_attachments = "disable"
+}"""
+_TERRAFORM["CF-TGW-002"] = """resource "aws_flow_log" "$tf_name" {
+  transit_gateway_id   = aws_ec2_transit_gateway.$tf_name.id
+  log_destination_type = "s3"
+  log_destination      = aws_s3_bucket.flow_logs.arn
+}"""
+
 _CLOUDFORMATION["CF-EIP-001"] = """# Not needed: delete $name to release the address. Needed: attach it.
 ${name}Association:
   Type: AWS::EC2::EIPAssociation

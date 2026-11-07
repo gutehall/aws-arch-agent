@@ -175,11 +175,16 @@ resource "aws_vpc_security_group_ingress_rule" "all" {
 """,
         encoding="utf-8",
     )
-    assert _checks(tmp_path)["CF-SG-001"] == {
+    checks = _checks(tmp_path)
+    assert checks["CF-SG-001"] == {
         "aws_security_group.open (aws_security_group)",
         "aws_security_group_rule.rdp (aws_security_group_rule)",
+    }
+    # Every port open is reported as CF-SG-002 instead.
+    assert checks["CF-SG-002"] == {
         "aws_vpc_security_group_ingress_rule.all (aws_vpc_security_group_ingress_rule)",
     }
+    assert checks["CF-SG-003"] == {"aws_security_group_rule.out (aws_security_group_rule)"}
 
 
 def test_log_group_retention_zero_means_never_expire(tmp_path: Path) -> None:
