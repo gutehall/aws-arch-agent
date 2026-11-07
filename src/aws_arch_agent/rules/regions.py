@@ -120,7 +120,8 @@ def terraform_provider_region(module_dir: Path) -> str | None:
                         continue
                     raw = item.get("region")
                     value = normalize(item).get("region")  # a literal, unquoted
-                    match = _VAR.match(raw.strip()) if isinstance(raw, str) else None
+                    # var.x parses as "${var.x}"; a quoted "${var.x}" keeps its quotes.
+                    match = _VAR.match(raw.strip().strip('"')) if isinstance(raw, str) else None
                     if match:
                         value = defaults.get(match.group(1))
                     if isinstance(value, str) and REGION.fullmatch(value.strip()):
@@ -148,25 +149,30 @@ def terraform_plan_region(plan: Path) -> str | None:
     return value if isinstance(value, str) and REGION.fullmatch(value) else None
 
 
-def _strings(value: Any) -> Iterator[str]:
+def _zone_values(value: Any, under_zone_key: bool = False) -> Iterator[str]:
+    """Strings under an availability-zone key (AvailabilityZone, AvailabilityZones,
+    PreferredAvailabilityZones, availability_zone, ...), at any depth. Tags, names and
+    descriptions are not read: their text says nothing about where the stack runs."""
     if isinstance(value, str):
-        yield value
+        if under_zone_key:
+            yield value
     elif isinstance(value, dict):
-        for item in value.values():
-            yield from _strings(item)
+        for key, item in value.items():
+            zone_key = "availabilityzone" in str(key).replace("_", "").lower()
+            yield from _zone_values(item, under_zone_key or zone_key)
     elif isinstance(value, list):
         for item in value:
-            yield from _strings(item)
+            yield from _zone_values(item, under_zone_key)
 
 
 def _from_availability_zones(resources: Iterable[Resource]) -> str | None:
     found = set()
     for res in resources:
-        for text in _strings(res.properties):
+        for text in _zone_values(res.properties):
             match = _AZ.fullmatch(text)
             if match:
                 found.add(match.group(1))
-    return found.pop() if len(found) == 1 else None
+    return found.pop() if len(found) == 1 else None  # several regions: no guess
 
 
 def resolve(stack: Path, resources: Iterable[Resource]) -> Resolved:

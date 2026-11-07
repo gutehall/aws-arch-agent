@@ -120,7 +120,8 @@ def summary(findings: List[Finding], repo_path: Path | None = None) -> dict[str,
     dates = [snapshot_date(r) for r in used]
     return {
         "region": ", ".join(used),  # one region, or every region the stacks use
-        "snapshot_date": max(d for d in dates if d) if all(dates) else None,
+        # One region: its price list date. Several: each stack carries its own.
+        "snapshot_date": dates[0] if len(used) == 1 else None,
         "basis": "On-demand prices, 730 hours a month. Usage-based charges (data processed and "
                  "transferred, requests, storage growth) are not included.",
         "stacks": stacks,

@@ -120,6 +120,7 @@ def _tf(module: Path, provider: str) -> Path:
     [
         ('provider "aws" {\n  region = "eu-west-1"\n}\n', "eu-west-1"),
         ('provider "aws" {\n  region = var.aws_region\n}\n', "eu-north-1"),
+        ('provider "aws" {\n  region = "${var.aws_region}"\n}\n', "eu-north-1"),
         # An aliased provider is not the default one: the fallback decides.
         ('provider "aws" {\n  alias = "east"\n  region = "eu-central-1"\n}\n', "us-east-1"),
     ],
@@ -168,3 +169,32 @@ def test_outside_a_scan_use_region_decides(tmp_path: Path) -> None:
     with pricing.use_region("eu-north-1"):
         findings = run_cf_rules_from_paths([path])
     assert _gp2_finding_cost(findings) == {"stack.json": _gp2_cost("eu-north-1")}
+
+
+def test_terraform_json_provider_region(tmp_path: Path) -> None:
+    (tmp_path / "main.tf.json").write_text(json.dumps({
+        "variable": {"r": {"default": "eu-west-1"}}, "provider": {"aws": {"region": "${var.r}"}},
+    }))
+    assert regions.terraform_provider_region(tmp_path) == "eu-west-1"
+
+
+def test_only_availability_zone_keys_name_the_region(tmp_path: Path) -> None:
+    tagged = _template(tmp_path / "tagged.json", {"Vol": {**GP2, "Properties": {
+        **GP2["Properties"], "Tags": [{"Key": "Name", "Value": "eu-west-1a"}]}}})
+    zoned = _template(tmp_path / "zoned.json", {"Db": {"Type": "AWS::RDS::DBCluster", "Properties": {
+        "AvailabilityZones": ["eu-central-1a", "eu-central-1b"]}}})
+    with regions.use_regions(None, env={}):
+        run_cf_rules_from_paths([tagged, zoned], repo_path=tmp_path)
+        used = {Path(k).name: v.region for k, v in regions.used().items()}
+    assert used == {"tagged.json": "us-east-1", "zoned.json": "eu-central-1"}
+
+
+def test_cost_section_dates_each_region_when_there_are_several(tmp_path: Path) -> None:
+    paths = _cdk_out(tmp_path, {"North": "aws://111122223333/eu-north-1",
+                                "West": "aws://111122223333/eu-west-1"})
+    with regions.use_regions(None, env={}), stack_cost.collect():
+        findings = run_cf_rules_from_paths(paths, repo_path=tmp_path)
+        cost = stack_cost.summary(findings, tmp_path)
+    assert cost is not None and cost["snapshot_date"] is None
+    assert {s["region"]: s["snapshot_date"] for s in cost["stacks"]} == {
+        "eu-north-1": pricing.snapshot_date("eu-north-1"), "eu-west-1": pricing.snapshot_date("eu-west-1")}
