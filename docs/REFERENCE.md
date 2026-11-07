@@ -25,6 +25,9 @@ The agent covers all six AWS Well-Architected pillars. Static and CloudFormation
 | `--enforce-baseline` | `false` | Only fail on findings not in baseline |
 | `--update-baseline` | `false` | Add current findings to baseline file |
 | `--region` | detected | AWS region whose on-demand prices cost estimates use, for every stack (config `region`). Without it each stack is priced in its own region, then `AWS_REGION`, then `us-east-1`: see [Price region](#price-region). Prices come from a snapshot shipped in the package, so the scan makes no network call. The report states the region and the AWS price list date. A region the snapshot lacks gives no estimates, and the run says so. See [Prices](#prices) |
+| `--theme` | — | Only report rules in these themes. Repeatable or comma-separated: `finops`, `security-baseline`, `identity`, `data-protection`, `network-exposure`, `resilience`, `observability`, `sustainability` |
+| `--group-by` | `severity` | Group Markdown findings by `severity` or `theme` |
+| `--version` | — | Print the version and exit. The version is the release tag the rules come from |
 
 ## IaC sources
 
@@ -73,10 +76,10 @@ Keys: `format`, `fail_on`, `no_llm`, `llm_mode`, `out`, `severity_threshold`, `t
 
 ## GitHub Action
 
-Use the composite action from this repository:
+Use the composite action, pinned to a release tag (`@main` changes with every merged check; see the README's CI section):
 
 ```yaml
-- uses: ./.github/actions/aws-arch-agent
+- uses: gutehall/aws-arch-agent/.github/actions/aws-arch-agent@v0.1.0
   with:
     repo: .
     fail-on: high
