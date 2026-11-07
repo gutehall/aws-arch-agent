@@ -1,0 +1,52 @@
+# Publish a GitHub release when a version tag is pushed.
+# The tag is pushed by hand (see CONTRIBUTING.md#releases); this workflow never creates or
+# moves a tag, and leaves an existing release alone.
+name: Release
+
+on:
+  push:
+    tags: ["v*"]
+
+permissions:
+  contents: write
+
+concurrency:
+  group: release-${{ github.ref_name }}
+  cancel-in-progress: false
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    env:
+      TAG: ${{ github.ref_name }}
+      GH_TOKEN: ${{ github.token }}
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          fetch-depth: 0
+
+      - name: Skip if the release already exists
+        id: existing
+        run: |
+          if gh release view "$TAG" >/dev/null 2>&1; then
+            echo "Release $TAG already exists; leaving it alone."
+            echo "exists=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "exists=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Check the tag is on main
+        if: steps.existing.outputs.exists == 'false'
+        run: |
+          git fetch origin main
+          commit=$(git rev-parse "$TAG^{commit}")
+          git merge-base --is-ancestor "$commit" origin/main \
+            || { echo "$TAG ($commit) is not on main"; exit 1; }
+
+      - name: Build notes from CHANGELOG.md
+        if: steps.existing.outputs.exists == 'false'
+        run: python3 scripts/release_notes.py "$TAG" > "$RUNNER_TEMP/notes.md"
+
+      - name: Create the release
+        if: steps.existing.outputs.exists == 'false'
+        run: gh release create "$TAG" --verify-tag --title "$TAG" --notes-file "$RUNNER_TEMP/notes.md"
