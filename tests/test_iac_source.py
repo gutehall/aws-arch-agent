@@ -171,7 +171,7 @@ def test_cli_json_includes_source(tmp_path: Path) -> None:
         app, ["--repo", str(tmp_path), "--no-llm", "--format", "json", "--out", str(out)]
     )
     assert result.exit_code == 0, result.output
-    assert json.loads(out.read_text())["context"]["source"] == "terraform"
+    assert json.loads(out.read_text(encoding="utf-8"))["context"]["source"] == "terraform"
 
 
 def test_minified_json_template_with_version_only(tmp_path: Path) -> None:

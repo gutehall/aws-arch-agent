@@ -8,15 +8,29 @@ No AWS credentials. No cloud calls. LLM output is optional.
 
 ## Install
 
-Requires Python 3.11+ and [ripgrep](https://github.com/BurntSushi/ripgrep#installation) (`brew install ripgrep`).
+Requires Python 3.11+, git, and [ripgrep](https://github.com/BurntSushi/ripgrep#installation): `brew install ripgrep` (macOS), `sudo apt install ripgrep` (Debian/Ubuntu), or `winget install BurntSushi.ripgrep.MSVC` (Windows).
 
-Install a release (latest: [v0.1.0](https://github.com/gutehall/aws-arch-agent/releases/tag/v0.1.0)):
+Install a release (latest: [v0.1.0](https://github.com/gutehall/aws-arch-agent/releases/tag/v0.1.0)).
+
+macOS and Linux:
 
 ```bash
-python3 -m venv .venv && source .venv/bin/activate
+python3 -m venv .venv
+source .venv/bin/activate
 pip install "git+https://github.com/gutehall/aws-arch-agent@v0.1.0"
 aws-arch-agent --version   # 0.1.0
 ```
+
+Windows (PowerShell):
+
+```powershell
+py -m venv .venv
+.venv\Scripts\Activate.ps1
+pip install "git+https://github.com/gutehall/aws-arch-agent@v0.1.0"
+aws-arch-agent --version   # 0.1.0
+```
+
+CI runs the test suite on Linux and Windows, and the GitHub Action on Linux, macOS, and Windows runners. V2 synth also needs Node.js for `npx cdk synth`.
 
 The release tag is the rule set; see [CI](#ci) for what each upgrade can change. To work on the scanner itself, clone `main` and `pip install -e ".[dev]"` (see [CONTRIBUTING.md](CONTRIBUTING.md)).
 

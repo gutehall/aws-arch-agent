@@ -163,6 +163,9 @@ def rg(
             cmd,
             capture_output=True,
             text=True,
+            # ripgrep prints UTF-8; the locale default on Windows is often cp1252.
+            encoding="utf-8",
+            errors="replace",
             check=False,
             cwd=str(repo_path),
             timeout=RG_TIMEOUT_S,

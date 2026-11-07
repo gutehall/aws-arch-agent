@@ -175,3 +175,22 @@ def test_missing_npx_is_a_failed_synth(tmp_path: Path, monkeypatch: pytest.Monke
     assert rc == 127
     assert out == ""
     assert "npx not found" in err
+
+
+def test_synth_uses_resolved_npx_and_utf8(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """Windows needs the full npx.cmd path; output is decoded as UTF-8 on every OS."""
+    from aws_arch_agent.tools import cdk_synth
+
+    seen: dict[str, object] = {}
+
+    def fake_run(cmd: list[str], **kwargs: object) -> subprocess.CompletedProcess[str]:
+        seen["cmd"] = cmd
+        seen.update(kwargs)
+        return subprocess.CompletedProcess(cmd, 0, "", "")
+
+    monkeypatch.setattr(cdk_synth.shutil, "which", lambda name: r"C:\node\npx.cmd" if name == "npx" else None)
+    monkeypatch.setattr(subprocess, "run", fake_run)
+    cdk_synth.run_cdk_synth(tmp_path)
+    assert seen["cmd"][:3] == [r"C:\node\npx.cmd", "cdk", "synth"]  # type: ignore[index]
+    assert seen["encoding"] == "utf-8"
+    assert seen["errors"] == "replace"

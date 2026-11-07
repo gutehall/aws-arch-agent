@@ -33,7 +33,7 @@ def _scan(repo: Path) -> list[dict]:
     out = repo / "r.json"
     result = CliRunner().invoke(app, ["--repo", str(repo), "--no-llm", "--format", "json", "--out", str(out)])
     assert result.exit_code == 0, result.output
-    return json.loads(out.read_text())["findings"]
+    return json.loads(out.read_text(encoding="utf-8"))["findings"]
 
 
 def test_infra_dev_and_prod_get_their_environment(tmp_path: Path) -> None:
@@ -131,14 +131,14 @@ def test_reports_show_the_environment(tmp_path: Path) -> None:
     out = repo / "r.md"
     result = CliRunner().invoke(app, ["--repo", str(repo), "--no-llm", "--out", str(out)])
     assert result.exit_code == 0, result.output
-    md = out.read_text()
+    md = out.read_text(encoding="utf-8")
     assert "- Environment: **dev**" in md and "- Environment: **prod**" in md
     out_html = repo / "r.html"
     CliRunner().invoke(app, ["--repo", str(repo), "--no-llm", "--format", "html", "--out", str(out_html)])
-    assert "Environment: <b>dev</b>" in out_html.read_text()
+    assert "Environment: <b>dev</b>" in out_html.read_text(encoding="utf-8")
     out_sarif = repo / "r.sarif"
     CliRunner().invoke(app, ["--repo", str(repo), "--no-llm", "--format", "sarif", "--out", str(out_sarif)])
-    results = json.loads(out_sarif.read_text())["runs"][0]["results"]
+    results = json.loads(out_sarif.read_text(encoding="utf-8"))["runs"][0]["results"]
     assert {r["properties"]["environment"] for r in results} == {"dev", "prod"}
     assert "environment" in REPORT_SCHEMA["properties"]["findings"]["items"]["properties"]
 

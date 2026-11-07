@@ -132,7 +132,7 @@ def test_terraform_provider_region(tmp_path: Path, provider: str, expected: str)
     result = CliRunner().invoke(app, ["--repo", str(tmp_path), "--iac", "terraform", "--no-llm",
                                       "--format", "json", "--out", str(out)])
     assert result.exit_code == 0, result.output
-    data = json.loads(out.read_text())
+    data = json.loads(out.read_text(encoding="utf-8"))
     assert data["context"]["notes"]["prices"]["region"] == expected
     gp2 = next(f for f in data["findings"] if f["id"] == "CF-EBS-002")
     assert gp2["monthly_cost_usd"] == _gp2_cost(expected)
@@ -160,7 +160,7 @@ def test_detected_region_without_prices_warns_and_skips_its_estimates(tmp_path: 
                                       "--templates", str(tmp_path / "cdk.out"), "--out", str(out)])
     assert result.exit_code == 0, result.output
     assert "No prices for region ap-southeast-2" in result.output
-    assert "ap-southeast-2 (CDK stack env; not in the price snapshot" in out.read_text()
+    assert "ap-southeast-2 (CDK stack env; not in the price snapshot" in out.read_text(encoding="utf-8")
 
 
 def test_outside_a_scan_use_region_decides(tmp_path: Path) -> None:

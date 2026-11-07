@@ -116,7 +116,7 @@ def test_scan_summary_matches_its_findings_every_run(tmp_path: Path) -> None:
         result = CliRunner().invoke(app, ["--repo", str(tmp_path), "--no-llm", "--format", "json",
                                           "--out", str(out)])
         assert result.exit_code == 0, result.output
-        runs.append(json.loads(out.read_text()))
+        runs.append(json.loads(out.read_text(encoding="utf-8")))
     assert runs[0]["summary"] == runs[1]["summary"]
     data = runs[0]
     summary, findings = data["summary"], data["findings"]

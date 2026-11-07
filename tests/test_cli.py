@@ -28,7 +28,7 @@ def test_analyze_creates_report(tmp_path: Path) -> None:
     )
     assert result.exit_code == 0, result.output or result.stderr
     assert out_file.exists()
-    assert "AWS Architecture Review Report" in out_file.read_text()
+    assert "AWS Architecture Review Report" in out_file.read_text(encoding="utf-8")
 
 
 def test_analyze_json_format(tmp_path: Path) -> None:
@@ -40,7 +40,7 @@ def test_analyze_json_format(tmp_path: Path) -> None:
         ["--repo", str(tmp_path), "--no-llm", "--format", "json", "--out", str(out_file)],
     )
     assert result.exit_code == 0, result.output or result.stderr
-    data = json.loads(out_file.read_text())
+    data = json.loads(out_file.read_text(encoding="utf-8"))
     assert "context" in data
     assert "findings" in data
     assert "repo_path" in data["context"]
@@ -168,7 +168,7 @@ def test_analyze_templates_only_no_repo(tmp_path: Path) -> None:
     )
     assert result.exit_code == 0, result.output or result.stderr
     assert out_file.exists()
-    assert "CF-S3-001" in out_file.read_text()
+    assert "CF-S3-001" in out_file.read_text(encoding="utf-8")
 
 
 def _high_finding_repo(root: Path) -> None:
@@ -568,7 +568,7 @@ def test_v2_iac_cloudformation_with_templates_runs(tmp_path: Path) -> None:
         "--templates", str(tmp_path), "--out", str(out_file),
     ])
     assert result.exit_code == 0, result.output
-    assert "CF-S3-001" in out_file.read_text()
+    assert "CF-S3-001" in out_file.read_text(encoding="utf-8")
 
 
 def test_v2_iac_cloudformation_with_config_templates_runs(tmp_path: Path) -> None:
@@ -618,7 +618,7 @@ def test_v2_iac_cloudformation_with_templates_outside_repo(tmp_path: Path) -> No
         "--templates", str(cfn), "--out", str(out_file),
     ])
     assert result.exit_code == 0, result.output
-    assert "CF-S3-001" in out_file.read_text()
+    assert "CF-S3-001" in out_file.read_text(encoding="utf-8")
 
 
 def test_analyze_html_format(tmp_path: Path) -> None:
