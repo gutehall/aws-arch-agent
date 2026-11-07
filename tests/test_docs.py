@@ -2,6 +2,7 @@
 import re
 from pathlib import Path
 
+from aws_arch_agent import __version__
 from aws_arch_agent.rules.registry import ALL_RULES
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -59,3 +60,9 @@ def test_rule_reference_count_matches_the_registry_and_lists_each_rule_once() ->
     assert dupes == []
     # OPS-024 is a note: the rule was folded into REL-027 and is not registered.
     assert set(listed) - {"OPS-024"} == {rule.id for rule in ALL_RULES}
+
+
+def test_readme_pins_the_action_to_the_current_release() -> None:
+    readme = (ROOT / "README.md").read_text(encoding="utf-8")
+    assert f".github/actions/aws-arch-agent@v{__version__}" in readme
+    assert "aws-arch-agent@main\n" not in readme
