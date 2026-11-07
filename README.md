@@ -10,15 +10,15 @@ No AWS credentials. No cloud calls. LLM output is optional.
 
 Requires Python 3.11+, git, and [ripgrep](https://github.com/BurntSushi/ripgrep#installation): `brew install ripgrep` (macOS), `sudo apt install ripgrep` (Debian/Ubuntu), or `winget install BurntSushi.ripgrep.MSVC` (Windows).
 
-Install a release (latest: [v0.1.0](https://github.com/gutehall/aws-arch-agent/releases/tag/v0.1.0)).
+Install a release (latest: [v0.1.1](https://github.com/gutehall/aws-arch-agent/releases/tag/v0.1.1)).
 
 macOS and Linux:
 
 ```bash
 python3 -m venv .venv
 source .venv/bin/activate
-pip install "git+https://github.com/gutehall/aws-arch-agent@v0.1.0"
-aws-arch-agent --version   # 0.1.0
+pip install "git+https://github.com/gutehall/aws-arch-agent@v0.1.1"
+aws-arch-agent --version   # 0.1.1
 ```
 
 Windows (PowerShell):
@@ -26,8 +26,8 @@ Windows (PowerShell):
 ```powershell
 py -m venv .venv
 .venv\Scripts\Activate.ps1
-pip install "git+https://github.com/gutehall/aws-arch-agent@v0.1.0"
-aws-arch-agent --version   # 0.1.0
+pip install "git+https://github.com/gutehall/aws-arch-agent@v0.1.1"
+aws-arch-agent --version   # 0.1.1
 ```
 
 CI runs the test suite on Linux and Windows, and the GitHub Action on Linux, macOS, and Windows runners. V2 synth also needs Node.js for `npx cdk synth`.
@@ -73,7 +73,7 @@ aws-arch-agent --repo . --no-llm --fail-on high --enforce-baseline
 Or use the composite GitHub Action, pinned to a release:
 
 ```yaml
-- uses: gutehall/aws-arch-agent/.github/actions/aws-arch-agent@v0.1.0
+- uses: gutehall/aws-arch-agent/.github/actions/aws-arch-agent@v0.1.1
   with:
     repo: .
     fail-on: high
