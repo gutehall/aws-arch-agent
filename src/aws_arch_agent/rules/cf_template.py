@@ -69,6 +69,42 @@ CF_COVERS_STATIC: dict[str, tuple[str, ...]] = {
     "CF-IAM-003": ("SEC-002",),
     # Action "*" on Resource "*" is reported once, as admin, so it covers both wildcards.
     "CF-IAM-008": ("SEC-067", "SEC-001", "SEC-002"),
+    "CF-SQS-001": ("SEC-013",),
+    "CF-SQS-002": ("REL-008",),
+    # Sensitive ports include SSH (SEC-003) and the DB ports (SEC-004).
+    "CF-SG-001": ("SEC-003", "SEC-004"),
+    "CF-DDB-001": ("REL-004",),
+    "CF-DDB-002": ("SEC-008",),
+    # RetentionDays.INFINITE synthesises to a log group with no RetentionInDays.
+    "CF-CW-001": ("COST-001",),
+    "CF-CW-002": ("SEC-062",),
+    "CF-APIGW-001": ("OPS-005",),
+    "CF-APIGW-V2-001": ("OPS-005",),
+    # OPS-003 looks at API Gateway and Lambda only, which these three checks cover.
+    "CF-APIGW-002": ("OPS-003",),
+    "CF-APIGW-V2-002": ("OPS-003",),
+    "CF-LAM-002": ("OPS-003",),
+    # Reports every function without a DLQ, a superset of REL-003 (no DLQ and no onFailure).
+    "CF-LAM-001": ("REL-003",),
+    "CF-RDS-002": ("REL-002",),
+    "CF-RDS-004": ("SEC-064",),
+    "CF-RDS-005": ("REL-030",),
+    "CF-S3-003": ("REL-031",),
+    "CF-KMS-001": ("SEC-007",),
+    # Checks every ELBv2 load balancer, so NLBs too.
+    "CF-ALB-001": ("OPS-006",),
+}
+
+# Template checks that name a CDK rule's control but cover only part of it, so the CDK
+# finding stays. Each value is (CDK rules, why the pair is not in CF_COVERS_STATIC).
+CF_PARTLY_COVERS_STATIC: dict[str, tuple[tuple[str, ...], str]] = {
+    "CF-RDS-003": (("REL-001",), "checks DB instances only; REL-001 also flags DatabaseCluster"),
+    "CF-PERF-001": (("PERF-001",), "checks Lambda only; PERF-001 also flags EC2 and ECS"),
+    "CF-CT-001": (("OPS-001",), "checks an existing trail; OPS-001 reports no trail at all"),
+    "CF-CT-002": (("OPS-001",), "checks an existing trail; OPS-001 reports no trail at all"),
+    "CF-CT-003": (("OPS-001",), "checks an existing trail; OPS-001 reports no trail at all"),
+    # Not a gap: tag_policy.REPLACED_STATIC_RULES drops BP-001 once the policy ran.
+    "CF-TAG-001": (("BP-001",), "replaced through tag_policy.REPLACED_STATIC_RULES"),
 }
 
 
