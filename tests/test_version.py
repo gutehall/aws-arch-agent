@@ -27,3 +27,11 @@ def test_cli_prints_version() -> None:
     result = CliRunner().invoke(app, ["--version"])
     assert result.exit_code == 0, result.output
     assert result.output.strip() == __version__
+
+
+def test_changelog_top_entry_matches_version() -> None:
+    """The newest CHANGELOG.md entry is the version being released."""
+    text = (ROOT / "CHANGELOG.md").read_text(encoding="utf-8")
+    match = re.search(r"^## v(\d+\.\d+\.\d+)\b", text, re.MULTILINE)
+    assert match, "CHANGELOG.md has no '## vX.Y.Z' entry"
+    assert match.group(1) == __version__
