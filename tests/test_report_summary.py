@@ -76,14 +76,13 @@ def test_no_findings_no_summary() -> None:
     assert build_summary([])["top_fixes"] == []
 
 
-def test_json_and_html_carry_the_summary() -> None:
+def test_json_carries_the_summary_and_html_does_not() -> None:
     ctx = RepoContext(repo_path="/r")
     data = json.loads(render_json(ctx, FINDINGS))
     assert data["summary"] == build_summary(FINDINGS)
     assert data["findings"][0]["effort"] == "medium"
     html = render_html(ctx, FINDINGS)
-    assert "<h2>Summary</h2>" in html and "Cost Optimization: 3 findings" in html
-    assert "Quick wins" in html
+    assert "<h2>Summary</h2>" not in html and "Quick wins" not in html
 
 
 def test_effort_map() -> None:

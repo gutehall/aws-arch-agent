@@ -128,7 +128,9 @@ def test_page_uses_dark_theme() -> None:
 def test_findings_link_to_service_and_pillar_docs() -> None:
     page = render_html(CTX, _findings())
     assert "Learn more" in page
-    assert 'href="https://docs.aws.amazon.com/AmazonS3/latest/userguide/"' in page
-    assert ('href="https://docs.aws.amazon.com/wellarchitected/latest/security-pillar/welcome.html"'
-            in page)
+    s3 = "https://docs.aws.amazon.com/AmazonS3/latest/userguide/access-control-block-public-access.html"
+    assert f'href="{s3}"' in page
+    assert ('href="https://docs.aws.amazon.com/wellarchitected/latest/security-pillar/'
+            'sec_protect_data_rest_access_control.html"' in page)
+    assert 'href="https://docs.aws.amazon.com/AmazonS3/latest/userguide/"' not in page
     assert 'target="_blank" rel="noopener noreferrer"' in page

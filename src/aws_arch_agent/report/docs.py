@@ -1,14 +1,17 @@
-"""AWS documentation links for findings: one service page and one Well-Architected pillar page.
+"""AWS documentation links for findings: one service page and one Well-Architected page.
 
-Links are resolved from the finding, not stored on rules: the service is matched from the
-rule title (first matching keyword wins, so specific keywords come before broad ones) and
-the pillar from the finding category. Only docs.aws.amazon.com URLs are produced.
+A rule listed in doc_topics.RULE_TOPICS links to the docs page for its control and to the
+Well-Architected best practice it supports. Any other finding falls back to a service start
+page matched from the title (first matching keyword wins, so specific keywords come before
+broad ones) and the pillar overview for its category. Only docs.aws.amazon.com URLs are
+produced.
 """
 from __future__ import annotations
 
 import re
 
 from aws_arch_agent.models import Finding
+from aws_arch_agent.report.doc_topics import RULE_TOPICS, TOPICS
 
 _DOCS = "https://docs.aws.amazon.com"
 _WA = f"{_DOCS}/wellarchitected/latest"
@@ -124,7 +127,14 @@ _COMPILED = [(re.compile(p, re.IGNORECASE), label, path) for p, label, path in _
 
 
 def doc_links(finding: Finding) -> list[dict[str, str]]:
-    """Return documentation links for a finding: matched service page first, then the pillar."""
+    """Return documentation links for a finding: service page first, then Well-Architected."""
+    topic = RULE_TOPICS.get(finding.id)
+    if topic:
+        label, path, wa_label, wa_path = TOPICS[topic]
+        return [
+            {"label": label, "url": _DOCS + path},
+            {"label": wa_label, "url": _DOCS + wa_path},
+        ]
     links: list[dict[str, str]] = []
     for pattern, label, path in _COMPILED:
         if pattern.search(finding.title):
