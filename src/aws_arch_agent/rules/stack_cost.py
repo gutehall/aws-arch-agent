@@ -51,6 +51,7 @@ _FREE_TF = re.compile(
 @dataclass
 class _Stack:
     path: str
+    region: str = ""
     priced: list[tuple[Resource, estimates.Estimate]] = field(default_factory=list)
     not_priced: Counter = field(default_factory=Counter)
 
@@ -78,7 +79,7 @@ def record(template_path: Path, resources: List[Resource]) -> None:
     if _stacks is None:
         return
     # One entry per file however the scan reached it (relative, absolute, listed twice).
-    stack = _Stack(path=str(Path(template_path).resolve()))
+    stack = _Stack(path=str(Path(template_path).resolve()), region=current_region())
     for res in resources:
         if res.malformed:
             stack.not_priced[res.source_type] += 1
@@ -99,8 +100,6 @@ def summary(findings: List[Finding], repo_path: Path | None = None) -> dict[str,
     """
     if not _stacks:
         return None
-    region = current_region()
-
     def where(path: str) -> str:
         return to_repo_relative(path, repo_path) if repo_path else path
 
@@ -109,14 +108,19 @@ def summary(findings: List[Finding], repo_path: Path | None = None) -> dict[str,
     not_priced: Counter = Counter()
     for path, stack in sorted(_stacks.items()):
         total = round(sum(c.monthly_cost_usd or 0.0 for _, c in stack.priced), 2)
-        stacks.append({"name": where(path), "resources_priced": len(stack.priced), "monthly_usd": total})
+        stacks.append({
+            "name": where(path), "region": stack.region, "snapshot_date": snapshot_date(stack.region),
+            "resources_priced": len(stack.priced), "monthly_usd": total,
+        })
         everything.extend((where(path), res, cost) for res, cost in stack.priced)
         not_priced.update(stack.not_priced)
     top = sorted(everything, key=lambda item: (-(item[2].monthly_cost_usd or 0.0), item[0], item[1].name))
     savings = [f.monthly_savings_usd for f in findings if f.monthly_savings_usd]
+    used = sorted({s.region for s in _stacks.values()})
+    dates = [snapshot_date(r) for r in used]
     return {
-        "region": region,
-        "snapshot_date": snapshot_date(region),
+        "region": ", ".join(used),  # one region, or every region the stacks use
+        "snapshot_date": max(d for d in dates if d) if all(dates) else None,
         "basis": "On-demand prices, 730 hours a month. Usage-based charges (data processed and "
                  "transferred, requests, storage growth) are not included.",
         "stacks": stacks,

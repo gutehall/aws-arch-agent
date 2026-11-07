@@ -13,6 +13,7 @@ from aws_arch_agent.rules import (
     iam_policy,
     lambda_runtimes,
     nonprod,
+    regions,
     stack_cost,
     tag_policy,
 )
@@ -1877,7 +1878,19 @@ def run_resource_checks(
     template_path: Path,
     warnings: list[str] | None = None,
 ) -> List[Finding]:
-    """Run the CF-* checks on one file's resources; return list of findings."""
+    """Run the CF-* checks on one file's resources; return list of findings.
+
+    Estimates are priced in the stack's region (see rules/regions.py).
+    """
+    with regions.for_stack(template_path, resources):
+        return _run_resource_checks(resources, template_path, warnings)
+
+
+def _run_resource_checks(
+    resources: List[Resource],
+    template_path: Path,
+    warnings: list[str] | None = None,
+) -> List[Finding]:
     if warnings is None:
         warnings = []
     findings: List[Finding] = []

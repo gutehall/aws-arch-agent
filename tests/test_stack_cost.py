@@ -69,7 +69,10 @@ def test_summary_prices_every_covered_resource(tmp_path: Path) -> None:
     assert cost is not None
     expected = _expected()
     total = round(sum(expected.values()), 2)
-    assert cost["stacks"] == [{"name": "stack.json", "resources_priced": 6, "monthly_usd": total}]
+    assert cost["stacks"] == [{
+        "name": "stack.json", "region": "us-east-1", "snapshot_date": pricing.snapshot_date("us-east-1"),
+        "resources_priced": 6, "monthly_usd": total,
+    }]
     assert cost["total_monthly_usd"] == total
     top = [r["name"] for r in cost["top_resources"]]
     assert top == sorted(expected, key=lambda k: -expected[k])[:5]
@@ -147,7 +150,10 @@ def test_terraform_module_total(tmp_path: Path) -> None:
     expected = round(
         H * _p("ec2:t3.micro") + 50 * _p("ebs:gp2")
         + H * (10 * _p("dynamodb:rcu-hour") + 2 * _p("dynamodb:wcu-hour")), 2)
-    assert cost["stacks"] == [{"name": tmp_path.name, "resources_priced": 3, "monthly_usd": expected}]
+    assert cost["stacks"] == [{
+        "name": tmp_path.name, "region": "us-east-1", "snapshot_date": pricing.snapshot_date("us-east-1"),
+        "resources_priced": 3, "monthly_usd": expected,
+    }]
     assert cost["not_priced"] == {"aws_dynamodb_table": 1, "aws_lambda_function": 1}
     web = next(r for r in cost["top_resources"] if r["name"] == "aws_instance.web")
     assert web["line"] == 1 and web["file"].endswith("main.tf")
@@ -163,7 +169,8 @@ def test_reports_show_the_cost_section(tmp_path: Path) -> None:
     assert result.exit_code == 0, result.output
     md = out_md.read_text()
     assert "## Estimated Monthly Cost (estimate)" in md
-    assert f"| **Total** | 6 | **${total:,.2f}** |" in md
+    assert f"| `stack.json` | us-east-1 | 6 | **${total:,.2f}** |".replace("**", "") in md
+    assert f"| **Total** | | 6 | **${total:,.2f}** |" in md
     assert "Top 5 resources by estimated cost:" in md
     assert "Not priced (usage-based, or not in the price snapshot): AWS::DynamoDB::Table ×1" in md
     assert f"Region us-east-1, AWS prices of {pricing.snapshot_date('us-east-1')}." in md

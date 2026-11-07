@@ -23,8 +23,7 @@ from aws_arch_agent.rules.terraform_model import (
     variables_from_terraform,
 )
 from aws_arch_agent.rules.runner import filter_by_severity, run_all_rules
-from aws_arch_agent.pricing import DEFAULT_REGION, price_note, use_region
-from aws_arch_agent.rules import effort, environments, nonprod, stack_cost, themes
+from aws_arch_agent.rules import effort, environments, nonprod, regions, stack_cost, themes
 from aws_arch_agent.rules.tag_policy import TagPolicy, policy_checked, use_tag_policy
 from aws_arch_agent.report.markdown import insert_summary, render_markdown
 from aws_arch_agent.tools.llm import LLMClient
@@ -332,6 +331,9 @@ def _scan_terraform(
         plan_target, plan_values = _plan_module(repo_path, modules, tf_plan, warnings)
         if plan_target is not None and notes is not None:
             notes["terraform_plan_module"] = to_repo_relative(str(plan_target), repo_path)
+        plan_region = regions.terraform_plan_region(tf_plan) if plan_target is not None else None
+        if plan_target is not None and plan_region:
+            regions.remember(plan_target, plan_region, "Terraform plan")
     for module in modules:
         resources = resources_from_terraform(
             module, warnings, plan_values if module == plan_target else None
@@ -410,7 +412,7 @@ def analyze_v1(
     rules_org: bool = False,
     iac: str = "auto",
     tf_plan: Path | None = None,
-    price_region: str = DEFAULT_REGION,
+    price_region: str | None = None,
     tag_policy: TagPolicy | None = None,
     environment_map: dict[str, str] | None = None,
     nonprod_max_size: str | None = None,
@@ -419,7 +421,7 @@ def analyze_v1(
 ) -> tuple[str, RepoContext, list[Finding], list[str]]:
     """Run V1 pipeline: scan repo, run rules, optionally polish with LLM; return (report_md, ctx, findings, warnings)."""
     with (
-        use_region(price_region),
+        regions.use_regions(price_region),
         use_tag_policy(tag_policy),
         stack_cost.collect(),
         environments.use_environments(environment_map, repo_path),
@@ -437,7 +439,7 @@ def analyze_v1(
         cost = stack_cost.summary(findings, repo_path)
         if cost is not None:
             ctx.notes["cost"] = cost
-    ctx.notes["prices"] = price_note(price_region)
+        ctx.notes["prices"] = regions.note()
 
     if not use_llm:
         return render_markdown(ctx, findings, warnings=warnings, group_by=group_by), ctx, findings, warnings
