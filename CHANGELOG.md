@@ -2,7 +2,7 @@
 
 New releases go at the top. See [CONTRIBUTING.md](CONTRIBUTING.md#releases) for when to cut one and how the version is bumped.
 
-## v0.1.0
+## v0.1.0 - 2026-11-07
 
 First release. Covers everything merged to `main` up to this tag.
 
@@ -48,6 +48,7 @@ First release. Covers everything merged to `main` up to this tag.
 - Flag S3 and DynamoDB traffic routed through a NAT gateway (#69)
 - Link each finding to its control's docs page and drop the HTML summary (#71)
 - Price each stack in the region its code deploys to (#72)
+- Print the version with `--version` (#73)
 
 ### Fixes
 
@@ -83,6 +84,7 @@ First release. Covers everything merged to `main` up to this tag.
 - Document the three IaC sources and the GitHub Action (#34)
 - Document the HTML report (#40)
 - Fix rule count in the docs and test the untested template checks (#70)
+- Document release rules and start this changelog (#73)
 
 ### Chores
 
