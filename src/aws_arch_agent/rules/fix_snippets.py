@@ -1141,6 +1141,127 @@ _CLOUDFORMATION["CF-EBS-002"] = """$name:
     VolumeType: gp3
     # over 1,000 GiB: Iops: <3 x size in GiB> to keep the gp2 baseline"""
 # Unused Elastic IPs: delete the resource to release it, or attach it.
+_CLOUDFORMATION["CF-ALB-002"] = """$name:
+  Type: AWS::ElasticLoadBalancingV2::Listener
+  Properties:
+    LoadBalancerArn: !Ref LoadBalancer
+    Protocol: HTTP
+    Port: 80
+    DefaultActions:
+      - Type: redirect
+        RedirectConfig:
+          Protocol: HTTPS
+          Port: "443"
+          StatusCode: HTTP_301"""
+_CLOUDFORMATION["CF-ALB-003"] = """$name:
+  Type: AWS::ElasticLoadBalancingV2::Listener
+  Properties:
+    SslPolicy: ELBSecurityPolicy-TLS13-1-2-2021-06"""
+_CLOUDFORMATION["CF-ALB-004"] = """$name:
+  Type: AWS::ElasticLoadBalancingV2::LoadBalancer
+  Properties:
+    LoadBalancerAttributes:
+      - Key: routing.http.drop_invalid_header_fields.enabled
+        Value: 'true'"""
+_CLOUDFORMATION["CF-ALB-005"] = """$name:
+  Type: AWS::ElasticLoadBalancingV2::LoadBalancer
+  Properties:
+    LoadBalancerAttributes:
+      - Key: deletion_protection.enabled
+        Value: 'true'"""
+_CLOUDFORMATION["CF-ALB-006"] = """$name:
+  Type: AWS::ElasticLoadBalancingV2::LoadBalancer
+  Properties:
+    LoadBalancerAttributes:
+      - Key: routing.http.desync_mitigation_mode
+        Value: defensive"""
+_CLOUDFORMATION["CF-ALB-007"] = """$name:
+  Type: AWS::ElasticLoadBalancingV2::TargetGroup
+  Properties:
+    HealthCheckEnabled: true
+    HealthCheckPath: /health  # an endpoint that checks the app and its dependencies"""
+_CLOUDFORMATION["CF-CLB-001"] = """$name:
+  Type: AWS::ElasticLoadBalancing::LoadBalancer
+  Properties:
+    Listeners:
+      - LoadBalancerPort: "443"
+        InstancePort: "80"
+        Protocol: HTTPS
+        SSLCertificateId: !Ref Certificate  # an AWS::CertificateManager::Certificate"""
+_CLOUDFORMATION["CF-CLB-002"] = _CLOUDFORMATION["CF-CLB-001"]
+_CLOUDFORMATION["CF-CLB-003"] = """$name:
+  Type: AWS::ElasticLoadBalancing::LoadBalancer
+  Properties:
+    AccessLoggingPolicy:
+      Enabled: true
+      EmitInterval: 60
+      S3BucketName: !Ref LogBucket"""
+_CLOUDFORMATION["CF-CLB-004"] = """$name:
+  Type: AWS::ElasticLoadBalancing::LoadBalancer
+  Properties:
+    CrossZone: true"""
+_CLOUDFORMATION["CF-CLB-005"] = """$name:
+  Type: AWS::ElasticLoadBalancing::LoadBalancer
+  Properties:
+    ConnectionDrainingPolicy:
+      Enabled: true
+      Timeout: 300"""
+_TERRAFORM["CF-ALB-002"] = """resource "aws_lb_listener" "$tf_name" {
+  load_balancer_arn = aws_lb.example.arn
+  port              = 80
+  protocol          = "HTTP"
+  default_action {
+    type = "redirect"
+    redirect {
+      protocol    = "HTTPS"
+      port        = "443"
+      status_code = "HTTP_301"
+    }
+  }
+}"""
+_TERRAFORM["CF-ALB-003"] = """resource "aws_lb_listener" "$tf_name" {
+  ssl_policy = "ELBSecurityPolicy-TLS13-1-2-2021-06"
+}"""
+_TERRAFORM["CF-ALB-004"] = """resource "aws_lb" "$tf_name" {
+  drop_invalid_header_fields = true
+}"""
+_TERRAFORM["CF-ALB-005"] = """resource "aws_lb" "$tf_name" {
+  enable_deletion_protection = true
+}"""
+_TERRAFORM["CF-ALB-006"] = """resource "aws_lb" "$tf_name" {
+  desync_mitigation_mode = "defensive"
+}"""
+_TERRAFORM["CF-ALB-007"] = """resource "aws_lb_target_group" "$tf_name" {
+  health_check {
+    enabled = true
+    path    = "/health" # an endpoint that checks the app and its dependencies
+  }
+}"""
+_TERRAFORM["CF-CLB-001"] = """resource "aws_elb" "$tf_name" {
+  listener {
+    lb_port            = 443
+    lb_protocol        = "https"
+    instance_port      = 80
+    instance_protocol  = "http"
+    ssl_certificate_id = aws_acm_certificate.example.arn
+  }
+}"""
+_TERRAFORM["CF-CLB-002"] = _TERRAFORM["CF-CLB-001"]
+_TERRAFORM["CF-CLB-003"] = """resource "aws_elb" "$tf_name" {
+  access_logs {
+    bucket   = aws_s3_bucket.logs.id
+    interval = 60
+    enabled  = true
+  }
+}"""
+_TERRAFORM["CF-CLB-004"] = """resource "aws_elb" "$tf_name" {
+  cross_zone_load_balancing = true
+}"""
+_TERRAFORM["CF-CLB-005"] = """resource "aws_elb" "$tf_name" {
+  connection_draining         = true
+  connection_draining_timeout = 300
+}"""
+
 _CLOUDFORMATION["CF-SG-002"] = """$name:
   Type: AWS::EC2::SecurityGroup
   Properties:

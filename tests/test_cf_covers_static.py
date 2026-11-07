@@ -135,6 +135,17 @@ PAIRS: list[tuple[str, str, dict, str]] = [
     ("CF-NAT-001", "REL-012", _ONE_NAT_TWO_AZS, "new ec2.Vpc(this, 'Vpc', { natGateways: 1 });"),
     ("CF-TGW-002", "OPS-016", {"Type": "AWS::EC2::TransitGateway", "Properties": {}},
      "new ec2.CfnTransitGateway(this, 'Tgw', {});"),
+    ("CF-ALB-002", "SEC-011", {"Type": "AWS::ElasticLoadBalancingV2::Listener", "Properties": {
+        "Protocol": "HTTP", "Port": 80,
+        "DefaultActions": [{"Type": "forward", "TargetGroupArn": "arn"}]}},
+     "new elbv2.ApplicationLoadBalancer(this, 'Alb', { vpc });"),
+    ("CF-ALB-003", "SEC-012", {"Type": "AWS::ElasticLoadBalancingV2::Listener", "Properties": {
+        "Protocol": "HTTPS", "Port": 443,
+        "DefaultActions": [{"Type": "forward", "TargetGroupArn": "arn"}]}},
+     "new elbv2.ApplicationLoadBalancer(this, 'Alb', { vpc });"),
+    ("CF-ALB-007", "REL-007", {"Type": "AWS::ElasticLoadBalancingV2::TargetGroup", "Properties": {
+        "Protocol": "HTTP", "Port": 80}},
+     "new elbv2.ApplicationTargetGroup(this, 'Tg', { vpc, port: 80 });"),
     ("CF-COST-002", "COST-006",
      {"Type": "AWS::EC2::NatGateway", "Properties": {"SubnetId": {"Ref": "Public"}}},
      "new ec2.Vpc(this, 'Vpc', { natGateways: 1 });"),

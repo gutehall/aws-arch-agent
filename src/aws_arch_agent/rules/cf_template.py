@@ -103,6 +103,9 @@ CF_COVERS_STATIC: dict[str, tuple[str, ...]] = {
     "CF-KMS-001": ("SEC-007",),
     # Checks every ELBv2 load balancer, so NLBs too.
     "CF-ALB-001": ("OPS-006",),
+    "CF-ALB-002": ("SEC-011",),
+    "CF-ALB-003": ("SEC-012",),
+    "CF-ALB-007": ("REL-007",),
     # COST-006 is a NAT gateway with no VPC endpoints: CF-COST-002 reports every NAT
     # gateway, and CF-VPC-002/003 the missing S3 and DynamoDB gateway endpoints.
     "CF-COST-002": ("COST-006",),
@@ -246,6 +249,7 @@ _PER_RESOURCE_TYPES = frozenset({
     "secretsmanager_secret", "cognito_user_pool", "eip", "launch_configuration",
     "elasticache_cluster", "scalable_target",
     "security_group_egress_rule", "network_acl_entry", "network_acl", "transit_gateway",
+    "lb_listener", "lb_target_group", "elb",
 })
 
 
@@ -266,6 +270,17 @@ CHECK_PROPERTIES: dict[str, frozenset[str]] = {
         "CF-PERF-004": {"InstanceType"},
         "CF-EC2-001": {"MetadataOptions", "LaunchTemplate", "LaunchTemplateData"},
         "CF-ALB-001": {"LoadBalancerAttributes"},
+        "CF-ALB-002": {"Protocol", "DefaultActions"},
+        "CF-ALB-003": {"Protocol", "SslPolicy"},
+        "CF-ALB-004": {"LoadBalancerAttributes", "Type"},
+        "CF-ALB-005": {"LoadBalancerAttributes"},
+        "CF-ALB-006": {"LoadBalancerAttributes", "Type"},
+        "CF-ALB-007": {"Protocol", "TargetType", "HealthCheckEnabled", "HealthCheckPath"},
+        "CF-CLB-001": {"Listeners"},
+        "CF-CLB-002": {"Listeners"},
+        "CF-CLB-003": {"AccessLoggingPolicy"},
+        "CF-CLB-004": {"CrossZone"},
+        "CF-CLB-005": {"ConnectionDrainingPolicy"},
         "CF-CT-001": {"EnableLogFileValidation"},
         "CF-CT-002": {"IsMultiRegionTrail"},
         "CF-CT-003": {"KmsKeyId"},
@@ -360,7 +375,10 @@ _F, _SB, _ID, _DP, _NET, _RES, _OBS, _SUS = (
     "network-exposure", "resilience", "observability", "sustainability",
 )
 CF_THEMES: dict[str, tuple[str, ...]] = {
-    "CF-ALB-001": (_OBS,), "CF-APIGW-001": (_OBS,), "CF-APIGW-002": (_OBS,),
+    "CF-ALB-001": (_OBS,), "CF-ALB-002": (_DP, _NET), "CF-ALB-003": (_DP, _NET),
+    "CF-ALB-004": (_NET,), "CF-ALB-005": (_RES,), "CF-ALB-006": (_NET,), "CF-ALB-007": (_RES,),
+    "CF-CLB-001": (_DP, _NET), "CF-CLB-002": (_DP,), "CF-CLB-003": (_OBS,), "CF-CLB-004": (_RES,),
+    "CF-CLB-005": (_RES,), "CF-APIGW-001": (_OBS,), "CF-APIGW-002": (_OBS,),
     "CF-APIGW-V2-001": (_OBS,), "CF-APIGW-V2-002": (_OBS,),
     "CF-CF-001": (_DP, _NET), "CF-CF-002": (_DP, _NET), "CF-CF-003": (_NET,), "CF-CF-004": (_NET, _ID),
     "CF-COG-001": (_ID,), "CF-COG-002": (_ID,), "CF-COG-003": (_ID,),
@@ -862,6 +880,174 @@ def _points_at(res: Resource, key: str, target: Resource) -> bool:
         return _references(text, target.name)
     return target.name in res.references
 
+
+
+# A value the scan cannot read: an intrinsic, or a Terraform expression.
+_UNKNOWN = object()
+
+
+def _lb_attribute(attrs: Any, key: str) -> Any:
+    """An ELBv2 LoadBalancerAttributes value as lower-case text, None when not set, or
+    _UNKNOWN when the list or the value is not a literal."""
+    if attrs is None:
+        return None
+    if not isinstance(attrs, list):
+        return _UNKNOWN
+    for item in attrs:
+        if not isinstance(item, dict) or item.get("Key") != key:
+            continue
+        value = item.get("Value")
+        if isinstance(value, bool):
+            return "true" if value else "false"
+        return value.strip().lower() if isinstance(value, str) else _UNKNOWN
+    return None
+
+
+# ELBv2 security policies that allow TLS 1.0 or 1.1. ELBSecurityPolicy-2016-08 is also
+# what CloudFormation, the CLI, CDK and Terraform use when SslPolicy is not set.
+_WEAK_ELB_POLICY = re.compile(
+    r"^ELBSecurityPolicy-(?:2015-05|2016-08|FS-2018-06|TLS-1-[01]-|FS-1-1-|TLS13-1-[01]-)"
+)
+_DEFAULT_ELB_POLICY = "ELBSecurityPolicy-2016-08"
+
+
+def _redirects_to_https(actions: Any) -> bool | None:
+    """True when a listener's default action redirects to HTTPS. None when unreadable."""
+    if not isinstance(actions, list):
+        return None if actions is not None else False
+    for action in actions:
+        if not isinstance(action, dict):
+            return None
+        kind = action.get("Type")
+        if not isinstance(kind, str):
+            return None
+        if kind.lower() != "redirect":
+            continue
+        protocol = (action.get("RedirectConfig") or {}).get("Protocol")
+        if not isinstance(protocol, str):
+            return None
+        if protocol.upper() == "HTTPS":
+            return True
+    return False
+
+
+def _is_acm_certificate(value: Any) -> bool | None:
+    """True for an ACM certificate ARN, False for an IAM server certificate, None when the
+    value cannot be read (a Ref to a parameter, an import)."""
+    if isinstance(value, str):
+        return ":acm:" in value
+    text = json.dumps(value, default=str)
+    if ":acm:" in text:
+        return True
+    if ":iam:" in text and "server-certificate" in text:
+        return False
+    return None
+
+
+def _flag_off(block: Any, key: str) -> bool:
+    """True when a {key: bool} setting is missing or false; False when it is on or when the
+    block or the value is an intrinsic the scan cannot read."""
+    if block is None:
+        return True
+    if not isinstance(block, dict) or _is_intrinsic(block):
+        return False
+    value = block.get(key)
+    if value is None or value is False:
+        return True
+    return isinstance(value, str) and value.strip().lower() == "false"
+
+
+def _load_balancer_findings(res: Resource, template_path: Path) -> List[Finding]:
+    """ELBv2 load balancers (CF-ALB-001, 004, 005, 006), listeners (CF-ALB-002, 003),
+    target groups (CF-ALB-007) and Classic Load Balancers (CF-CLB-001..005)."""
+    props = res.properties
+    out: List[Finding] = []
+
+    def add(check_id: str, title: str, severity: Severity, category: str, recommendation: str) -> None:
+        out.append(Finding(
+            id=check_id, title=title, severity=severity, category=category,
+            file=res.file or str(template_path), line=res.line,
+            evidence=f"{res.name} ({res.source_type})", recommendation=recommendation,
+        ))
+
+    if res.type == "lb":
+        attrs = props.get("LoadBalancerAttributes")
+        kind = props.get("Type", "application")
+        if _lb_attribute(attrs, "access_logs.s3.enabled") in (None, "false"):
+            add("CF-ALB-001", "ALB access logs not enabled (template-level)", "Low", "Observability",
+                "Consider enabling access logs to S3 for audit and incident analysis, balanced against "
+                "cost (Security Hub ELB.5).")
+        if kind == "application" and _lb_attribute(
+                attrs, "routing.http.drop_invalid_header_fields.enabled") in (None, "false"):
+            add("CF-ALB-004", "ALB does not drop invalid HTTP headers", "Low", "Security",
+                "Set the attribute routing.http.drop_invalid_header_fields.enabled to true, so headers "
+                "that do not match the HTTP spec are removed before they reach the targets (Security "
+                "Hub ELB.4). In Terraform: drop_invalid_header_fields = true.")
+        if _lb_attribute(attrs, "deletion_protection.enabled") in (None, "false"):
+            add("CF-ALB-005", "Load balancer deletion protection not enabled", "Low", "Reliability",
+                "Set the attribute deletion_protection.enabled to true for production load balancers, so "
+                "they cannot be deleted by mistake (Security Hub ELB.6). In CDK: deletionProtection: true.")
+        if kind == "application" and _lb_attribute(attrs, "routing.http.desync_mitigation_mode") == "monitor":
+            add("CF-ALB-006", "ALB desync mitigation mode is monitor", "Low", "Security",
+                "Set routing.http.desync_mitigation_mode to defensive (the default) or strictest. Monitor "
+                "lets requests that may be HTTP desync attacks through (Security Hub ELB.12).")
+
+    if res.type == "lb_listener":
+        protocol = props.get("Protocol")
+        protocol = protocol.upper() if isinstance(protocol, str) else None
+        if protocol == "HTTP" and _redirects_to_https(props.get("DefaultActions")) is False:
+            add("CF-ALB-002", "HTTP listener does not redirect to HTTPS", "Medium", "Security",
+                "Make the HTTP listener's default action a redirect to HTTPS (port 443, HTTP_301), so "
+                "no request is served in clear text (Security Hub ELB.1). In CDK: redirectHTTP: true, or "
+                "ListenerAction.redirect({ protocol: 'HTTPS', port: '443' }).")
+        if protocol in ("HTTPS", "TLS"):
+            policy = props.get("SslPolicy", _DEFAULT_ELB_POLICY)
+            if isinstance(policy, str) and _WEAK_ELB_POLICY.match(policy):
+                unset = "SslPolicy" not in props
+                add("CF-ALB-003", "Listener TLS policy allows TLS 1.0 or 1.1", "Medium", "Security",
+                    ("No SslPolicy is set, so the listener uses ELBSecurityPolicy-2016-08, which allows "
+                     "TLS 1.0. " if unset else f"{policy} allows TLS below 1.2. ")
+                    + "Set SslPolicy to ELBSecurityPolicy-TLS13-1-2-2021-06 or newer. In CDK: "
+                    "sslPolicy: elbv2.SslPolicy.RECOMMENDED_TLS.")
+
+    if res.type == "lb_target_group" and props.get("TargetType", "instance") != "lambda":
+        protocol = props.get("Protocol")
+        enabled = props.get("HealthCheckEnabled")
+        if enabled is False or (isinstance(enabled, str) and enabled.lower() == "false"):
+            add("CF-ALB-007", "Target group health checks are off", "Low", "Reliability",
+                "Turn health checks on, so the load balancer stops sending traffic to failed targets. "
+                "In CDK: healthCheck: { enabled: true, path: '/health' }.")
+        elif isinstance(protocol, str) and protocol.upper() in ("HTTP", "HTTPS") \
+                and "HealthCheckPath" not in props:
+            add("CF-ALB-007", "Target group has no health check path", "Low", "Reliability",
+                "Set HealthCheckPath to an endpoint that checks the app and its dependencies. The "
+                "default is /, which often only shows that the web server is up. In CDK: "
+                "healthCheck: { path: '/health' }.")
+
+    if res.type == "elb":
+        listeners = props.get("Listeners")
+        listeners = [x for x in listeners if isinstance(x, dict)] if isinstance(listeners, list) else []
+        protocols = [x.get("Protocol").upper() for x in listeners if isinstance(x.get("Protocol"), str)]
+        if protocols and all(p in ("HTTP", "TCP") for p in protocols):
+            add("CF-CLB-001", "Classic Load Balancer has no HTTPS or SSL listener", "Medium", "Security",
+                "Add an HTTPS or SSL listener with a certificate and stop serving clear text (Security "
+                "Hub ELB.3). Better: move to an Application or Network Load Balancer.")
+        if any(_is_acm_certificate(x.get("SSLCertificateId")) is False for x in listeners
+               if str(x.get("Protocol", "")).upper() in ("HTTPS", "SSL")):
+            add("CF-CLB-002", "Classic Load Balancer uses an IAM server certificate", "Low", "Security",
+                "Use a certificate from AWS Certificate Manager, which renews it for you (Security Hub ELB.2).")
+        if _flag_off(props.get("AccessLoggingPolicy"), "Enabled"):
+            add("CF-CLB-003", "Classic Load Balancer access logs not enabled", "Low", "Observability",
+                "Set AccessLoggingPolicy with Enabled: true and an S3 bucket (Security Hub ELB.5).")
+        if _flag_off({"Enabled": props["CrossZone"]} if "CrossZone" in props else None, "Enabled"):
+            add("CF-CLB-004", "Classic Load Balancer cross-zone load balancing is off", "Low", "Reliability",
+                "Set CrossZone: true, so each AZ's nodes spread traffic over targets in every AZ "
+                "(Security Hub ELB.9). It is off by default in CloudFormation.")
+        if _flag_off(props.get("ConnectionDrainingPolicy"), "Enabled"):
+            add("CF-CLB-005", "Classic Load Balancer connection draining is off", "Low", "Reliability",
+                "Set ConnectionDrainingPolicy with Enabled: true, so in-flight requests finish when a "
+                "target is removed (Security Hub ELB.7).")
+    return out
 
 
 _WORLD_V4, _WORLD_V6 = "0.0.0.0/0", "::/0"
@@ -2500,26 +2686,9 @@ def _run_resource_checks(
                         ))
                         estimates.apply(findings[-1], estimates.ec2_instance(props.get("InstanceType")))
 
-                # --- ALB access logs (heuristic) ---
-                if ctype == "lb":
-                    attrs = props.get("LoadBalancerAttributes")
-                    # CDK may represent as list of {Key, Value}
-                    has_logs = False
-                    if isinstance(attrs, list):
-                        for a in attrs:
-                            if a.get("Key") == "access_logs.s3.enabled" and str(a.get("Value")).lower() == "true":
-                                has_logs = True
-                    if not has_logs:
-                        findings.append(Finding(
-                            id="CF-ALB-001",
-                            title="ALB access logs not enabled (template-level)",
-                            severity="Low",
-                            category="Observability",
-                            file=res.file or str(template_path),
-                            line=res.line,
-                            evidence=f"{logical_id} ({rtype})",
-                            recommendation="Consider enabling ALB access logs to S3 for audit and incident analysis (balance against cost).",
-                        ))
+                # --- Load balancers: ELBv2 attributes, listeners, target groups, Classic ---
+                if ctype in ("lb", "lb_listener", "lb_target_group", "elb"):
+                    findings.extend(_load_balancer_findings(res, template_path))
 
                 # --- CloudTrail ---
                 if ctype == "cloudtrail":

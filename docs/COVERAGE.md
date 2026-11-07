@@ -17,7 +17,6 @@ Which CDK rules have a template check, and which AWS Foundational Security Best 
 
 | Work | Adds template checks for |
 | -- | -- |
-| `load-balancers` | Load balancers (ALB, NLB, Classic) |
 | `rds` | More RDS and Aurora settings |
 | `lambda` | Lambda access, secrets and limits |
 | `api-gateway` | API Gateway auth, TLS, throttling and caching |
@@ -42,7 +41,7 @@ Which CDK rules have a template check, and which AWS Foundational Security Best 
 
 ## CDK rules
 
-172 rules: 59 covered, 6 partial, 68 planned, 10 account, 5 cdk-only, 24 advice.
+172 rules: 62 covered, 6 partial, 65 planned, 10 account, 5 cdk-only, 24 advice.
 
 | Rule | Title | Template check | Status | Note |
 | -- | -- | -- | -- | -- |
@@ -56,8 +55,8 @@ Which CDK rules have a template check, and which AWS Foundational Security Best 
 | SEC-008 | DynamoDB table may miss encryption | `CF-DDB-002` | `covered` |  |
 | SEC-009 | API Gateway missing authentication |  | `planned: api-gateway` |  |
 | SEC-010 | API Gateway may not enforce TLS 1.2+ |  | `planned: api-gateway` |  |
-| SEC-011 | ALB/NLB not enforcing HTTPS redirect |  | `planned: load-balancers` |  |
-| SEC-012 | ALB using insecure SSL/TLS policy |  | `planned: load-balancers` |  |
+| SEC-011 | ALB/NLB not enforcing HTTPS redirect | `CF-ALB-002` | `covered` |  |
+| SEC-012 | ALB using insecure SSL/TLS policy | `CF-ALB-003` | `covered` |  |
 | SEC-013 | SQS queue not encrypted | `CF-SQS-001` | `covered` |  |
 | SEC-014 | SNS topic not encrypted | `CF-SNS-001` | `covered` |  |
 | SEC-015 | Secrets Manager rotation not enabled | `CF-SM-001` | `covered` |  |
@@ -120,7 +119,7 @@ Which CDK rules have a template check, and which AWS Foundational Security Best 
 | REL-004 | DynamoDB may miss point-in-time recovery | `CF-DDB-001` | `covered` |  |
 | REL-005 | DynamoDB may miss automated backups |  | `planned: data-resilience` |  |
 | REL-006 | API Gateway throttling not configured |  | `planned: api-gateway` |  |
-| REL-007 | ALB health check configuration missing |  | `planned: load-balancers` |  |
+| REL-007 | ALB health check configuration missing | `CF-ALB-007` | `covered` |  |
 | REL-008 | SQS missing dead-letter queue configuration | `CF-SQS-002` | `covered` |  |
 | REL-009 | Lambda timeout may be too low or too high |  | `planned: lambda` |  |
 | REL-010 | Lambda not in VPC when accessing RDS/ElastiCache |  | `advice` | Whether a function needs the VPC depends on what it calls. |
@@ -311,15 +310,15 @@ Controls a template can show. Account-level controls (for example S3.1, EC2.7 an
 | ElasticBeanstalk.1 | `planned: app-services` | `AWS::ElasticBeanstalk::Environment` |
 | ElasticBeanstalk.2 | `planned: app-services` | `AWS::ElasticBeanstalk::Environment` |
 | ElasticBeanstalk.3 | `planned: app-services` | `AWS::ElasticBeanstalk::Environment` |
-| ELB.1 | `planned: load-balancers` | `AWS::ElasticLoadBalancingV2::Listener` |
-| ELB.2 | `planned: load-balancers` | `AWS::ElasticLoadBalancing::LoadBalancer` |
-| ELB.3 | `planned: load-balancers` | `AWS::ElasticLoadBalancing::LoadBalancer` |
-| ELB.4 | `planned: load-balancers` | `AWS::ElasticLoadBalancingV2::LoadBalancer` |
-| ELB.5 | `CF-ALB-001` | `AWS::ElasticLoadBalancingV2::LoadBalancer` |
-| ELB.6 | `planned: load-balancers` | `AWS::ElasticLoadBalancingV2::LoadBalancer` |
-| ELB.7 | `planned: load-balancers` | `AWS::ElasticLoadBalancing::LoadBalancer` |
-| ELB.9 | `planned: load-balancers` | `AWS::ElasticLoadBalancing::LoadBalancer` |
-| ELB.12 | `planned: load-balancers` | `AWS::ElasticLoadBalancingV2::LoadBalancer` |
+| ELB.1 | `CF-ALB-002` | `AWS::ElasticLoadBalancingV2::Listener` |
+| ELB.2 | `CF-CLB-002` | `AWS::ElasticLoadBalancing::LoadBalancer` |
+| ELB.3 | `CF-CLB-001` | `AWS::ElasticLoadBalancing::LoadBalancer` |
+| ELB.4 | `CF-ALB-004` | `AWS::ElasticLoadBalancingV2::LoadBalancer` |
+| ELB.5 | `CF-ALB-001` | `AWS::ElasticLoadBalancingV2::LoadBalancer` (CF-CLB-003 for `AWS::ElasticLoadBalancing::LoadBalancer`) |
+| ELB.6 | `CF-ALB-005` | `AWS::ElasticLoadBalancingV2::LoadBalancer` |
+| ELB.7 | `CF-CLB-005` | `AWS::ElasticLoadBalancing::LoadBalancer` |
+| ELB.9 | `CF-CLB-004` | `AWS::ElasticLoadBalancing::LoadBalancer` |
+| ELB.12 | `CF-ALB-006` | `AWS::ElasticLoadBalancingV2::LoadBalancer` |
 | EMR.1 | `planned: emr-dms` | `AWS::EMR::Cluster` |
 | EMR.3 | `planned: emr-dms` | `AWS::EMR::SecurityConfiguration` |
 | EMR.4 | `planned: emr-dms` | `AWS::EMR::SecurityConfiguration` |

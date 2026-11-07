@@ -47,6 +47,11 @@ TF_TYPE_TO_CANONICAL: dict[str, str] = {
     "aws_eip": "eip",
     "aws_lb": "lb",
     "aws_alb": "lb",
+    "aws_lb_listener": "lb_listener",
+    "aws_alb_listener": "lb_listener",
+    "aws_lb_target_group": "lb_target_group",
+    "aws_alb_target_group": "lb_target_group",
+    "aws_elb": "elb",
     "aws_cloudtrail": "cloudtrail",
     "aws_kms_key": "kms_key",
     "aws_lambda_function": "lambda_function",
@@ -906,12 +911,78 @@ def _lb(body: dict) -> dict:
         props["Scheme"] = UNRESOLVED if internal is UNRESOLVED else (
             "internal" if internal is True else "internet-facing")
     logs = _first_block(body, "access_logs")
-    enabled = _v(logs, "enabled", False)  # provider default: false, even with a bucket
-    if enabled is UNRESOLVED:
-        props["LoadBalancerAttributes"] = UNRESOLVED
+    attributes = []
+    # Provider defaults: logs off (even with a bucket), headers kept, no deletion
+    # protection, desync mode defensive.
+    for key, value in (
+        ("access_logs.s3.enabled", _v(logs, "enabled", False)),
+        ("routing.http.drop_invalid_header_fields.enabled", _v(body, "drop_invalid_header_fields", False)),
+        ("deletion_protection.enabled", _v(body, "enable_deletion_protection", False)),
+        ("routing.http.desync_mitigation_mode", _v(body, "desync_mitigation_mode", "defensive")),
+    ):
+        if value is UNRESOLVED:
+            value = _OPAQUE
+        elif isinstance(value, bool):
+            value = "true" if value else "false"
+        attributes.append({"Key": key, "Value": value})
+    props["LoadBalancerAttributes"] = attributes
+    return props
+
+
+def _lb_listener(body: dict) -> dict:
+    """aws_lb_listener in the AWS::ElasticLoadBalancingV2::Listener shape: protocol, TLS
+    policy and default actions (CF-ALB-002, CF-ALB-003)."""
+    props: dict = {}
+    _set(props, "Protocol", _v(body, "protocol"))
+    _set(props, "SslPolicy", _v(body, "ssl_policy"))
+    if "default_action" in _dynamic_names(body):
+        props["DefaultActions"] = UNRESOLVED
         return props
-    value = "true" if enabled is True else "false"
-    props["LoadBalancerAttributes"] = [{"Key": "access_logs.s3.enabled", "Value": value}]
+    actions = []
+    for action in _blocks(body, "default_action"):
+        kind = _v(action, "type")
+        item: dict = {"Type": _OPAQUE if kind is UNRESOLVED else kind}
+        redirect = _first_block(action, "redirect")
+        if redirect:
+            protocol = _v(redirect, "protocol", "#{protocol}")
+            item["RedirectConfig"] = {"Protocol": _OPAQUE if protocol is UNRESOLVED else protocol}
+        actions.append(item)
+    props["DefaultActions"] = actions
+    return props
+
+
+def _lb_target_group(body: dict) -> dict:
+    """aws_lb_target_group: protocol, target type and health check (CF-ALB-007)."""
+    props: dict = {}
+    _set(props, "Protocol", _v(body, "protocol"))
+    _set(props, "TargetType", _v(body, "target_type", "instance"))
+    if "health_check" in _dynamic_names(body):
+        props["HealthCheckEnabled"] = UNRESOLVED
+        return props
+    check = _first_block(body, "health_check")
+    _set(props, "HealthCheckEnabled", _v(check, "enabled"))
+    _set(props, "HealthCheckPath", _v(check, "path"))
+    return props
+
+
+def _elb(body: dict) -> dict:
+    """aws_elb in the AWS::ElasticLoadBalancing::LoadBalancer shape (CF-CLB-001..005).
+    Provider defaults: cross-zone on, connection draining off, access logs on when the
+    block is present."""
+    props: dict = {}
+    if "listener" in _dynamic_names(body):
+        props["Listeners"] = UNRESOLVED
+    else:
+        props["Listeners"] = [
+            {"Protocol": _v(item, "lb_protocol"), "SSLCertificateId": _ref(item, "ssl_certificate_id")}
+            for item in _blocks(body, "listener")
+        ]
+    if "access_logs" in _dynamic_names(body):
+        props["AccessLoggingPolicy"] = UNRESOLVED
+    elif _blocks(body, "access_logs"):
+        props["AccessLoggingPolicy"] = {"Enabled": _v(_first_block(body, "access_logs"), "enabled", True)}
+    props["CrossZone"] = _v(body, "cross_zone_load_balancing", True)
+    props["ConnectionDrainingPolicy"] = {"Enabled": _v(body, "connection_draining", False)}
     return props
 
 
@@ -1318,6 +1389,11 @@ _ADAPTERS: dict[str, Callable[[dict], dict]] = {
     "aws_security_group": _security_group,
     "aws_lb": _lb,
     "aws_alb": _lb,
+    "aws_lb_listener": _lb_listener,
+    "aws_alb_listener": _lb_listener,
+    "aws_lb_target_group": _lb_target_group,
+    "aws_alb_target_group": _lb_target_group,
+    "aws_elb": _elb,
     "aws_cloudtrail": _cloudtrail,
     "aws_kms_key": _kms_key,
     "aws_lambda_function": _lambda,
