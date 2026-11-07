@@ -2,7 +2,10 @@
 import re
 from pathlib import Path
 
+from typer.main import get_command
+
 from aws_arch_agent import __version__
+from aws_arch_agent.cli import app
 from aws_arch_agent.rules.registry import ALL_RULES
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -65,4 +68,15 @@ def test_rule_reference_count_matches_the_registry_and_lists_each_rule_once() ->
 def test_readme_pins_the_action_to_the_current_release() -> None:
     readme = (ROOT / "README.md").read_text(encoding="utf-8")
     assert f".github/actions/aws-arch-agent@v{__version__}" in readme
+    assert f'pip install "git+https://github.com/gutehall/aws-arch-agent@v{__version__}"' in readme
+    assert f"releases/tag/v{__version__}" in readme
     assert "aws-arch-agent@main" not in readme
+
+
+def test_reference_pins_the_action_and_lists_every_cli_option() -> None:
+    text = (ROOT / "docs" / "REFERENCE.md").read_text(encoding="utf-8")
+    assert f".github/actions/aws-arch-agent@v{__version__}" in text
+    for param in get_command(app).params:
+        for opt in param.opts:
+            if opt.startswith("--"):
+                assert f"`{opt}`" in text, opt

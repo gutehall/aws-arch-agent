@@ -68,7 +68,7 @@ Releases let consumers pin a rule set. These rules are settled; follow them rath
   - If a release mixes these, the largest bump wins.
 - **Where releases come from:** always `main`, as a `vX.Y.Z` tag plus GitHub release notes. Not every merge gets a release; cut one when there is something worth pinning.
 - **One number everywhere:** the tag and the package version must match. The version lives only in `__version__` in `src/aws_arch_agent/__init__.py`; `pyproject.toml` reads it from there, and `aws-arch-agent --version` prints it. Bump it in a PR before tagging.
-- **Cutting one:** add the `## vX.Y.Z` section to `CHANGELOG.md` and bump the version in a PR. After it merges, tag the merged `main` and push the tag (`git switch main && git pull --ff-only && git tag -a vX.Y.Z -m vX.Y.Z && git push origin vX.Y.Z`). The `Release` workflow then publishes the GitHub release with that changelog section as notes. It never creates a tag and skips a tag that already has a release.
+- **Cutting one:** add the `## vX.Y.Z` section to `CHANGELOG.md`, bump the version, and update the `@vX.Y.Z` pins in `README.md` and `docs/REFERENCE.md` in one PR (tests fail until all match). After it merges, tag the merged `main` and push the tag (`git switch main && git pull --ff-only && git tag -a vX.Y.Z -m vX.Y.Z && git push origin vX.Y.Z`). The `Release` workflow then publishes the GitHub release with that changelog section as notes. It never creates a tag and skips a tag that already has a release.
 - **Tags are immutable:** never force-push or move a tag. If a release is wrong, fix it on `main` and cut the next patch.
 - PyPI publishing is out of scope for now.
 

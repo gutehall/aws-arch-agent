@@ -10,12 +10,15 @@ No AWS credentials. No cloud calls. LLM output is optional.
 
 Requires Python 3.11+ and [ripgrep](https://github.com/BurntSushi/ripgrep#installation) (`brew install ripgrep`).
 
+Install a release (latest: [v0.1.0](https://github.com/gutehall/aws-arch-agent/releases/tag/v0.1.0)):
+
 ```bash
-git clone https://github.com/gutehall/aws-arch-agent.git
-cd aws-arch-agent
 python3 -m venv .venv && source .venv/bin/activate
-pip install -e .
+pip install "git+https://github.com/gutehall/aws-arch-agent@v0.1.0"
+aws-arch-agent --version   # 0.1.0
 ```
+
+The release tag is the rule set; see [CI](#ci) for what each upgrade can change. To work on the scanner itself, clone `main` and `pip install -e ".[dev]"` (see [CONTRIBUTING.md](CONTRIBUTING.md)).
 
 ## Usage
 
@@ -89,7 +92,8 @@ aws-arch-agent --repo . --mode v2 --rag ./docs/waf-snippets.md
 - [docs/CF_RULES.md](docs/CF_RULES.md): all rules
 - [docs/V2_LANGGRAPH.md](docs/V2_LANGGRAPH.md): V2 pipeline
 - [docs/report-schema.json](docs/report-schema.json): JSON report schema
-- [CONTRIBUTING.md](CONTRIBUTING.md): development setup
+- [CONTRIBUTING.md](CONTRIBUTING.md): development setup and releases
+- [CHANGELOG.md](CHANGELOG.md): what each release changed
 
 ## License
 
