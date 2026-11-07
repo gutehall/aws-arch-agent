@@ -4,7 +4,7 @@ This document provides a comprehensive list of all rules checked by AWS Arch Age
 
 ## Overview
 
-AWS Arch Agent checks **170 static analysis rules** plus additional CloudFormation template rules across all 6 AWS Well-Architected Framework pillars.
+AWS Arch Agent checks **172 static analysis rules** plus additional CloudFormation template rules across all 6 AWS Well-Architected Framework pillars.
 
 ## Static Analysis Rules (V1 & V2 Modes)
 
@@ -18,8 +18,6 @@ These rules run on your CDK TypeScript/Python code and execute in both V1 and V2
 - SEC-013: SQS queue encryption missing
 - SEC-014: SNS topic encryption missing
 - SEC-025: ElastiCache encryption missing
-- SEC-028: ECR repository image scanning not enabled
-- SEC-033: SSM Parameter Store not using SecureString
 - SEC-037: EFS encryption not enabled
 - SEC-038: Kinesis stream encryption not enabled
 - SEC-039: OpenSearch domain encryption not enabled
@@ -123,7 +121,6 @@ These rules run on your CDK TypeScript/Python code and execute in both V1 and V2
 - REL-008: SQS queue missing dead-letter queue
 - REL-009: Lambda timeout may be too short
 - REL-015: Step Functions missing retry policies
-- OPS-013: EventBridge rules not using DLQ
 
 **Throttling & Limits:**
 - REL-006: API Gateway throttling not configured
