@@ -20,8 +20,7 @@ from aws_arch_agent.tools.llm import LLMClient
 from aws_arch_agent.rules.fix_snippets import attach_fixes
 from aws_arch_agent.rules.registry import ALL_RULES
 from aws_arch_agent.rules.runner import filter_by_severity, run_all_rules
-from aws_arch_agent.pricing import DEFAULT_REGION, price_note, use_region
-from aws_arch_agent.rules import effort, environments, nonprod, stack_cost, themes
+from aws_arch_agent.rules import effort, environments, nonprod, regions, stack_cost, themes
 from aws_arch_agent.rules.tag_policy import TagPolicy, use_tag_policy
 from aws_arch_agent.report.markdown import render_markdown
 from aws_arch_agent.tools.cdk_synth import (
@@ -65,7 +64,7 @@ class State(TypedDict, total=False):
     rag_embedding_provider: str
     rag_embedding_model: str
     iac: str
-    price_region: str
+    price_region: str | None
     theme_filter: List[str] | None
     group_by: str
     rag: object
@@ -215,7 +214,7 @@ def node_collect(state: State) -> State:
         key_files=[p.name for p in files if p.name in {"cdk.json", "package.json", "requirements.txt"}],
         notes={
             "top_level": [p.name for p in repo_path.iterdir() if p.is_dir()],
-            "prices": price_note(state.get("price_region") or DEFAULT_REGION),
+            "prices": regions.note(),  # replaced in node_report once stacks are priced
         },
     )
 
@@ -486,6 +485,7 @@ def node_report(state: State) -> State:
     cost = stack_cost.summary(findings, Path(state["repo_path"]))
     if cost is not None:
         ctx.notes["cost"] = cost
+    ctx.notes["prices"] = regions.note()
     base_report = render_markdown(ctx, findings, warnings=warnings, group_by=state.get("group_by") or "severity")
     synth_block = state.get("synth_summary", "")
     if state.get("templates_path"):
@@ -564,7 +564,7 @@ def analyze_v2(
     llm_mode: LLMMode = "full",
     rules_org: bool = False,
     iac: str = "auto",
-    price_region: str = DEFAULT_REGION,
+    price_region: str | None = None,
     tag_policy: TagPolicy | None = None,
     environment_map: dict[str, str] | None = None,
     nonprod_max_size: str | None = None,
@@ -594,7 +594,7 @@ def analyze_v2(
         "group_by": group_by,
     }
     with (
-        use_region(price_region),
+        regions.use_regions(price_region),
         use_tag_policy(tag_policy),
         stack_cost.collect(),
         environments.use_environments(environment_map, repo_path),

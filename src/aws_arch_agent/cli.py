@@ -28,7 +28,6 @@ from aws_arch_agent.config import (
     load_config,
 )
 from aws_arch_agent.models import Finding, IacSource
-from aws_arch_agent.pricing import DEFAULT_REGION
 from aws_arch_agent.rules.themes import THEMES
 from aws_arch_agent.report.json_report import render_json
 from aws_arch_agent.report.html import render_html
@@ -157,8 +156,10 @@ def analyze(
     baseline: str | None = typer.Option(None, "--baseline", help="Path to baseline file for suppressions"),
     enforce_baseline: bool = typer.Option(False, "--enforce-baseline", help="Only fail on findings not in baseline"),
     update_baseline: bool = typer.Option(False, "--update-baseline", help="Add current findings to baseline file"),
-    region: str = typer.Option(
-        DEFAULT_REGION, "--region", help="AWS region whose prices cost estimates use (offline snapshot)"
+    region: str | None = typer.Option(
+        None, "--region",
+        help="AWS region whose prices cost estimates use (offline snapshot). Default: each "
+             "stack's own region (CDK env, Terraform provider), then AWS_REGION, then us-east-1",
     ),
     theme: list[str] = typer.Option(
         [], "--theme",
@@ -316,9 +317,11 @@ def analyze(
             style="yellow",
             markup=False,
         )
-    if ctx_report.notes.get("prices", {}).get("snapshot_date") is None:
+    missing = [e["region"] for e in ctx_report.notes.get("prices", {}).get("regions", [])
+               if e.get("snapshot_date") is None]
+    if missing:
         console.print(
-            f"No prices for region {cfg.region} in the snapshot: cost estimates are skipped.",
+            f"No prices for region {', '.join(missing)} in the snapshot: cost estimates there are skipped.",
             style="yellow",
             markup=False,
         )

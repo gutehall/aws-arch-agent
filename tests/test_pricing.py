@@ -221,7 +221,7 @@ def test_snapshot_is_small() -> None:
 
 
 def test_config_region(tmp_path: Path) -> None:
-    assert load_config(tmp_path).region == "us-east-1"
+    assert load_config(tmp_path).region is None  # not set: detected per stack
     (tmp_path / ".aws-arch-agent.yaml").write_text("region: EU-North-1\n", encoding="utf-8")
     assert load_config(tmp_path).region == "eu-north-1"
     assert load_config(tmp_path, region="eu-west-1").region == "eu-west-1"  # the flag wins
@@ -242,14 +242,18 @@ def test_report_states_the_price_region(tmp_path: Path) -> None:
     result = CliRunner().invoke(app, ["--repo", str(tmp_path), "--no-llm", "--out", str(out)])
     assert result.exit_code == 0, result.output
     date = pricing.snapshot_date("us-east-1")
-    assert f"- Prices: on-demand, us-east-1 (AWS price list of {date})" in out.read_text()
+    assert f"- Prices: on-demand, us-east-1 (default; AWS price list of {date})" in out.read_text()
 
     out_json = tmp_path / "report.json"
     result = CliRunner().invoke(app, ["--repo", str(tmp_path), "--no-llm", "--format", "json",
                                       "--region", "eu-north-1", "--out", str(out_json)])
     assert result.exit_code == 0, result.output
     notes = json.loads(out_json.read_text())["context"]["notes"]
-    assert notes["prices"] == {"region": "eu-north-1", "snapshot_date": pricing.snapshot_date("eu-north-1")}
+    north = pricing.snapshot_date("eu-north-1")
+    assert notes["prices"] == {
+        "region": "eu-north-1", "snapshot_date": north,
+        "regions": [{"region": "eu-north-1", "source": "--region / config", "snapshot_date": north}],
+    }
 
     out_html = tmp_path / "report.html"
     result = CliRunner().invoke(app, ["--repo", str(tmp_path), "--no-llm", "--format", "html",

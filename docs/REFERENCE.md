@@ -24,7 +24,7 @@ The agent covers all six AWS Well-Architected pillars. Static and CloudFormation
 | `--baseline` | `.aws-arch-agent-baseline.json` | Path to baseline suppressions file |
 | `--enforce-baseline` | `false` | Only fail on findings not in baseline |
 | `--update-baseline` | `false` | Add current findings to baseline file |
-| `--region` | `us-east-1` | AWS region whose on-demand prices cost estimates use (config `region`). Prices come from a snapshot shipped in the package, so the scan makes no network call. The report states the region and the AWS price list date. A region the snapshot lacks gives no estimates, and the run says so. See [Prices](#prices) |
+| `--region` | detected | AWS region whose on-demand prices cost estimates use, for every stack (config `region`). Without it each stack is priced in its own region, then `AWS_REGION`, then `us-east-1`: see [Price region](#price-region). Prices come from a snapshot shipped in the package, so the scan makes no network call. The report states the region and the AWS price list date. A region the snapshot lacks gives no estimates, and the run says so. See [Prices](#prices) |
 
 ## IaC sources
 
@@ -100,7 +100,18 @@ Static and CloudFormation rule IDs, titles, and pillar groups are in [CF_RULES.m
 
 Cost estimates read `aws_arch_agent/pricing/prices.json.gz`, an offline snapshot of the AWS Price List bulk API: on-demand USD prices for the resources the cost rules touch (EC2 and RDS instance types, NAT gateway hour and GB, EBS gp2/gp3/io2, public IPv4 addresses including Elastic IPs, Lambda, DynamoDB on-demand and provisioned, S3 storage classes, CloudWatch Logs ingestion and storage). Each price carries its region and the publication date of its AWS offer. A tiered price is the first paid tier. An instance type or region the snapshot lacks gives no estimate, never a guess.
 
-The snapshot covers `us-east-1`, `us-west-2`, `eu-west-1`, `eu-central-1` and `eu-north-1`. To refresh it, or to add regions:
+### Price region
+
+Each stack (one template, or one Terraform root module) is priced in one region, the first of:
+
+1. `--region` or config `region`, for every stack.
+2. The region the stack's code deploys to: the CDK stack's `env` region (from `cdk.out/manifest.json`; an env-agnostic stack has none), the default `provider "aws"` region in Terraform (a literal, `var.<name>` with a default, or from `--tf-plan`), or else the availability zones written in the template (`eu-north-1a`) when they all name one region.
+3. `AWS_REGION`, then `AWS_DEFAULT_REGION`.
+4. `us-east-1`.
+
+The report's Prices line names each region and what decided it, for example `eu-north-1 (CDK stack env; AWS price list of 2026-11-05)`. The cost table has a Region column. JSON `context.notes.prices.regions` lists them with their `source`. CDK source scanned without synth has no stacks to read, so it uses steps 1, 3 and 4.
+
+The snapshot covers `us-east-1`, `us-west-2`, `eu-west-1`, `eu-central-1` and `eu-north-1`. A stack in another region gets no estimates, and the run says so. To refresh the snapshot, or to add regions:
 
 ```bash
 python scripts/refresh_prices.py --regions us-east-1 eu-north-1 --cache-dir /tmp/offers

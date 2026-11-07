@@ -85,7 +85,7 @@ rules:
   nonprod:
     max_instance_size: xlarge
   ```
-- **region**: AWS region whose on-demand prices cost estimates use (default `us-east-1`; `--region` overrides it). Prices come from the snapshot shipped with the package; see [Prices](REFERENCE.md#prices)
+- **region**: AWS region whose on-demand prices cost estimates use, for every stack (`--region` overrides it). Leave it out to price each stack in its own region: see [Price region](REFERENCE.md#price-region). Prices come from the snapshot shipped with the package; see [Prices](REFERENCE.md#prices)
 - **severity_threshold**: only report findings at or above this severity
 - **templates**: path to CloudFormation templates (dir or file); V2 only. When set, cdk synth is skipped and CF rules run on these templates (JSON or YAML).
 - **no_synth**: if `true`, do not run cdk synth (V2 only). Use with **templates** for raw CF, or alone for static analysis only.
