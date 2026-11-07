@@ -77,14 +77,14 @@
   {% if cost and cost.stacks %}
   <section class="cost" aria-label="Estimated monthly cost">
     <h2>Estimated monthly cost (estimate)</h2>
-    <p class="meta">{{ cost.basis }} Region {{ cost.region }}{% if cost.snapshot_date %}, AWS prices of {{ cost.snapshot_date }}{% endif %}.</p>
+    <p class="meta">{{ cost.basis }} {% if "," in cost.region %}Regions{% else %}Region{% endif %} {{ cost.region }}{% if cost.snapshot_date %}, AWS prices of {{ cost.snapshot_date }}{% endif %}.</p>
     <table>
-      <thead><tr><th>Template / module</th><th>Resources priced</th><th>Estimated monthly cost</th></tr></thead>
+      <thead><tr><th>Template / module</th><th>Region</th><th>Resources priced</th><th>Estimated monthly cost</th></tr></thead>
       <tbody>
         {% for s in cost.stacks %}
-        <tr><td><code>{{ s.name }}</code></td><td>{{ s.resources_priced }}</td><td>${{ "{:,.2f}".format(s.monthly_usd) }}</td></tr>
+        <tr><td><code>{{ s.name }}</code></td><td>{{ s.region or cost.region }}</td><td>{{ s.resources_priced }}</td><td>${{ "{:,.2f}".format(s.monthly_usd) }}</td></tr>
         {% endfor %}
-        <tr><td><b>Total</b></td><td>{{ cost.stacks | sum(attribute="resources_priced") }}</td><td><b>${{ "{:,.2f}".format(cost.total_monthly_usd) }}</b></td></tr>
+        <tr><td><b>Total</b></td><td></td><td>{{ cost.stacks | sum(attribute="resources_priced") }}</td><td><b>${{ "{:,.2f}".format(cost.total_monthly_usd) }}</b></td></tr>
       </tbody>
     </table>
     {% if cost.top_resources %}

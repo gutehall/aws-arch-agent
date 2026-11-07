@@ -1,4 +1,4 @@
-"""Required tag policy for template resources (DM3-543).
+"""Required tag policy for template resources.
 
 Config:
 

@@ -1,4 +1,4 @@
-"""CF-PAR-001 / CF-PAR-002 on Terraform root-module variables (DM3-553)."""
+"""CF-PAR-001 / CF-PAR-002 on Terraform root-module variables."""
 import json
 from pathlib import Path
 

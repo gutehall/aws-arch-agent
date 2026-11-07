@@ -1,4 +1,4 @@
-"""The report's opening summary (DM3-550): top fixes, one line per pillar, quick wins.
+"""The report's opening summary: top fixes, one line per pillar, quick wins.
 
 Built from rule output only, so it is the same with or without an LLM, and the same on
 every run for the same findings. A "fix" is one rule: fixing it covers every resource it

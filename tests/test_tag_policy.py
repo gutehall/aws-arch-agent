@@ -1,4 +1,4 @@
-"""CF-TAG-001: resources checked against a required tag policy (DM3-543)."""
+"""CF-TAG-001: resources checked against a required tag policy."""
 import json
 from pathlib import Path
 

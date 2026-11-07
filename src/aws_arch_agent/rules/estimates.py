@@ -1,4 +1,4 @@
-"""Monthly cost estimates for template findings (DM3-541).
+"""Monthly cost estimates for template findings.
 
 Prices come from the offline snapshot (aws_arch_agent.pricing) for the scan's region.
 Only what the template states is priced: instance types, volume sizes and types, counts.
@@ -230,7 +230,7 @@ def idle_public_ipv4() -> Estimate | None:
     )
 
 
-# --- Whole-resource costs for the stack total (DM3-542) ---------------------------------
+# --- Whole-resource costs for the stack total ---------------------------------
 
 
 def volume(volume_type: Any, size: Any) -> Estimate | None:
@@ -316,7 +316,7 @@ def _without_saving(basis: str) -> str:
     return re.sub(r" Saving if one size smaller \([^)]*\)\.", "", basis)
 
 
-# --- Non-production savings (DM3-545) ---------------------------------------------------
+# --- Non-production savings ---------------------------------------------------
 
 
 def rds_multi_az_premium(props: dict) -> Estimate | None:

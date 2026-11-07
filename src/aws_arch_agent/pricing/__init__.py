@@ -1,4 +1,4 @@
-"""Offline AWS on-demand prices for cost estimates (DM3-540).
+"""Offline AWS on-demand prices for cost estimates.
 
 The snapshot ships with the package (prices.json.gz) and is read from disk: a scan never
 calls the network. scripts/refresh_prices.py rebuilds it from the AWS Price List bulk API.

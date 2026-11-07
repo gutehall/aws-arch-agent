@@ -21,9 +21,17 @@ def price_line(ctx: RepoContext) -> str | None:
     note = ctx.notes.get("prices")
     if not isinstance(note, dict) or not note.get("region"):
         return None
-    if note.get("snapshot_date"):
-        return f"on-demand, {note['region']} (AWS price list of {note['snapshot_date']})"
-    return f"{note['region']}: not in the price snapshot, so no cost estimates"
+    entries = note.get("regions") or [
+        {"region": note["region"], "snapshot_date": note.get("snapshot_date"), "source": ""}
+    ]
+    parts = []
+    for e in entries:
+        source = f"{e['source']}; " if e.get("source") else ""
+        if e.get("snapshot_date"):
+            parts.append(f"{e['region']} ({source}AWS price list of {e['snapshot_date']})")
+        else:
+            parts.append(f"{e['region']} ({source}not in the price snapshot, so no cost estimates)")
+    return "on-demand, " + ", ".join(parts)
 
 
 def estimate_lines(f: Finding) -> List[str]:
@@ -50,16 +58,17 @@ def cost_section(ctx: RepoContext) -> List[str]:
     when = f", AWS prices of {cost['snapshot_date']}" if cost.get("snapshot_date") else ""
     out = [
         "## Estimated Monthly Cost (estimate)",
-        f"{cost['basis']} Region {cost['region']}{when}.",
+        f"{cost['basis']} {'Regions' if ',' in cost['region'] else 'Region'} {cost['region']}{when}.",
         "",
-        "| Template / module | Resources priced | Estimated monthly cost |",
-        "|---|---:|---:|",
+        "| Template / module | Region | Resources priced | Estimated monthly cost |",
+        "|---|---|---:|---:|",
     ]
     for stack in cost["stacks"]:
         name = str(stack["name"]).replace("|", "\\|")
-        out.append(f"| `{name}` | {stack['resources_priced']} | {_usd(stack['monthly_usd'])} |")
+        region = stack.get("region") or cost["region"]
+        out.append(f"| `{name}` | {region} | {stack['resources_priced']} | {_usd(stack['monthly_usd'])} |")
     priced = sum(s["resources_priced"] for s in cost["stacks"])
-    out.append(f"| **Total** | {priced} | **{_usd(cost['total_monthly_usd'])}** |")
+    out.append(f"| **Total** | | {priced} | **{_usd(cost['total_monthly_usd'])}** |")
     out.append("")
     if cost.get("top_resources"):
         out.append(f"Top {len(cost['top_resources'])} resources by estimated cost:")

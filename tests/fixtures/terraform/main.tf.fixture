@@ -1,4 +1,4 @@
-# Regression fixture for Terraform root-module scans (DM3-517).
+# Regression fixture for Terraform root-module scans.
 # Mirrors tests/fixtures/cloudformation/stack.yaml.fixture.
 
 variable "env" {

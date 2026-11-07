@@ -1,4 +1,4 @@
-"""Rule themes (DM3-551)."""
+"""Rule themes."""
 import json
 import re
 from pathlib import Path

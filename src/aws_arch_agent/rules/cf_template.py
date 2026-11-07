@@ -13,6 +13,7 @@ from aws_arch_agent.rules import (
     iam_policy,
     lambda_runtimes,
     nonprod,
+    regions,
     stack_cost,
     tag_policy,
 )
@@ -282,7 +283,7 @@ CHECK_PROPERTIES: dict[str, frozenset[str]] = {
 }
 
 
-# Themes of each template check (DM3-551). Every check the module can emit is listed;
+# Themes of each template check. Every check the module can emit is listed;
 # tests/test_themes.py fails when one is missing.
 _F, _SB, _ID, _DP, _NET, _RES, _OBS, _SUS = (
     "finops", "security-baseline", "identity", "data-protection",
@@ -1877,7 +1878,19 @@ def run_resource_checks(
     template_path: Path,
     warnings: list[str] | None = None,
 ) -> List[Finding]:
-    """Run the CF-* checks on one file's resources; return list of findings."""
+    """Run the CF-* checks on one file's resources; return list of findings.
+
+    Estimates are priced in the stack's region (see rules/regions.py).
+    """
+    with regions.for_stack(template_path, resources):
+        return _run_resource_checks(resources, template_path, warnings)
+
+
+def _run_resource_checks(
+    resources: List[Resource],
+    template_path: Path,
+    warnings: list[str] | None = None,
+) -> List[Finding]:
     if warnings is None:
         warnings = []
     findings: List[Finding] = []
@@ -2242,7 +2255,7 @@ def run_resource_checks(
                 if ctype == "ecs_task_definition":
                     findings.extend(_ecs_findings(res, template_path))
 
-                # --- S3 storage classes, DynamoDB autoscaling, launch template gp2 (DM3-548) ---
+                # --- S3 storage classes, DynamoDB autoscaling, launch template gp2 ---
                 if ctype == "s3_bucket":
                     findings.extend(_s3_storage_findings(res, template_path))
                 if ctype == "dynamodb_table" and not autoscaling_unlinked and logical_id not in autoscaled:
@@ -2254,7 +2267,7 @@ def run_resource_checks(
                     if gp2_devices is not None:
                         findings.append(gp2_devices)
 
-                # --- Previous-generation instance families (DM3-547) ---
+                # --- Previous-generation instance families ---
                 findings.extend(generations.findings(res, template_path))
 
                 # --- Stateful resources deleted with the stack ---
@@ -2621,7 +2634,7 @@ def run_resource_checks(
     # --- Required tag policy (config tags.required; off without one) ---
     findings.extend(tag_policy.findings(resources, template_path))
 
-    # --- Production-grade spend in dev and staging stacks (DM3-545) ---
+    # --- Production-grade spend in dev and staging stacks ---
     stack_env = environments.resolve(template_path, resources)
     if stack_env in ("dev", "staging"):
         findings.extend(nonprod.findings(resources, template_path, stack_env))

@@ -1,4 +1,4 @@
-"""CF-SM-001 (Secrets Manager rotation) and CF-COG-* (Cognito user pools) (DM3-528)."""
+"""CF-SM-001 (Secrets Manager rotation) and CF-COG-* (Cognito user pools)."""
 import json
 from pathlib import Path
 

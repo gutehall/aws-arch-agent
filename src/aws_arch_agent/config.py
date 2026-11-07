@@ -8,7 +8,6 @@ from typing import Any, Literal, cast
 
 import yaml
 
-from aws_arch_agent.pricing import DEFAULT_REGION
 from aws_arch_agent.rules.estimates import SIZES
 from aws_arch_agent.rules.tag_policy import TagPolicy
 from aws_arch_agent.rules.themes import THEMES
@@ -336,7 +335,7 @@ def load_config(
         region=(
             price_region(region, "--region") if region is not None
             else price_region(file_cfg["region"]) if "region" in file_cfg
-            else DEFAULT_REGION
+            else None  # detected per stack (rules/regions.py)
         ),
         tag_policy=tag_policy_from(file_cfg.get("tags")),
         environments=environments_from(file_cfg.get("environments")),
@@ -391,7 +390,7 @@ class RunConfig:
         rag_embedding_provider: str | None = None,
         rag_embedding_model: str | None = None,
         llm_mode: str = "full",
-        region: str = DEFAULT_REGION,
+        region: str | None = None,
         tag_policy: TagPolicy | None = None,
         environments: dict[str, str] | None = None,
         nonprod_max_size: str | None = None,
@@ -413,7 +412,7 @@ class RunConfig:
         self.rag_embedding_provider = rag_embedding_provider
         self.rag_embedding_model = rag_embedding_model
         self.llm_mode = llm_mode
-        self.region = region  # price region for cost estimates
+        self.region = region  # price region set by hand; None: detected per stack
         self.tag_policy = tag_policy  # config tags.required; None turns the check off
         self.environments = environments  # config environments: match -> prod|staging|dev
         self.nonprod_max_size = nonprod_max_size  # config nonprod.max_instance_size
