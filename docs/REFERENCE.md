@@ -63,7 +63,7 @@ LLM output is optional. `--no-llm` skips it.
 
 ## HTML report
 
-`--format html` writes one file to open in a browser. CSS and script are inline and nothing external loads, so it works offline and as a CI artifact. The page has a dark theme, severity counts, All/High/Medium/Low tabs, and each finding's file and line, evidence, recommendation, and suggested code. Each finding links to the AWS documentation for its service and its Well-Architected pillar. These links are the only external URLs on the page, and they load only when clicked. Evidence and code from the scanned repo are escaped. With `--enforce-baseline`, each finding is labeled Accepted or New.
+`--format html` writes one file to open in a browser. CSS and script are inline and nothing external loads, so it works offline and as a CI artifact. The page has a dark theme, severity counts, All/High/Medium/Low tabs, and each finding's file and line, evidence, recommendation, and suggested code. Each finding links to the AWS docs page for its control (for example S3 default bucket encryption, not the S3 start page) and to the Well-Architected best practice it supports (for example SEC08-BP02 Enforce encryption at rest). The map is `aws_arch_agent/report/doc_topics.py`; `python scripts/check_doc_links.py` checks that every page still exists. A finding with no entry there gets a service start page when its title names a service, and always the pillar overview. The HTML report has no summary section; the summary is in Markdown and JSON. These links are the only external URLs on the page, and they load only when clicked. Evidence and code from the scanned repo are escaped. With `--enforce-baseline`, each finding is labeled Accepted or New.
 
 ## Config file (JSON or YAML)
 
@@ -110,7 +110,7 @@ The script streams the offer files (the EC2 one is about 300 MB per region) and 
 
 ## Report summary
 
-Every report opens with a **Summary** built from the findings alone, so it is the same with `--no-llm` and the same on every run. It appears in Markdown and HTML, and as `summary` in JSON:
+Markdown reports open with a **Summary** built from the findings alone, so it is the same with `--no-llm` and the same on every run. It appears in Markdown, and as `summary` in JSON. The HTML report leaves it out:
 
 - **Top fixes**: the five most important fixes. A fix is one rule, covering every resource it reported. They are ranked by severity, then estimated monthly saving, then how many resources the fix covers, then rule id.
 - **By pillar**: one line per finding category with its count by severity and possible savings, for example "Cost Optimization: 7 findings (7 Low), about $120.00/month possible savings (estimate)". The lines add up to the findings below, counts and savings alike.
