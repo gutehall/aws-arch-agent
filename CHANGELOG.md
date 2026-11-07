@@ -2,6 +2,22 @@
 
 New releases go at the top. See [CONTRIBUTING.md](CONTRIBUTING.md#releases) for when to cut one and how the version is bumped.
 
+## v0.1.1 - 2026-11-07
+
+### Fixes
+
+- Run on Windows and macOS: V2 synth finds `npx.cmd`, ripgrep and synth output is read as UTF-8, and the GitHub Action installs ripgrep on Linux, macOS, and Windows runners (#77)
+
+### Documentation
+
+- Pin the GitHub Action example to a release and explain what each upgrade can change (#75)
+- Install a pinned release, with steps for macOS, Linux, and Windows (#76)
+
+### Chores
+
+- Publish a GitHub release when a version tag is pushed (#75)
+- Run the tests on Windows, and the GitHub Action on Linux, macOS, and Windows, in CI (#77)
+
 ## v0.1.0 - 2026-11-07
 
 First release. Covers everything merged to `main` up to this tag.
