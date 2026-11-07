@@ -276,7 +276,7 @@ CloudFormation template rules run when the agent has access to template files. T
 
 **Template formats:** JSON (including `*.template.json`) and YAML (`*.yaml`, `*.yml`). With `--templates`, the agent discovers all of these under the given path.
 
-**One finding per problem in V2:** when a template check reports a control that a CDK rule also checks, V2 keeps the template finding and drops the CDK one. The pairs are `CF_COVERS_STATIC` in `aws_arch_agent/rules/cf_template.py`. Some are named in the resource sections below. The others: CF-SQS-001/002 replace SEC-013 and REL-008, CF-SG-001 replaces SEC-003 and SEC-004, CF-DDB-001/002 replace REL-004 and SEC-008, CF-CW-001/002 replace COST-001 and SEC-062, CF-APIGW-001 and CF-APIGW-V2-001 replace OPS-005, CF-APIGW-002, CF-APIGW-V2-002 and CF-LAM-002 replace OPS-003, CF-LAM-001 replaces REL-003, CF-RDS-002/004/005 replace REL-002, SEC-064 and REL-030, CF-S3-003 replaces REL-031, CF-KMS-001 replaces SEC-007, and CF-ALB-001 replaces OPS-006. Some template checks cover only part of a CDK rule, so both are kept: CF-RDS-003 checks DB instances but REL-001 also flags clusters, CF-PERF-001 checks Lambda but PERF-001 also flags EC2 and ECS, and CF-CT-001/002/003 check an existing trail while OPS-001 reports no trail at all. These are `CF_PARTLY_COVERS_STATIC`.
+**One finding per problem in V2:** when a template check reports a control that a CDK rule also checks, V2 keeps the template finding and drops the CDK one. The pairs are `CF_COVERS_STATIC` in `aws_arch_agent/rules/cf_template.py`. Some are named in the resource sections below. The others: CF-SQS-001/002 replace SEC-013 and REL-008, CF-SG-001 replaces SEC-003 and SEC-004, CF-DDB-001/002 replace REL-004 and SEC-008, CF-CW-001/002 replace COST-001 and SEC-062, CF-APIGW-001 and CF-APIGW-V2-001 replace OPS-005, CF-APIGW-002, CF-APIGW-V2-002 and CF-LAM-002 replace OPS-003, CF-LAM-001 replaces REL-003, CF-RDS-002/004/005 replace REL-002, SEC-064 and REL-030, CF-S3-003 replaces REL-031, CF-KMS-001 replaces SEC-007, CF-ALB-001 replaces OPS-006, and CF-COST-002 and CF-VPC-002/003 replace COST-006. Some template checks cover only part of a CDK rule, so both are kept. For example, CF-RDS-003 checks DB instances but REL-001 also flags clusters. These are `CF_PARTLY_COVERS_STATIC`. [COVERAGE.md](COVERAGE.md) lists every CDK rule with its template check or the reason it has none.
 
 ## Rules (by resource)
 
@@ -349,6 +349,7 @@ CloudFormation template rules run when the agent has access to template files. T
 
 - [REFERENCE.md](REFERENCE.md) — CLI options. Static and CloudFormation rule IDs are listed above.
 - [CONFIG.md](CONFIG.md) — `templates` and `no_synth` config keys for V2.
+- [COVERAGE.md](COVERAGE.md) — which CDK rules and FSBP controls have a template check.
 
 ## Cost estimates
 

@@ -100,6 +100,9 @@ PAIRS: list[tuple[str, str, dict, str]] = [
     ("CF-ALB-001", "OPS-006",
      {"Type": "AWS::ElasticLoadBalancingV2::LoadBalancer", "Properties": {"Type": "network"}},
      "new elbv2.NetworkLoadBalancer(this, 'Nlb', { vpc });"),
+    ("CF-COST-002", "COST-006",
+     {"Type": "AWS::EC2::NatGateway", "Properties": {"SubnetId": {"Ref": "Public"}}},
+     "new ec2.Vpc(this, 'Vpc', { natGateways: 1 });"),
 ]
 
 

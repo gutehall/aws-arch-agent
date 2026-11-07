@@ -93,6 +93,11 @@ CF_COVERS_STATIC: dict[str, tuple[str, ...]] = {
     "CF-KMS-001": ("SEC-007",),
     # Checks every ELBv2 load balancer, so NLBs too.
     "CF-ALB-001": ("OPS-006",),
+    # COST-006 is a NAT gateway with no VPC endpoints: CF-COST-002 reports every NAT
+    # gateway, and CF-VPC-002/003 the missing S3 and DynamoDB gateway endpoints.
+    "CF-COST-002": ("COST-006",),
+    "CF-VPC-002": ("COST-006",),
+    "CF-VPC-003": ("COST-006",),
 }
 
 # Template checks that name a CDK rule's control but cover only part of it, so the CDK
@@ -100,6 +105,14 @@ CF_COVERS_STATIC: dict[str, tuple[str, ...]] = {
 CF_PARTLY_COVERS_STATIC: dict[str, tuple[tuple[str, ...], str]] = {
     "CF-RDS-003": (("REL-001",), "checks DB instances only; REL-001 also flags DatabaseCluster"),
     "CF-PERF-001": (("PERF-001",), "checks Lambda only; PERF-001 also flags EC2 and ECS"),
+    "CF-PERF-002": (("PERF-002",), "API Gateway and Lambda only; PERF-002 also counts load "
+                    "balancers, API caches and DAX"),
+    "CF-PERF-003": (("PERF-008",), "RDS only; PERF-008 matches any large instanceType"),
+    "CF-PERF-004": (("PERF-008",), "EC2 only; PERF-008 matches any large instanceType"),
+    "CF-SUST-001": (("SUST-001",), "Auto Scaling groups only; SUST-001 also flags EC2 "
+                    "instances and ECS services"),
+    "CF-SUST-002": (("SUST-001",), "Fargate only; SUST-001 also flags EC2 instances"),
+    "CF-SUST-003": (("SUST-001",), "launch templates only; SUST-001 also flags ECS services"),
     "CF-CT-001": (("OPS-001",), "checks an existing trail; OPS-001 reports no trail at all"),
     "CF-CT-002": (("OPS-001",), "checks an existing trail; OPS-001 reports no trail at all"),
     "CF-CT-003": (("OPS-001",), "checks an existing trail; OPS-001 reports no trail at all"),
