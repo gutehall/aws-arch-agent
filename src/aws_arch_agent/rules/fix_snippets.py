@@ -1141,6 +1141,57 @@ _CLOUDFORMATION["CF-EBS-002"] = """$name:
     VolumeType: gp3
     # over 1,000 GiB: Iops: <3 x size in GiB> to keep the gp2 baseline"""
 # Unused Elastic IPs: delete the resource to release it, or attach it.
+_CLOUDFORMATION["CF-LAM-004"] = """$name:
+  Type: AWS::Lambda::Url
+  Properties:
+    TargetFunctionArn: !GetAtt Function.Arn
+    AuthType: AWS_IAM"""
+_CLOUDFORMATION["CF-LAM-005"] = """$name:
+  Type: AWS::Lambda::Function
+  Properties:
+    Environment:
+      Variables:
+        DB_SECRET_ARN: !Ref DbSecret  # read the value at runtime with GetSecretValue"""
+_CLOUDFORMATION["CF-LAM-006"] = """$name:
+  Type: AWS::Lambda::Function
+  Properties:
+    ReservedConcurrentExecutions: 50  # what the function and its downstreams can take"""
+_CLOUDFORMATION["CF-LAM-007"] = """$name:
+  Type: AWS::Lambda::Function
+  Properties:
+    Timeout: 30  # what one batch needs; behind API Gateway, just above its 29 s limit"""
+_CLOUDFORMATION["CF-LAM-008"] = """$name:
+  Type: AWS::Lambda::Function
+  Properties:
+    VpcConfig:
+      SubnetIds:  # private subnets in at least two AZs
+        - !Ref PrivateSubnetA
+        - !Ref PrivateSubnetB
+      SecurityGroupIds:
+        - !Ref FunctionSecurityGroup"""
+_TERRAFORM["CF-LAM-004"] = """resource "aws_lambda_function_url" "$tf_name" {
+  function_name      = aws_lambda_function.example.function_name
+  authorization_type = "AWS_IAM"
+}"""
+_TERRAFORM["CF-LAM-005"] = """resource "aws_lambda_function" "$tf_name" {
+  environment {
+    variables = {
+      DB_SECRET_ARN = aws_secretsmanager_secret.db.arn # read the value at runtime
+    }
+  }
+}"""
+_TERRAFORM["CF-LAM-006"] = """resource "aws_lambda_function" "$tf_name" {
+  reserved_concurrent_executions = 50 # what the function and its downstreams can take
+}"""
+_TERRAFORM["CF-LAM-007"] = """resource "aws_lambda_function" "$tf_name" {
+  timeout = 30 # what one batch needs; behind API Gateway, just above its 29 s limit
+}"""
+_TERRAFORM["CF-LAM-008"] = """resource "aws_lambda_function" "$tf_name" {
+  vpc_config {
+    subnet_ids         = [aws_subnet.private_a.id, aws_subnet.private_b.id] # two AZs or more
+    security_group_ids = [aws_security_group.function.id]
+  }
+}"""
 _CLOUDFORMATION["CF-RDS-006"] = """DbParameterGroup:
   Type: AWS::RDS::DBParameterGroup
   Properties:

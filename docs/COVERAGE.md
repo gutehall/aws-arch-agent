@@ -17,7 +17,6 @@ Which CDK rules have a template check, and which AWS Foundational Security Best 
 
 | Work | Adds template checks for |
 | -- | -- |
-| `lambda` | Lambda access, secrets and limits |
 | `api-gateway` | API Gateway auth, TLS, throttling and caching |
 | `ci-cd` | CodeBuild and CodePipeline |
 | `kms-ssm` | KMS key rotation and SSM parameters |
@@ -40,7 +39,7 @@ Which CDK rules have a template check, and which AWS Foundational Security Best 
 
 ## CDK rules
 
-172 rules: 65 covered, 6 partial, 62 planned, 10 account, 5 cdk-only, 24 advice.
+172 rules: 70 covered, 6 partial, 57 planned, 10 account, 5 cdk-only, 24 advice.
 
 | Rule | Title | Template check | Status | Note |
 | -- | -- | -- | -- | -- |
@@ -60,7 +59,7 @@ Which CDK rules have a template check, and which AWS Foundational Security Best 
 | SEC-014 | SNS topic not encrypted | `CF-SNS-001` | `covered` |  |
 | SEC-015 | Secrets Manager rotation not enabled | `CF-SM-001` | `covered` |  |
 | SEC-016 | Potential hardcoded credentials/secrets in code |  | `cdk-only` | Scans source for secret-looking literals. CF-PAR-001/002 check template parameters. |
-| SEC-017 | Lambda environment variables may contain secrets |  | `planned: lambda` |  |
+| SEC-017 | Lambda environment variables may contain secrets | `CF-LAM-005` | `covered` |  |
 | SEC-018 | CloudFront not enforcing HTTPS | `CF-CF-001` | `covered` |  |
 | SEC-019 | CloudFront using legacy SSL/TLS | `CF-CF-002` | `covered` |  |
 | SEC-020 | ECS task definition not using read-only root filesystem | `CF-ECS-002` | `covered` |  |
@@ -100,7 +99,7 @@ Which CDK rules have a template check, and which AWS Foundational Security Best 
 | SEC-054 | Security Group egress too permissive (0.0.0.0/0) | `CF-SG-003` | `covered` |  |
 | SEC-055 | Network ACLs not configured | `CF-NACL-001` | `partial` | CF-NACL-001 checks entries that open 22 or 3389; SEC-055 reports a VPC with no custom network ACL. |
 | SEC-056 | Stack termination protection not enabled |  | `cdk-only` | Termination protection is a stack setting, not in the template. |
-| SEC-057 | Lambda function URL without authentication |  | `planned: lambda` |  |
+| SEC-057 | Lambda function URL without authentication | `CF-LAM-004` | `covered` |  |
 | SEC-058 | ECS task may run as root user | `CF-ECS-003` | `covered` |  |
 | SEC-059 | Redshift cluster encryption not enabled | `CF-RS-001` | `covered` |  |
 | SEC-060 | DocumentDB cluster encryption not enabled | `CF-DOCDB-001` | `covered` |  |
@@ -120,7 +119,7 @@ Which CDK rules have a template check, and which AWS Foundational Security Best 
 | REL-006 | API Gateway throttling not configured |  | `planned: api-gateway` |  |
 | REL-007 | ALB health check configuration missing | `CF-ALB-007` | `covered` |  |
 | REL-008 | SQS missing dead-letter queue configuration | `CF-SQS-002` | `covered` |  |
-| REL-009 | Lambda timeout may be too low or too high |  | `planned: lambda` |  |
+| REL-009 | Lambda timeout may be too low or too high | `CF-LAM-007` | `covered` |  |
 | REL-010 | Lambda not in VPC when accessing RDS/ElastiCache |  | `advice` | Whether a function needs the VPC depends on what it calls. |
 | REL-011 | RDS read replicas missing for read-heavy workloads |  | `advice` | Read replicas depend on read load. |
 | REL-012 | NAT Gateway single point of failure (need multi-AZ) | `CF-NAT-001` | `covered` |  |
@@ -138,7 +137,7 @@ Which CDK rules have a template check, and which AWS Foundational Security Best 
 | REL-024 | SQS visibility timeout may need review |  | `planned: error-handling` |  |
 | REL-025 | DynamoDB global tables not configured for multi-region |  | `advice` | Global tables depend on multi-Region needs. |
 | REL-026 | S3 replication not configured for critical buckets |  | `planned: s3` |  |
-| REL-027 | Lambda reserved concurrency not configured for critical functions |  | `planned: lambda` |  |
+| REL-027 | Lambda reserved concurrency not configured for critical functions | `CF-LAM-006` | `covered` |  |
 | REL-028 | API Gateway request validation not configured |  | `planned: api-gateway` |  |
 | REL-029 | EventBridge rule retry policy not configured |  | `planned: error-handling` |  |
 | REL-030 | RDS deletion protection not enabled | `CF-RDS-005` | `covered` |  |
@@ -162,7 +161,7 @@ Which CDK rules have a template check, and which AWS Foundational Security Best 
 | COST-017 | Lambda memory/CPU may not be optimized |  | `advice` | Memory tuning needs invocation data. |
 | COST-018 | S3 Storage Lens not enabled |  | `account` | Storage Lens is configured for the account or organization. |
 | BP-001 | Standard tags may be missing | `CF-TAG-001` | `covered` |  |
-| BP-002 | Using environment variables instead of Secrets Manager |  | `planned: lambda` |  |
+| BP-002 | Using environment variables instead of Secrets Manager | `CF-LAM-005` | `covered` |  |
 | BP-003 | Resource naming convention may not be followed |  | `cdk-only` | Reads construct and resource names in code. |
 | BP-004 | CDK Aspects not used for policy enforcement |  | `cdk-only` | Reads CDK Aspects. |
 | BP-005 | CDK context not used for environment-specific config |  | `cdk-only` | Reads CDK context. |
@@ -328,7 +327,7 @@ Controls a template can show. Account-level controls (for example S3.1, EC2.7 an
 | KMS.4 | `planned: kms-ssm` | `AWS::KMS::Key` |
 | Lambda.1 | `CF-RP-001` | `AWS::Lambda::Permission` |
 | Lambda.2 | `CF-LAM-003` | `AWS::Lambda::Function` |
-| Lambda.5 | `planned: lambda` | `AWS::Lambda::Function` |
+| Lambda.5 | `CF-LAM-008` | `AWS::Lambda::Function` |
 | MSK.1 | `CF-MSK-001` | `AWS::MSK::Cluster` |
 | MSK.4 | `planned: search-streaming` | `AWS::MSK::Cluster` |
 | Neptune.1 | `CF-NEP-001` | `AWS::Neptune::DBCluster` |

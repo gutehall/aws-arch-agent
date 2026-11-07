@@ -152,6 +152,18 @@ PAIRS: list[tuple[str, str, dict, str]] = [
      f'new rds.DatabaseInstance(this, "DB", {{ {_DB_ENGINE} }});'),
     ("CF-RDS-014", "COST-010", _db(Engine="postgres", DBInstanceClass="db.m5.large"),
      f'new rds.DatabaseInstance(this, "DB", {{ {_DB_ENGINE} }});'),
+    ("CF-LAM-004", "SEC-057", {"Type": "AWS::Lambda::Url", "Properties": {
+        "TargetFunctionArn": "arn", "AuthType": "NONE"}}, "fn.addFunctionUrl();"),
+    ("CF-LAM-005", "SEC-017", _lambda(Environment={"Variables": {"DB_PASSWORD": "literal-value"}}),
+     "new lambda.Function(this, 'Fn', { environment: { PASSWORD: 'secret123456789' } });"),
+    ("CF-LAM-005", "BP-002", _lambda(Environment={"Variables": {"DB_PASSWORD": "literal-value"}}),
+     "new lambda.Function(this, 'Fn', { environment: { PASSWORD: 'secret123456789' } });"),
+    ("CF-LAM-006", "REL-027", _lambda(), _FN),
+    ("CF-LAM-007", "REL-009", {
+        "Fn": _lambda(),
+        "Map": {"Type": "AWS::Lambda::EventSourceMapping", "Properties": {
+            "FunctionName": {"Ref": "Fn"}, "EventSourceArn": "arn:aws:sqs:eu-west-1:1:q"}},
+    }, _FN),
     ("CF-COST-002", "COST-006",
      {"Type": "AWS::EC2::NatGateway", "Properties": {"SubnetId": {"Ref": "Public"}}},
      "new ec2.Vpc(this, 'Vpc', { natGateways: 1 });"),

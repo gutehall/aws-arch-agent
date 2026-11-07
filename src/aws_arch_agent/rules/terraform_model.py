@@ -109,6 +109,8 @@ TF_TYPE_TO_CANONICAL: dict[str, str] = {
     "aws_secretsmanager_secret_rotation": "secretsmanager_secret_rotation",
     "aws_cognito_user_pool": "cognito_user_pool",
     "aws_lambda_permission": "lambda_permission",
+    "aws_lambda_function_url": "lambda_url",
+    "aws_lambda_event_source_mapping": "lambda_event_source_mapping",
     # Holds ProvisionedConcurrencyConfig, like AWS::Lambda::Alias (CF-ENV-002).
     "aws_lambda_provisioned_concurrency_config": "lambda_alias",
     "aws_iam_user": "iam_user",
@@ -1258,6 +1260,30 @@ def _lambda(body: dict) -> dict:
     _set(props, "Architectures", _v(body, "architectures"))
     _set(props, "Runtime", _v(body, "runtime"))
     _set(props, "PackageType", _v(body, "package_type"))
+    # Provider defaults: 3 second timeout, -1 (no reserved concurrency).
+    _set(props, "Timeout", _v(body, "timeout", 3))
+    reserved = _v(body, "reserved_concurrent_executions", -1)
+    if reserved not in (-1, "-1"):
+        props["ReservedConcurrentExecutions"] = reserved
+    if "environment" in _dynamic_names(body):
+        props["Environment"] = UNRESOLVED
+    else:
+        variables = _first_block(body, "environment").get("variables")
+        if isinstance(variables, dict):
+            # One value from var/local must not hide the literal ones (CF-LAM-005).
+            props["Environment"] = {"Variables": {
+                k: _OPAQUE if v is UNRESOLVED else v for k, v in variables.items()}}
+        elif variables is not None:
+            props["Environment"] = UNRESOLVED
+    vpc = _first_block(body, "vpc_config")
+    if vpc:
+        props["VpcConfig"] = {"SubnetIds": _ref(vpc, "subnet_ids")}
+    return props
+
+
+def _lambda_url(body: dict) -> dict:
+    props: dict = {}
+    _set(props, "AuthType", _v(body, "authorization_type"))
     return props
 
 
@@ -1487,6 +1513,7 @@ _ADAPTERS: dict[str, Callable[[dict], dict]] = {
     "aws_secretsmanager_secret_rotation": _secret_rotation,
     "aws_cognito_user_pool": _cognito_user_pool,
     "aws_lambda_permission": _lambda_permission,
+    "aws_lambda_function_url": _lambda_url,
     "aws_iam_role_policy_attachment": _policy_attachment,
     "aws_iam_user_policy_attachment": _policy_attachment,
     "aws_iam_group_policy_attachment": _policy_attachment,

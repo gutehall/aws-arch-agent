@@ -21,6 +21,13 @@
     "evidence": "Template has 1 VPC(s) and 0 FlowLog(s)"
   },
   {
+    "id": "CF-LAM-006",
+    "severity": "Low",
+    "file": "stack.yaml",
+    "line": null,
+    "evidence": "Worker (AWS::Lambda::Function)"
+  },
+  {
     "id": "CF-PERF-002",
     "severity": "Low",
     "file": "stack.yaml",

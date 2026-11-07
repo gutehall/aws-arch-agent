@@ -6,6 +6,7 @@ from pathlib import Path
 from typing import Any, Callable, List
 
 from aws_arch_agent.models import Finding, Severity
+from aws_arch_agent.rules.secret_names import is_literal_secret, is_secret_name
 from aws_arch_agent.rules import (
     environments,
     estimates,
@@ -96,6 +97,10 @@ CF_COVERS_STATIC: dict[str, tuple[str, ...]] = {
     "CF-LAM-002": ("OPS-003",),
     # Reports every function without a DLQ, a superset of REL-003 (no DLQ and no onFailure).
     "CF-LAM-001": ("REL-003",),
+    "CF-LAM-004": ("SEC-057",),
+    "CF-LAM-005": ("SEC-017", "BP-002"),
+    "CF-LAM-006": ("REL-027",),
+    "CF-LAM-007": ("REL-009",),
     "CF-RDS-002": ("REL-002",),
     "CF-RDS-004": ("SEC-064",),
     "CF-RDS-005": ("REL-030",),
@@ -252,7 +257,7 @@ _PER_RESOURCE_TYPES = frozenset({
     "secretsmanager_secret", "cognito_user_pool", "eip", "launch_configuration",
     "elasticache_cluster", "scalable_target",
     "security_group_egress_rule", "network_acl_entry", "network_acl", "transit_gateway",
-    "lb_listener", "lb_target_group", "elb",
+    "lb_listener", "lb_target_group", "elb", "lambda_url",
 })
 # Parameter groups only feed CF-RDS-006; they have no checks of their own.
 
@@ -317,6 +322,12 @@ CHECK_PROPERTIES: dict[str, frozenset[str]] = {
         "CF-LAM-001": {"DeadLetterConfig"},
         "CF-LAM-002": {"TracingConfig"},
         "CF-LAM-003": {"Runtime", "PackageType"},
+        "CF-LAM-004": {"AuthType"},
+        "CF-LAM-005": {"Environment"},
+        "CF-LAM-006": {"ReservedConcurrentExecutions"},
+        # Template-level: they read Timeout, VpcConfig and references and skip the unknown.
+        "CF-LAM-007": set(),
+        "CF-LAM-008": set(),
         "CF-CF-001": {"DistributionConfig"},
         "CF-CF-002": {"DistributionConfig"},
         "CF-CF-003": {"DistributionConfig"},
@@ -409,6 +420,8 @@ CF_THEMES: dict[str, tuple[str, ...]] = {
     "CF-IAM-004": (_ID,), "CF-IAM-005": (_ID,), "CF-IAM-006": (_ID,), "CF-IAM-007": (_ID,),
     "CF-IAM-008": (_ID,), "CF-KIN-001": (_DP,), "CF-KMS-001": (_ID, _DP),
     "CF-LAM-001": (_RES,), "CF-LAM-002": (_OBS,), "CF-LAM-003": (_SB,),
+    "CF-LAM-004": (_ID, _NET), "CF-LAM-005": (_DP, _ID), "CF-LAM-006": (_RES,),
+    "CF-LAM-007": (_RES,), "CF-LAM-008": (_RES,),
     "CF-MSK-001": (_DP,), "CF-NEP-001": (_DP,), "CF-OS-001": (_DP,), "CF-OS-002": (_DP,),
     "CF-PAR-001": (_DP, _ID), "CF-PAR-002": (_DP, _ID),
     "CF-PERF-001": (_F, _SUS), "CF-PERF-002": (_RES,), "CF-PERF-003": (_F,), "CF-PERF-004": (_F,),
@@ -1229,6 +1242,111 @@ def _load_balancer_findings(res: Resource, template_path: Path) -> List[Finding]
             add("CF-CLB-005", "Classic Load Balancer connection draining is off", "Low", "Reliability",
                 "Set ConnectionDrainingPolicy with Enabled: true, so in-flight requests finish when a "
                 "target is removed (Security Hub ELB.7).")
+    return out
+
+
+def _lambda_access_findings(res: Resource, template_path: Path) -> List[Finding]:
+    """CF-LAM-004 (function URL with no auth), CF-LAM-005 (secret in an environment
+    variable) and CF-LAM-006 (no reserved concurrency)."""
+    props = res.properties
+    out: List[Finding] = []
+
+    def add(check_id: str, title: str, severity: Severity, category: str, recommendation: str) -> None:
+        out.append(Finding(
+            id=check_id, title=title, severity=severity, category=category,
+            file=res.file or str(template_path), line=res.line,
+            evidence=f"{res.name} ({res.source_type})", recommendation=recommendation,
+        ))
+
+    if res.type == "lambda_url":
+        if props.get("AuthType") == "NONE":
+            add("CF-LAM-004", "Lambda function URL has no authentication", "High", "Security",
+                "AuthType NONE makes the function a public endpoint anyone can call. Set AuthType: "
+                "AWS_IAM and sign requests, or put API Gateway with an authorizer in front. In CDK: "
+                "authType: lambda.FunctionUrlAuthType.AWS_IAM.")
+        return out
+
+    env = props.get("Environment")
+    variables = env.get("Variables") if isinstance(env, dict) else None
+    if isinstance(variables, dict) and not _is_intrinsic(variables):
+        names = sorted(k for k, v in variables.items() if is_secret_name(str(k)) and is_literal_secret(v))
+        if names:
+            add("CF-LAM-005", "Lambda environment variable holds a secret", "High", "Security",
+                f"{', '.join(names)} look like secrets set as literal values, so they are in the "
+                "template, the console and the function configuration. Store them in Secrets "
+                "Manager or SSM Parameter Store (SecureString) and read them at runtime; pass "
+                "only the secret's ARN or name in the environment.")
+
+    if props.get("ReservedConcurrentExecutions") is None:
+        add("CF-LAM-006", "Lambda function has no reserved concurrency", "Low", "Reliability",
+            "Set ReservedConcurrentExecutions on functions that must keep capacity, or that must "
+            "not exhaust the account's concurrency or a downstream database. In CDK: "
+            "reservedConcurrentExecutions.")
+    return out
+
+
+def _lambda_wiring_findings(resources: List[Resource], template_path: Path) -> List[Finding]:
+    """CF-LAM-007: the 3 second default timeout on a function an event source mapping
+    polls for, or the 900 second maximum behind API Gateway (which stops waiting at 29
+    seconds). CF-LAM-008: a VPC function whose subnets are all in one AZ (Security Hub
+    Lambda.5).
+
+    API Gateway is read from AWS::Lambda::Permission with principal apigateway.amazonaws.com.
+    A subnet that is not in this template, or whose AZ cannot be read, is not judged.
+    """
+    functions = [r for r in resources if r.type == "lambda_function" and not r.malformed]
+    if not functions:
+        return []
+    mappings = [r for r in resources if r.type == "lambda_event_source_mapping" and not r.malformed]
+    api_permissions = [
+        r for r in resources if r.type == "lambda_permission" and not r.malformed
+        and isinstance(r.properties.get("Principal"), str)
+        and r.properties["Principal"].startswith("apigateway.")
+    ]
+    subnets = [r for r in resources if r.type == "subnet" and not r.malformed]
+    out: List[Finding] = []
+
+    def finding(fn: Resource, check_id: str, title: str, severity: Severity, recommendation: str) -> Finding:
+        return Finding(id=check_id, title=title, severity=severity, category="Reliability",
+                       file=fn.file or str(template_path), line=fn.line,
+                       evidence=f"{fn.name} ({fn.source_type})", recommendation=recommendation)
+
+    for fn in functions:
+        timeout = None if "Timeout" in fn.unresolved else fn.properties.get("Timeout", 3)
+        polled = any(_points_at(m, "FunctionName", fn) for m in mappings)
+        behind_api = any(_points_at(p, "FunctionName", fn) for p in api_permissions)
+        if polled and timeout in (3, "3"):
+            out.append(finding(
+                fn, "CF-LAM-007", "Lambda timeout left at the 3 second default for a queue or stream", "Low", (
+                    "An event source mapping polls for this function, and a batch that takes longer "
+                    "than 3 seconds fails and is retried. Set Timeout to what a batch needs, and set "
+                    "the SQS visibility timeout to at least 6 times that. In CDK: timeout.")))
+        elif behind_api and timeout in (900, "900"):
+            out.append(finding(
+                fn, "CF-LAM-007", "Lambda timeout is 900 seconds behind API Gateway", "Low", (
+                    "API Gateway stops waiting after 29 seconds by default, so a 15 minute timeout "
+                    "only keeps failed calls running and billed. Set Timeout just above the API "
+                    "timeout. In CDK: timeout: Duration.seconds(30).")))
+
+        vpc = fn.properties.get("VpcConfig")
+        ids = vpc.get("SubnetIds") if isinstance(vpc, dict) and "VpcConfig" not in fn.unresolved else None
+        if not isinstance(ids, list) or not ids:
+            continue
+        azs: set[str] = set()
+        for item in ids:
+            text = item if type(item) is str else json.dumps(item, default=str)
+            subnet = next((s for s in subnets if _references(text, s.name)), None)
+            az = _az_key(subnet) if subnet is not None else None
+            if az is None:
+                azs = set()
+                break
+            azs.add(az)
+        if len(azs) == 1:
+            out.append(finding(
+                fn, "CF-LAM-008", "Lambda function in a VPC uses subnets in one AZ", "Medium", (
+                    "All of this function's subnets are in one Availability Zone, so an AZ failure "
+                    "stops it. Give it subnets in at least two AZs (Security Hub Lambda.5). In CDK: "
+                    "vpcSubnets: { subnetType: ec2.SubnetType.PRIVATE_WITH_EGRESS }.")))
     return out
 
 
@@ -2994,6 +3112,8 @@ def _run_resource_checks(
                         findings.append(public)
 
                 # --- Lambda ---
+                if ctype in ("lambda_function", "lambda_url"):
+                    findings.extend(_lambda_access_findings(res, template_path))
                 if ctype == "lambda_function":
                     deprecated = _runtime_finding(res, template_path)
                     if deprecated is not None:
@@ -3383,6 +3503,9 @@ def _run_resource_checks(
     # --- Gateway endpoints: S3 and DynamoDB through a NAT gateway (CF-VPC-002/003) ---
     findings.extend(_gateway_endpoint_findings(resources, template_path, _at))
 
+    # --- Lambda timeouts against their triggers, and VPC functions in one AZ ---
+    findings.extend(_lambda_wiring_findings(resources, template_path))
+
     # --- Network: one NAT gateway for several AZs, transit gateways without flow logs ---
     findings.extend(_nat_single_az_findings(resources, template_path, _at))
     findings.extend(_tgw_flow_log_findings(resources, template_path, _at))
@@ -3412,25 +3535,6 @@ def _run_resource_checks(
     return environments.apply(list(dedup.values()), template_path, resources)
 
 
-# A parameter name that holds a secret (DbPassword, ApiKey, GithubToken, ...).
-_SECRET_NAME = re.compile(
-    r"pass(?:word|wd|phrase|code)|pwd|secret|token(?!iz)|api_?key|private_?key|credential|"
-    r"auth_?key|access_?key|signing_?key|shared_?key|client_?secret|connection_?string",
-    re.IGNORECASE,
-)
-# Names that point at a secret or describe one, without holding it (DbSecretArn, KeyName,
-# PasswordMinLength, TokenIssuer). A secret parameter named *Param still holds the value.
-_SECRET_REFERENCE = re.compile(
-    r"(?:arn|name|id|length|policy|ttl|expiry|expiration|rotation|version|path|prefix|type|"
-    r"enabled|count|url|uri|header|duration|days|audience|issuer|complexity|validity|format|"
-    r"symbols|numbers|uppercase|lowercase|require\w*|tokens|limit|size)$",
-    re.IGNORECASE,
-)
-# Counts and limits named after a secret word, such as MaxTokens or min_password_age.
-# Case-sensitive, so the next word must start a new word: MinioSecretKey is a secret.
-_SECRET_LIMIT = re.compile(r"^(?:max|Max|MAX|min|Min|MIN)(?:imum|IMUM)?(?:_|[A-Z0-9])")
-
-
 def _parameter_findings(template_path: Path, doc: dict) -> List[Finding]:
     """CF-PAR-001 (secret-named parameter without NoEcho) and CF-PAR-002 (with a Default).
 
@@ -3442,7 +3546,7 @@ def _parameter_findings(template_path: Path, doc: dict) -> List[Finding]:
     for name, body in params.items() if isinstance(params, dict) else []:
         if type(name) is not str or not isinstance(body, dict):
             continue
-        if not _is_secret_name(name):
+        if not is_secret_name(name):
             continue
         ptype = body.get("Type")
         if type(ptype) is str and "AWS::SSM::Parameter" in ptype:  # incl. List<AWS::SSM::...>
@@ -3492,14 +3596,6 @@ def _parameter_findings(template_path: Path, doc: dict) -> List[Finding]:
     return out
 
 
-def _is_secret_name(name: str) -> bool:
-    return (
-        bool(_SECRET_NAME.search(name))
-        and not _SECRET_REFERENCE.search(name)
-        and not _SECRET_LIMIT.match(name)
-    )
-
-
 def _committed(default: Any) -> bool:
     """A default that puts a value in the repo: a non-empty string, a number, or a
     non-empty list or map."""
@@ -3525,7 +3621,7 @@ def terraform_variable_findings(variables: List[TfVariable]) -> List[Finding]:
     )
     out: List[Finding] = []
     for var in variables:
-        if not _is_secret_name(var.name):
+        if not is_secret_name(var.name):
             continue
         sensitive_flag = _flag(var.sensitive)
         sensitive = sensitive_flag is True
