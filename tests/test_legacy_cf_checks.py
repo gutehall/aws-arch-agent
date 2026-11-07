@@ -13,7 +13,11 @@ def _ids(tmp_path: Path, rtype: str, props: dict[str, Any]) -> list[str]:
     cdk_out.mkdir(parents=True)
     template = {"Resources": {"Res": {"Type": rtype, "Properties": props}}}
     (cdk_out / "stack.template.json").write_text(json.dumps(template), encoding="utf-8")
-    return [f.id for f in run_cf_rules(cdk_out)]
+    warnings: list[str] = []
+    ids = [f.id for f in run_cf_rules(cdk_out, warnings=warnings)]
+    # run_cf_rules turns a crashing check into a warning; a crash must not pass as "no finding".
+    assert warnings == []
+    return ids
 
 
 CASES = [

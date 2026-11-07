@@ -57,3 +57,5 @@ def test_rule_reference_count_matches_the_registry_and_lists_each_rule_once() ->
     listed = re.findall(r"^- ([A-Z]+-\d+):", static, flags=re.MULTILINE)
     dupes = sorted({rule_id for rule_id in listed if listed.count(rule_id) > 1})
     assert dupes == []
+    # OPS-024 is a note: the rule was folded into REL-027 and is not registered.
+    assert set(listed) - {"OPS-024"} == {rule.id for rule in ALL_RULES}
