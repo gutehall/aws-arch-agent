@@ -88,3 +88,12 @@ def test_workflow_runs_on_version_tags_and_never_touches_tags() -> None:
     for job in workflow["jobs"].values():
         for step in job["steps"]:
             assert "${{" not in step.get("run", ""), step
+
+
+def test_workflow_pins_actions_to_a_commit() -> None:
+    """The job can write releases, so third-party actions are pinned to a full SHA."""
+    workflow = yaml.safe_load((ROOT / ".github" / "workflows" / "release.yml").read_text(encoding="utf-8"))
+    for job in workflow["jobs"].values():
+        for step in job["steps"]:
+            if "uses" in step:
+                assert re.fullmatch(r"[\w.-]+/[\w.-]+@[0-9a-f]{40}", step["uses"]), step["uses"]
