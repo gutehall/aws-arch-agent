@@ -65,6 +65,8 @@ TF_TYPE_TO_CANONICAL: dict[str, str] = {
     "aws_sns_topic": "sns_topic",
     "aws_ebs_volume": "ebs_volume",
     "aws_efs_file_system": "efs_file_system",
+    "aws_efs_access_point": "efs_access_point",
+    "aws_efs_backup_policy": "efs_backup_policy",
     "aws_kinesis_stream": "kinesis_stream",
     "aws_kinesis_stream_consumer": "kinesis_stream_consumer",
     "aws_kinesisanalyticsv2_application": "kinesis_analytics_application",
@@ -781,6 +783,36 @@ def _eip(body: dict) -> dict:
 def _efs_file_system(body: dict) -> dict:
     props: dict = {}
     _set(props, "Encrypted", _v(body, "encrypted"))
+    _set(props, "AvailabilityZoneName", _ref(body, "availability_zone_name"))
+    if "lifecycle_policy" in _dynamic_names(body):
+        props["LifecyclePolicies"] = UNRESOLVED
+    else:
+        policies = [{"TransitionToIA": _ref(p, "transition_to_ia")} for p in _blocks(body, "lifecycle_policy")]
+        if policies:
+            props["LifecyclePolicies"] = policies
+    return props
+
+
+def _efs_backup_policy(body: dict) -> dict:
+    """aws_efs_backup_policy: Terraform sets a file system's policy from a resource of its own."""
+    if "backup_policy" in _dynamic_names(body):
+        return {"BackupPolicy": UNRESOLVED}
+    return {"BackupPolicy": {"Status": _ref(_first_block(body, "backup_policy"), "status")}}
+
+
+def _efs_access_point(body: dict) -> dict:
+    props: dict = {}
+    names = _dynamic_names(body)
+    root = _first_block(body, "root_directory")
+    if "root_directory" in names:
+        props["RootDirectory"] = UNRESOLVED
+    elif root:
+        props["RootDirectory"] = {"Path": _ref(root, "path")} if "path" in root else {}
+    posix = _first_block(body, "posix_user")
+    if "posix_user" in names:
+        props["PosixUser"] = UNRESOLVED
+    elif posix:
+        props["PosixUser"] = {"Uid": _ref(posix, "uid"), "Gid": _ref(posix, "gid")}
     return props
 
 
@@ -919,6 +951,13 @@ def _elasticache_replication_group(body: dict) -> dict:
     _set(props, "Engine", _v(body, "engine"))
     _set(props, "MultiAZEnabled", _v(body, "multi_az_enabled"))
     _set(props, "CacheNodeType", _v(body, "node_type"))
+    _set(props, "AutomaticFailoverEnabled", _v(body, "automatic_failover_enabled"))
+    _set(props, "SnapshotRetentionLimit", _v(body, "snapshot_retention_limit"))
+    _set(props, "AutoMinorVersionUpgrade", _v(body, "auto_minor_version_upgrade"))
+    _set(props, "EngineVersion", _v(body, "engine_version"))
+    _set(props, "CacheSubnetGroupName", _ref(body, "subnet_group_name"))
+    if body.get("auth_token") is not None:
+        props["AuthToken"] = _OPAQUE  # only checked for presence: keep the secret out of the model
     return props
 
 
@@ -1417,6 +1456,7 @@ def _dynamodb(body: dict) -> dict:
         props["TableName"] = name
     # Priced for the stack total. Terraform's default billing mode is PROVISIONED too.
     _set(props, "BillingMode", _v(body, "billing_mode"))
+    _set(props, "DeletionProtectionEnabled", _v(body, "deletion_protection_enabled"))
     if "read_capacity" in body or "write_capacity" in body:
         props["ProvisionedThroughput"] = {
             "ReadCapacityUnits": _v(body, "read_capacity"),
@@ -1791,6 +1831,12 @@ def _launch_configuration(body: dict) -> dict:
 def _elasticache_cluster(body: dict) -> dict:
     props: dict = {}
     _set(props, "CacheNodeType", _v(body, "node_type"))
+    _set(props, "Engine", _v(body, "engine"))
+    _set(props, "SnapshotRetentionLimit", _v(body, "snapshot_retention_limit"))
+    _set(props, "AutoMinorVersionUpgrade", _v(body, "auto_minor_version_upgrade"))
+    _set(props, "CacheSubnetGroupName", _ref(body, "subnet_group_name"))
+    # A member of a replication group: the group holds its settings.
+    _set(props, "ReplicationGroupId", _ref(body, "replication_group_id"))
     return props
 
 
@@ -1908,6 +1954,8 @@ _ADAPTERS: dict[str, Callable[[dict], dict]] = {
     "aws_flow_log": _flow_log,
     "aws_vpc_endpoint": _vpc_endpoint,
     "aws_efs_file_system": _efs_file_system,
+    "aws_efs_access_point": _efs_access_point,
+    "aws_efs_backup_policy": _efs_backup_policy,
     "aws_kinesis_stream": _kinesis_stream,
     "aws_elasticache_replication_group": _elasticache_replication_group,
     "aws_opensearch_domain": _opensearch_domain,

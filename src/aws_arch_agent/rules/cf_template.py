@@ -128,6 +128,10 @@ CF_COVERS_STATIC: dict[str, tuple[str, ...]] = {
     "CF-RDS-006": ("SEC-021",),
     "CF-RDS-007": ("OPS-009",),
     "CF-RDS-014": ("COST-010",),
+    "CF-DDB-005": ("REL-005",),
+    "CF-EC-003": ("REL-016",),
+    "CF-EFS-002": ("REL-017",),
+    "CF-EFS-003": ("REL-018",),
     "CF-BAK-001": ("SEC-063",),
     "CF-BAK-002": ("REL-014",),
     "CF-BAK-005": ("REL-013",),
@@ -286,6 +290,7 @@ _PER_RESOURCE_TYPES = frozenset({
     "lb_listener", "lb_target_group", "elb", "lambda_url",
     "sfn_state_machine", "events_rule", "events_target", "event_bus", "event_bus_policy",
     "backup_vault", "backup_vault_lock", "backup_plan", "backup_selection",
+    "efs_access_point", "efs_backup_policy",
 })
 # Parameter groups only feed CF-RDS-006; they have no checks of their own.
 
@@ -414,6 +419,9 @@ CHECK_PROPERTIES: dict[str, frozenset[str]] = {
                               "CF-MSK-002", "CF-MSK-003", "CF-KIN-002")},
         # Template-level: _kms_ssm_findings skips what it cannot read.
         **{c: set() for c in ("CF-KMS-002", "CF-KMS-003", "CF-SSM-001", "CF-SSM-002")},
+        # Template-level: _data_store_findings skips what it cannot read.
+        **{c: set() for c in ("CF-DDB-004", "CF-DDB-005", "CF-EC-003", "CF-EC-004", "CF-EC-005", "CF-EC-006",
+                              "CF-EC-007", "CF-EFS-002", "CF-EFS-003", "CF-EFS-004", "CF-EFS-005")},
         # Template-level: _backup_findings skips what it cannot read.
         **{c: set() for c in ("CF-BAK-001", "CF-BAK-002", "CF-BAK-003", "CF-BAK-004", "CF-BAK-005")},
         # Template-level: _ci_cd_findings skips what it cannot read.
@@ -495,6 +503,9 @@ CF_THEMES: dict[str, tuple[str, ...]] = {
     "CF-S3-006": (_F, _DP), "CF-S3-007": (_F,), "CF-DDB-003": (_F, _RES),
     "CF-S3-005": (_DP, _NET), "CF-SG-001": (_NET,), "CF-SG-002": (_NET,), "CF-SG-003": (_NET,),
     "CF-NACL-001": (_NET,), "CF-NAT-001": (_RES,), "CF-TGW-001": (_NET, _ID), "CF-TGW-002": (_OBS, _NET), "CF-SM-001": (_DP, _ID), "CF-SNS-001": (_DP,),
+    "CF-DDB-004": (_RES, _DP), "CF-DDB-005": (_RES, _DP), "CF-EC-003": (_RES,), "CF-EC-004": (_RES, _DP),
+    "CF-EC-005": (_SB,), "CF-EC-006": (_ID,), "CF-EC-007": (_NET,), "CF-EFS-002": (_RES, _DP),
+    "CF-EFS-003": (_F,), "CF-EFS-004": (_DP, _ID), "CF-EFS-005": (_ID,),
     "CF-BAK-001": (_DP,), "CF-BAK-002": (_RES, _DP), "CF-BAK-003": (_RES, _DP),
     "CF-BAK-004": (_DP, _RES), "CF-BAK-005": (_RES, _DP),
     "CF-SFN-001": (_RES,), "CF-SFN-002": (_OBS,), "CF-SFN-003": (_OBS,), "CF-EB-001": (_OBS, _RES),
@@ -2248,6 +2259,144 @@ def _backup_findings(resources: List[Resource], template_path: Path) -> List[Fin
                 "No BackupSelection in this template selects the resource by ARN or tag, so the plan does "
                 "not back it up. Add it to a selection's Resources, or give it a tag in ListOfTags. In "
                 "CDK: addSelection on the BackupPlan.")
+    return out
+
+
+def _is_off(res: Resource, key: str) -> bool:
+    """True when a boolean setting that defaults to off is unset or false. Unknown is not judged."""
+    return key not in res.unresolved and _flag(res.properties.get(key)) is False
+
+
+def _cache_engine(res: Resource) -> str | None:
+    """The cache engine in lower case, or None when unknown. A replication group defaults to redis."""
+    default = "redis" if res.type == "elasticache_replication_group" else None
+    engine = None if "Engine" in res.unresolved else res.properties.get("Engine", default)
+    return engine.lower() if type(engine) is str else None
+
+
+def _efs_backup_off(fs: Resource, systems: List[Resource], policies: List[Resource]) -> bool:
+    """True when automatic backups are off. An aws_efs_backup_policy the scan cannot tie to a file
+    system counts for all of them, and One Zone file systems turn backups on by default."""
+    if "BackupPolicy" in fs.unresolved:
+        return False
+    policy = fs.properties.get("BackupPolicy")
+    if policy is None:
+        if any(not any(s.name in p.references for s in systems) for p in policies):
+            return False
+        tied = next((p for p in policies if fs.name in p.references), None)
+        if tied is None:
+            one_zone = "AvailabilityZoneName" in fs.unresolved or fs.properties.get("AvailabilityZoneName")
+            return not one_zone
+        if "BackupPolicy" in tied.unresolved:
+            return False
+        policy = tied.properties.get("BackupPolicy")
+    status = policy.get("Status") if isinstance(policy, dict) else None
+    return type(status) is str and status.upper() != "ENABLED"
+
+
+def _at_file_system_root(access_point: Resource) -> bool:
+    """True when an access point's root directory is /, set or by default."""
+    if "RootDirectory" in access_point.unresolved:
+        return False
+    root = access_point.properties.get("RootDirectory")
+    if root is None:
+        return True
+    if not isinstance(root, dict) or _is_intrinsic(root):
+        return False
+    path = root.get("Path", "/")
+    return type(path) is str and not path.rstrip("/")
+
+
+def _data_store_findings(resources: List[Resource], template_path: Path) -> List[Finding]:
+    """DynamoDB (CF-DDB-004/005), ElastiCache (CF-EC-003..007) and EFS (CF-EFS-002..005) resilience
+    and access. A value the scan cannot read is not judged."""
+    usable = [r for r in resources if not r.malformed]
+    selections = [r for r in usable if r.type == "backup_selection"]
+    selections_readable = not any(r.malformed and r.type == "backup_selection" for r in resources)
+    systems = [r for r in usable if r.type == "efs_file_system"]
+    policies = [r for r in usable if r.type == "efs_backup_policy"]
+    out: List[Finding] = []
+
+    def add(res: Resource, check_id: str, title: str, severity: Severity, category: str,
+            recommendation: str) -> None:
+        out.append(Finding(
+            id=check_id, title=title, severity=severity, category=category,
+            file=res.file or str(template_path), line=res.line,
+            evidence=f"{res.name} ({res.source_type})", recommendation=recommendation,
+        ))
+
+    for table in (r for r in usable if r.type == "dynamodb_table"):
+        if _is_off(table, "DeletionProtectionEnabled"):
+            add(table, "CF-DDB-004", "DynamoDB table has no deletion protection", "Low", "Reliability",
+                "Set DeletionProtectionEnabled: true so the table cannot be deleted by accident (Security "
+                "Hub DynamoDB.6). In CDK: deletionProtection: true on the Table.")
+        no_pitr = ("PointInTimeRecoverySpecification" not in table.unresolved and _flag_off(
+            table.properties.get("PointInTimeRecoverySpecification"), "PointInTimeRecoveryEnabled"))
+        if no_pitr and selections_readable and not any(
+                _selection_may_select(s, table, usable) for s in selections):
+            add(table, "CF-DDB-005", "DynamoDB table has no point-in-time recovery or AWS Backup", "Low",
+                "Reliability",
+                "Neither point-in-time recovery nor a BackupSelection in this template protects the table. "
+                "Turn on one of them, unless another stack or an organization backup policy covers it. In "
+                "CDK: pointInTimeRecoverySpecification on the Table, or addSelection on a BackupPlan.")
+
+    for cache in (r for r in usable if r.type in ("elasticache_replication_group", "elasticache_cluster")):
+        props = cache.properties
+        if props.get("ReplicationGroupId") or "ReplicationGroupId" in cache.unresolved:
+            continue
+        is_group = cache.type == "elasticache_replication_group"
+        engine = _cache_engine(cache)
+        if is_group:
+            off = [k for k in ("AutomaticFailoverEnabled", "MultiAZEnabled") if _is_off(cache, k)]
+            if off:
+                add(cache, "CF-EC-003", "ElastiCache replication group has no failover across zones", "Medium",
+                    "Reliability",
+                    f"{' and '.join(off)} not true. With both on, a replica in another zone takes over when "
+                    "the primary fails (Security Hub ElastiCache.3). In CDK: automaticFailoverEnabled and "
+                    "multiAzEnabled on the CfnReplicationGroup.")
+        if is_group and (props.get("PrimaryClusterId") or "PrimaryClusterId" in cache.unresolved):
+            continue  # built on an existing cluster: the template does not show what it already has
+        if engine in ("redis", "valkey"):
+            if _days(cache, "SnapshotRetentionLimit", 0) == 0:
+                add(cache, "CF-EC-004", "ElastiCache has no automatic backups", "Low", "Reliability",
+                    "SnapshotRetentionLimit is 0 or unset, which turns automatic backups off. Set it to at "
+                    "least 1 day (Security Hub ElastiCache.1). In CDK: snapshotRetentionLimit.")
+            if props.get("AutoMinorVersionUpgrade") is not None and _is_off(cache, "AutoMinorVersionUpgrade"):
+                add(cache, "CF-EC-005", "ElastiCache minor version upgrades are off", "Low", "Security",
+                    "AutoMinorVersionUpgrade is false, so security patches are not applied automatically. Set "
+                    "it to true (Security Hub ElastiCache.2). In CDK: autoMinorVersionUpgrade: true.")
+        version = _major_version(props.get("EngineVersion"))
+        if (is_group and engine == "redis" and version is not None and version < 6
+                and not props.get("AuthToken") and "AuthToken" not in cache.unresolved):
+            add(cache, "CF-EC-006", "Redis below version 6 has no AUTH token", "Medium", "Security",
+                "Redis OSS before version 6 has no role-based access control, so with no AuthToken any client "
+                "that can reach it can run commands. Set AuthToken from a secret, or upgrade and use RBAC "
+                "(Security Hub ElastiCache.6). In CDK: authToken on the CfnReplicationGroup.")
+        subnet_group = props.get("CacheSubnetGroupName")
+        if "CacheSubnetGroupName" not in cache.unresolved and (not subnet_group or subnet_group == "default"):
+            add(cache, "CF-EC-007", "ElastiCache uses the default subnet group", "Low", "Security",
+                "The default subnet group uses subnets of the default VPC. Set CacheSubnetGroupName to a group "
+                "of private subnets (Security Hub ElastiCache.7). In CDK: cacheSubnetGroupName.")
+
+    for fs in systems:
+        if _efs_backup_off(fs, systems, policies):
+            add(fs, "CF-EFS-002", "EFS file system has automatic backups off", "Low", "Reliability",
+                "Set BackupPolicy.Status to ENABLED (Terraform aws_efs_backup_policy) (Security Hub EFS.7). "
+                "In CDK: enableAutomaticBackups: true on the FileSystem.")
+        if "LifecyclePolicies" not in fs.unresolved and not fs.properties.get("LifecyclePolicies"):
+            add(fs, "CF-EFS-003", "EFS file system has no lifecycle policy", "Low", "Cost Optimization",
+                "Set LifecyclePolicies to move files that are not read to a cheaper storage class. In CDK: "
+                "lifecyclePolicy on the FileSystem.")
+
+    for point in (r for r in usable if r.type == "efs_access_point"):
+        if _at_file_system_root(point):
+            add(point, "CF-EFS-004", "EFS access point root directory is the file system root", "Medium", "Security",
+                "Clients of this access point can reach the whole file system. Set RootDirectory.Path to an "
+                "application's directory (Security Hub EFS.3). In CDK: path on the AccessPoint.")
+        if "PosixUser" not in point.unresolved and not point.properties.get("PosixUser"):
+            add(point, "CF-EFS-005", "EFS access point does not enforce a user identity", "Medium", "Security",
+                "Without PosixUser, clients choose their own user and group IDs. Set PosixUser so every request "
+                "uses one identity (Security Hub EFS.4). In CDK: posixUser on the AccessPoint.")
     return out
 
 
@@ -4760,6 +4909,9 @@ def _run_resource_checks(
 
     # --- CodeBuild and CodePipeline ---
     findings.extend(_ci_cd_findings(resources, template_path))
+
+    # --- DynamoDB, ElastiCache and EFS resilience and access ---
+    findings.extend(_data_store_findings(resources, template_path))
 
     # --- AWS Backup vaults, plans and which resources they select ---
     findings.extend(_backup_findings(resources, template_path))
