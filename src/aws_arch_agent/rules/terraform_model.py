@@ -121,6 +121,7 @@ TF_TYPE_TO_CANONICAL: dict[str, str] = {
     "aws_ecs_service": "ecs_service",
     "aws_eks_cluster": "eks_cluster",
     "aws_cloudfront_distribution": "cloudfront_distribution",
+    "aws_cloudwatch_log_delivery_source": "cloudwatch_log_delivery_source",
     "aws_elasticache_cluster": "elasticache_cluster",
     "aws_elasticache_replication_group": "elasticache_replication_group",
     "aws_iam_policy": "iam_policy",
@@ -1249,28 +1250,63 @@ def _known(value: Any) -> Any:
     return _OPAQUE if value is UNRESOLVED else value
 
 
+def _cloudfront_associations(block: dict, key: str) -> Any:
+    """Function associations on a behavior, keeping only the event type."""
+    if key in _dynamic_names(block):
+        return _OPAQUE
+    return [{"EventType": _known(_v(a, "event_type"))} for a in _blocks(block, key)]
+
+
+def _cloudfront_behavior(block: dict) -> dict:
+    item = {
+        "ViewerProtocolPolicy": _known(_v(block, "viewer_protocol_policy")),
+        "TargetOriginId": _known(_ref(block, "target_origin_id")),
+    }
+    for prop, value in (
+        ("Compress", _v(block, "compress")),
+        ("CachePolicyId", _v(block, "cache_policy_id")),
+        ("RealtimeLogConfigArn", _ref(block, "realtime_log_config_arn")),
+    ):
+        if value is not None:
+            item[prop] = _known(value)
+    for prop, key in (("FunctionAssociations", "function_association"),
+                      ("LambdaFunctionAssociations", "lambda_function_association")):
+        associations = _cloudfront_associations(block, key)
+        if associations:
+            item[prop] = associations
+    return item
+
+
+def _cloudfront_origin_group(group: dict) -> dict:
+    members: Any = {"Items": [{"OriginId": _known(_ref(m, "origin_id"))} for m in _blocks(group, "member")]}
+    if "member" in _dynamic_names(group):
+        members = _OPAQUE
+    return {"Id": _known(_ref(group, "origin_id")), "Members": members}
+
+
 def _cloudfront_distribution(body: dict) -> dict:
-    """The arguments CF-CF-001..003 read, in DistributionConfig shape.
+    """The arguments the CF-CF checks read, in DistributionConfig shape.
 
     An unknown value is kept as _OPAQUE, so it does not hide the other checks.
     """
     config: dict = {}
     default = _first_block(body, "default_cache_behavior")
     if default:
-        config["DefaultCacheBehavior"] = {"ViewerProtocolPolicy": _known(_v(default, "viewer_protocol_policy"))}
-    ordered = _blocks(body, "ordered_cache_behavior")
+        config["DefaultCacheBehavior"] = _cloudfront_behavior(default)
+    ordered = [
+        {"PathPattern": _known(_v(b, "path_pattern")), **_cloudfront_behavior(b)}
+        for b in _blocks(body, "ordered_cache_behavior")
+    ]
     if ordered:
-        config["CacheBehaviors"] = [
-            {"PathPattern": _known(_v(b, "path_pattern")),
-             "ViewerProtocolPolicy": _known(_v(b, "viewer_protocol_policy"))}
-            for b in ordered
-        ]
+        config["CacheBehaviors"] = ordered
     cert = _first_block(body, "viewer_certificate")
     if cert:
         version = _v(cert, "minimum_protocol_version")
+        support = _v(cert, "ssl_support_method")
         config["ViewerCertificate"] = {
             "CloudFrontDefaultCertificate": _known(_v(cert, "cloudfront_default_certificate")),
             **({} if version is None else {"MinimumProtocolVersion": _known(version)}),
+            **({} if support is None else {"SslSupportMethod": _known(support)}),
         }
     origins = []
     for origin in _blocks(body, "origin"):
@@ -1284,11 +1320,32 @@ def _cloudfront_distribution(body: dict) -> dict:
         s3 = _first_block(origin, "s3_origin_config")
         if s3:
             item["S3OriginConfig"] = {"OriginAccessIdentity": _known(_ref(s3, "origin_access_identity"))}
-        if _first_block(origin, "custom_origin_config"):
-            item["CustomOriginConfig"] = {}
+        custom = _first_block(origin, "custom_origin_config")
+        if "custom_origin_config" in _dynamic_names(origin):
+            item["CustomOriginConfig"] = _OPAQUE
+        elif custom:
+            protocols = _v(custom, "origin_ssl_protocols")
+            item["CustomOriginConfig"] = {
+                "OriginProtocolPolicy": _known(_v(custom, "origin_protocol_policy")),
+                # One unknown entry does not hide a literal SSLv3 next to it.
+                "OriginSSLProtocols": ([_known(_v({"p": p}, "p")) for p in protocols]
+                                       if isinstance(protocols, list) else _known(protocols)),
+            }
         origins.append(item)
     if origins:
         config["Origins"] = origins
+    if "origin_group" in _dynamic_names(body):
+        config["OriginGroups"] = _OPAQUE
+    else:
+        groups = _blocks(body, "origin_group")
+        if groups:
+            config["OriginGroups"] = {"Items": [_cloudfront_origin_group(g) for g in groups]}
+    root = _ref(body, "default_root_object")
+    if root is not None:
+        config["DefaultRootObject"] = _known(root)
+    price = _v(body, "price_class")
+    if price is not None:
+        config["PriceClass"] = _known(price)
     web_acl = _ref(body, "web_acl_id")
     if web_acl is not None:
         config["WebACLId"] = _known(web_acl)
@@ -1297,6 +1354,10 @@ def _cloudfront_distribution(body: dict) -> dict:
     elif _first_block(body, "logging_config"):
         config["Logging"] = {"Bucket": _known(_ref(_first_block(body, "logging_config"), "bucket"))}
     return {"DistributionConfig": config}
+
+
+def _log_delivery_source(body: dict) -> dict:
+    return {"ResourceArn": _known(_ref(body, "resource_arn"))}
 
 
 def _waf_association(body: dict) -> dict:
@@ -2285,6 +2346,7 @@ _ADAPTERS: dict[str, Callable[[dict], dict]] = {
     "aws_neptune_cluster": _storage_encrypted_cluster,
     "aws_msk_cluster": _msk_cluster,
     "aws_cloudfront_distribution": _cloudfront_distribution,
+    "aws_cloudwatch_log_delivery_source": _log_delivery_source,
     "aws_wafv2_web_acl_association": _waf_association,
     "aws_wafregional_web_acl_association": _waf_association,
     "aws_sqs_queue_policy": _resource_policy,

@@ -1428,6 +1428,102 @@ _CLOUDFORMATION["CF-S3-010"] = """$name:
               Time:
                 Minutes: 15"""
 
+_CLOUDFORMATION["CF-CF-005"] = """$name:
+  Type: AWS::CloudFront::Distribution
+  Properties:
+    DistributionConfig:
+      # keep the other settings as they are
+      Logging:
+        Bucket: my-log-bucket.s3.amazonaws.com  # the bucket must allow ACLs
+        IncludeCookies: false"""
+
+_CLOUDFORMATION["CF-CF-006"] = """$name:
+  Type: AWS::CloudFront::Distribution
+  Properties:
+    DistributionConfig:
+      # keep the other settings as they are
+      PriceClass: PriceClass_100  # or PriceClass_200, if viewers are in those Regions"""
+
+_CLOUDFORMATION["CF-CF-007"] = """$name:
+  Type: AWS::CloudFront::Distribution
+  Properties:
+    DistributionConfig:
+      # keep the other settings as they are
+      DefaultCacheBehavior:
+        Compress: true  # also on each CacheBehaviors entry"""
+
+_CLOUDFORMATION["CF-CF-008"] = """$name:
+  Type: AWS::CloudFront::Distribution
+  Properties:
+    DistributionConfig:
+      # keep the other settings as they are
+      DefaultRootObject: index.html"""
+
+_CLOUDFORMATION["CF-CF-009"] = """$name:
+  Type: AWS::CloudFront::Distribution
+  Properties:
+    DistributionConfig:
+      # keep the other settings as they are
+      OriginGroups:
+        Quantity: 1
+        Items:
+          - Id: failover
+            FailoverCriteria:
+              StatusCodes:
+                Quantity: 3
+                Items: [500, 502, 503]
+            Members:
+              Quantity: 2
+              Items:
+                - OriginId: primary
+                - OriginId: secondary
+      DefaultCacheBehavior:
+        TargetOriginId: failover"""
+
+_CLOUDFORMATION["CF-CF-010"] = """$name:
+  Type: AWS::CloudFront::Distribution
+  Properties:
+    DistributionConfig:
+      # keep the other settings as they are
+      Origins:
+        - Id: app
+          DomainName: app.example.com
+          CustomOriginConfig:
+            OriginProtocolPolicy: https-only"""
+
+_CLOUDFORMATION["CF-CF-011"] = """$name:
+  Type: AWS::CloudFront::Distribution
+  Properties:
+    DistributionConfig:
+      # keep the other settings as they are
+      Origins:
+        - Id: app
+          DomainName: app.example.com
+          CustomOriginConfig:
+            OriginProtocolPolicy: https-only
+            OriginSSLProtocols: [TLSv1.2]"""
+
+_CLOUDFORMATION["CF-CF-012"] = """$name:
+  Type: AWS::CloudFront::Distribution
+  Properties:
+    DistributionConfig:
+      # keep the other settings as they are
+      ViewerCertificate:
+        AcmCertificateArn: arn:aws:acm:us-east-1:111122223333:certificate/example  # keep your certificate
+        SslSupportMethod: sni-only
+        MinimumProtocolVersion: TLSv1.2_2021"""
+
+_CLOUDFORMATION["CF-CF-013"] = """$name:
+  Type: AWS::CloudFront::Distribution
+  Properties:
+    DistributionConfig:
+      # keep the other settings as they are
+      CacheBehaviors:
+        - PathPattern: '*.js'
+          TargetOriginId: app
+          ViewerProtocolPolicy: redirect-to-https
+          CachePolicyId: 658327ea-f89d-4fab-a63d-7e88639e58f6  # managed CachingOptimized"""
+
 _CLOUDFORMATION["CF-S3-011"] = """$name:
   Type: AWS::S3::Bucket
   Properties:
@@ -1783,6 +1879,96 @@ resource "aws_s3_bucket_replication_configuration" "$tf_name" {
         }
       }
     }
+  }
+}"""
+
+_TERRAFORM["CF-CF-005"] = """resource "aws_cloudfront_distribution" "$tf_name" {
+  # keep the other arguments as they are
+  logging_config {
+    bucket          = "my-log-bucket.s3.amazonaws.com" # the bucket must allow ACLs
+    include_cookies = false
+  }
+}"""
+
+_TERRAFORM["CF-CF-006"] = """resource "aws_cloudfront_distribution" "$tf_name" {
+  # keep the other arguments as they are
+  price_class = "PriceClass_100" # or PriceClass_200, if viewers are in those Regions
+}"""
+
+_TERRAFORM["CF-CF-007"] = """resource "aws_cloudfront_distribution" "$tf_name" {
+  # keep the other arguments as they are
+  default_cache_behavior {
+    compress = true # also on each ordered_cache_behavior
+  }
+}"""
+
+_TERRAFORM["CF-CF-008"] = """resource "aws_cloudfront_distribution" "$tf_name" {
+  # keep the other arguments as they are
+  default_root_object = "index.html"
+}"""
+
+_TERRAFORM["CF-CF-009"] = """resource "aws_cloudfront_distribution" "$tf_name" {
+  # keep the other arguments as they are
+  origin_group {
+    origin_id = "failover"
+    failover_criteria {
+      status_codes = [500, 502, 503]
+    }
+    member {
+      origin_id = "primary"
+    }
+    member {
+      origin_id = "secondary"
+    }
+  }
+  default_cache_behavior {
+    target_origin_id = "failover"
+  }
+}"""
+
+_TERRAFORM["CF-CF-010"] = """resource "aws_cloudfront_distribution" "$tf_name" {
+  # keep the other arguments as they are
+  origin {
+    origin_id   = "app"
+    domain_name = "app.example.com"
+    custom_origin_config {
+      http_port              = 80
+      https_port             = 443
+      origin_protocol_policy = "https-only"
+      origin_ssl_protocols   = ["TLSv1.2"]
+    }
+  }
+}"""
+
+_TERRAFORM["CF-CF-011"] = """resource "aws_cloudfront_distribution" "$tf_name" {
+  # keep the other arguments as they are
+  origin {
+    origin_id   = "app"
+    domain_name = "app.example.com"
+    custom_origin_config {
+      http_port              = 80
+      https_port             = 443
+      origin_protocol_policy = "https-only"
+      origin_ssl_protocols   = ["TLSv1.2"]
+    }
+  }
+}"""
+
+_TERRAFORM["CF-CF-012"] = """resource "aws_cloudfront_distribution" "$tf_name" {
+  # keep the other arguments as they are
+  viewer_certificate {
+    acm_certificate_arn      = "arn:aws:acm:us-east-1:111122223333:certificate/example" # keep your certificate
+    ssl_support_method       = "sni-only"
+    minimum_protocol_version = "TLSv1.2_2021"
+  }
+}"""
+
+_TERRAFORM["CF-CF-013"] = """resource "aws_cloudfront_distribution" "$tf_name" {
+  # keep the other arguments as they are
+  ordered_cache_behavior {
+    path_pattern    = "*.js"
+    cache_policy_id = "658327ea-f89d-4fab-a63d-7e88639e58f6" # managed CachingOptimized
+    # keep the other arguments of this behavior
   }
 }"""
 

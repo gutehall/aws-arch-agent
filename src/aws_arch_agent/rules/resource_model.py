@@ -45,6 +45,7 @@ CF_TYPE_TO_CANONICAL: dict[str, str] = {
     "AWS::Lambda::Function": "lambda_function",
     "AWS::DynamoDB::Table": "dynamodb_table",
     "AWS::Logs::LogGroup": "cloudwatch_log_group",
+    "AWS::Logs::DeliverySource": "cloudwatch_log_delivery_source",
     "AWS::SQS::Queue": "sqs_queue",
     "AWS::SNS::Topic": "sns_topic",
     "AWS::EC2::Volume": "ebs_volume",

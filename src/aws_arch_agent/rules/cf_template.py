@@ -3,7 +3,7 @@ from __future__ import annotations
 import json
 import re
 from pathlib import Path
-from typing import Any, Callable, List
+from typing import Any, Callable, List, TypeGuard
 
 from aws_arch_agent.models import Finding, Severity
 from aws_arch_agent.rules.secret_names import is_literal_secret, is_secret_name
@@ -50,6 +50,11 @@ CF_COVERS_STATIC: dict[str, tuple[str, ...]] = {
     "CF-CF-001": ("SEC-018",),
     "CF-CF-002": ("SEC-019",),
     "CF-CF-003": ("SEC-024",),
+    "CF-CF-005": ("OPS-007",),
+    "CF-CF-006": ("COST-011",),
+    "CF-CF-007": ("SUST-006",),
+    # Reports only the managed CachingDisabled policy on a static path, as the rule's narrow form.
+    "CF-CF-013": ("PERF-006",),
     "CF-WAF-001": ("SEC-024",),
     "CF-EFS-001": ("SEC-037",),
     "CF-KIN-001": ("SEC-038",),
@@ -306,6 +311,7 @@ _PER_RESOURCE_TYPES = frozenset({
     "efs_access_point", "efs_backup_policy", "ecs_cluster",
     "autoscaling_policy", "autoscaling_schedule", "autoscaling_attachment",
     "athena_workgroup", "glue_job", "glue_security_configuration", "firehose_delivery_stream",
+    "cloudwatch_log_delivery_source",
 })
 # Parameter groups only feed CF-RDS-006; they have no checks of their own.
 
@@ -446,6 +452,9 @@ CHECK_PROPERTIES: dict[str, frozenset[str]] = {
         # Template-level: _emr_dms_findings skips what it cannot read.
         **{c: set() for c in ("CF-EMR-001", "CF-EMR-002", "CF-EMR-003", "CF-DMS-001", "CF-DMS-002",
                               "CF-DMS-003", "CF-DMS-004")},
+        # Template-level: _cloudfront_settings_findings skips what it cannot read.
+        **{c: set() for c in ("CF-CF-005", "CF-CF-006", "CF-CF-007", "CF-CF-008", "CF-CF-009", "CF-CF-010",
+                              "CF-CF-011", "CF-CF-012", "CF-CF-013")},
         # Template-level: _s3_settings_findings skips what it cannot read.
         **{c: set() for c in ("CF-S3-008", "CF-S3-009", "CF-S3-010", "CF-S3-011", "CF-S3-012")},
         # Template-level: _analytics_findings skips what it cannot read.
@@ -504,6 +513,8 @@ CF_THEMES: dict[str, tuple[str, ...]] = {
     "CF-CB-001": (_DP, _ID), "CF-CB-002": (_DP, _ID), "CF-CB-003": (_SB,), "CF-CB-004": (_OBS,),
     "CF-CB-005": (_OBS, _DP), "CF-CP-001": (_DP,), "CF-CP-002": (_RES,), "CF-CP-003": (_OBS,),
     "CF-CF-001": (_DP, _NET), "CF-CF-002": (_DP, _NET), "CF-CF-003": (_NET,), "CF-CF-004": (_NET, _ID),
+    "CF-CF-005": (_OBS,), "CF-CF-006": (_F,), "CF-CF-007": (_SUS, _F), "CF-CF-008": (_NET,), "CF-CF-009": (_RES,),
+    "CF-CF-010": (_DP, _NET), "CF-CF-011": (_DP, _NET), "CF-CF-012": (_F,), "CF-CF-013": (_RES,),
     "CF-COG-001": (_ID,), "CF-COG-002": (_ID,), "CF-COG-003": (_ID,),
     "CF-COST-002": (_F,), "CF-CT-001": (_OBS, _SB), "CF-CT-002": (_OBS,), "CF-CT-003": (_OBS, _DP),
     "CF-CW-001": (_F, _DP), "CF-CW-002": (_DP,),
@@ -745,6 +756,289 @@ def _s3_origin_findings(res: Resource, template_path: Path, config: dict) -> Lis
             "In CDK: origins.S3BucketOrigin.withOriginAccessControl(bucket)."
         ),
     )]
+
+
+# The managed CachingDisabled cache policy. A behavior using it does not cache, and so does not compress.
+_CACHING_DISABLED_POLICY = "4135ea2d-6df8-44a3-9df3-4b5a84be39ad"
+# Path patterns that plainly serve static files. A longer path such as /api/assets/* is not judged.
+_STATIC_PATH = re.compile(
+    r"\*\.(?:js|mjs|css|map|png|jpe?g|gif|svg|ico|webp|avif|woff2?|ttf|otf|eot)$"
+    r"|^/?(?:_next/)?(?:static|assets|images|img|fonts|css|js)/\*$",
+    re.IGNORECASE,
+)
+# An S3 website endpoint, as a literal, a CloudFormation attribute or a Terraform attribute. It only speaks HTTP.
+_S3_WEBSITE_ORIGIN = re.compile(r"s3-website|website_endpoint|website_domain|WebsiteURL")
+
+
+def _names_one_origin(value: Any) -> bool:
+    """True when an origin id can be compared. Two unknown Terraform values are not the same id."""
+    return value is not None and not (isinstance(value, dict) and "Fn::Unresolved" in value)
+
+
+def _readable(value: Any) -> TypeGuard[dict]:
+    return isinstance(value, dict) and not _is_intrinsic(value)
+
+
+def _origins_behind(config: dict, target: Any) -> list[dict] | None:
+    """The origins a behavior's TargetOriginId leads to, through an origin group too. None when the
+    scan cannot tie them. With one origin, every behavior goes there."""
+    origins = config.get("Origins")
+    if not isinstance(origins, list) or not origins:
+        return None
+    if len(origins) == 1:
+        return [origins[0]] if _readable(origins[0]) else None
+    if not _names_one_origin(target):
+        return None
+    known = [o for o in origins if _readable(o)]
+    direct = [o for o in known if o.get("Id") == target]
+    if direct:
+        return direct
+    groups = config.get("OriginGroups")
+    items = groups.get("Items") if isinstance(groups, dict) else None
+    for group in items if isinstance(items, list) else []:
+        if not (isinstance(group, dict) and group.get("Id") == target):
+            continue
+        members = group.get("Members")
+        listed = members.get("Items") if isinstance(members, dict) else None
+        ids = [m.get("OriginId") for m in listed if isinstance(m, dict)] if isinstance(listed, list) else []
+        ids = [i for i in ids if _names_one_origin(i)]
+        found = [o for o in known if o.get("Id") in ids]
+        return found if found and isinstance(listed, list) and len(found) == len(listed) else None
+    return None
+
+
+def _changes_request(behavior: dict) -> bool:
+    """True when a function may rewrite the request, such as / to /index.html. Unknown counts."""
+    for key in ("FunctionAssociations", "LambdaFunctionAssociations"):
+        value = behavior.get(key)
+        if value is None:
+            continue
+        if not isinstance(value, list):
+            return True
+        for item in value:
+            if not isinstance(item, dict) or item.get("EventType") not in ("viewer-response", "origin-response"):
+                return True
+    return False
+
+
+def _default_goes_to_s3(config: dict) -> bool:
+    """True when the default behavior serves an S3 origin, so the root URL reaches the bucket.
+
+    When the target cannot be tied, every origin must be a readable S3 origin: a distribution that
+    also has an API origin may send its root URL to the API.
+    """
+    default = config.get("DefaultCacheBehavior")
+    origins = config.get("Origins")
+    if not _readable(default) or _changes_request(default) or not isinstance(origins, list):
+        return False
+    behind = _origins_behind(config, default.get("TargetOriginId"))
+    if behind is None:
+        if not all(_readable(o) for o in origins):
+            return False
+        behind = origins
+    return bool(behind) and all(_is_s3_origin(o) and o.get("CustomOriginConfig") is None for o in behind)
+
+
+def _no_origin_group(config: dict) -> bool:
+    """True when no origin group with two or more origins is set. Unknown is not judged."""
+    groups = config.get("OriginGroups")
+    if groups is None:
+        return True
+    if not _readable(groups):
+        return False
+    items = groups.get("Items")
+    if items is None:
+        return True
+    if not isinstance(items, list):
+        return False
+    for group in items:
+        members = group.get("Members") if _readable(group) else None
+        listed = members.get("Items") if _readable(members) else None
+        if not isinstance(listed, list) or len(listed) >= 2:
+            return False
+    return True
+
+
+def _custom_origins(config: dict) -> list[tuple[str, dict, dict]]:
+    """(name, origin, CustomOriginConfig) for each origin with custom settings the scan can read."""
+    origins = config.get("Origins")
+    out = []
+    for i, origin in enumerate(origins if isinstance(origins, list) else []):
+        if not _readable(origin) or origin.get("S3OriginConfig") is not None:
+            continue
+        settings = origin.get("CustomOriginConfig")
+        if _readable(settings):
+            name = origin.get("Id")
+            out.append((name if type(name) is str else f"origin {i + 1}", origin, settings))
+    return out
+
+
+def _plain_http_origins(config: dict, behaviors: list[tuple[str, dict]]) -> tuple[list[str], list[str]]:
+    """Custom origins that get plain HTTP: (http-only, match-viewer behind an allow-all behavior).
+    S3 website endpoints are left out: they cannot use HTTPS."""
+    http_only, matching = [], []
+    open_targets = [
+        _origins_behind(config, b.get("TargetOriginId")) or []
+        for _, b in behaviors if b.get("ViewerProtocolPolicy") == "allow-all"
+    ]
+    for name, origin, settings in _custom_origins(config):
+        if _S3_WEBSITE_ORIGIN.search(json.dumps(origin.get("DomainName"), default=str)):
+            continue
+        policy = settings.get("OriginProtocolPolicy")
+        if policy == "http-only":
+            http_only.append(name)
+        elif policy == "match-viewer" and any(origin is o for target in open_targets for o in target):
+            matching.append(name)
+    return http_only, matching
+
+
+def _compress_off(behavior: dict) -> bool:
+    """True when turning on Compress would work. The CachingDisabled policy cannot compress, and a
+    cache policy the scan cannot read may be that policy."""
+    policy = behavior.get("CachePolicyId")
+    if policy is not None and (type(policy) is not str or policy.lower() == _CACHING_DISABLED_POLICY):
+        return False
+    return _flag(behavior.get("Compress")) is False
+
+
+def _may_log_in_realtime(config: dict) -> bool:
+    """True when a behavior sends real-time logs, or a behavior the scan cannot read might."""
+    default = config.get("DefaultCacheBehavior")
+    extra = config.get("CacheBehaviors")
+    if extra is not None and not isinstance(extra, list):
+        return True
+    behaviors = [default, *(extra or [])]
+    return any(not _readable(b) or b.get("RealtimeLogConfigArn") not in (None, "") for b in behaviors)
+
+
+def _has_log_delivery(dist: Resource, sources: List[Resource], usable: List[Resource]) -> bool:
+    """True when a v2 standard logging delivery source names the distribution. A source the scan
+    cannot tie to any resource counts for all distributions."""
+    for source in sources:
+        arn = source.properties.get("ResourceArn")
+        if _value_mentions(arn, dist.name):
+            return True
+        if type(arn) is str:  # a literal ARN of another distribution still counts: it cannot be tied
+            if ":cloudfront:" in arn:
+                return True
+            continue
+        if not any(_value_mentions(arn, r.name) for r in usable if r is not source):
+            return True
+    return False
+
+
+def _cloudfront_settings_findings(resources: List[Resource], template_path: Path) -> List[Finding]:
+    """Logging (CF-CF-005), price class (CF-CF-006), compression (CF-CF-007), default root object
+    (CF-CF-008), origin failover (CF-CF-009), origin TLS (CF-CF-010, CF-CF-011), dedicated IP
+    certificates (CF-CF-012) and caching on static paths (CF-CF-013). A value the scan cannot read
+    is not judged."""
+    usable = [r for r in resources if not r.malformed]
+    dists = [r for r in usable if r.type == "cloudfront_distribution"]
+    sources = [r for r in usable if r.type == "cloudwatch_log_delivery_source"]
+    out: List[Finding] = []
+
+    def add(res: Resource, check_id: str, title: str, severity: Severity, category: str,
+            recommendation: str) -> None:
+        out.append(Finding(
+            id=check_id, title=title, severity=severity, category=category,
+            file=res.file or str(template_path), line=res.line,
+            evidence=f"{res.name} ({res.source_type})", recommendation=recommendation,
+        ))
+
+    for dist in dists:
+        config = dist.properties.get("DistributionConfig")
+        if not _readable(config):
+            continue
+        behaviors: list[tuple[str, dict]] = []
+        if _readable(config.get("DefaultCacheBehavior")):
+            behaviors.append(("default", config["DefaultCacheBehavior"]))
+        extra = config.get("CacheBehaviors")
+        for item in extra if isinstance(extra, list) else []:
+            if _readable(item):
+                path = item.get("PathPattern")
+                behaviors.append((path if type(path) is str else "a path", item))
+
+        if (config.get("Logging") is None and not _may_log_in_realtime(config)
+                and not _has_log_delivery(dist, sources, usable)):
+            add(dist, "CF-CF-005", "CloudFront distribution has no access logs", "Low", "Operational Excellence",
+                "This distribution has no Logging, no real-time log config on a behavior, and no log delivery "
+                "source, so requests cannot be traced after an incident. Set Logging to an S3 bucket "
+                "(Security Hub CloudFront.5 reads only this legacy standard logging), or deliver standard logs "
+                "with AWS::Logs::DeliverySource. In CDK: enableLogging: true and logBucket on the Distribution.")
+
+        # A multi-tenant distribution has no price class.
+        price = config.get("PriceClass")
+        if config.get("ConnectionMode") in (None, "direct") and price in (None, "PriceClass_All"):
+            add(dist, "CF-CF-006", "CloudFront distribution uses all edge locations", "Low", "Cost Optimization",
+                f"PriceClass is {price or 'unset, which means PriceClass_All'}. If most viewers are in North "
+                "America, Europe or Asia, PriceClass_100 or PriceClass_200 can cost less, with slower responses "
+                "for viewers elsewhere. Keep this if you serve viewers worldwide. "
+                "In CDK: priceClass: cloudfront.PriceClass.PRICE_CLASS_100.")
+
+        uncompressed = [name for name, b in behaviors if _compress_off(b)]
+        if uncompressed:
+            add(dist, "CF-CF-007", "CloudFront behavior does not compress responses", "Low", "Sustainability",
+                f"Compress is not true on behaviors: {', '.join(uncompressed)}, so text files cost more to send "
+                "and take longer to load. Set Compress to true, and use a cache policy that allows Gzip and "
+                "Brotli. In CDK: compress: true on the behavior.")
+
+        if config.get("DefaultRootObject") in (None, "") and _default_goes_to_s3(config):
+            add(dist, "CF-CF-008", "CloudFront distribution with an S3 origin has no default root object", "Low",
+                "Security",
+                "The default behavior serves an S3 origin and DefaultRootObject is not set, so a request for "
+                "the root URL goes to the bucket itself and may expose a listing or an error from S3 "
+                "(Security Hub CloudFront.1). Set DefaultRootObject, such as index.html. "
+                "In CDK: defaultRootObject on the Distribution.")
+
+        if _no_origin_group(config):
+            add(dist, "CF-CF-009", "CloudFront distribution has no origin failover", "Low", "Reliability",
+                "No origin group with two origins is set, so CloudFront has nothing to fail over to when the "
+                "origin is down (Security Hub CloudFront.4). This also reports a distribution with one origin: "
+                "many have one on purpose, and then you can ignore this. If this content must stay up, add a "
+                "second origin and an origin group. In CDK: origins.OriginGroup.")
+
+        http_only, matching = _plain_http_origins(config, behaviors)
+        if http_only or matching:
+            parts = []
+            if http_only:
+                parts.append(f"OriginProtocolPolicy is http-only on origins: {', '.join(http_only)}.")
+            if matching:
+                parts.append(f"OriginProtocolPolicy is match-viewer on origins: {', '.join(matching)}, behind a "
+                             "behavior with ViewerProtocolPolicy allow-all.")
+            add(dist, "CF-CF-010", "CloudFront sends plain HTTP to a custom origin", "Medium", "Security",
+                f"{' '.join(parts)} Traffic between CloudFront and the origin can then be read or changed "
+                "(Security Hub CloudFront.9). Set https-only, and give the origin a certificate. "
+                "In CDK: protocolPolicy: cloudfront.OriginProtocolPolicy.HTTPS_ONLY on the origin.")
+
+        weak = [
+            name for name, _o, settings in _custom_origins(config)
+            if isinstance(settings.get("OriginSSLProtocols"), list) and "SSLv3" in settings["OriginSSLProtocols"]
+        ]
+        if weak:
+            add(dist, "CF-CF-011", "CloudFront allows SSLv3 to a custom origin", "Medium", "Security",
+                f"OriginSSLProtocols includes SSLv3 on origins: {', '.join(weak)}, and SSLv3 is deprecated and "
+                "not secure (Security Hub CloudFront.10). Allow only TLSv1.2. "
+                "In CDK: originSslProtocols: [cloudfront.OriginSslPolicy.TLS_V1_2] on the origin.")
+
+        cert = config.get("ViewerCertificate")
+        if _readable(cert) and cert.get("SslSupportMethod") == "vip":
+            add(dist, "CF-CF-012", "CloudFront certificate uses a dedicated IP address", "Low", "Cost Optimization",
+                "SslSupportMethod is vip, which has a large monthly charge for dedicated IP addresses at each "
+                "edge location. Set sni-only, unless you must serve very old clients without SNI "
+                "(Security Hub CloudFront.8). In CDK: sslSupportMethod: cloudfront.SSLMethod.SNI.")
+
+        no_cache = [
+            name for name, b in behaviors
+            if type(b.get("PathPattern")) is str and _STATIC_PATH.search(b["PathPattern"])
+            and type(b.get("CachePolicyId")) is str and b["CachePolicyId"].lower() == _CACHING_DISABLED_POLICY
+        ]
+        if no_cache:
+            add(dist, "CF-CF-013", "CloudFront does not cache static paths", "Low", "Performance Efficiency",
+                f"Behaviors with the managed CachingDisabled policy on static paths: {', '.join(no_cache)}. Each "
+                "request for these files goes to the origin. Use the managed CachingOptimized policy, and name "
+                "files by content hash so a new version gets a new URL. "
+                "In CDK: cachePolicy: cloudfront.CachePolicy.CACHING_OPTIMIZED.")
+    return out
 
 
 def _references(text: str, name: str) -> bool:
@@ -5886,6 +6180,9 @@ def _run_resource_checks(
 
     # --- Athena workgroups, Glue jobs and security configurations, Firehose delivery streams ---
     findings.extend(_analytics_findings(resources, template_path))
+
+    # --- CloudFront logging, price class, compression, origins, certificates, caching ---
+    findings.extend(_cloudfront_settings_findings(resources, template_path))
 
     # --- S3 bucket ACLs and ownership, replication, S3 Bucket Keys ---
     findings.extend(_s3_settings_findings(resources, template_path))

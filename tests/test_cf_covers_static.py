@@ -254,6 +254,18 @@ PAIRS: list[tuple[str, str, dict, str]] = [
      {"Type": "AWS::S3::Bucket", "Properties": {"ReplicationConfiguration": {"Role": "r", "Rules": [
          {"Status": "Enabled", "Destination": {"Bucket": "arn:aws:s3:::dest"}}]}}},
      "new s3.Bucket(this, 'B', { replicationRule: {} });"),
+    ("CF-CF-005", "OPS-007", {"Type": "AWS::CloudFront::Distribution", "Properties": {"DistributionConfig": {
+         "Origins": [{"Id": "a", "DomainName": "a.example.com", "CustomOriginConfig": {"OriginProtocolPolicy": "https-only"}}],
+         "DefaultCacheBehavior": {"TargetOriginId": "a", "ViewerProtocolPolicy": "https-only"}}}}, "new cloudfront.Distribution(this, 'D', {});"),
+    ("CF-CF-006", "COST-011", {"Type": "AWS::CloudFront::Distribution", "Properties": {"DistributionConfig": {
+         "Origins": [{"Id": "a", "DomainName": "a.example.com", "CustomOriginConfig": {"OriginProtocolPolicy": "https-only"}}],
+         "DefaultCacheBehavior": {"TargetOriginId": "a", "ViewerProtocolPolicy": "https-only"}}}}, "new cloudfront.Distribution(this, 'D', {});"),
+    ("CF-CF-007", "SUST-006", {"Type": "AWS::CloudFront::Distribution", "Properties": {"DistributionConfig": {
+         "Origins": [{"Id": "a", "DomainName": "a.example.com", "CustomOriginConfig": {"OriginProtocolPolicy": "https-only"}}],
+         "DefaultCacheBehavior": {"TargetOriginId": "a", "ViewerProtocolPolicy": "https-only"}}}}, "new cloudfront.Distribution(this, 'D', {});"),
+    ("CF-CF-013", "PERF-006", {"Type": "AWS::CloudFront::Distribution", "Properties": {"DistributionConfig": {
+         "Origins": [{"Id": "a", "DomainName": "a.example.com", "CustomOriginConfig": {"OriginProtocolPolicy": "https-only"}}],
+         "DefaultCacheBehavior": {"TargetOriginId": "a", "ViewerProtocolPolicy": "https-only"}, "CacheBehaviors": [{"PathPattern": "*.js", "TargetOriginId": "a", "ViewerProtocolPolicy": "https-only", "CachePolicyId": "4135ea2d-6df8-44a3-9df3-4b5a84be39ad"}]}}}, "new cloudfront.Distribution(this, 'D', {});"),
 ]
 
 

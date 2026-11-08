@@ -17,7 +17,6 @@ Which CDK rules have a template check, and which AWS Foundational Security Best 
 
 | Work | Adds template checks for |
 | -- | -- |
-| `cloudfront` | More CloudFront settings |
 | `sagemaker-fsx` | SageMaker and FSx |
 | `app-services` | AppSync, Transfer Family, App Runner and Elastic Beanstalk |
 | `dns-certs` | Route 53, ACM and Global Accelerator |
@@ -26,7 +25,7 @@ Which CDK rules have a template check, and which AWS Foundational Security Best 
 
 ## CDK rules
 
-172 rules: 106 covered, 7 partial, 19 planned, 10 account, 5 cdk-only, 25 advice.
+172 rules: 110 covered, 7 partial, 15 planned, 10 account, 5 cdk-only, 25 advice.
 
 | Rule | Title | Template check | Status | Note |
 | -- | -- | -- | -- | -- |
@@ -139,7 +138,7 @@ Which CDK rules have a template check, and which AWS Foundational Security Best 
 | COST-008 | EBS volumes using gp2 instead of gp3 | `CF-EBS-002` | `covered` |  |
 | COST-009 | ElastiCache may benefit from reserved nodes |  | `account` | Reserved nodes are bought for the account. |
 | COST-010 | RDS not using Graviton instances | `CF-RDS-014` | `covered` |  |
-| COST-011 | CloudFront using all edge locations (Price Class All) |  | `planned: cloudfront` |  |
+| COST-011 | CloudFront using all edge locations (Price Class All) | `CF-CF-006` | `covered` |  |
 | COST-012 | Elastic IP allocated but may not be used | `CF-EIP-001` | `covered` |  |
 | COST-013 | S3 lifecycle policy not configured for cost optimization | `CF-S3-006` | `covered` |  |
 | COST-014 | AWS Budgets not configured |  | `account` | Budgets are account-level. account-baseline checks a budget the repo defines. |
@@ -158,7 +157,7 @@ Which CDK rules have a template check, and which AWS Foundational Security Best 
 | OPS-004 | DynamoDB table may benefit from streams for event-driven patterns |  | `advice` | Streams depend on the event design. |
 | OPS-005 | API Gateway access logging not enabled | `CF-APIGW-001`, `CF-APIGW-V2-001` | `covered` |  |
 | OPS-006 | ALB/NLB access logs not enabled | `CF-ALB-001` | `covered` |  |
-| OPS-007 | CloudFront access logging not enabled |  | `planned: cloudfront` |  |
+| OPS-007 | CloudFront access logging not enabled | `CF-CF-005` | `covered` |  |
 | OPS-008 | ECS container insights not enabled | `CF-ECS-010` | `covered` |  |
 | OPS-009 | RDS enhanced monitoring not enabled | `CF-RDS-007` | `covered` |  |
 | OPS-010 | CloudWatch alarms not configured for critical resources |  | `planned: alarms` |  |
@@ -181,7 +180,7 @@ Which CDK rules have a template check, and which AWS Foundational Security Best 
 | PERF-003 | DynamoDB table may use provisioned capacity (consider on-demand) |  | `advice` | On-demand versus provisioned depends on traffic. |
 | PERF-004 | API Gateway caching not enabled | `CF-APIGW-008` | `covered` |  |
 | PERF-005 | Lambda memory not optimized (too low/high) |  | `advice` | Memory tuning needs invocation data. |
-| PERF-006 | CloudFront caching strategy not optimized |  | `planned: cloudfront` |  |
+| PERF-006 | CloudFront caching strategy not optimized | `CF-CF-013` | `covered` | Narrowed: CF-CF-013 reports only the managed CachingDisabled policy on a static-looking path, because a template does not show other caching gaps. |
 | PERF-007 | ECS task sizing (CPU/memory) may need review | `CF-ECS-011` | `covered` |  |
 | PERF-008 | RDS instance class may be oversized | `CF-PERF-003`, `CF-PERF-004` | `partial` | CF-PERF-003 checks RDS and CF-PERF-004 checks EC2; PERF-008 matches any large instanceType. |
 | PERF-009 | Kinesis enhanced fan-out not used |  | `advice` | Enhanced fan-out depends on consumer count. |
@@ -200,7 +199,7 @@ Which CDK rules have a template check, and which AWS Foundational Security Best 
 | SUST-003 | Scheduled scaling not configured for predictable patterns |  | `advice` | Scheduled scaling depends on traffic patterns. |
 | SUST-004 | Consider async processing for batch workloads |  | `advice` | Architecture advice. |
 | SUST-005 | Consider managed services over self-managed |  | `advice` | Architecture advice. |
-| SUST-006 | CloudFront compression not enabled |  | `planned: cloudfront` |  |
+| SUST-006 | CloudFront compression not enabled | `CF-CF-007` | `covered` |  |
 | SUST-007 | Latest generation instance types not used | `CF-GEN-001` | `covered` |  |
 
 ## FSBP controls
@@ -222,14 +221,14 @@ Controls a template can show. Account-level controls (for example S3.1, EC2.7 an
 | AutoScaling.3 | `CF-ASG-003` | `AWS::AutoScaling::LaunchConfiguration` |
 | AutoScaling.5 | `CF-ASG-004` | `AWS::AutoScaling::LaunchConfiguration` |
 | AutoScaling.9 | `CF-ASG-005` | `AWS::AutoScaling::AutoScalingGroup` |
-| CloudFront.1 | `planned: cloudfront` | `AWS::CloudFront::Distribution` |
+| CloudFront.1 | `CF-CF-008` | `AWS::CloudFront::Distribution` |
 | CloudFront.3 | `CF-CF-001` | `AWS::CloudFront::Distribution` |
-| CloudFront.4 | `planned: cloudfront` | `AWS::CloudFront::Distribution` |
-| CloudFront.5 | `planned: cloudfront` | `AWS::CloudFront::Distribution` |
+| CloudFront.4 | `CF-CF-009` | `AWS::CloudFront::Distribution` |
+| CloudFront.5 | `CF-CF-005` | `AWS::CloudFront::Distribution` |
 | CloudFront.6 | `CF-CF-003` | `AWS::CloudFront::Distribution` |
-| CloudFront.8 | `planned: cloudfront` | `AWS::CloudFront::Distribution` |
-| CloudFront.9 | `planned: cloudfront` | `AWS::CloudFront::Distribution` |
-| CloudFront.10 | `planned: cloudfront` | `AWS::CloudFront::Distribution` |
+| CloudFront.8 | `CF-CF-012` | `AWS::CloudFront::Distribution` |
+| CloudFront.9 | `CF-CF-010` | `AWS::CloudFront::Distribution` |
+| CloudFront.10 | `CF-CF-011` | `AWS::CloudFront::Distribution` |
 | CloudFront.13 | `CF-CF-004` | `AWS::CloudFront::Distribution` |
 | CloudFront.15 | `CF-CF-002` | `AWS::CloudFront::Distribution` |
 | CloudTrail.1 | `CF-CT-002` | `AWS::CloudTrail::Trail` |
