@@ -1279,6 +1279,60 @@ _CLOUDFORMATION["CF-RS-002"] = """$name:
   Type: AWS::Redshift::Cluster
   Properties:
     PubliclyAccessible: false"""
+_CLOUDFORMATION["CF-DDB-004"] = """$name:
+  Type: AWS::DynamoDB::Table
+  Properties:
+    DeletionProtectionEnabled: true"""
+_CLOUDFORMATION["CF-DDB-005"] = """$name:
+  Type: AWS::DynamoDB::Table
+  Properties:
+    PointInTimeRecoverySpecification:
+      PointInTimeRecoveryEnabled: true"""
+_CLOUDFORMATION["CF-EC-003"] = """$name:
+  Type: AWS::ElastiCache::ReplicationGroup
+  Properties:
+    AutomaticFailoverEnabled: true
+    MultiAZEnabled: true"""
+_CLOUDFORMATION["CF-EC-004"] = """$name:
+  Type: AWS::ElastiCache::ReplicationGroup
+  Properties:
+    SnapshotRetentionLimit: 7"""
+_CLOUDFORMATION["CF-EC-005"] = """$name:
+  Type: AWS::ElastiCache::ReplicationGroup
+  Properties:
+    AutoMinorVersionUpgrade: true"""
+_CLOUDFORMATION["CF-EC-006"] = """$name:
+  Type: AWS::ElastiCache::ReplicationGroup
+  Properties:
+    TransitEncryptionEnabled: true
+    AuthToken: '{{resolve:secretsmanager:cache-auth:SecretString:token}}'"""
+_CLOUDFORMATION["CF-EC-007"] = """$name:
+  Type: AWS::ElastiCache::ReplicationGroup
+  Properties:
+    CacheSubnetGroupName: !Ref CacheSubnets"""
+_CLOUDFORMATION["CF-EFS-002"] = """$name:
+  Type: AWS::EFS::FileSystem
+  Properties:
+    BackupPolicy:
+      Status: ENABLED"""
+_CLOUDFORMATION["CF-EFS-003"] = """$name:
+  Type: AWS::EFS::FileSystem
+  Properties:
+    LifecyclePolicies:
+      - TransitionToIA: AFTER_30_DAYS"""
+_CLOUDFORMATION["CF-EFS-004"] = """$name:
+  Type: AWS::EFS::AccessPoint
+  Properties:
+    FileSystemId: !Ref FileSystem
+    RootDirectory:
+      Path: /my-app"""
+_CLOUDFORMATION["CF-EFS-005"] = """$name:
+  Type: AWS::EFS::AccessPoint
+  Properties:
+    FileSystemId: !Ref FileSystem
+    PosixUser:
+      Uid: '1000'
+      Gid: '1000'"""
 _CLOUDFORMATION["CF-BAK-001"] = """$name:
   Type: AWS::Backup::BackupVault
   Properties:
@@ -1380,6 +1434,58 @@ _CLOUDFORMATION["CF-NEP-005"] = """$name:
     IamAuthEnabled: true"""
 _TERRAFORM["CF-RS-002"] = """resource "aws_redshift_cluster" "$tf_name" {
   publicly_accessible = false
+}"""
+_TERRAFORM["CF-DDB-004"] = """resource "aws_dynamodb_table" "$tf_name" {
+  deletion_protection_enabled = true
+}"""
+_TERRAFORM["CF-DDB-005"] = """resource "aws_dynamodb_table" "$tf_name" {
+  point_in_time_recovery {
+    enabled = true
+  }
+}"""
+_TERRAFORM["CF-EC-003"] = """resource "aws_elasticache_replication_group" "$tf_name" {
+  automatic_failover_enabled = true
+  multi_az_enabled           = true
+}"""
+_TERRAFORM["CF-EC-004"] = """resource "aws_elasticache_replication_group" "$tf_name" {
+  snapshot_retention_limit = 7
+}"""
+_TERRAFORM["CF-EC-005"] = """resource "aws_elasticache_replication_group" "$tf_name" {
+  auto_minor_version_upgrade = true
+}"""
+_TERRAFORM["CF-EC-006"] = """resource "aws_elasticache_replication_group" "$tf_name" {
+  transit_encryption_enabled = true
+  auth_token                 = var.cache_auth_token
+}"""
+_TERRAFORM["CF-EC-007"] = """resource "aws_elasticache_replication_group" "$tf_name" {
+  subnet_group_name = aws_elasticache_subnet_group.private.name
+}"""
+_TERRAFORM["CF-EFS-002"] = """resource "aws_efs_backup_policy" "$tf_name" {
+  file_system_id = aws_efs_file_system.$tf_name.id
+
+  backup_policy {
+    status = "ENABLED"
+  }
+}"""
+_TERRAFORM["CF-EFS-003"] = """resource "aws_efs_file_system" "$tf_name" {
+  lifecycle_policy {
+    transition_to_ia = "AFTER_30_DAYS"
+  }
+}"""
+_TERRAFORM["CF-EFS-004"] = """resource "aws_efs_access_point" "$tf_name" {
+  file_system_id = aws_efs_file_system.main.id
+
+  root_directory {
+    path = "/my-app"
+  }
+}"""
+_TERRAFORM["CF-EFS-005"] = """resource "aws_efs_access_point" "$tf_name" {
+  file_system_id = aws_efs_file_system.main.id
+
+  posix_user {
+    uid = 1000
+    gid = 1000
+  }
 }"""
 _TERRAFORM["CF-BAK-001"] = """resource "aws_backup_vault" "$tf_name" {
   name        = "my-vault"

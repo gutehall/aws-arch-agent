@@ -49,6 +49,7 @@ CF_TYPE_TO_CANONICAL: dict[str, str] = {
     "AWS::SNS::Topic": "sns_topic",
     "AWS::EC2::Volume": "ebs_volume",
     "AWS::EFS::FileSystem": "efs_file_system",
+    "AWS::EFS::AccessPoint": "efs_access_point",
     "AWS::Kinesis::Stream": "kinesis_stream",
     "AWS::Kinesis::StreamConsumer": "kinesis_stream_consumer",
     "AWS::KinesisAnalyticsV2::Application": "kinesis_analytics_application",
@@ -116,9 +117,9 @@ CF_TYPE_TO_CANONICAL: dict[str, str] = {
     "AWS::FSx::FileSystem": "fsx_file_system",
 }
 
-# Terraform only: CloudFormation lists a rule's targets on the rule, and a vault's lock on the vault.
+# Terraform only: CloudFormation sets these on the rule, the vault and the file system.
 CANONICAL_TYPES: frozenset[str] = frozenset(CF_TYPE_TO_CANONICAL.values()) | {
-    "events_target", "backup_vault_lock",
+    "events_target", "backup_vault_lock", "efs_backup_policy",
 }
 
 

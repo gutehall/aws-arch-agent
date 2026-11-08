@@ -17,7 +17,6 @@ Which CDK rules have a template check, and which AWS Foundational Security Best 
 
 | Work | Adds template checks for |
 | -- | -- |
-| `data-resilience` | DynamoDB, ElastiCache and EFS resilience |
 | `containers` | More ECS and EKS settings |
 | `auto-scaling` | Auto Scaling groups and launch configurations |
 | `analytics` | Athena, Glue and Firehose |
@@ -32,7 +31,7 @@ Which CDK rules have a template check, and which AWS Foundational Security Best 
 
 ## CDK rules
 
-172 rules: 94 covered, 6 partial, 32 planned, 10 account, 5 cdk-only, 25 advice.
+172 rules: 98 covered, 6 partial, 28 planned, 10 account, 5 cdk-only, 25 advice.
 
 | Rule | Title | Template check | Status | Note |
 | -- | -- | -- | -- | -- |
@@ -108,7 +107,7 @@ Which CDK rules have a template check, and which AWS Foundational Security Best 
 | REL-002 | RDS may miss backup retention | `CF-RDS-002` | `covered` |  |
 | REL-003 | Lambda may miss DLQ / on-failure destination | `CF-LAM-001` | `covered` |  |
 | REL-004 | DynamoDB may miss point-in-time recovery | `CF-DDB-001` | `covered` |  |
-| REL-005 | DynamoDB may miss automated backups |  | `planned: data-resilience` |  |
+| REL-005 | DynamoDB may miss automated backups | `CF-DDB-005` | `covered` |  |
 | REL-006 | API Gateway throttling not configured | `CF-APIGW-005`, `CF-APIGW-V2-004` | `covered` |  |
 | REL-007 | ALB health check configuration missing | `CF-ALB-007` | `covered` |  |
 | REL-008 | SQS missing dead-letter queue configuration | `CF-SQS-002` | `covered` |  |
@@ -119,9 +118,9 @@ Which CDK rules have a template check, and which AWS Foundational Security Best 
 | REL-013 | AWS Backup vault not configured | `CF-BAK-005` | `covered` |  |
 | REL-014 | Cross-region backup replication missing | `CF-BAK-002` | `covered` |  |
 | REL-015 | Step Functions retry/catch not configured | `CF-SFN-001` | `covered` |  |
-| REL-016 | ElastiCache not using multi-AZ |  | `planned: data-resilience` |  |
-| REL-017 | EFS backup policy not configured |  | `planned: data-resilience` |  |
-| REL-018 | EFS lifecycle policy not configured |  | `planned: data-resilience` |  |
+| REL-016 | ElastiCache not using multi-AZ | `CF-EC-003` | `covered` | Reads replication groups. A cache cluster has no failover setting, so a scan where CF-EC-003 does not report keeps the CDK finding. |
+| REL-017 | EFS backup policy not configured | `CF-EFS-002` | `covered` |  |
+| REL-018 | EFS lifecycle policy not configured | `CF-EFS-003` | `covered` |  |
 | REL-019 | Kinesis stream retention period too short | `CF-KIN-002` | `covered` |  |
 | REL-020 | Global Accelerator health checks not configured |  | `planned: dns-certs` |  |
 | REL-021 | CodePipeline missing manual approval for production | `CF-CP-002` | `covered` |  |
@@ -258,7 +257,7 @@ Controls a template can show. Account-level controls (for example S3.1, EC2.7 an
 | DocumentDB.5 | `CF-DOCDB-004` | `AWS::DocDB::DBCluster` |
 | DynamoDB.1 | `CF-DDB-003` | `AWS::DynamoDB::Table` |
 | DynamoDB.2 | `CF-DDB-001` | `AWS::DynamoDB::Table` |
-| DynamoDB.6 | `planned: data-resilience` | `AWS::DynamoDB::Table` |
+| DynamoDB.6 | `CF-DDB-004` | `AWS::DynamoDB::Table` |
 | EC2.3 | `CF-EBS-001` | `AWS::EC2::Volume` |
 | EC2.6 | `CF-FL-001` | `AWS::EC2::VPC` |
 | EC2.8 | `CF-EC2-001` | `AWS::EC2::Instance`, `AWS::EC2::LaunchTemplate` |
@@ -283,20 +282,21 @@ Controls a template can show. Account-level controls (for example S3.1, EC2.7 an
 | ECS.10 | `planned: containers` | `AWS::ECS::Service` |
 | ECS.12 | `planned: containers` | `AWS::ECS::Cluster` |
 | EFS.1 | `CF-EFS-001` | `AWS::EFS::FileSystem` |
-| EFS.2 | `planned: data-resilience` | `AWS::EFS::FileSystem` |
-| EFS.3 | `planned: data-resilience` | `AWS::EFS::AccessPoint` |
-| EFS.4 | `planned: data-resilience` | `AWS::EFS::AccessPoint` |
+| EFS.2 | `CF-BAK-005` | `AWS::EFS::FileSystem` |
+| EFS.3 | `CF-EFS-004` | `AWS::EFS::AccessPoint` |
+| EFS.4 | `CF-EFS-005` | `AWS::EFS::AccessPoint` |
+| EFS.7 | `CF-EFS-002` | `AWS::EFS::FileSystem` |
 | EKS.1 | `CF-EKS-002` | `AWS::EKS::Cluster` |
 | EKS.2 | `planned: containers` | `AWS::EKS::Cluster` |
 | EKS.3 | `CF-EKS-003` | `AWS::EKS::Cluster` |
 | EKS.8 | `CF-EKS-001` | `AWS::EKS::Cluster` |
-| ElastiCache.1 | `planned: data-resilience` | `AWS::ElastiCache::ReplicationGroup` |
-| ElastiCache.2 | `planned: data-resilience` | `AWS::ElastiCache::ReplicationGroup` |
-| ElastiCache.3 | `planned: data-resilience` | `AWS::ElastiCache::ReplicationGroup` |
+| ElastiCache.1 | `CF-EC-004` | `AWS::ElastiCache::ReplicationGroup` |
+| ElastiCache.2 | `CF-EC-005` | `AWS::ElastiCache::ReplicationGroup` |
+| ElastiCache.3 | `CF-EC-003` | `AWS::ElastiCache::ReplicationGroup` |
 | ElastiCache.4 | `CF-EC-001` | `AWS::ElastiCache::ReplicationGroup` |
 | ElastiCache.5 | `CF-EC-002` | `AWS::ElastiCache::ReplicationGroup` |
-| ElastiCache.6 | `planned: data-resilience` | `AWS::ElastiCache::ReplicationGroup` |
-| ElastiCache.7 | `planned: data-resilience` | `AWS::ElastiCache::ReplicationGroup` |
+| ElastiCache.6 | `CF-EC-006` | `AWS::ElastiCache::ReplicationGroup` |
+| ElastiCache.7 | `CF-EC-007` | `AWS::ElastiCache::ReplicationGroup` |
 | ElasticBeanstalk.1 | `planned: app-services` | `AWS::ElasticBeanstalk::Environment` |
 | ElasticBeanstalk.2 | `planned: app-services` | `AWS::ElasticBeanstalk::Environment` |
 | ElasticBeanstalk.3 | `planned: app-services` | `AWS::ElasticBeanstalk::Environment` |
