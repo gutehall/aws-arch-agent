@@ -17,12 +17,11 @@ Which CDK rules have a template check, and which AWS Foundational Security Best 
 
 | Work | Adds template checks for |
 | -- | -- |
-| `alarms` | Alarms, dashboards and trail integration |
 | `account-baseline` | Account baseline resources a repo defines |
 
 ## CDK rules
 
-172 rules: 122 covered, 7 partial, 3 planned, 10 account, 5 cdk-only, 25 advice.
+172 rules: 125 covered, 7 partial, 10 account, 5 cdk-only, 25 advice.
 
 | Rule | Title | Template check | Status | Note |
 | -- | -- | -- | -- | -- |
@@ -148,7 +147,7 @@ Which CDK rules have a template check, and which AWS Foundational Security Best 
 | BP-003 | Resource naming convention may not be followed |  | `cdk-only` | Reads construct and resource names in code. |
 | BP-004 | CDK Aspects not used for policy enforcement |  | `cdk-only` | Reads CDK Aspects. |
 | BP-005 | CDK context not used for environment-specific config |  | `cdk-only` | Reads CDK context. |
-| OPS-001 | CloudTrail / audit trail may be missing |  | `account` | A trail is usually an organization or account trail outside the app. CF-CT-001/002/003 check a trail the template defines. |
+| OPS-001 | CloudTrail / audit trail may be missing |  | `account` | A trail is usually an organization or account trail outside the app. CF-CT-001 to CF-CT-005 check a trail the template defines. |
 | OPS-002 | VPC Flow Logs may be missing | `CF-FL-001` | `covered` |  |
 | OPS-003 | X-Ray / distributed tracing may be missing | `CF-APIGW-002`, `CF-APIGW-V2-002`, `CF-LAM-002` | `covered` |  |
 | OPS-004 | DynamoDB table may benefit from streams for event-driven patterns |  | `advice` | Streams depend on the event design. |
@@ -157,8 +156,8 @@ Which CDK rules have a template check, and which AWS Foundational Security Best 
 | OPS-007 | CloudFront access logging not enabled | `CF-CF-005` | `covered` |  |
 | OPS-008 | ECS container insights not enabled | `CF-ECS-010` | `covered` |  |
 | OPS-009 | RDS enhanced monitoring not enabled | `CF-RDS-007` | `covered` |  |
-| OPS-010 | CloudWatch alarms not configured for critical resources |  | `planned: alarms` |  |
-| OPS-011 | No SNS topics for alarm notifications |  | `planned: alarms` |  |
+| OPS-010 | CloudWatch alarms not configured for critical resources | `CF-ALARM-001` | `covered` | Not reported in dev. A child stack or module that may hold alarms is not judged. |
+| OPS-011 | No SNS topics for alarm notifications | `CF-ALARM-002` | `covered` | Like the CDK rule, any alarm action passes, not only SNS. An alarm something else reads is not reported. |
 | OPS-012 | Step Functions not using X-Ray tracing | `CF-SFN-002` | `covered` |  |
 | OPS-013 | EventBridge rules not using DLQ | `CF-EB-001` | `covered` |  |
 | OPS-014 | AWS Config not enabled |  | `account` | AWS Config is an account service. account-baseline checks a recorder the repo defines. |
@@ -168,7 +167,7 @@ Which CDK rules have a template check, and which AWS Foundational Security Best 
 | OPS-018 | App Runner observability not configured | `CF-APPRUNNER-001` | `covered` |  |
 | OPS-019 | Glue job bookmarks not enabled | `CF-GLUE-003` | `covered` | CF-GLUE-003 reports a literal job-bookmark-disable; a job with the option unset keeps OPS-019. |
 | OPS-020 | CodeBuild project logging not configured | `CF-CB-004` | `covered` |  |
-| OPS-021 | CloudWatch dashboards not configured |  | `planned: alarms` |  |
+| OPS-021 | CloudWatch dashboards not configured | `CF-DASH-001` | `covered` | Stacks with more than `dashboards.min_resources` resources (default 20). Not reported in dev. |
 | OPS-022 | Resource tagging strategy may be incomplete |  | `advice` | Tag choice. CF-TAG-001 checks a configured tag policy. |
 | OPS-023 | SSM Parameter Store throughput setting may need review |  | `advice` | Restated: it used to recommend the advanced tier for throughput, but AWS sets throughput per account and Region, whatever the tier. Throughput needs traffic data. `CF-SSM-002` reports the separate cost of an advanced parameter that does not need that tier. |
 | OPS-025 | S3 replication metrics not enabled | `CF-S3-011` | `covered` |  |
@@ -231,7 +230,7 @@ Controls a template can show. Account-level controls (for example S3.1, EC2.7 an
 | CloudTrail.1 | `CF-CT-002` | `AWS::CloudTrail::Trail` |
 | CloudTrail.2 | `CF-CT-003` | `AWS::CloudTrail::Trail` |
 | CloudTrail.4 | `CF-CT-001` | `AWS::CloudTrail::Trail` |
-| CloudTrail.5 | `planned: alarms` | `AWS::CloudTrail::Trail` |
+| CloudTrail.5 | `CF-CT-004` | `AWS::CloudTrail::Trail` |
 | CodeBuild.1 | `CF-CB-002` | `AWS::CodeBuild::Project` |
 | CodeBuild.2 | `CF-CB-001` | `AWS::CodeBuild::Project` |
 | CodeBuild.3 | `CF-CB-005` | `AWS::CodeBuild::Project` |

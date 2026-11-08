@@ -18,7 +18,7 @@ import re
 from pathlib import Path
 from typing import Any, Callable
 
-from aws_arch_agent.rules.resource_model import Resource
+from aws_arch_agent.rules.resource_model import TF_MODULE_CALL, Resource
 from aws_arch_agent.rules.secret_names import is_literal_secret
 from aws_arch_agent.rules.tag_policy import TF_TAGGABLE
 from aws_arch_agent.rules.tag_policy import UNKNOWN as UNKNOWN_TAG
@@ -115,6 +115,9 @@ TF_TYPE_TO_CANONICAL: dict[str, str] = {
     "aws_route53_key_signing_key": "route53_key_signing_key",
     "aws_route53_query_log": "route53_query_log",
     "aws_acm_certificate": "acm_certificate",
+    "aws_cloudwatch_metric_alarm": "cloudwatch_alarm",
+    "aws_cloudwatch_composite_alarm": "cloudwatch_composite_alarm",
+    "aws_cloudwatch_dashboard": "cloudwatch_dashboard",
     "aws_globalaccelerator_endpoint_group": "globalaccelerator_endpoint_group",
     "aws_appsync_graphql_api": "appsync_graphql_api",
     "aws_appsync_api_cache": "appsync_api_cache",
@@ -506,6 +509,61 @@ def parse_tf_file(path: Path) -> tuple[list[_Block], list[str]]:
                 if isinstance(source, str) and source.startswith(("./", "../")):
                     sources.append(source)
     return blocks, sources
+
+
+def _module_call_bodies(path: Path) -> list[tuple[str, dict]]:
+    """The label and body of each `module` block in one file."""
+    doc, _text, _is_json, normalize = _load_tf(path)
+    calls: list[tuple[str, dict]] = []
+    for module_map in _iter_type_maps(doc.get("module")):
+        for raw_name, body in module_map.items():
+            for item in _iter_type_maps(body):
+                calls.append((_unquote_key(raw_name), normalize(item)))
+    return calls
+
+
+def _call_resource_types(source: Any, module_dir: Path, seen: set[Path]) -> set[str] | None:
+    """The resource types a module call defines, its own calls included. None when any part is
+    remote or cannot be read."""
+    if type(source) is not str or not source.startswith(("./", "../")):
+        return None
+    child = (module_dir / source).resolve()
+    if child in seen:
+        return set()
+    seen.add(child)
+    if not child.is_dir():
+        return None
+    types: set[str] = set()
+    try:
+        for path in _module_files(child):
+            types.update(block.type for block in parse_tf_file(path)[0] if not block.data)
+            for _label, body in _module_call_bodies(path):
+                nested = _call_resource_types(body.get("source"), child, seen)
+                if nested is None:
+                    return None
+                types |= nested
+    except (TerraformError, OSError, UnicodeError):
+        return None
+    return types
+
+
+def _module_call_records(module_dir: Path) -> list[Resource]:
+    """One record per `module` call, for checks that ask what a stack may define out of sight."""
+    out: list[Resource] = []
+    for path in _module_files(module_dir):
+        try:
+            calls = _module_call_bodies(path)
+        except (TerraformError, OSError, UnicodeError):
+            continue  # resources_from_terraform already warned about this file
+        for label, body in calls:
+            types = _call_resource_types(body.get("source"), module_dir, set())
+            out.append(Resource(
+                type=None, name=f"module.{label}", file=str(path), source_type=TF_MODULE_CALL,
+                properties={} if types is None else {"ResourceTypes": sorted(types)},
+                unresolved=frozenset({"ResourceTypes"}) if types is None else frozenset(),
+                references=frozenset(_ADDRESS_REF.findall(json.dumps(body, default=str))),
+            ))
+    return out
 
 
 def _module_files(module_dir: Path) -> list[Path]:
@@ -1594,6 +1652,85 @@ def _cloudtrail(body: dict) -> dict:
     _set(props, "EnableLogFileValidation", _v(body, "enable_log_file_validation"))
     _set(props, "IsMultiRegionTrail", _v(body, "is_multi_region_trail"))
     _set(props, "KmsKeyId", _ref(body, "kms_key_id"))
+    _set(props, "CloudWatchLogsLogGroupArn", _ref(body, "cloud_watch_logs_group_arn"))
+    _set(props, "S3BucketName", _ref(body, "s3_bucket_name"))
+    names = _dynamic_names(body)
+    if "event_selector" in names:
+        props["EventSelectors"] = UNRESOLVED
+    elif "event_selector" in body:
+        props["EventSelectors"] = [_trail_event_selector(item) for item in _blocks(body, "event_selector")]
+    if "advanced_event_selector" in names:
+        props["AdvancedEventSelectors"] = UNRESOLVED
+    elif "advanced_event_selector" in body:
+        props["AdvancedEventSelectors"] = [
+            _trail_advanced_selector(item) for item in _blocks(body, "advanced_event_selector")]
+    return props
+
+
+def _trail_event_selector(block: dict) -> Any:
+    if "data_resource" in _dynamic_names(block):
+        return UNRESOLVED
+    return {"DataResources": [{"Type": _ref(item, "type"), "Values": _ref(item, "values")}
+                              for item in _blocks(block, "data_resource")]}
+
+
+_FIELD_OPERATORS = {"equals": "Equals", "not_equals": "NotEquals", "starts_with": "StartsWith",
+                    "not_starts_with": "NotStartsWith", "ends_with": "EndsWith", "not_ends_with": "NotEndsWith"}
+
+
+def _trail_advanced_selector(block: dict) -> Any:
+    if "field_selector" in _dynamic_names(block):
+        return UNRESOLVED
+    fields = []
+    for item in _blocks(block, "field_selector"):
+        field: dict = {"Field": _ref(item, "field")}
+        for key, cf_key in _FIELD_OPERATORS.items():
+            _set(field, cf_key, _ref(item, key))
+        fields.append(field)
+    return {"FieldSelectors": fields}
+
+
+def _alarm_dimensions(body: dict) -> Any:
+    """`dimensions` as CloudFormation's Name and Value list. A whole map from an expression stays
+    as it is, so the check can see it cannot read it."""
+    raw = _ref(body, "dimensions")
+    if not isinstance(raw, dict):
+        return raw
+    return [{"Name": _unquote_key(str(key)), "Value": value} for key, value in raw.items()]
+
+
+def _metric_query(block: dict) -> Any:
+    if "metric" in _dynamic_names(block):
+        return UNRESOLVED
+    query: dict = {}
+    _set(query, "Expression", _ref(block, "expression"))
+    metric = _first_block(block, "metric")
+    if metric:
+        fields: dict = {}
+        _set(fields, "Namespace", _ref(metric, "namespace"))
+        _set(fields, "Dimensions", _alarm_dimensions(metric))
+        query["MetricStat"] = {"Metric": fields}
+    return query
+
+
+def _metric_alarm(body: dict) -> dict:
+    props: dict = {}
+    _set(props, "AlarmName", _ref(body, "alarm_name"))
+    _set(props, "AlarmActions", _ref(body, "alarm_actions"))
+    _set(props, "Namespace", _ref(body, "namespace"))
+    _set(props, "Dimensions", _alarm_dimensions(body))
+    if "metric_query" in _dynamic_names(body):
+        props["Metrics"] = UNRESOLVED
+    elif "metric_query" in body:
+        props["Metrics"] = [_metric_query(item) for item in _blocks(body, "metric_query")]
+    return props
+
+
+def _composite_alarm(body: dict) -> dict:
+    props: dict = {}
+    _set(props, "AlarmName", _ref(body, "alarm_name"))
+    _set(props, "AlarmActions", _ref(body, "alarm_actions"))
+    _set(props, "AlarmRule", _ref(body, "alarm_rule"))
     return props
 
 
@@ -2583,6 +2720,8 @@ _ADAPTERS: dict[str, Callable[[dict], dict]] = {
     "aws_route53_key_signing_key": _route53_zone_link("hosted_zone_id"),
     "aws_route53_query_log": _route53_zone_link("zone_id"),
     "aws_acm_certificate": _acm_certificate,
+    "aws_cloudwatch_metric_alarm": _metric_alarm,
+    "aws_cloudwatch_composite_alarm": _composite_alarm,
     "aws_globalaccelerator_endpoint_group": _globalaccelerator_endpoint_group,
     "aws_appsync_graphql_api": _appsync_graphql_api,
     "aws_appsync_api_cache": _appsync_api_cache,
@@ -3119,7 +3258,7 @@ def resources_from_terraform(
     _merge_ecr_lifecycle(blocks, resources)
     _merge_method_settings(blocks, resources)
     _resolve_iam(resources, blocks)
-    return list(resources.values())
+    return [*resources.values(), *_module_call_records(module_dir)]
 
 
 def _inherited_tags(block: _Block, default_tags: dict[str, dict[str, Any] | None]) -> dict[str, Any] | None:

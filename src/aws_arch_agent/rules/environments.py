@@ -56,6 +56,9 @@ RULE_POLICY: dict[str, dict[Environment, Severity | None]] = {
     "CF-CW-001": {"dev": None, "staging": None},
     # DynamoDB autoscaling: CF-ENV-006 says on demand there instead.
     "CF-DDB-003": {"dev": None, "staging": None},
+    # A throwaway stack does not need its own alarms or dashboard.
+    "CF-ALARM-001": {"dev": None},
+    "CF-DASH-001": {"dev": None},
     "CF-RDS-002": {"dev": "Low"},          # backup retention
     "CF-DDB-001": {"dev": "Low"},          # point-in-time recovery
     "CF-S3-003": {"dev": "Low"},           # versioning

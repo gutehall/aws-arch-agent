@@ -20,7 +20,7 @@ from aws_arch_agent.tools.llm import LLMClient
 from aws_arch_agent.rules.fix_snippets import attach_fixes
 from aws_arch_agent.rules.registry import ALL_RULES
 from aws_arch_agent.rules.runner import filter_by_severity, run_all_rules
-from aws_arch_agent.rules import effort, environments, nonprod, regions, stack_cost, themes
+from aws_arch_agent.rules import cf_template, effort, environments, nonprod, regions, stack_cost, themes
 from aws_arch_agent.rules.tag_policy import TagPolicy, use_tag_policy
 from aws_arch_agent.report.markdown import render_markdown
 from aws_arch_agent.tools.cdk_synth import (
@@ -568,6 +568,7 @@ def analyze_v2(
     tag_policy: TagPolicy | None = None,
     environment_map: dict[str, str] | None = None,
     nonprod_max_size: str | None = None,
+    dashboards_min_resources: int | None = None,
     theme_filter: List[str] | None = None,
     group_by: str = "severity",
 ) -> tuple[str, RepoContext, List[Finding], List[str]]:
@@ -599,6 +600,7 @@ def analyze_v2(
         stack_cost.collect(),
         environments.use_environments(environment_map, repo_path),
         nonprod.use_max_size(nonprod_max_size),
+        cf_template.use_dashboard_min_resources(dashboards_min_resources),
     ):
         out = graph.invoke(initial)
     report = out.get("final_report") or "No report produced."

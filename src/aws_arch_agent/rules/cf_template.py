@@ -2,8 +2,9 @@
 from __future__ import annotations
 import json
 import re
+from contextlib import contextmanager
 from pathlib import Path
-from typing import Any, Callable, List, TypeGuard
+from typing import Any, Callable, Iterator, List, TypeGuard
 
 from aws_arch_agent.models import Finding, Severity
 from aws_arch_agent.rules.secret_names import is_literal_secret, is_secret_name
@@ -19,7 +20,7 @@ from aws_arch_agent.rules import (
     stack_cost,
     tag_policy,
 )
-from aws_arch_agent.rules.resource_model import Resource, resources_from_cf_template
+from aws_arch_agent.rules.resource_model import TF_MODULE_CALL, Resource, resources_from_cf_template
 from aws_arch_agent.rules.terraform_model import TfVariable
 from aws_arch_agent.tools.cdk_synth import list_cf_templates
 from aws_arch_agent.tools.cfn_yaml import parse_template_text
@@ -35,6 +36,9 @@ SENSITIVE_PORTS = {
 
 # Static rule dropped when the CF rule already reported that control.
 CF_COVERS_STATIC: dict[str, tuple[str, ...]] = {
+    "CF-ALARM-001": ("OPS-010",),
+    "CF-ALARM-002": ("OPS-011",),
+    "CF-DASH-001": ("OPS-021",),
     "CF-R53-002": ("SEC-032",),
     "CF-R53-003": ("SEC-031",),
     "CF-ACM-001": ("REL-022",),
@@ -331,6 +335,7 @@ _PER_RESOURCE_TYPES = frozenset({
     "route53_hosted_zone", "route53_record_set", "route53_record_set_group", "route53_dnssec",
     "route53_key_signing_key", "route53_query_log", "acm_certificate",
     "globalaccelerator_endpoint_group",
+    "cloudwatch_alarm", "cloudwatch_composite_alarm", "cloudwatch_dashboard",
 })
 # Parameter groups only feed CF-RDS-006; they have no checks of their own.
 
@@ -375,6 +380,7 @@ CHECK_PROPERTIES: dict[str, frozenset[str]] = {
         "CF-CT-001": {"EnableLogFileValidation"},
         "CF-CT-002": {"IsMultiRegionTrail"},
         "CF-CT-003": {"KmsKeyId"},
+        "CF-CT-004": {"CloudWatchLogsLogGroupArn"},
         "CF-KMS-001": {"KeyPolicy"},
         "CF-SNS-001": {"KmsMasterKeyId"},
         "CF-EBS-001": {"Encrypted", "SnapshotId", "BlockDeviceMappings"},
@@ -489,6 +495,8 @@ CHECK_PROPERTIES: dict[str, frozenset[str]] = {
         # Template-level: _dns_certificate_findings skips what it cannot read.
         **{c: set() for c in ("CF-R53-001", "CF-R53-002", "CF-R53-003", "CF-ACM-001", "CF-ACM-002",
                               "CF-ACM-003", "CF-GA-001")},
+        # Template-level: _monitoring_findings skips what it cannot read.
+        **{c: set() for c in ("CF-ALARM-001", "CF-ALARM-002", "CF-DASH-001", "CF-CT-005")},
         # Template-level: _backup_findings skips what it cannot read.
         **{c: set() for c in ("CF-BAK-001", "CF-BAK-002", "CF-BAK-003", "CF-BAK-004", "CF-BAK-005")},
         # Template-level: _ci_cd_findings skips what it cannot read.
@@ -523,6 +531,8 @@ _F, _SB, _ID, _DP, _NET, _RES, _OBS, _SUS = (
     "network-exposure", "resilience", "observability", "sustainability",
 )
 CF_THEMES: dict[str, tuple[str, ...]] = {
+    "CF-ALARM-001": (_OBS,), "CF-ALARM-002": (_OBS,), "CF-DASH-001": (_OBS,),
+    "CF-CT-004": (_OBS, _SB), "CF-CT-005": (_OBS, _DP),
     "CF-R53-001": (_OBS, _SB), "CF-R53-002": (_SB,), "CF-R53-003": (_RES,),
     "CF-ACM-001": (_RES,), "CF-ACM-002": (_DP,), "CF-ACM-003": (_SB,), "CF-GA-001": (_RES,),
     "CF-APPSYNC-001": (_OBS, _SB), "CF-APPSYNC-002": (_ID,), "CF-APPSYNC-003": (_NET,), "CF-APPSYNC-004": (_RES,),
@@ -3152,6 +3162,290 @@ def _dns_certificate_findings(resources: List[Resource], template_path: Path) ->
     return out
 
 
+DEFAULT_DASHBOARD_MIN_RESOURCES = 20
+_dashboard_min_resources = DEFAULT_DASHBOARD_MIN_RESOURCES
+
+
+@contextmanager
+def use_dashboard_min_resources(limit: int | None) -> Iterator[None]:
+    """The resource count a stack may reach with no dashboard, for a scan."""
+    global _dashboard_min_resources
+    previous, _dashboard_min_resources = _dashboard_min_resources, limit or DEFAULT_DASHBOARD_MIN_RESOURCES
+    try:
+        yield
+    finally:
+        _dashboard_min_resources = previous
+
+
+# What an alarm can watch for CF-ALARM-001: type -> (the dimension that names one, the property
+# holding its name).
+_ALARM_TARGETS: dict[str, tuple[str, str]] = {
+    "db_instance": ("DBInstanceIdentifier", "DBInstanceIdentifier"),
+    "rds_cluster": ("DBClusterIdentifier", "DBClusterIdentifier"),
+    "dynamodb_table": ("TableName", "TableName"),
+    "lambda_function": ("FunctionName", "FunctionName"),
+    "ecs_service": ("ServiceName", "ServiceName"),
+    "lb": ("LoadBalancer", "Name"),
+    "sqs_queue": ("QueueName", "QueueName"),
+}
+_ALARM_NAMESPACES: dict[str, tuple[str, ...]] = {
+    "AWS/RDS": ("db_instance", "rds_cluster"),
+    "AWS/DynamoDB": ("dynamodb_table",),
+    "AWS/Lambda": ("lambda_function",),
+    "AWS/ECS": ("ecs_service",),
+    "ECS/ContainerInsights": ("ecs_service",),
+    "AWS/ApplicationELB": ("lb",),
+    "AWS/SQS": ("sqs_queue",),
+}
+# CDK's own helper functions have a fixed UUID or CustomResourceProvider in their logical id:
+# LogRetention<uuid>, AWS679f53fa..., CustomS3AutoDeleteObjectsCustomResourceProviderHandler.
+_CDK_HELPER_FUNCTION = re.compile(r"[0-9a-fA-F]{32}|CustomResourceProvider")
+# Other stacks this one creates: what they hold cannot be read from here.
+_CHILD_STACK_TYPES = ("AWS::CloudFormation::Stack", "AWS::Serverless::Application")
+# A word that marks a bucket sensitive, not "insensitive", "non-sensitive" or "pii-free".
+_SENSITIVE_WORD = re.compile(
+    r"(?<![a-z0-9])(?<!non[-_ ])(?<!not[-_ ])(?<!no[-_ ])"
+    r"(?:sensitive|pii|phi|confidential|secrets?)(?![a-z0-9])(?![-_ ]free)")
+# A data event selector value for every bucket.
+_ALL_S3_OBJECTS = re.compile(r"^arn:[a-z-]+:s3(?::::)?/?$")
+
+
+def _may_be_out_of_sight(resources: List[Resource], tf_types: tuple[str, ...]) -> bool:
+    """True when a child stack or Terraform module may define one of these types. A local module
+    is read, a remote one is not."""
+    for res in resources:
+        if res.source_type in _CHILD_STACK_TYPES:
+            return True
+        if res.source_type == TF_MODULE_CALL and (
+                "ResourceTypes" in res.unresolved or set(tf_types) & set(res.properties.get("ResourceTypes", ()))):
+            return True
+    return False
+
+
+def _is_alarm_target(res: Resource) -> bool:
+    """A resource CF-ALARM-001 asks an alarm for. Only an ALB of the load balancers, known to be
+    one, and not CDK's helper functions."""
+    if res.type not in _ALARM_TARGETS:
+        return False
+    if res.type == "lb":
+        return "Type" not in res.unresolved and res.properties.get("Type", "application") == "application"
+    return res.type != "lambda_function" or not _CDK_HELPER_FUNCTION.search(res.name)
+
+
+def _metric_may_watch(namespace: Any, dimensions: Any, targets: List[Resource], names: List[str]) -> bool:
+    """True when a metric may be about one of the targets. A dimension that cannot be tied to a
+    resource counts for all of them, and a literal counts for a target whose name is not known.
+    A namespace with no dimension naming another resource covers that service's targets."""
+    if (namespace is not None and type(namespace) is not str) or (
+            dimensions is not None and not isinstance(dimensions, list)):
+        return True
+    naming = {key for key, _prop in _ALARM_TARGETS.values()}
+    named_other = False
+    for dimension in dimensions or []:
+        if not isinstance(dimension, dict) or _is_intrinsic(dimension):
+            return True
+        key, value = dimension.get("Name"), dimension.get("Value")
+        if type(key) is not str:
+            return True
+        if type(value) is str:
+            for target in targets:
+                dimension_key, name_key = _ALARM_TARGETS[str(target.type)]
+                literal = target.properties.get(name_key)
+                if key == dimension_key and (type(literal) is not str or literal in value):
+                    return True
+            named_other = named_other or key in naming
+        elif (key in naming or any(_value_mentions(value, t.name) for t in targets)
+              or not any(_value_mentions(value, name) for name in names)):
+            return True
+    covered = _ALARM_NAMESPACES.get(namespace, ()) if namespace else ()
+    return not named_other and any(t.type in covered for t in targets)
+
+
+def _alarm_may_watch(alarm: Resource, targets: List[Resource], names: List[str]) -> bool:
+    """True when an alarm's metric, or any metric of its math, may be about one of the targets."""
+    if alarm.malformed or {"Namespace", "Dimensions", "Metrics"} & alarm.unresolved:
+        return True
+    metrics = alarm.properties.get("Metrics")
+    if metrics is None:
+        return _metric_may_watch(alarm.properties.get("Namespace"), alarm.properties.get("Dimensions"),
+                                 targets, names)
+    if not isinstance(metrics, list):
+        return True
+    for item in metrics:
+        if not isinstance(item, dict) or _is_intrinsic(item):
+            return True
+        stat = item.get("MetricStat")
+        if stat is None:
+            expression = item.get("Expression")
+            # Math over the other metrics adds nothing. A query reads metrics of its own.
+            if type(expression) is not str or "select" in expression.lower():
+                return True
+            continue
+        metric = stat.get("Metric") if isinstance(stat, dict) and not _is_intrinsic(stat) else None
+        if not isinstance(metric, dict) or _is_intrinsic(metric):
+            return True
+        if _metric_may_watch(metric.get("Namespace"), metric.get("Dimensions"), targets, names):
+            return True
+    return False
+
+
+def _alarm_is_read(alarm: Resource, resources: List[Resource]) -> bool:
+    """True when something in the template may act on this alarm with no action of its own: a
+    composite alarm, an EventBridge rule on alarm state, or any resource or module that refers to
+    it, such as a CodeDeploy group, a Route 53 health check or an ECS deployment."""
+    literal = alarm.properties.get("AlarmName")
+    for other in resources:
+        if other is alarm:
+            continue
+        if other.malformed and other.type in ("cloudwatch_composite_alarm", "events_rule"):
+            return True
+        if other.type == "cloudwatch_composite_alarm":
+            rule = other.properties.get("AlarmRule")
+            if "AlarmRule" in other.unresolved or type(rule) is not str:
+                return True  # built from values the scan cannot read in full
+            if type(literal) is not str or literal in rule:
+                return True
+        if other.type == "events_rule":
+            pattern = other.properties.get("EventPattern")
+            if "EventPattern" in other.unresolved or (isinstance(pattern, dict) and _is_intrinsic(pattern)):
+                return True
+            text = json.dumps(pattern, default=str)
+            if "aws.cloudwatch" in text or "CloudWatch Alarm State Change" in text:
+                return True
+        if _refers_to(other, alarm):
+            return True
+    return False
+
+
+def _arns_may_reach(values: Any, bucket: Resource, buckets: List[Resource]) -> bool:
+    """True when selector values may cover this bucket. A value that cannot be tied to a bucket
+    counts, and so does a literal when the bucket's name is not known."""
+    if not isinstance(values, list):
+        return True
+    literal = bucket.properties.get("BucketName")
+    for value in values:
+        if type(value) is str:
+            if _ALL_S3_OBJECTS.match(value) or type(literal) is not str or literal in value:
+                return True
+        elif (_value_mentions(value, bucket.name)
+              or not any(_value_mentions(value, other.name) for other in buckets)):
+            return True
+    return False
+
+
+def _advanced_selector_may_reach(selector: Any, bucket: Resource, buckets: List[Resource]) -> bool:
+    """True unless an advanced selector is readable and leaves this bucket's objects out."""
+    fields = selector.get("FieldSelectors") if isinstance(selector, dict) and not _is_intrinsic(selector) else None
+    if not isinstance(fields, list):
+        return True
+    arn_values: list[Any] = []
+    arns_limited = False
+    for field in fields:
+        if not isinstance(field, dict) or _is_intrinsic(field) or type(field.get("Field")) is not str:
+            return True
+        equals = field.get("Equals")
+        wanted = {"eventCategory": "Data", "resources.type": "AWS::S3::Object"}.get(field["Field"])
+        if wanted is not None and isinstance(equals, list) and wanted not in equals and all(
+                type(v) is str for v in equals):
+            return False
+        if field["Field"] == "resources.ARN":
+            operators = set(field) - {"Field"}
+            if operators - {"Equals", "StartsWith"}:
+                return True  # an exclusion or suffix: not judged
+            for key in operators:
+                if not isinstance(field[key], list):
+                    return True
+                arn_values.extend(field[key])
+            arns_limited = True
+    return not arns_limited or _arns_may_reach(arn_values, bucket, buckets)
+
+
+def _trail_may_reach(trail: Resource, bucket: Resource, buckets: List[Resource]) -> bool:
+    """True when a trail may record S3 data events on this bucket. What cannot be read counts."""
+    if trail.malformed or {"EventSelectors", "AdvancedEventSelectors"} & trail.unresolved:
+        return True
+    basic = trail.properties.get("EventSelectors")
+    advanced = trail.properties.get("AdvancedEventSelectors")
+    if (basic is not None and not isinstance(basic, list)) or (
+            advanced is not None and not isinstance(advanced, list)):
+        return True
+    for selector in basic or []:
+        if not isinstance(selector, dict) or _is_intrinsic(selector):
+            return True
+        data = selector.get("DataResources")
+        if data is not None and not isinstance(data, list):
+            return True
+        for item in data or []:
+            if not isinstance(item, dict) or _is_intrinsic(item) or type(item.get("Type")) is not str:
+                return True
+            if item["Type"] == "AWS::S3::Object" and _arns_may_reach(item.get("Values"), bucket, buckets):
+                return True
+    return any(_advanced_selector_may_reach(selector, bucket, buckets) for selector in advanced or [])
+
+
+def _monitoring_findings(resources: List[Resource], template_path: Path) -> List[Finding]:
+    """CloudWatch alarms (CF-ALARM-001..002), a dashboard (CF-DASH-001) and S3 data events on a
+    trail (CF-CT-005). A value the scan cannot read is not judged."""
+    usable = [r for r in resources if not r.malformed]
+    out: List[Finding] = []
+
+    def add(res: Resource, check_id: str, title: str, category: str, recommendation: str) -> None:
+        out.append(Finding(
+            id=check_id, title=title, severity="Low", category=category,
+            file=res.file or str(template_path), line=res.line,
+            evidence=f"{res.name} ({res.source_type})", recommendation=recommendation,
+        ))
+
+    targets = [r for r in usable if _is_alarm_target(r)]
+    metric_alarms = [r for r in resources if r.type == "cloudwatch_alarm"]
+    names = [r.name for r in usable]
+    if (targets and not _may_be_out_of_sight(resources, ("aws_cloudwatch_metric_alarm",))
+            and not any(_alarm_may_watch(a, targets, names) for a in metric_alarms)):
+        add(targets[0], "CF-ALARM-001", "Stack has no CloudWatch alarm on its main resources",
+            "Operational Excellence",
+            "This stack defines RDS, DynamoDB, Lambda, ECS service, ALB or SQS resources, and no "
+            "AWS::CloudWatch::Alarm (Terraform aws_cloudwatch_metric_alarm) in it refers to any of them, so "
+            "errors, latency or backlog raise no signal. Add alarms on the metrics that show users are "
+            "affected. Another stack or a central monitoring setup may cover it: if so, exclude this check. "
+            "In CDK: metric.createAlarm() on each resource.")
+
+    for alarm in (r for r in usable if r.type in ("cloudwatch_alarm", "cloudwatch_composite_alarm")):
+        actions = None if "AlarmActions" in alarm.unresolved else alarm.properties.get("AlarmActions", [])
+        if actions == [] and not _alarm_is_read(alarm, resources):
+            add(alarm, "CF-ALARM-002", "CloudWatch alarm has no action", "Operational Excellence",
+                "This alarm has no AlarmActions, and nothing in this template reads its state, so when it "
+                "fires nobody is told. Point AlarmActions at an SNS topic, or exclude this check if a "
+                "composite alarm or EventBridge rule in another stack reads it. In CDK: "
+                "alarm.addAlarmAction(new SnsAction(topic)).")
+
+    counted = [r for r in resources if r.type is not None]
+    if (len(counted) > _dashboard_min_resources
+            and not any(r.type == "cloudwatch_dashboard" for r in resources)
+            and not _may_be_out_of_sight(resources, ("aws_cloudwatch_dashboard",))):
+        add(counted[0], "CF-DASH-001", "Large stack has no CloudWatch dashboard", "Operational Excellence",
+            f"This stack defines {len(counted)} resources and no AWS::CloudWatch::Dashboard (Terraform "
+            "aws_cloudwatch_dashboard), so nothing shows its health in one place. Add a dashboard for its "
+            "key metrics. Set dashboards.min_resources to change the limit "
+            f"({_dashboard_min_resources}), or exclude this check if another stack or a central monitoring "
+            "setup has one. In CDK: new cloudwatch.Dashboard().")
+
+    trails = [r for r in resources if r.type == "cloudtrail"]
+    buckets = [r for r in usable if r.type == "s3_bucket"]
+    # A bucket a trail logs to takes no data events of its own: they would log their own delivery.
+    sensitive = [b for b in buckets if _s3_marked(b, _SENSITIVE_WORD) and not any(
+        _names_bucket(t.properties.get("S3BucketName"), b) for t in trails)]
+    missed = [b.name for b in sensitive if not any(_trail_may_reach(t, b, buckets) for t in trails)]
+    if missed:
+        for trail in (t for t in trails if not t.malformed):
+            add(trail, "CF-CT-005", "No trail records S3 data events on a sensitive bucket", "Security",
+                f"No trail in this template has an S3 data event selector that reaches {', '.join(missed)}, "
+                "whose name or tags mark it sensitive, so object reads and writes leave no audit record. Add "
+                "EventSelectors with DataResources of type AWS::S3::Object, or AdvancedEventSelectors for "
+                "those objects, on one trail. Data events are charged per event, so limit them to these "
+                "buckets. A trail in another stack may already hold them. In CDK: trail.addS3EventSelector().")
+    return out
+
+
 def _is_off(res: Resource, key: str) -> bool:
     """True when a boolean setting that defaults to off is unset or false. Unknown is not judged."""
     return key not in res.unresolved and _flag(res.properties.get(key)) is False
@@ -4726,15 +5020,20 @@ def _bucket_names(bucket: Resource) -> list[str]:
 
 
 def _s3_marked_critical(bucket: Resource) -> bool:
-    """True when a literal name or tag says critical. A key such as Critical needs a true value."""
-    if any(_CRITICAL_WORD.search(name) for name in _bucket_names(bucket)):
+    """True when a literal name or tag says critical."""
+    return _s3_marked(bucket, _CRITICAL_WORD)
+
+
+def _s3_marked(bucket: Resource, word: re.Pattern[str]) -> bool:
+    """True when a literal name or tag holds the word. A tag key with it needs a true value."""
+    if any(word.search(name) for name in _bucket_names(bucket)):
         return True
     for key, value in (tag_policy.effective_tags(bucket) or {}).items():
         if type(value) is not str or key.lower() in _FREE_TEXT_TAGS:
             continue
-        if _CRITICAL_WORD.search(_name_words(value)):
+        if word.search(_name_words(value)):
             return True
-        if _CRITICAL_WORD.search(_name_words(key)) and value.lower() in ("true", "yes", "1"):
+        if word.search(_name_words(key)) and value.lower() in ("true", "yes", "1"):
             return True
     return False
 
@@ -6226,6 +6525,20 @@ def _run_resource_checks(
                             evidence=f"{logical_id} ({rtype})",
                             recommendation="Use KmsKeyId to encrypt CloudTrail log files for integrity and compliance.",
                         ))
+                    if not props.get("CloudWatchLogsLogGroupArn"):
+                        findings.append(Finding(
+                            id="CF-CT-004",
+                            title="CloudTrail does not send events to CloudWatch Logs",
+                            severity="Low",
+                            category="Operational Excellence",
+                            file=res.file or str(template_path),
+                            line=res.line,
+                            evidence=f"{logical_id} ({rtype})",
+                            recommendation=(
+                                "With no CloudWatchLogsLogGroupArn, trail events reach only S3, so nothing can alarm "
+                                "on them as they happen. Set CloudWatchLogsLogGroupArn and CloudWatchLogsRoleArn "
+                                "(Security Hub CloudTrail.5). In CDK: sendToCloudWatchLogs: true on the Trail."),
+                        ))
 
                 # --- VPC Flow Logs ---
                 if ctype == "flow_log":
@@ -6740,6 +7053,9 @@ def _run_resource_checks(
 
     # --- Route 53, ACM and Global Accelerator ---
     findings.extend(_dns_certificate_findings(resources, template_path))
+
+    # --- CloudWatch alarms and dashboards; S3 data events on a trail ---
+    findings.extend(_monitoring_findings(resources, template_path))
 
     # --- AWS Backup vaults, plans and which resources they select ---
     findings.extend(_backup_findings(resources, template_path))

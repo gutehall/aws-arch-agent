@@ -128,6 +128,9 @@ CF_TYPE_TO_CANONICAL: dict[str, str] = {
     "AWS::Route53::DNSSEC": "route53_dnssec",
     "AWS::Route53::KeySigningKey": "route53_key_signing_key",
     "AWS::CertificateManager::Certificate": "acm_certificate",
+    "AWS::CloudWatch::Alarm": "cloudwatch_alarm",
+    "AWS::CloudWatch::CompositeAlarm": "cloudwatch_composite_alarm",
+    "AWS::CloudWatch::Dashboard": "cloudwatch_dashboard",
     "AWS::GlobalAccelerator::EndpointGroup": "globalaccelerator_endpoint_group",
     "AWS::AppSync::GraphQLApi": "appsync_graphql_api",
     "AWS::AppSync::ApiCache": "appsync_api_cache",
@@ -145,6 +148,10 @@ CF_TYPE_TO_CANONICAL: dict[str, str] = {
 }
 
 # Terraform only: CloudFormation sets these on the rule, the vault and the file system.
+# source_type of the record for a Terraform `module` call. Its type is None, and its
+# ResourceTypes property lists what a local child defines; unresolved when it cannot be read.
+TF_MODULE_CALL = "module"
+
 CANONICAL_TYPES: frozenset[str] = frozenset(CF_TYPE_TO_CANONICAL.values()) | {
     "events_target", "backup_vault_lock", "efs_backup_policy", "autoscaling_attachment",
     "route53_query_log",

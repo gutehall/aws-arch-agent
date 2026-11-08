@@ -87,6 +87,10 @@ _FN = (
 
 # (template check, CDK rule, synthesised resource, CDK source that fires the CDK rule)
 PAIRS: list[tuple[str, str, dict, str]] = [
+    ("CF-ALARM-001", "OPS-010", {"Type": "AWS::SQS::Queue", "Properties": {}}, _FN),
+    ("CF-ALARM-002", "OPS-011", {"Type": "AWS::CloudWatch::Alarm", "Properties": {}},
+     "new cloudwatch.Alarm(this, 'A', {});"),
+    ("CF-DASH-001", "OPS-021", {f"Queue{i}": {"Type": "AWS::SQS::Queue", "Properties": {}} for i in range(21)}, _FN),
     ("CF-SQS-001", "SEC-013", {"Type": "AWS::SQS::Queue", "Properties": {}},
      "new sqs.Queue(this, 'Q');"),
     ("CF-SQS-002", "REL-008", {"Type": "AWS::SQS::Queue", "Properties": {}},

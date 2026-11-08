@@ -128,6 +128,45 @@ _CLOUDFORMATION: dict[str, str] = {
   Type: AWS::CloudTrail::Trail
   Properties:
     KmsKeyId: !Ref TrailKey""",
+    "CF-CT-004": """$name:
+  Type: AWS::CloudTrail::Trail
+  Properties:
+    CloudWatchLogsLogGroupArn: !GetAtt TrailLogGroup.Arn
+    CloudWatchLogsRoleArn: !GetAtt TrailLogsRole.Arn""",
+    "CF-CT-005": """$name:
+  Type: AWS::CloudTrail::Trail
+  Properties:
+    EventSelectors:
+      - ReadWriteType: All
+        DataResources:
+          - Type: AWS::S3::Object
+            Values:
+              - !Sub '$${SensitiveBucket.Arn}/'""",
+    "CF-ALARM-001": """# For a Lambda function. Use the metric and dimension of the resource you watch.
+${name}ErrorsAlarm:
+  Type: AWS::CloudWatch::Alarm
+  Properties:
+    Namespace: AWS/Lambda
+    MetricName: Errors
+    Dimensions:
+      - Name: FunctionName
+        Value: !Ref $name
+    Statistic: Sum
+    Period: 300
+    EvaluationPeriods: 1
+    Threshold: 1
+    ComparisonOperator: GreaterThanOrEqualToThreshold
+    AlarmActions:
+      - !Ref AlarmTopic""",
+    "CF-ALARM-002": """$name:
+  Type: AWS::CloudWatch::Alarm
+  Properties:
+    AlarmActions:
+      - !Ref AlarmTopic""",
+    "CF-DASH-001": """StackDashboard:
+  Type: AWS::CloudWatch::Dashboard
+  Properties:
+    DashboardBody: '{"widgets": []}'""",
     "CF-KMS-001": """$name:
   Type: AWS::KMS::Key
   Properties:
@@ -403,6 +442,39 @@ resource "aws_s3_bucket_policy" "$tf_name" {
 }""",
     "CF-CT-003": """resource "aws_cloudtrail" "$tf_name" {
   kms_key_id = aws_kms_key.trail.arn
+}""",
+    "CF-CT-004": """resource "aws_cloudtrail" "$tf_name" {
+  cloud_watch_logs_group_arn = "$${aws_cloudwatch_log_group.trail.arn}:*"
+  cloud_watch_logs_role_arn  = aws_iam_role.trail_logs.arn
+}""",
+    "CF-CT-005": """resource "aws_cloudtrail" "$tf_name" {
+  event_selector {
+    read_write_type = "All"
+    data_resource {
+      type   = "AWS::S3::Object"
+      values = ["$${aws_s3_bucket.sensitive.arn}/"]
+    }
+  }
+}""",
+    "CF-ALARM-001": """# For a Lambda function. Use the metric and dimension of the resource you watch.
+resource "aws_cloudwatch_metric_alarm" "${tf_name}_errors" {
+  alarm_name          = "$tf_name-errors"
+  namespace           = "AWS/Lambda"
+  metric_name         = "Errors"
+  dimensions          = { FunctionName = aws_lambda_function.$tf_name.function_name }
+  statistic           = "Sum"
+  period              = 300
+  evaluation_periods  = 1
+  threshold           = 1
+  comparison_operator = "GreaterThanOrEqualToThreshold"
+  alarm_actions       = [aws_sns_topic.alarms.arn]
+}""",
+    "CF-ALARM-002": """resource "aws_cloudwatch_metric_alarm" "$tf_name" {
+  alarm_actions = [aws_sns_topic.alarms.arn]
+}""",
+    "CF-DASH-001": """resource "aws_cloudwatch_dashboard" "stack" {
+  dashboard_name = "stack"
+  dashboard_body = jsonencode({ widgets = [] })
 }""",
     "CF-KMS-001": """data "aws_caller_identity" "current" {}
 data "aws_partition" "current" {}

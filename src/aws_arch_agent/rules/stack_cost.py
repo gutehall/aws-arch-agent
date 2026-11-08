@@ -17,7 +17,7 @@ from typing import Any, Iterator, List
 from aws_arch_agent.models import Finding
 from aws_arch_agent.pricing import current_region, snapshot_date
 from aws_arch_agent.rules import estimates
-from aws_arch_agent.rules.resource_model import Resource
+from aws_arch_agent.rules.resource_model import TF_MODULE_CALL, Resource
 from aws_arch_agent.tools.paths import to_repo_relative
 
 TOP_N = 5
@@ -73,7 +73,7 @@ def collect() -> Iterator[None]:
 
 
 def _free(source_type: str) -> bool:
-    return bool(_FREE_CF.match(source_type) or _FREE_TF.match(source_type))
+    return bool(source_type == TF_MODULE_CALL or _FREE_CF.match(source_type) or _FREE_TF.match(source_type))
 
 
 def record(template_path: Path, resources: List[Resource]) -> None:
