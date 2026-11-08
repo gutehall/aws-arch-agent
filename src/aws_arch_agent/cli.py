@@ -299,6 +299,7 @@ def analyze(
             tag_policy=cfg.tag_policy,
             environment_map=cfg.environments,
             nonprod_max_size=cfg.nonprod_max_size,
+            dashboards_min_resources=cfg.dashboards_min_resources,
             theme_filter=cfg.themes,
             group_by=cfg.group_by,
         )
@@ -317,6 +318,7 @@ def analyze(
             tag_policy=cfg.tag_policy,
             environment_map=cfg.environments,
             nonprod_max_size=cfg.nonprod_max_size,
+            dashboards_min_resources=cfg.dashboards_min_resources,
             theme_filter=cfg.themes,
             group_by=cfg.group_by,
         )

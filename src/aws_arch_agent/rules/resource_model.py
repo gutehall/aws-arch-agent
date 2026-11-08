@@ -45,6 +45,7 @@ CF_TYPE_TO_CANONICAL: dict[str, str] = {
     "AWS::Lambda::Function": "lambda_function",
     "AWS::DynamoDB::Table": "dynamodb_table",
     "AWS::Logs::LogGroup": "cloudwatch_log_group",
+    "AWS::Logs::DeliverySource": "cloudwatch_log_delivery_source",
     "AWS::SQS::Queue": "sqs_queue",
     "AWS::SNS::Topic": "sns_topic",
     "AWS::EC2::Volume": "ebs_volume",
@@ -74,7 +75,10 @@ CF_TYPE_TO_CANONICAL: dict[str, str] = {
     "AWS::ApiGatewayV2::Route": "apigatewayv2_route",
     "AWS::AutoScaling::AutoScalingGroup": "autoscaling_group",
     "AWS::AutoScaling::LaunchConfiguration": "launch_configuration",
+    "AWS::AutoScaling::ScalingPolicy": "autoscaling_policy",
+    "AWS::AutoScaling::ScheduledAction": "autoscaling_schedule",
     "AWS::ApplicationAutoScaling::ScalableTarget": "scalable_target",
+    "AWS::ECS::Cluster": "ecs_cluster",
     "AWS::ECS::Service": "ecs_service",
     "AWS::EKS::Cluster": "eks_cluster",
     "AWS::CloudFront::Distribution": "cloudfront_distribution",
@@ -115,11 +119,50 @@ CF_TYPE_TO_CANONICAL: dict[str, str] = {
     "AWS::Backup::BackupPlan": "backup_plan",
     "AWS::Backup::BackupSelection": "backup_selection",
     "AWS::FSx::FileSystem": "fsx_file_system",
+    "AWS::FSx::DataRepositoryAssociation": "fsx_data_repository_association",
+    "AWS::SageMaker::NotebookInstance": "sagemaker_notebook_instance",
+    "AWS::SageMaker::EndpointConfig": "sagemaker_endpoint_config",
+    "AWS::Route53::HostedZone": "route53_hosted_zone",
+    "AWS::Route53::RecordSet": "route53_record_set",
+    "AWS::Route53::RecordSetGroup": "route53_record_set_group",
+    "AWS::Route53::DNSSEC": "route53_dnssec",
+    "AWS::Route53::KeySigningKey": "route53_key_signing_key",
+    "AWS::CertificateManager::Certificate": "acm_certificate",
+    "AWS::CloudWatch::Alarm": "cloudwatch_alarm",
+    "AWS::CloudWatch::CompositeAlarm": "cloudwatch_composite_alarm",
+    "AWS::CloudWatch::Dashboard": "cloudwatch_dashboard",
+    "AWS::GuardDuty::Detector": "guardduty_detector",
+    "AWS::SecurityHub::Hub": "securityhub_hub",
+    "AWS::SecurityHub::Standard": "securityhub_standard",
+    "AWS::SecurityHub::ConfigurationPolicy": "securityhub_configuration_policy",
+    "AWS::Config::ConfigurationRecorder": "config_configuration_recorder",
+    "AWS::Macie::Session": "macie_session",
+    "AWS::Budgets::Budget": "budgets_budget",
+    "AWS::Budgets::BudgetsAction": "budgets_action",
+    "AWS::GlobalAccelerator::EndpointGroup": "globalaccelerator_endpoint_group",
+    "AWS::AppSync::GraphQLApi": "appsync_graphql_api",
+    "AWS::AppSync::ApiCache": "appsync_api_cache",
+    "AWS::Transfer::Server": "transfer_server",
+    "AWS::AppRunner::Service": "apprunner_service",
+    "AWS::ElasticBeanstalk::Environment": "elastic_beanstalk_environment",
+    "AWS::ElasticBeanstalk::ConfigurationTemplate": "elastic_beanstalk_configuration_template",
+    "AWS::Athena::WorkGroup": "athena_workgroup",
+    "AWS::Glue::Job": "glue_job",
+    "AWS::Glue::SecurityConfiguration": "glue_security_configuration",
+    "AWS::EMR::Cluster": "emr_cluster",
+    "AWS::EMR::SecurityConfiguration": "emr_security_configuration",
+    "AWS::DMS::ReplicationInstance": "dms_replication_instance",
+    "AWS::DMS::Endpoint": "dms_endpoint",
 }
 
 # Terraform only: CloudFormation sets these on the rule, the vault and the file system.
+# source_type of the record for a Terraform `module` call. Its type is None, and its
+# ResourceTypes property lists what a local child defines; unresolved when it cannot be read.
+TF_MODULE_CALL = "module"
+
 CANONICAL_TYPES: frozenset[str] = frozenset(CF_TYPE_TO_CANONICAL.values()) | {
-    "events_target", "backup_vault_lock", "efs_backup_policy",
+    "events_target", "backup_vault_lock", "efs_backup_policy", "autoscaling_attachment",
+    "route53_query_log", "guardduty_detector_feature",
 }
 
 

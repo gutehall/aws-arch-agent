@@ -49,11 +49,16 @@ RULE_POLICY: dict[str, dict[Environment, Severity | None]] = {
     "CF-DEL-001": {"dev": None, "staging": None},  # retain on delete
     "CF-OS-007": {"dev": None, "staging": None},  # three data nodes across zones
     "CF-EC-003": {"dev": None, "staging": None},  # automatic failover and Multi-AZ
+    "CF-ASG-002": {"dev": None, "staging": None},  # Auto Scaling group in one AZ
     "CF-DDB-004": {"dev": None},           # deletion protection
+    "CF-SAGE-005": {"dev": None, "staging": None},  # endpoint variant on one instance
     # Never-expiring logs: CF-ENV-005 asks for 30 days or less there instead of 30-365.
     "CF-CW-001": {"dev": None, "staging": None},
     # DynamoDB autoscaling: CF-ENV-006 says on demand there instead.
     "CF-DDB-003": {"dev": None, "staging": None},
+    # A throwaway stack does not need its own alarms or dashboard.
+    "CF-ALARM-001": {"dev": None},
+    "CF-DASH-001": {"dev": None},
     "CF-RDS-002": {"dev": "Low"},          # backup retention
     "CF-DDB-001": {"dev": "Low"},          # point-in-time recovery
     "CF-S3-003": {"dev": "Low"},           # versioning

@@ -137,6 +137,20 @@ def nonprod_max_size(value: Any) -> str | None:
     return str(size)
 
 
+def dashboards_min_resources(value: Any) -> int | None:
+    """Config `dashboards.min_resources`: a stack with more resources and no dashboard is reported."""
+    if value is None:
+        return None
+    if not isinstance(value, dict) or set(value) - {"min_resources"}:
+        raise ConfigError(f"dashboards must be a mapping with min_resources, got {value!r}")
+    limit = value.get("min_resources")
+    if limit is None:
+        return None
+    if type(limit) is not int or limit <= 0:
+        raise ConfigError(f"dashboards.min_resources must be a positive integer, got {limit!r}")
+    return limit
+
+
 def themes_from(value: Any, key: str = "themes") -> list[str] | None:
     """Config `themes` (or --theme): theme names a scan is limited to. None: every theme."""
     if value is None:
@@ -340,6 +354,7 @@ def load_config(
         tag_policy=tag_policy_from(file_cfg.get("tags")),
         environments=environments_from(file_cfg.get("environments")),
         nonprod_max_size=nonprod_max_size(file_cfg.get("nonprod")),
+        dashboards_min_resources=dashboards_min_resources(file_cfg.get("dashboards")),
         themes=themes_from(themes, "--theme") if themes is not None else themes_from(file_cfg.get("themes")),
         group_by=_pick_choice(file_cfg, "group_by", group_by, "severity", ("severity", "theme")),
     )
@@ -368,6 +383,7 @@ class RunConfig:
         "tag_policy",
         "environments",
         "nonprod_max_size",
+        "dashboards_min_resources",
         "themes",
         "group_by",
     )
@@ -394,6 +410,7 @@ class RunConfig:
         tag_policy: TagPolicy | None = None,
         environments: dict[str, str] | None = None,
         nonprod_max_size: str | None = None,
+        dashboards_min_resources: int | None = None,
         themes: list[str] | None = None,
         group_by: str = "severity",
     ):
@@ -416,5 +433,6 @@ class RunConfig:
         self.tag_policy = tag_policy  # config tags.required; None turns the check off
         self.environments = environments  # config environments: match -> prod|staging|dev
         self.nonprod_max_size = nonprod_max_size  # config nonprod.max_instance_size
+        self.dashboards_min_resources = dashboards_min_resources  # config dashboards.min_resources
         self.themes = themes  # config themes / --theme: limit the scan to these themes
         self.group_by = group_by  # config group_by / --group-by: severity or theme

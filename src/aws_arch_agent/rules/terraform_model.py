@@ -18,7 +18,8 @@ import re
 from pathlib import Path
 from typing import Any, Callable
 
-from aws_arch_agent.rules.resource_model import Resource
+from aws_arch_agent.rules.resource_model import TF_MODULE_CALL, Resource
+from aws_arch_agent.rules.secret_names import is_literal_secret
 from aws_arch_agent.rules.tag_policy import TF_TAGGABLE
 from aws_arch_agent.rules.tag_policy import UNKNOWN as UNKNOWN_TAG
 
@@ -71,6 +72,13 @@ TF_TYPE_TO_CANONICAL: dict[str, str] = {
     "aws_kinesis_stream_consumer": "kinesis_stream_consumer",
     "aws_kinesisanalyticsv2_application": "kinesis_analytics_application",
     "aws_kinesis_firehose_delivery_stream": "firehose_delivery_stream",
+    "aws_athena_workgroup": "athena_workgroup",
+    "aws_glue_job": "glue_job",
+    "aws_glue_security_configuration": "glue_security_configuration",
+    "aws_emr_cluster": "emr_cluster",
+    "aws_emr_security_configuration": "emr_security_configuration",
+    "aws_dms_replication_instance": "dms_replication_instance",
+    "aws_dms_endpoint": "dms_endpoint",
     "aws_opensearch_domain": "opensearch_domain",
     "aws_redshift_cluster": "redshift_cluster",
     "aws_docdb_cluster": "docdb_cluster",
@@ -98,6 +106,34 @@ TF_TYPE_TO_CANONICAL: dict[str, str] = {
     "aws_fsx_windows_file_system": "fsx_file_system",
     "aws_fsx_ontap_file_system": "fsx_file_system",
     "aws_fsx_openzfs_file_system": "fsx_file_system",
+    "aws_fsx_data_repository_association": "fsx_data_repository_association",
+    "aws_sagemaker_notebook_instance": "sagemaker_notebook_instance",
+    "aws_sagemaker_endpoint_configuration": "sagemaker_endpoint_config",
+    "aws_route53_zone": "route53_hosted_zone",
+    "aws_route53_record": "route53_record_set",
+    "aws_route53_hosted_zone_dnssec": "route53_dnssec",
+    "aws_route53_key_signing_key": "route53_key_signing_key",
+    "aws_route53_query_log": "route53_query_log",
+    "aws_acm_certificate": "acm_certificate",
+    "aws_cloudwatch_metric_alarm": "cloudwatch_alarm",
+    "aws_cloudwatch_composite_alarm": "cloudwatch_composite_alarm",
+    "aws_cloudwatch_dashboard": "cloudwatch_dashboard",
+    "aws_guardduty_detector": "guardduty_detector",
+    "aws_guardduty_detector_feature": "guardduty_detector_feature",
+    "aws_securityhub_account": "securityhub_hub",
+    "aws_securityhub_standards_subscription": "securityhub_standard",
+    "aws_securityhub_configuration_policy": "securityhub_configuration_policy",
+    "aws_config_configuration_recorder": "config_configuration_recorder",
+    "aws_macie2_account": "macie_session",
+    "aws_budgets_budget": "budgets_budget",
+    "aws_budgets_budget_action": "budgets_action",
+    "aws_globalaccelerator_endpoint_group": "globalaccelerator_endpoint_group",
+    "aws_appsync_graphql_api": "appsync_graphql_api",
+    "aws_appsync_api_cache": "appsync_api_cache",
+    "aws_transfer_server": "transfer_server",
+    "aws_apprunner_service": "apprunner_service",
+    "aws_elastic_beanstalk_environment": "elastic_beanstalk_environment",
+    "aws_elastic_beanstalk_configuration_template": "elastic_beanstalk_configuration_template",
     "aws_api_gateway_method": "api_gateway_method",
     "aws_api_gateway_domain_name": "api_gateway_domain_name",
     "aws_api_gateway_usage_plan": "api_gateway_usage_plan",
@@ -105,10 +141,15 @@ TF_TYPE_TO_CANONICAL: dict[str, str] = {
     "aws_apigatewayv2_route": "apigatewayv2_route",
     "aws_autoscaling_group": "autoscaling_group",
     "aws_launch_configuration": "launch_configuration",
+    "aws_autoscaling_policy": "autoscaling_policy",
+    "aws_autoscaling_schedule": "autoscaling_schedule",
+    "aws_autoscaling_attachment": "autoscaling_attachment",
     "aws_appautoscaling_target": "scalable_target",
+    "aws_ecs_cluster": "ecs_cluster",
     "aws_ecs_service": "ecs_service",
     "aws_eks_cluster": "eks_cluster",
     "aws_cloudfront_distribution": "cloudfront_distribution",
+    "aws_cloudwatch_log_delivery_source": "cloudwatch_log_delivery_source",
     "aws_elasticache_cluster": "elasticache_cluster",
     "aws_elasticache_replication_group": "elasticache_replication_group",
     "aws_iam_policy": "iam_policy",
@@ -154,6 +195,9 @@ _S3_PARTS: dict[str, str] = {
     "aws_s3_bucket_policy": "BucketPolicy",
     "aws_s3_bucket_lifecycle_configuration": "LifecycleConfiguration",
     "aws_s3_bucket_intelligent_tiering_configuration": "IntelligentTieringConfigurations",
+    "aws_s3_bucket_ownership_controls": "OwnershipControls",
+    "aws_s3_bucket_acl": "AccessControl",
+    "aws_s3_bucket_replication_configuration": "ReplicationConfiguration",
 }
 
 # var/local are module inputs; each/count/self differ per instance. None is known statically.
@@ -476,6 +520,61 @@ def parse_tf_file(path: Path) -> tuple[list[_Block], list[str]]:
     return blocks, sources
 
 
+def _module_call_bodies(path: Path) -> list[tuple[str, dict]]:
+    """The label and body of each `module` block in one file."""
+    doc, _text, _is_json, normalize = _load_tf(path)
+    calls: list[tuple[str, dict]] = []
+    for module_map in _iter_type_maps(doc.get("module")):
+        for raw_name, body in module_map.items():
+            for item in _iter_type_maps(body):
+                calls.append((_unquote_key(raw_name), normalize(item)))
+    return calls
+
+
+def _call_resource_types(source: Any, module_dir: Path, seen: set[Path]) -> set[str] | None:
+    """The resource types a module call defines, its own calls included. None when any part is
+    remote or cannot be read."""
+    if type(source) is not str or not source.startswith(("./", "../")):
+        return None
+    child = (module_dir / source).resolve()
+    if child in seen:
+        return set()
+    seen.add(child)
+    if not child.is_dir():
+        return None
+    types: set[str] = set()
+    try:
+        for path in _module_files(child):
+            types.update(block.type for block in parse_tf_file(path)[0] if not block.data)
+            for _label, body in _module_call_bodies(path):
+                nested = _call_resource_types(body.get("source"), child, seen)
+                if nested is None:
+                    return None
+                types |= nested
+    except (TerraformError, OSError, UnicodeError):
+        return None
+    return types
+
+
+def _module_call_records(module_dir: Path) -> list[Resource]:
+    """One record per `module` call, for checks that ask what a stack may define out of sight."""
+    out: list[Resource] = []
+    for path in _module_files(module_dir):
+        try:
+            calls = _module_call_bodies(path)
+        except (TerraformError, OSError, UnicodeError):
+            continue  # resources_from_terraform already warned about this file
+        for label, body in calls:
+            types = _call_resource_types(body.get("source"), module_dir, set())
+            out.append(Resource(
+                type=None, name=f"module.{label}", file=str(path), source_type=TF_MODULE_CALL,
+                properties={} if types is None else {"ResourceTypes": sorted(types)},
+                unresolved=frozenset({"ResourceTypes"}) if types is None else frozenset(),
+                references=frozenset(_ADDRESS_REF.findall(json.dumps(body, default=str))),
+            ))
+    return out
+
+
 def _module_files(module_dir: Path) -> list[Path]:
     files = [
         p for p in sorted(module_dir.iterdir())
@@ -544,6 +643,12 @@ def _s3_bucket(body: dict) -> dict:
         props["LoggingConfiguration"] = {"DestinationBucketName": _ref(logging, "target_bucket")}
     if _blocks(body, "lifecycle_rule"):
         props["LifecycleConfiguration"] = _lifecycle_rules(_blocks(body, "lifecycle_rule"))
+    if type(body.get("bucket")) is str:
+        props["BucketName"] = body["bucket"]
+    _set(props, "AccessControl", _s3_acl(body))
+    replication = _first_block(body, "replication_configuration")
+    if replication:
+        props["ReplicationConfiguration"] = _s3_replication(replication, "rules")
     return props
 
 
@@ -551,8 +656,56 @@ def _s3_encryption(body: dict) -> Any:
     configs = []
     for rule in _blocks(body, "rule"):
         default = _first_block(rule, "apply_server_side_encryption_by_default")
-        configs.append({"ServerSideEncryptionByDefault": {"SSEAlgorithm": _v(default, "sse_algorithm")}})
+        config: dict = {"ServerSideEncryptionByDefault": {"SSEAlgorithm": _v(default, "sse_algorithm")}}
+        if "bucket_key_enabled" in rule:  # an unknown value must not hide the algorithm from CF-S3-002
+            config["BucketKeyEnabled"] = _known(_v(rule, "bucket_key_enabled"))
+        configs.append(config)
     return {"ServerSideEncryptionConfiguration": configs}
+
+
+# Terraform canned ACL -> CloudFormation AccessControl.
+_S3_CANNED_ACLS: dict[str, str] = {
+    "private": "Private",
+    "public-read": "PublicRead",
+    "public-read-write": "PublicReadWrite",
+    "aws-exec-read": "AwsExecRead",
+    "authenticated-read": "AuthenticatedRead",
+    "bucket-owner-read": "BucketOwnerRead",
+    "bucket-owner-full-control": "BucketOwnerFullControl",
+    "log-delivery-write": "LogDeliveryWrite",
+}
+
+
+def _s3_acl(body: dict) -> Any:
+    """The canned ACL as AccessControl. Grants are not read: the bucket's ACL is then unknown."""
+    if {"grant", "access_control_policy"} & (body.keys() | _dynamic_names(body)):
+        return UNRESOLVED
+    acl = _v(body, "acl")
+    if acl is None or acl is UNRESOLVED:
+        return acl
+    return _S3_CANNED_ACLS.get(acl, UNRESOLVED) if type(acl) is str else UNRESOLVED
+
+
+def _s3_replication(body: dict, rule_key: str) -> Any:
+    """Replication rules in CloudFormation shape. rule_key is `rule`, or `rules` on the inline
+    block (provider < v4). A dynamic rule makes the whole configuration unknown. One unknown
+    value is kept as _OPAQUE: the bucket still has replication, and its other rules can be read."""
+    if rule_key in _dynamic_names(body):
+        return UNRESOLVED
+    rules = []
+    for rule in _blocks(body, rule_key):
+        destination = _first_block(rule, "destination")
+        if not destination or "destination" in _dynamic_names(rule):
+            rules.append({"Status": _known(_v(rule, "status")), "Destination": _OPAQUE})
+            continue
+        item: dict = {"Bucket": _known(_ref(destination, "bucket"))}
+        for block, cf_key in (("metrics", "Metrics"), ("replication_time", "ReplicationTime")):
+            if block in _dynamic_names(destination):
+                item[cf_key] = _OPAQUE
+            elif _first_block(destination, block):
+                item[cf_key] = {"Status": _known(_v(_first_block(destination, block), "status"))}
+        rules.append({"Status": _known(_v(rule, "status")), "Destination": item})
+    return {"Rules": rules}
 
 
 def _s3_part(part_type: str, body: dict) -> Any:
@@ -574,6 +727,12 @@ def _s3_part(part_type: str, body: dict) -> Any:
         return _lifecycle_rules(_blocks(body, "rule"))
     if part_type == "aws_s3_bucket_intelligent_tiering_configuration":
         return [{"Status": _known(_v(body, "status")) or "Enabled"}]
+    if part_type == "aws_s3_bucket_ownership_controls":
+        return {"Rules": [{"ObjectOwnership": _v(rule, "object_ownership")} for rule in _blocks(body, "rule")]}
+    if part_type == "aws_s3_bucket_acl":
+        return _s3_acl(body)
+    if part_type == "aws_s3_bucket_replication_configuration":
+        return _s3_replication(body, "rule")
     return {"DestinationBucketName": _ref(body, "target_bucket")}
 
 
@@ -1174,28 +1333,63 @@ def _known(value: Any) -> Any:
     return _OPAQUE if value is UNRESOLVED else value
 
 
+def _cloudfront_associations(block: dict, key: str) -> Any:
+    """Function associations on a behavior, keeping only the event type."""
+    if key in _dynamic_names(block):
+        return _OPAQUE
+    return [{"EventType": _known(_v(a, "event_type"))} for a in _blocks(block, key)]
+
+
+def _cloudfront_behavior(block: dict) -> dict:
+    item = {
+        "ViewerProtocolPolicy": _known(_v(block, "viewer_protocol_policy")),
+        "TargetOriginId": _known(_ref(block, "target_origin_id")),
+    }
+    for prop, value in (
+        ("Compress", _v(block, "compress")),
+        ("CachePolicyId", _v(block, "cache_policy_id")),
+        ("RealtimeLogConfigArn", _ref(block, "realtime_log_config_arn")),
+    ):
+        if value is not None:
+            item[prop] = _known(value)
+    for prop, key in (("FunctionAssociations", "function_association"),
+                      ("LambdaFunctionAssociations", "lambda_function_association")):
+        associations = _cloudfront_associations(block, key)
+        if associations:
+            item[prop] = associations
+    return item
+
+
+def _cloudfront_origin_group(group: dict) -> dict:
+    members: Any = {"Items": [{"OriginId": _known(_ref(m, "origin_id"))} for m in _blocks(group, "member")]}
+    if "member" in _dynamic_names(group):
+        members = _OPAQUE
+    return {"Id": _known(_ref(group, "origin_id")), "Members": members}
+
+
 def _cloudfront_distribution(body: dict) -> dict:
-    """The arguments CF-CF-001..003 read, in DistributionConfig shape.
+    """The arguments the CF-CF checks read, in DistributionConfig shape.
 
     An unknown value is kept as _OPAQUE, so it does not hide the other checks.
     """
     config: dict = {}
     default = _first_block(body, "default_cache_behavior")
     if default:
-        config["DefaultCacheBehavior"] = {"ViewerProtocolPolicy": _known(_v(default, "viewer_protocol_policy"))}
-    ordered = _blocks(body, "ordered_cache_behavior")
+        config["DefaultCacheBehavior"] = _cloudfront_behavior(default)
+    ordered = [
+        {"PathPattern": _known(_v(b, "path_pattern")), **_cloudfront_behavior(b)}
+        for b in _blocks(body, "ordered_cache_behavior")
+    ]
     if ordered:
-        config["CacheBehaviors"] = [
-            {"PathPattern": _known(_v(b, "path_pattern")),
-             "ViewerProtocolPolicy": _known(_v(b, "viewer_protocol_policy"))}
-            for b in ordered
-        ]
+        config["CacheBehaviors"] = ordered
     cert = _first_block(body, "viewer_certificate")
     if cert:
         version = _v(cert, "minimum_protocol_version")
+        support = _v(cert, "ssl_support_method")
         config["ViewerCertificate"] = {
             "CloudFrontDefaultCertificate": _known(_v(cert, "cloudfront_default_certificate")),
             **({} if version is None else {"MinimumProtocolVersion": _known(version)}),
+            **({} if support is None else {"SslSupportMethod": _known(support)}),
         }
     origins = []
     for origin in _blocks(body, "origin"):
@@ -1209,15 +1403,251 @@ def _cloudfront_distribution(body: dict) -> dict:
         s3 = _first_block(origin, "s3_origin_config")
         if s3:
             item["S3OriginConfig"] = {"OriginAccessIdentity": _known(_ref(s3, "origin_access_identity"))}
-        if _first_block(origin, "custom_origin_config"):
-            item["CustomOriginConfig"] = {}
+        custom = _first_block(origin, "custom_origin_config")
+        if "custom_origin_config" in _dynamic_names(origin):
+            item["CustomOriginConfig"] = _OPAQUE
+        elif custom:
+            protocols = _v(custom, "origin_ssl_protocols")
+            item["CustomOriginConfig"] = {
+                "OriginProtocolPolicy": _known(_v(custom, "origin_protocol_policy")),
+                # One unknown entry does not hide a literal SSLv3 next to it.
+                "OriginSSLProtocols": ([_known(_v({"p": p}, "p")) for p in protocols]
+                                       if isinstance(protocols, list) else _known(protocols)),
+            }
         origins.append(item)
     if origins:
         config["Origins"] = origins
+    if "origin_group" in _dynamic_names(body):
+        config["OriginGroups"] = _OPAQUE
+    else:
+        groups = _blocks(body, "origin_group")
+        if groups:
+            config["OriginGroups"] = {"Items": [_cloudfront_origin_group(g) for g in groups]}
+    root = _ref(body, "default_root_object")
+    if root is not None:
+        config["DefaultRootObject"] = _known(root)
+    price = _v(body, "price_class")
+    if price is not None:
+        config["PriceClass"] = _known(price)
     web_acl = _ref(body, "web_acl_id")
     if web_acl is not None:
         config["WebACLId"] = _known(web_acl)
+    if "logging_config" in _dynamic_names(body):
+        config["Logging"] = {"Bucket": _OPAQUE}
+    elif _first_block(body, "logging_config"):
+        config["Logging"] = {"Bucket": _known(_ref(_first_block(body, "logging_config"), "bucket"))}
     return {"DistributionConfig": config}
+
+
+def _sagemaker_notebook(body: dict) -> dict:
+    props: dict = {}
+    _set(props, "DirectInternetAccess", _v(body, "direct_internet_access"))
+    _set(props, "RootAccess", _v(body, "root_access"))
+    _set(props, "SubnetId", _ref(body, "subnet_id"))
+    _set(props, "KmsKeyId", _ref(body, "kms_key_id"))
+    return props
+
+
+def _sagemaker_variants(body: dict, key: str) -> Any:
+    """Variants of an endpoint config. An unknown value is kept as _OPAQUE, so one does not hide the others."""
+    if key in _dynamic_names(body):
+        return UNRESOLVED
+    variants = []
+    for block in _blocks(body, key):
+        item: dict = {}
+        _set(item, "VariantName", _known(_v(block, "variant_name")))
+        _set(item, "InstanceType", _known(_v(block, "instance_type")))
+        _set(item, "InitialInstanceCount", _known(_v(block, "initial_instance_count")))
+        if "serverless_config" in _dynamic_names(block) or _first_block(block, "serverless_config"):
+            item["ServerlessConfig"] = _OPAQUE
+        variants.append(item)
+    return variants or None
+
+
+def _sagemaker_endpoint_config(body: dict) -> dict:
+    """aws_sagemaker_endpoint_configuration. Its key argument is kms_key_arn."""
+    props: dict = {}
+    _set(props, "KmsKeyId", _ref(body, "kms_key_arn"))
+    _set(props, "ProductionVariants", _sagemaker_variants(body, "production_variants"))
+    _set(props, "ShadowProductionVariants", _sagemaker_variants(body, "shadow_production_variants"))
+    return props
+
+
+def _fsx_file_system(kind: str, block: str) -> Callable[[dict], dict]:
+    """aws_fsx_*_file_system: flat arguments, in the shape of AWS::FSx::FileSystem with its per-type block."""
+
+    def adapter(body: dict) -> dict:
+        config: dict = {}
+        _set(config, "AutomaticBackupRetentionDays", _known(_v(body, "automatic_backup_retention_days")))
+        if kind != "ONTAP":
+            _set(config, "CopyTagsToBackups", _known(_v(body, "copy_tags_to_backups")))
+        if kind == "LUSTRE":
+            _set(config, "DeploymentType", _known(_v(body, "deployment_type")))
+            _set(config, "ImportPath", _known(_ref(body, "import_path")))
+            _set(config, "ExportPath", _known(_ref(body, "export_path")))
+        props: dict = {"FileSystemType": kind, block: config}
+        _set(props, "KmsKeyId", _ref(body, "kms_key_id"))
+        _set(props, "BackupId", _ref(body, "backup_id"))
+        return props
+
+    return adapter
+
+
+def _fsx_data_repository_association(body: dict) -> dict:
+    return {"FileSystemId": _known(_ref(body, "file_system_id"))}
+
+
+def _block_is_unknown(body: dict, key: str) -> bool:
+    """True when a block comes from a dynamic block or an expression, so the scan cannot read it."""
+    return key in _dynamic_names(body) or isinstance(body.get(key), _Expr)
+
+
+def _route53_zone(body: dict) -> dict:
+    """aws_route53_zone. A vpc block makes the zone private."""
+    if _block_is_unknown(body, "vpc"):
+        return {"VPCs": UNRESOLVED}
+    return {"VPCs": _OPAQUE} if _blocks(body, "vpc") else {}
+
+
+def _route53_zone_link(key: str) -> Callable[[dict], dict]:
+    """A resource that points at a zone. HostedZoneId is compared, so each.key or var.x is unknown."""
+
+    def adapt(body: dict) -> dict:
+        return {"HostedZoneId": _known(_ref(body, key))}
+
+    return adapt
+
+
+def _route53_record(body: dict) -> dict:
+    """aws_route53_record, in the shape of AWS::Route53::RecordSet."""
+    props: dict = {}
+    _set(props, "HealthCheckId", _ref(body, "health_check_id"))
+    if _block_is_unknown(body, "failover_routing_policy"):
+        props["Failover"] = UNRESOLVED
+    elif block := _first_block(body, "failover_routing_policy"):
+        _set(props, "Failover", _v(block, "type"))
+    if _block_is_unknown(body, "weighted_routing_policy"):
+        props["Weight"] = UNRESOLVED
+    elif block := _first_block(body, "weighted_routing_policy"):
+        _set(props, "Weight", _v(block, "weight"))
+    if _block_is_unknown(body, "alias"):
+        props["AliasTarget"] = UNRESOLVED
+    elif block := _first_block(body, "alias"):
+        props["AliasTarget"] = {"EvaluateTargetHealth": _known(_v(block, "evaluate_target_health"))}
+    return props
+
+
+def _acm_certificate(body: dict) -> dict:
+    """aws_acm_certificate. The imported key and body are kept only as present: never their value."""
+    props: dict = {}
+    _set(props, "ValidationMethod", _v(body, "validation_method"))
+    _set(props, "KeyAlgorithm", _v(body, "key_algorithm"))
+    _set(props, "CertificateAuthorityArn", _ref(body, "certificate_authority_arn"))
+    if body.get("private_key") is not None:
+        props["PrivateKey"] = _OPAQUE
+    if body.get("certificate_body") is not None:
+        props["CertificateBody"] = _OPAQUE
+    if _block_is_unknown(body, "options"):
+        props["CertificateTransparencyLoggingPreference"] = UNRESOLVED
+    elif block := _first_block(body, "options"):
+        _set(props, "CertificateTransparencyLoggingPreference",
+             _v(block, "certificate_transparency_logging_preference"))
+    return props
+
+
+def _globalaccelerator_endpoint_group(body: dict) -> dict:
+    props: dict = {}
+    _set(props, "HealthCheckProtocol", _ref(body, "health_check_protocol"))
+    _set(props, "HealthCheckPath", _ref(body, "health_check_path"))
+    _set(props, "HealthCheckPort", _ref(body, "health_check_port"))
+    if _block_is_unknown(body, "endpoint_configuration"):
+        props["EndpointConfigurations"] = UNRESOLVED
+    else:
+        endpoints = [{"EndpointId": _known(_ref(block, "endpoint_id"))}
+                     for block in _blocks(body, "endpoint_configuration")]
+        _set(props, "EndpointConfigurations", endpoints or None)
+    return props
+
+
+def _appsync_graphql_api(body: dict) -> dict:
+    """aws_appsync_graphql_api. A WAF web ACL is attached by aws_wafv2_web_acl_association: there is
+    no inline argument."""
+    props: dict = {}
+    _set(props, "AuthenticationType", _v(body, "authentication_type"))
+    _set(props, "ApiType", _v(body, "api_type"))
+    _set(props, "Visibility", _v(body, "visibility"))
+    if _block_is_unknown(body, "log_config"):
+        props["LogConfig"] = UNRESOLVED
+    elif log := _first_block(body, "log_config"):
+        props["LogConfig"] = {"FieldLogLevel": _known(_v(log, "field_log_level"))}
+    if _block_is_unknown(body, "additional_authentication_provider"):
+        props["AdditionalAuthenticationProviders"] = UNRESOLVED
+    else:
+        providers = [{"AuthenticationType": _known(_v(block, "authentication_type"))}
+                     for block in _blocks(body, "additional_authentication_provider")]
+        _set(props, "AdditionalAuthenticationProviders", providers or None)
+    return props
+
+
+def _appsync_api_cache(body: dict) -> dict:
+    return {"ApiId": _known(_ref(body, "api_id"))}
+
+
+def _transfer_server(body: dict) -> dict:
+    """aws_transfer_server. The provider documents endpoint_type as defaulting to PUBLIC. Logging
+    arguments are only checked for presence."""
+    props: dict = {}
+    _set(props, "Protocols", _v(body, "protocols"))
+    default = None if body.get("endpoint_details") or "endpoint_details" in _dynamic_names(body) else "PUBLIC"
+    _set(props, "EndpointType", _v(body, "endpoint_type", default))
+    _set(props, "LoggingRole", _ref(body, "logging_role"))
+    _set(props, "StructuredLogDestinations", _ref(body, "structured_log_destinations"))
+    return props
+
+
+def _apprunner_service(body: dict) -> dict:
+    if _block_is_unknown(body, "observability_configuration"):
+        return {"ObservabilityConfiguration": UNRESOLVED}
+    block = _first_block(body, "observability_configuration")
+    if not block:
+        return {}
+    return {"ObservabilityConfiguration": {"ObservabilityEnabled": _known(_v(block, "observability_enabled"))}}
+
+
+def _beanstalk_option_settings(body: dict) -> Any:
+    """Repeated setting blocks, in the shape of OptionSettings. One unknown value stays _OPAQUE, so
+    it does not hide the other settings."""
+    if _block_is_unknown(body, "setting"):
+        return UNRESOLVED
+    settings = []
+    for block in _blocks(body, "setting"):
+        item: dict = {}
+        _set(item, "Namespace", _known(_v(block, "namespace")))
+        _set(item, "OptionName", _known(_v(block, "name")))
+        _set(item, "Value", _known(_v(block, "value")))
+        settings.append(item)
+    return settings or None
+
+
+def _beanstalk_environment(body: dict) -> dict:
+    props: dict = {}
+    _set(props, "OptionSettings", _beanstalk_option_settings(body))
+    _set(props, "TemplateName", _ref(body, "template_name"))
+    return props
+
+
+def _beanstalk_configuration_template(body: dict) -> dict:
+    """aws_elastic_beanstalk_configuration_template. Name is Terraform only: an environment can use
+    the template by this literal name."""
+    props: dict = {}
+    _set(props, "Name", _v(body, "name"))
+    _set(props, "OptionSettings", _beanstalk_option_settings(body))
+    _set(props, "EnvironmentId", _ref(body, "environment_id"))
+    return props
+
+
+def _log_delivery_source(body: dict) -> dict:
+    return {"ResourceArn": _known(_ref(body, "resource_arn"))}
 
 
 def _waf_association(body: dict) -> dict:
@@ -1231,6 +1661,85 @@ def _cloudtrail(body: dict) -> dict:
     _set(props, "EnableLogFileValidation", _v(body, "enable_log_file_validation"))
     _set(props, "IsMultiRegionTrail", _v(body, "is_multi_region_trail"))
     _set(props, "KmsKeyId", _ref(body, "kms_key_id"))
+    _set(props, "CloudWatchLogsLogGroupArn", _ref(body, "cloud_watch_logs_group_arn"))
+    _set(props, "S3BucketName", _ref(body, "s3_bucket_name"))
+    names = _dynamic_names(body)
+    if "event_selector" in names:
+        props["EventSelectors"] = UNRESOLVED
+    elif "event_selector" in body:
+        props["EventSelectors"] = [_trail_event_selector(item) for item in _blocks(body, "event_selector")]
+    if "advanced_event_selector" in names:
+        props["AdvancedEventSelectors"] = UNRESOLVED
+    elif "advanced_event_selector" in body:
+        props["AdvancedEventSelectors"] = [
+            _trail_advanced_selector(item) for item in _blocks(body, "advanced_event_selector")]
+    return props
+
+
+def _trail_event_selector(block: dict) -> Any:
+    if "data_resource" in _dynamic_names(block):
+        return UNRESOLVED
+    return {"DataResources": [{"Type": _ref(item, "type"), "Values": _ref(item, "values")}
+                              for item in _blocks(block, "data_resource")]}
+
+
+_FIELD_OPERATORS = {"equals": "Equals", "not_equals": "NotEquals", "starts_with": "StartsWith",
+                    "not_starts_with": "NotStartsWith", "ends_with": "EndsWith", "not_ends_with": "NotEndsWith"}
+
+
+def _trail_advanced_selector(block: dict) -> Any:
+    if "field_selector" in _dynamic_names(block):
+        return UNRESOLVED
+    fields = []
+    for item in _blocks(block, "field_selector"):
+        field: dict = {"Field": _ref(item, "field")}
+        for key, cf_key in _FIELD_OPERATORS.items():
+            _set(field, cf_key, _ref(item, key))
+        fields.append(field)
+    return {"FieldSelectors": fields}
+
+
+def _alarm_dimensions(body: dict) -> Any:
+    """`dimensions` as CloudFormation's Name and Value list. A whole map from an expression stays
+    as it is, so the check can see it cannot read it."""
+    raw = _ref(body, "dimensions")
+    if not isinstance(raw, dict):
+        return raw
+    return [{"Name": _unquote_key(str(key)), "Value": value} for key, value in raw.items()]
+
+
+def _metric_query(block: dict) -> Any:
+    if "metric" in _dynamic_names(block):
+        return UNRESOLVED
+    query: dict = {}
+    _set(query, "Expression", _ref(block, "expression"))
+    metric = _first_block(block, "metric")
+    if metric:
+        fields: dict = {}
+        _set(fields, "Namespace", _ref(metric, "namespace"))
+        _set(fields, "Dimensions", _alarm_dimensions(metric))
+        query["MetricStat"] = {"Metric": fields}
+    return query
+
+
+def _metric_alarm(body: dict) -> dict:
+    props: dict = {}
+    _set(props, "AlarmName", _ref(body, "alarm_name"))
+    _set(props, "AlarmActions", _ref(body, "alarm_actions"))
+    _set(props, "Namespace", _ref(body, "namespace"))
+    _set(props, "Dimensions", _alarm_dimensions(body))
+    if "metric_query" in _dynamic_names(body):
+        props["Metrics"] = UNRESOLVED
+    elif "metric_query" in body:
+        props["Metrics"] = [_metric_query(item) for item in _blocks(body, "metric_query")]
+    return props
+
+
+def _composite_alarm(body: dict) -> dict:
+    props: dict = {}
+    _set(props, "AlarmName", _ref(body, "alarm_name"))
+    _set(props, "AlarmActions", _ref(body, "alarm_actions"))
+    _set(props, "AlarmRule", _ref(body, "alarm_rule"))
     return props
 
 
@@ -1331,8 +1840,34 @@ def _container_definitions(value: Any) -> Any:
     for item in decoded:
         if not isinstance(item, dict):
             return UNRESOLVED
-        out.append({cf: item[tf] for tf, cf in _CONTAINER_KEYS.items() if tf in item})
+        container = {cf: item[tf] for tf, cf in _CONTAINER_KEYS.items() if tf in item}
+        if "environment" in item:
+            container["Environment"] = _container_environment(item["environment"])
+        if "logConfiguration" in item:
+            container["LogConfiguration"] = _container_logs(item["logConfiguration"])
+        out.append(container)
     return out
+
+
+# Stands for a literal environment value, so that the secret stays out of the model.
+_LITERAL_VALUE = "<literal>"
+
+
+def _container_environment(value: Any) -> Any:
+    """environment -> Environment, with each value reduced to whether it is a literal secret."""
+    if not isinstance(value, list):
+        return _OPAQUE
+    return [
+        {"Name": item.get("name"), "Value": _LITERAL_VALUE if is_literal_secret(item.get("value")) else _OPAQUE}
+        for item in value if isinstance(item, dict)
+    ]
+
+
+def _container_logs(value: Any) -> Any:
+    """logConfiguration -> LogConfiguration, with only the driver: options may hold secrets."""
+    if not isinstance(value, dict):
+        return _OPAQUE
+    return {"LogDriver": value.get("logDriver")}
 
 
 def _json_or_unresolved(text: str) -> Any:
@@ -1350,6 +1885,11 @@ def _ecs_task_definition(body: dict) -> dict:
     platform = _first_block(body, "runtime_platform")
     if "operating_system_family" in platform:
         props["RuntimePlatform"] = {"OperatingSystemFamily": _v(platform, "operating_system_family")}
+    _set(props, "NetworkMode", _v(body, "network_mode"))
+    _set(props, "PidMode", _v(body, "pid_mode"))
+    _set(props, "RequiresCompatibilities", _v(body, "requires_compatibilities"))
+    _set(props, "Cpu", _v(body, "cpu"))
+    _set(props, "Memory", _v(body, "memory"))
     return props
 
 
@@ -1789,17 +2329,33 @@ def _apiv2_route(body: dict) -> dict:
     return props
 
 
+def _entries(value: Any) -> Any:
+    """A list keeps its length when an entry comes from a variable, which would otherwise hide the
+    whole list. A list that is itself a variable stays UNRESOLVED."""
+    if isinstance(value, list):
+        return [_Expr("<unresolved>") if item is UNRESOLVED else item for item in value]
+    return value
+
+
 def _asg(body: dict) -> dict:
+    props: dict = {}
+    _set(props, "AutoScalingGroupName", _v(body, "name"))
+    _set(props, "HealthCheckType", _v(body, "health_check_type"))
+    _set(props, "MinSize", _v(body, "min_size"))
+    _set(props, "MaxSize", _v(body, "max_size"))
+    _set(props, "TargetGroupARNs", _entries(_ref(body, "target_group_arns")))
+    _set(props, "LoadBalancerNames", _entries(_ref(body, "load_balancers")))
+    _set(props, "AvailabilityZones", _entries(_ref(body, "availability_zones")))
+    _set(props, "VPCZoneIdentifier", _entries(_ref(body, "vpc_zone_identifier")))
+    _set(props, "LaunchConfigurationName", _ref(body, "launch_configuration"))
     mixed = _first_block(body, "mixed_instances_policy")
     if not mixed:
-        return {}
+        return props
     dist = _first_block(mixed, "instances_distribution")
-    props: dict = {
-        "MixedInstancesPolicy": {
-            "InstancesDistribution": {
-                "SpotMaxPrice": _ref(dist, "spot_max_price"),
-                "SpotAllocationStrategy": _ref(dist, "spot_allocation_strategy"),
-            }
+    props["MixedInstancesPolicy"] = {
+        "InstancesDistribution": {
+            "SpotMaxPrice": _ref(dist, "spot_max_price"),
+            "SpotAllocationStrategy": _ref(dist, "spot_allocation_strategy"),
         }
     }
     # Override instance types, apart from the policy so an unknown one hides only CF-GEN-001.
@@ -1825,6 +2381,164 @@ def _scalable_target(body: dict) -> dict:
 def _launch_configuration(body: dict) -> dict:
     props: dict = {}
     _set(props, "InstanceType", _v(body, "instance_type"))
+    _set(props, "MetadataOptions", _metadata_options(body))
+    _set(props, "AssociatePublicIpAddress", _v(body, "associate_public_ip_address"))
+    return props
+
+
+def _athena_workgroup(body: dict) -> dict:
+    """aws_athena_workgroup. One unknown value must not hide the others, so each is kept apart."""
+    if "configuration" in _dynamic_names(body):
+        return {"WorkGroupConfiguration": UNRESOLVED}
+    config = _first_block(body, "configuration")
+    dynamic = _dynamic_names(config)
+    props: dict = {}
+    _set(props, "EnforceWorkGroupConfiguration", _known(_v(config, "enforce_workgroup_configuration")))
+    if "result_configuration" in dynamic:
+        props["ResultConfiguration"] = _OPAQUE
+    elif "result_configuration" in config:
+        result = _first_block(config, "result_configuration")
+        if "encryption_configuration" in _dynamic_names(result):
+            props["ResultConfiguration"] = {"EncryptionConfiguration": _OPAQUE}
+        elif "encryption_configuration" in result:
+            encryption = _first_block(result, "encryption_configuration")
+            props["ResultConfiguration"] = {"EncryptionConfiguration": {
+                "EncryptionOption": _known(_v(encryption, "encryption_option"))}}
+        else:
+            props["ResultConfiguration"] = {}
+    if "managed_query_results_configuration" in dynamic:
+        props["ManagedQueryResultsConfiguration"] = _OPAQUE
+    elif "managed_query_results_configuration" in config:
+        managed = _first_block(config, "managed_query_results_configuration")
+        props["ManagedQueryResultsConfiguration"] = {"Enabled": _known(_v(managed, "enabled"))}
+    if "engine_version" in dynamic:
+        props["EngineVersion"] = _OPAQUE
+    elif "engine_version" in config:
+        engine = _first_block(config, "engine_version")
+        props["EngineVersion"] = {"SelectedEngineVersion": _known(_v(engine, "selected_engine_version"))}
+    return {"WorkGroupConfiguration": props} if props else {}
+
+
+# Only the arguments the checks read: another argument may hold a secret.
+_GLUE_ARGUMENTS = ("--enable-metrics", "--job-bookmark-option")
+
+
+def _glue_arguments(body: dict, key: str) -> Any:
+    """A job's argument map. A map from an expression, or with a computed key, may hold any argument."""
+    value = body.get(key)
+    if value is None:
+        return None
+    if not isinstance(value, dict) or any("${" in name for name in value):
+        return UNRESOLVED
+    return {name: _known(value[name]) for name in _GLUE_ARGUMENTS if name in value}
+
+
+def _glue_job(body: dict) -> dict:
+    props: dict = {}
+    _set(props, "SecurityConfiguration", _ref(body, "security_configuration"))
+    _set(props, "DefaultArguments", _glue_arguments(body, "default_arguments"))
+    _set(props, "NonOverridableArguments", _glue_arguments(body, "non_overridable_arguments"))
+    if "command" in _dynamic_names(body):
+        props["Command"] = UNRESOLVED
+    else:
+        # The provider defaults the job type to a Spark ETL job.
+        props["Command"] = {"Name": _v(_first_block(body, "command"), "name", "glueetl")}
+    return props
+
+
+_GLUE_ENCRYPTIONS = (
+    ("cloudwatch_encryption", "cloudwatch_encryption_mode", "CloudWatchEncryption", "CloudWatchEncryptionMode"),
+    ("job_bookmarks_encryption", "job_bookmarks_encryption_mode", "JobBookmarksEncryption",
+     "JobBookmarksEncryptionMode"),
+)
+
+
+def _glue_security_configuration(body: dict) -> dict:
+    """aws_glue_security_configuration. An unset mode is DISABLED in the provider. One unknown mode
+    must not hide the others, so each is kept apart."""
+    if "encryption_configuration" in _dynamic_names(body):
+        return {"EncryptionConfiguration": UNRESOLVED}
+    encryption = _first_block(body, "encryption_configuration")
+    dynamic = _dynamic_names(encryption)
+    props: dict = {}
+    for block, mode, cf_block, cf_mode in _GLUE_ENCRYPTIONS:
+        props[cf_block] = _OPAQUE if block in dynamic else {
+            cf_mode: _known(_v(_first_block(encryption, block), mode))}
+    props["S3Encryptions"] = _OPAQUE if "s3_encryption" in dynamic else [
+        {"S3EncryptionMode": _known(_v(_first_block(encryption, "s3_encryption"), "s3_encryption_mode"))}]
+    return {"EncryptionConfiguration": props}
+
+
+def _emr_cluster(body: dict) -> dict:
+    props: dict = {}
+    _set(props, "SecurityConfiguration", _ref(body, "security_configuration"))
+    if "ec2_attributes" in _dynamic_names(body):
+        props["Instances"] = UNRESOLVED
+    else:
+        subnet = _ref(_first_block(body, "ec2_attributes"), "subnet_id")
+        if subnet is not None:
+            props["Instances"] = {"Ec2SubnetId": subnet}
+    return props
+
+
+def _emr_security_configuration(body: dict) -> dict:
+    """aws_emr_security_configuration. configuration is a JSON string, often jsonencode; a document
+    from file() or a variable is UNRESOLVED."""
+    value = body.get("configuration")
+    return {} if value is None else {"SecurityConfiguration": _state_machine_definition(value)}
+
+
+def _dms_replication_instance(body: dict) -> dict:
+    """aws_dms_replication_instance. The provider sends false when these are unset, unlike
+    CloudFormation, where public access and minor upgrades default to true."""
+    props: dict = {
+        "PubliclyAccessible": _v(body, "publicly_accessible", False),
+        "AutoMinorVersionUpgrade": _v(body, "auto_minor_version_upgrade", False),
+    }
+    _set(props, "MultiAZ", _v(body, "multi_az"))
+    return props
+
+
+def _dms_endpoint(body: dict) -> dict:
+    """aws_dms_endpoint. Extra attributes may hold a secret, so only their presence is kept."""
+    props: dict = {}
+    _set(props, "EngineName", _v(body, "engine_name"))
+    _set(props, "SslMode", _v(body, "ssl_mode"))
+    _set(props, "SecretsManagerSecretId", _ref(body, "secrets_manager_arn"))
+    _set(props, "CertificateArn", _ref(body, "certificate_arn"))
+    if body.get("extra_connection_attributes") is not None:
+        props["ExtraConnectionAttributes"] = _OPAQUE
+    return props
+
+
+_FIREHOSE_SOURCE = "_source_configuration"
+
+
+def _firehose_delivery_stream(body: dict) -> dict:
+    """aws_kinesis_firehose_delivery_stream. A *_source_configuration block marks a stream that is
+    not direct put. server_side_encryption is off unless enabled is true."""
+    props: dict = {}
+    dynamic = _dynamic_names(body)
+    if any(name.endswith(_FIREHOSE_SOURCE) for name in dynamic):
+        props["DeliveryStreamType"] = UNRESOLVED
+    elif any(name.endswith(_FIREHOSE_SOURCE) for name in body):
+        props["DeliveryStreamType"] = "AsSource"
+    if "server_side_encryption" in dynamic:
+        props["DeliveryStreamEncryptionConfigurationInput"] = UNRESOLVED
+    else:
+        enabled = _v(_first_block(body, "server_side_encryption"), "enabled")
+        if enabled is UNRESOLVED:
+            props["DeliveryStreamEncryptionConfigurationInput"] = UNRESOLVED
+        elif enabled is True:
+            props["DeliveryStreamEncryptionConfigurationInput"] = {"KeyType": "set"}
+    return props
+
+
+def _asg_link(body: dict) -> dict:
+    """aws_autoscaling_policy, _schedule and _attachment: Terraform sets these from resources of
+    their own, and each names its group (CF-ASG-001, CF-ASG-006)."""
+    props: dict = {}
+    _set(props, "AutoScalingGroupName", _ref(body, "autoscaling_group_name"))
     return props
 
 
@@ -1840,9 +2554,32 @@ def _elasticache_cluster(body: dict) -> dict:
     return props
 
 
+def _ecs_cluster(body: dict) -> dict:
+    if "setting" in _dynamic_names(body):
+        return {"ClusterSettings": UNRESOLVED}
+    settings = [{"Name": _v(item, "name"), "Value": _v(item, "value")} for item in _blocks(body, "setting")]
+    return {"ClusterSettings": settings} if settings else {}
+
+
+def _assign_public_ip(body: dict) -> Any:
+    """network_configuration.assign_public_ip -> ENABLED or DISABLED, or None when unset."""
+    value = _v(_first_block(body, "network_configuration"), "assign_public_ip")
+    if value is None or value is UNRESOLVED:
+        return value
+    text = str(value).lower()
+    return {"true": "ENABLED", "false": "DISABLED"}.get(text, UNRESOLVED)
+
+
 def _ecs_service(body: dict) -> dict:
     props: dict = {}
     _set(props, "LaunchType", _v(body, "launch_type"))
+    _set(props, "PlatformVersion", _v(body, "platform_version"))
+    if "network_configuration" in _dynamic_names(body):
+        props["NetworkConfiguration"] = UNRESOLVED
+    else:
+        assign = _assign_public_ip(body)
+        if assign is not None:
+            props["NetworkConfiguration"] = {"AwsvpcConfiguration": {"AssignPublicIp": assign}}
     strategy = [
         {"CapacityProvider": _v(item, "capacity_provider")}
         for item in _blocks(body, "capacity_provider_strategy")
@@ -1890,7 +2627,86 @@ def _eks(body: dict) -> dict:
     return props
 
 
+def _guardduty_detector(body: dict) -> dict:
+    """aws_guardduty_detector. Values stay as written, so one from a variable does not hide the
+    other features; the check only reads a literal."""
+    props: dict = {}
+    _set(props, "Enable", _ref(body, "enable"))
+    if _block_is_unknown(body, "datasources"):
+        props["DataSources"] = UNRESOLVED
+        return props
+    sources = _first_block(body, "datasources")
+    if sources:
+        audit_logs = _first_block(_first_block(sources, "kubernetes"), "audit_logs")
+        scan = _first_block(_first_block(sources, "malware_protection"), "scan_ec2_instance_with_findings")
+        props["DataSources"] = {
+            "S3Logs": {"Enable": _ref(_first_block(sources, "s3_logs"), "enable")},
+            "Kubernetes": {"AuditLogs": {"Enable": _ref(audit_logs, "enable")}},
+            "MalwareProtection": {"ScanEc2InstanceWithFindings": {
+                "EbsVolumes": _ref(_first_block(scan, "ebs_volumes"), "enable")}},
+        }
+    return props
+
+
+def _guardduty_detector_feature(body: dict) -> dict:
+    """aws_guardduty_detector_feature: Terraform sets a feature from a resource of its own."""
+    return {"Name": _ref(body, "name"), "Status": _ref(body, "status")}
+
+
+def _securityhub_account(body: dict) -> dict:
+    props: dict = {}
+    _set(props, "EnableDefaultStandards", _ref(body, "enable_default_standards"))
+    return props
+
+
+def _securityhub_standards_subscription(body: dict) -> dict:
+    return {"StandardsArn": _ref(body, "standards_arn")}
+
+
+def _config_recorder(body: dict) -> dict:
+    """aws_config_configuration_recorder. Only all_supported is compared; the rest is presence."""
+    if _block_is_unknown(body, "recording_group"):
+        return {"RecordingGroup": UNRESOLVED}
+    group = _first_block(body, "recording_group")
+    if not group:
+        return {}
+    props = {"AllSupported": _ref(group, "all_supported"), "ResourceTypes": _ref(group, "resource_types")}
+    for block, key in (("exclusion_by_resource_types", "ExclusionByResourceTypes"),
+                       ("recording_strategy", "RecordingStrategy")):
+        if _block_is_unknown(group, block) or _blocks(group, block):
+            props[key] = _OPAQUE
+    return {"RecordingGroup": props}
+
+
+def _macie2_account(body: dict) -> dict:
+    props: dict = {}
+    _set(props, "Status", _ref(body, "status"))
+    return props
+
+
+def _budgets_budget(body: dict) -> dict:
+    """aws_budgets_budget. A notification block holds what CloudFormation calls NotificationsWithSubscribers."""
+    if _block_is_unknown(body, "notification"):
+        return {"NotificationsWithSubscribers": UNRESOLVED}
+    return {"NotificationsWithSubscribers": _OPAQUE} if _blocks(body, "notification") else {}
+
+
 _ADAPTERS: dict[str, Callable[[dict], dict]] = {
+    "aws_guardduty_detector": _guardduty_detector,
+    "aws_guardduty_detector_feature": _guardduty_detector_feature,
+    "aws_securityhub_account": _securityhub_account,
+    "aws_securityhub_standards_subscription": _securityhub_standards_subscription,
+    "aws_config_configuration_recorder": _config_recorder,
+    "aws_macie2_account": _macie2_account,
+    "aws_budgets_budget": _budgets_budget,
+    "aws_athena_workgroup": _athena_workgroup,
+    "aws_glue_job": _glue_job,
+    "aws_glue_security_configuration": _glue_security_configuration,
+    "aws_emr_cluster": _emr_cluster,
+    "aws_emr_security_configuration": _emr_security_configuration,
+    "aws_dms_replication_instance": _dms_replication_instance,
+    "aws_dms_endpoint": _dms_endpoint,
+    "aws_kinesis_firehose_delivery_stream": _firehose_delivery_stream,
     "aws_s3_bucket": _s3_bucket,
     "aws_db_instance": _db,
     "aws_rds_cluster": _db,
@@ -1937,6 +2753,10 @@ _ADAPTERS: dict[str, Callable[[dict], dict]] = {
     "aws_apigatewayv2_route": _apiv2_route,
     "aws_apigatewayv2_api": _apiv2_api,
     "aws_autoscaling_group": _asg,
+    "aws_autoscaling_policy": _asg_link,
+    "aws_autoscaling_schedule": _asg_link,
+    "aws_autoscaling_attachment": _asg_link,
+    "aws_ecs_cluster": _ecs_cluster,
     "aws_ecs_service": _ecs_service,
     "aws_eks_cluster": _eks,
     "aws_iam_policy": _iam_policy,
@@ -1966,6 +2786,29 @@ _ADAPTERS: dict[str, Callable[[dict], dict]] = {
     "aws_neptune_cluster": _storage_encrypted_cluster,
     "aws_msk_cluster": _msk_cluster,
     "aws_cloudfront_distribution": _cloudfront_distribution,
+    "aws_cloudwatch_log_delivery_source": _log_delivery_source,
+    "aws_sagemaker_notebook_instance": _sagemaker_notebook,
+    "aws_sagemaker_endpoint_configuration": _sagemaker_endpoint_config,
+    "aws_fsx_lustre_file_system": _fsx_file_system("LUSTRE", "LustreConfiguration"),
+    "aws_fsx_windows_file_system": _fsx_file_system("WINDOWS", "WindowsConfiguration"),
+    "aws_fsx_ontap_file_system": _fsx_file_system("ONTAP", "OntapConfiguration"),
+    "aws_fsx_openzfs_file_system": _fsx_file_system("OPENZFS", "OpenZFSConfiguration"),
+    "aws_fsx_data_repository_association": _fsx_data_repository_association,
+    "aws_route53_zone": _route53_zone,
+    "aws_route53_record": _route53_record,
+    "aws_route53_hosted_zone_dnssec": _route53_zone_link("hosted_zone_id"),
+    "aws_route53_key_signing_key": _route53_zone_link("hosted_zone_id"),
+    "aws_route53_query_log": _route53_zone_link("zone_id"),
+    "aws_acm_certificate": _acm_certificate,
+    "aws_cloudwatch_metric_alarm": _metric_alarm,
+    "aws_cloudwatch_composite_alarm": _composite_alarm,
+    "aws_globalaccelerator_endpoint_group": _globalaccelerator_endpoint_group,
+    "aws_appsync_graphql_api": _appsync_graphql_api,
+    "aws_appsync_api_cache": _appsync_api_cache,
+    "aws_transfer_server": _transfer_server,
+    "aws_apprunner_service": _apprunner_service,
+    "aws_elastic_beanstalk_environment": _beanstalk_environment,
+    "aws_elastic_beanstalk_configuration_template": _beanstalk_configuration_template,
     "aws_wafv2_web_acl_association": _waf_association,
     "aws_wafregional_web_acl_association": _waf_association,
     "aws_sqs_queue_policy": _resource_policy,
@@ -2002,6 +2845,7 @@ _BLOCK_PROPERTY: dict[str, str] = {
     "versioning": "VersioningConfiguration",
     "server_side_encryption_configuration": "BucketEncryption",
     "logging": "LoggingConfiguration",
+    "replication_configuration": "ReplicationConfiguration",
     "instance_market_options": "LaunchTemplateData",
     # Not LaunchTemplateData: an unknown metadata block must not hide the Spot check.
     "metadata_options": "MetadataOptions",
@@ -2494,7 +3338,7 @@ def resources_from_terraform(
     _merge_ecr_lifecycle(blocks, resources)
     _merge_method_settings(blocks, resources)
     _resolve_iam(resources, blocks)
-    return list(resources.values())
+    return [*resources.values(), *_module_call_records(module_dir)]
 
 
 def _inherited_tags(block: _Block, default_tags: dict[str, dict[str, Any] | None]) -> dict[str, Any] | None:

@@ -21,7 +21,7 @@ from pathlib import Path
 from typing import Any, Iterator, List
 
 from aws_arch_agent.models import Finding
-from aws_arch_agent.rules.resource_model import Resource
+from aws_arch_agent.rules.resource_model import TF_MODULE_CALL, Resource
 
 CHECK_ID = "CF-TAG-001"
 # The repo-wide tag guesses a policy check replaces where templates are scanned.
@@ -168,7 +168,7 @@ def findings(resources: List[Resource], template_path: Path) -> List[Finding]:
     policy = _active
     if policy is None or not policy.required:
         return []
-    if resources:
+    if any(r.source_type != TF_MODULE_CALL for r in resources):
         _checked = True
     out: List[Finding] = []
     for res in resources:
