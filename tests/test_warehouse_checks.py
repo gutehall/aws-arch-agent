@@ -138,6 +138,19 @@ def test_neptune_iam_auth(tmp_path: Path, value: Any, fires: bool) -> None:
     assert _cf(tmp_path, {"N": _neptune(IamAuthEnabled=value)}) == ({"CF-NEP-005": {"N"}} if fires else {})
 
 
+@pytest.mark.parametrize(("key", "factory", "check"), [
+    ("SnapshotIdentifier", _docdb, "CF-DOCDB-002"),
+    ("SourceDBClusterIdentifier", _docdb, "CF-DOCDB-002"),
+    ("SnapshotIdentifier", _neptune, "CF-NEP-004"),
+    ("SourceDBClusterIdentifier", _neptune, "CF-NEP-004"),
+])
+def test_restored_cluster_with_no_retention_is_not_judged(tmp_path: Path, key: str, factory: Any, check: str) -> None:
+    unset = factory(**{key: "source"})
+    del unset["Properties"]["BackupRetentionPeriod"]
+    assert _cf(tmp_path, {"C": unset}) == {}
+    assert _cf(tmp_path, {"C": factory(**{key: "source", "BackupRetentionPeriod": 1})}) == {check: {"C"}}
+
+
 def test_deletion_protection_is_prod_advice(tmp_path: Path) -> None:
     resources = {"D": _docdb(DeletionProtection=False), "N": _neptune(DeletionProtection=False)}
     assert _cf(tmp_path, resources, "dev-stack.json") == {}
@@ -220,6 +233,12 @@ resource "aws_neptune_cluster" "bare" {}
 resource "aws_neptune_cluster" "good" {
   backup_retention_period             = 7
   enable_cloudwatch_logs_exports      = ["audit"]
+  deletion_protection                 = true
+  iam_database_authentication_enabled = true
+}
+resource "aws_neptune_cluster" "export_expression" {
+  backup_retention_period             = 7
+  enable_cloudwatch_logs_exports      = [data.aws_ssm_parameter.export.value]
   deletion_protection                 = true
   iam_database_authentication_enabled = true
 }

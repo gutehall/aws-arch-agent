@@ -2042,6 +2042,16 @@ def _days(res: Resource, key: str, default: int) -> int | None:
         return None
 
 
+def _short_backups(res: Resource) -> int | None:
+    """Days of backup under the minimum, or None. Unset on a cluster restored from a snapshot or
+    another cluster is not judged: the template does not show what it starts with."""
+    restored = any(res.properties.get(k) is not None for k in ("SnapshotIdentifier", "SourceDBClusterIdentifier"))
+    if restored and res.properties.get("BackupRetentionPeriod") is None:
+        return None
+    days = _days(res, "BackupRetentionPeriod", 1)
+    return days if days is not None and days < _MIN_BACKUP_DAYS else None
+
+
 def _exports_audit_logs(res: Resource) -> bool | None:
     """Whether audit is in EnableCloudwatchLogsExports: None when the list cannot be read."""
     exports = res.properties.get("EnableCloudwatchLogsExports")
@@ -2053,7 +2063,8 @@ def _exports_audit_logs(res: Resource) -> bool | None:
         return None
     if any(isinstance(e, str) and e.lower() == "audit" for e in exports):
         return True
-    return False if all(isinstance(e, str) for e in exports) else None
+    # A Terraform expression is a str subclass, and may name audit once it is resolved.
+    return False if all(type(e) is str for e in exports) else None
 
 
 def _redshift_logs(cluster: Resource, clusters: List[Resource], logging: List[Resource]) -> bool:
@@ -2091,7 +2102,7 @@ def _warehouse_findings(resources: List[Resource], template_path: Path) -> List[
             add(cluster, "CF-RS-003", "Redshift cluster has no automated snapshots", "Medium", "Reliability",
                 "AutomatedSnapshotRetentionPeriod is 0, which turns automated snapshots off. Set it to at "
                 "least 7 days, the minimum Security Hub Redshift.3 expects. In CDK: "
-                "backup: { automatedSnapshotRetention: Duration.days(7) } on a CfnCluster.")
+                "automatedSnapshotRetentionPeriod on a CfnCluster.")
         if not _redshift_logs(cluster, clusters, logging):
             add(cluster, "CF-RS-004", "Redshift cluster has no audit logging", "Low", "Operational Excellence",
                 "Set LoggingProperties (Terraform aws_redshift_logging) to send connection and user logs "
@@ -2120,8 +2131,8 @@ def _warehouse_findings(resources: List[Resource], template_path: Path) -> List[
                     "changed later: create a new cluster. In CDK: masterUser and defaultDatabaseName.")
 
     for docdb in (r for r in usable if r.type == "docdb_cluster"):
-        days = _days(docdb, "BackupRetentionPeriod", 1)
-        if days is not None and days < _MIN_BACKUP_DAYS:
+        days = _short_backups(docdb)
+        if days is not None:
             add(docdb, "CF-DOCDB-002", "DocumentDB cluster keeps backups for under 7 days", "Low", "Reliability",
                 f"BackupRetentionPeriod is {days}. Set it to at least 7 (Security Hub DocumentDB.2). In "
                 "CDK: backup: { retention: Duration.days(7) }.")
@@ -2145,8 +2156,8 @@ def _warehouse_findings(resources: List[Resource], template_path: Path) -> List[
             add(neptune, "CF-NEP-003", "Neptune cluster has no deletion protection", "Low", "Reliability",
                 "Set DeletionProtection: true, so the cluster cannot be deleted by mistake (Security Hub "
                 "Neptune.4). In CDK: deletionProtection: true.")
-        days = _days(neptune, "BackupRetentionPeriod", 1)
-        if days is not None and days < _MIN_BACKUP_DAYS:
+        days = _short_backups(neptune)
+        if days is not None:
             add(neptune, "CF-NEP-004", "Neptune cluster keeps backups for under 7 days", "Low", "Reliability",
                 f"BackupRetentionPeriod is {days}. Set it to at least 7 (Security Hub Neptune.5). In CDK: "
                 "backupRetention: Duration.days(7).")
