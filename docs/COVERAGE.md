@@ -17,7 +17,6 @@ Which CDK rules have a template check, and which AWS Foundational Security Best 
 
 | Work | Adds template checks for |
 | -- | -- |
-| `s3` | S3 replication, ownership and notifications |
 | `cloudfront` | More CloudFront settings |
 | `sagemaker-fsx` | SageMaker and FSx |
 | `app-services` | AppSync, Transfer Family, App Runner and Elastic Beanstalk |
@@ -27,7 +26,7 @@ Which CDK rules have a template check, and which AWS Foundational Security Best 
 
 ## CDK rules
 
-172 rules: 104 covered, 7 partial, 21 planned, 10 account, 5 cdk-only, 25 advice.
+172 rules: 106 covered, 7 partial, 19 planned, 10 account, 5 cdk-only, 25 advice.
 
 | Rule | Title | Template check | Status | Note |
 | -- | -- | -- | -- | -- |
@@ -124,7 +123,7 @@ Which CDK rules have a template check, and which AWS Foundational Security Best 
 | REL-023 | Blue-green deployment not configured for critical services |  | `advice` | Deployment strategy, not a resource property. |
 | REL-024 | SQS visibility timeout may need review | `CF-SQS-003` | `covered` |  |
 | REL-025 | DynamoDB global tables not configured for multi-region |  | `advice` | Global tables depend on multi-Region needs. |
-| REL-026 | S3 replication not configured for critical buckets |  | `planned: s3` |  |
+| REL-026 | S3 replication not configured for critical buckets | `CF-S3-010` | `covered` |  |
 | REL-027 | Lambda reserved concurrency not configured for critical functions | `CF-LAM-006` | `covered` |  |
 | REL-028 | API Gateway request validation not configured | `CF-APIGW-006` | `covered` |  |
 | REL-029 | EventBridge rule retry policy not configured | `CF-EB-002` | `covered` |  |
@@ -176,7 +175,7 @@ Which CDK rules have a template check, and which AWS Foundational Security Best 
 | OPS-021 | CloudWatch dashboards not configured |  | `planned: alarms` |  |
 | OPS-022 | Resource tagging strategy may be incomplete |  | `advice` | Tag choice. CF-TAG-001 checks a configured tag policy. |
 | OPS-023 | SSM Parameter Store throughput setting may need review |  | `advice` | Restated: it used to recommend the advanced tier for throughput, but AWS sets throughput per account and Region, whatever the tier. Throughput needs traffic data. `CF-SSM-002` reports the separate cost of an advanced parameter that does not need that tier. |
-| OPS-025 | S3 replication metrics not enabled |  | `planned: s3` |  |
+| OPS-025 | S3 replication metrics not enabled | `CF-S3-011` | `covered` |  |
 | PERF-001 | Compute may not use Graviton/ARM (cost and performance) | `CF-PERF-001` | `partial` | Checks Lambda only; PERF-001 also flags EC2 and ECS. |
 | PERF-002 | No caching layer detected (performance) | `CF-PERF-002` | `partial` | API Gateway and Lambda only; PERF-002 also counts load balancers, API caches and DAX. |
 | PERF-003 | DynamoDB table may use provisioned capacity (consider on-demand) |  | `advice` | On-demand versus provisioned depends on traffic. |
@@ -359,11 +358,10 @@ Controls a template can show. Account-level controls (for example S3.1, EC2.7 an
 | Redshift.10 | `CF-RS-001` | `AWS::Redshift::Cluster` |
 | Route53.2 | `planned: dns-certs` | `AWS::Route53::HostedZone` |
 | S3.5 | `CF-S3-005` | `AWS::S3::BucketPolicy` |
-| S3.7 | planned: s3 | `AWS::S3::Bucket` |
+| S3.7 | `CF-S3-010` | `AWS::S3::Bucket` |
 | S3.8 | `CF-S3-001` | `AWS::S3::Bucket` |
 | S3.9 | `CF-S3-004` | `AWS::S3::Bucket` |
-| S3.11 | planned: s3 | `AWS::S3::Bucket` |
-| S3.12 | planned: s3 | `AWS::S3::Bucket` |
+| S3.12 | `CF-S3-008` | `AWS::S3::Bucket` |
 | S3.14 | `CF-S3-003` | `AWS::S3::Bucket` |
 | SageMaker.1 | `planned: sagemaker-fsx` | `AWS::SageMaker::NotebookInstance` |
 | SageMaker.2 | `planned: sagemaker-fsx` | `AWS::SageMaker::NotebookInstance` |

@@ -166,6 +166,9 @@ _S3_PARTS: dict[str, str] = {
     "aws_s3_bucket_policy": "BucketPolicy",
     "aws_s3_bucket_lifecycle_configuration": "LifecycleConfiguration",
     "aws_s3_bucket_intelligent_tiering_configuration": "IntelligentTieringConfigurations",
+    "aws_s3_bucket_ownership_controls": "OwnershipControls",
+    "aws_s3_bucket_acl": "AccessControl",
+    "aws_s3_bucket_replication_configuration": "ReplicationConfiguration",
 }
 
 # var/local are module inputs; each/count/self differ per instance. None is known statically.
@@ -556,6 +559,12 @@ def _s3_bucket(body: dict) -> dict:
         props["LoggingConfiguration"] = {"DestinationBucketName": _ref(logging, "target_bucket")}
     if _blocks(body, "lifecycle_rule"):
         props["LifecycleConfiguration"] = _lifecycle_rules(_blocks(body, "lifecycle_rule"))
+    if type(body.get("bucket")) is str:
+        props["BucketName"] = body["bucket"]
+    _set(props, "AccessControl", _s3_acl(body))
+    replication = _first_block(body, "replication_configuration")
+    if replication:
+        props["ReplicationConfiguration"] = _s3_replication(replication, "rules")
     return props
 
 
@@ -563,8 +572,56 @@ def _s3_encryption(body: dict) -> Any:
     configs = []
     for rule in _blocks(body, "rule"):
         default = _first_block(rule, "apply_server_side_encryption_by_default")
-        configs.append({"ServerSideEncryptionByDefault": {"SSEAlgorithm": _v(default, "sse_algorithm")}})
+        config: dict = {"ServerSideEncryptionByDefault": {"SSEAlgorithm": _v(default, "sse_algorithm")}}
+        if "bucket_key_enabled" in rule:  # an unknown value must not hide the algorithm from CF-S3-002
+            config["BucketKeyEnabled"] = _known(_v(rule, "bucket_key_enabled"))
+        configs.append(config)
     return {"ServerSideEncryptionConfiguration": configs}
+
+
+# Terraform canned ACL -> CloudFormation AccessControl.
+_S3_CANNED_ACLS: dict[str, str] = {
+    "private": "Private",
+    "public-read": "PublicRead",
+    "public-read-write": "PublicReadWrite",
+    "aws-exec-read": "AwsExecRead",
+    "authenticated-read": "AuthenticatedRead",
+    "bucket-owner-read": "BucketOwnerRead",
+    "bucket-owner-full-control": "BucketOwnerFullControl",
+    "log-delivery-write": "LogDeliveryWrite",
+}
+
+
+def _s3_acl(body: dict) -> Any:
+    """The canned ACL as AccessControl. Grants are not read: the bucket's ACL is then unknown."""
+    if {"grant", "access_control_policy"} & (body.keys() | _dynamic_names(body)):
+        return UNRESOLVED
+    acl = _v(body, "acl")
+    if acl is None or acl is UNRESOLVED:
+        return acl
+    return _S3_CANNED_ACLS.get(acl, UNRESOLVED) if type(acl) is str else UNRESOLVED
+
+
+def _s3_replication(body: dict, rule_key: str) -> Any:
+    """Replication rules in CloudFormation shape. rule_key is `rule`, or `rules` on the inline
+    block (provider < v4). A dynamic rule makes the whole configuration unknown. One unknown
+    value is kept as _OPAQUE: the bucket still has replication, and its other rules can be read."""
+    if rule_key in _dynamic_names(body):
+        return UNRESOLVED
+    rules = []
+    for rule in _blocks(body, rule_key):
+        destination = _first_block(rule, "destination")
+        if not destination or "destination" in _dynamic_names(rule):
+            rules.append({"Status": _known(_v(rule, "status")), "Destination": _OPAQUE})
+            continue
+        item: dict = {"Bucket": _known(_ref(destination, "bucket"))}
+        for block, cf_key in (("metrics", "Metrics"), ("replication_time", "ReplicationTime")):
+            if block in _dynamic_names(destination):
+                item[cf_key] = _OPAQUE
+            elif _first_block(destination, block):
+                item[cf_key] = {"Status": _known(_v(_first_block(destination, block), "status"))}
+        rules.append({"Status": _known(_v(rule, "status")), "Destination": item})
+    return {"Rules": rules}
 
 
 def _s3_part(part_type: str, body: dict) -> Any:
@@ -586,6 +643,12 @@ def _s3_part(part_type: str, body: dict) -> Any:
         return _lifecycle_rules(_blocks(body, "rule"))
     if part_type == "aws_s3_bucket_intelligent_tiering_configuration":
         return [{"Status": _known(_v(body, "status")) or "Enabled"}]
+    if part_type == "aws_s3_bucket_ownership_controls":
+        return {"Rules": [{"ObjectOwnership": _v(rule, "object_ownership")} for rule in _blocks(body, "rule")]}
+    if part_type == "aws_s3_bucket_acl":
+        return _s3_acl(body)
+    if part_type == "aws_s3_bucket_replication_configuration":
+        return _s3_replication(body, "rule")
     return {"DestinationBucketName": _ref(body, "target_bucket")}
 
 
@@ -1229,6 +1292,10 @@ def _cloudfront_distribution(body: dict) -> dict:
     web_acl = _ref(body, "web_acl_id")
     if web_acl is not None:
         config["WebACLId"] = _known(web_acl)
+    if "logging_config" in _dynamic_names(body):
+        config["Logging"] = {"Bucket": _OPAQUE}
+    elif _first_block(body, "logging_config"):
+        config["Logging"] = {"Bucket": _known(_ref(_first_block(body, "logging_config"), "bucket"))}
     return {"DistributionConfig": config}
 
 
@@ -2254,6 +2321,7 @@ _BLOCK_PROPERTY: dict[str, str] = {
     "versioning": "VersioningConfiguration",
     "server_side_encryption_configuration": "BucketEncryption",
     "logging": "LoggingConfiguration",
+    "replication_configuration": "ReplicationConfiguration",
     "instance_market_options": "LaunchTemplateData",
     # Not LaunchTemplateData: an unknown metadata block must not hide the Spot check.
     "metadata_options": "MetadataOptions",

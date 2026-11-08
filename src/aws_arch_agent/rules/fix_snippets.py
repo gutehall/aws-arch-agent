@@ -1380,6 +1380,90 @@ _CLOUDFORMATION["CF-FH-001"] = """$name:
   Properties:
     DeliveryStreamEncryptionConfigurationInput:
       KeyType: AWS_OWNED_CMK"""
+_CLOUDFORMATION["CF-S3-008"] = """$name:
+  Type: AWS::S3::Bucket
+  Properties:
+    # keep the other properties as they are, and remove AccessControl
+    OwnershipControls:
+      Rules:
+        - ObjectOwnership: BucketOwnerEnforced"""
+
+_CLOUDFORMATION["CF-S3-009"] = """$name:
+  Type: AWS::S3::Bucket
+  Properties:
+    # keep the other properties as they are, and remove AccessControl
+    OwnershipControls:
+      Rules:
+        - ObjectOwnership: BucketOwnerEnforced
+    PublicAccessBlockConfiguration:
+      BlockPublicAcls: true
+      IgnorePublicAcls: true
+      BlockPublicPolicy: true
+      RestrictPublicBuckets: true"""
+
+_CLOUDFORMATION["CF-S3-010"] = """$name:
+  Type: AWS::S3::Bucket
+  Properties:
+    # keep the other properties as they are
+    VersioningConfiguration:
+      Status: Enabled
+    ReplicationConfiguration:
+      Role: !GetAtt ${name}ReplicationRole.Arn # a role S3 can assume to replicate
+      Rules:
+        - Id: to-other-region
+          Status: Enabled
+          Priority: 1
+          Filter:
+            Prefix: ''
+          DeleteMarkerReplication:
+            Status: Enabled
+          Destination:
+            Bucket: arn:aws:s3:::my-replica-bucket # versioned, in another Region
+            Metrics:
+              Status: Enabled
+              EventThreshold:
+                Minutes: 15
+            ReplicationTime:
+              Status: Enabled
+              Time:
+                Minutes: 15"""
+
+_CLOUDFORMATION["CF-S3-011"] = """$name:
+  Type: AWS::S3::Bucket
+  Properties:
+    # keep the other properties as they are
+    ReplicationConfiguration:
+      Role: !GetAtt ${name}ReplicationRole.Arn
+      Rules:
+        - Id: to-other-region # in each rule, add Metrics and ReplicationTime
+          Status: Enabled
+          Priority: 1
+          Filter:
+            Prefix: ''
+          DeleteMarkerReplication:
+            Status: Enabled
+          Destination:
+            Bucket: arn:aws:s3:::my-replica-bucket
+            Metrics:
+              Status: Enabled
+              EventThreshold:
+                Minutes: 15
+            ReplicationTime:
+              Status: Enabled
+              Time:
+                Minutes: 15"""
+
+_CLOUDFORMATION["CF-S3-012"] = """$name:
+  Type: AWS::S3::Bucket
+  Properties:
+    # keep the other properties as they are
+    BucketEncryption:
+      ServerSideEncryptionConfiguration:
+        - BucketKeyEnabled: true
+          ServerSideEncryptionByDefault:
+            SSEAlgorithm: aws:kms
+            KMSMasterKeyID: !Ref ${name}Key"""
+
 _CLOUDFORMATION["CF-EMR-001"] = """$name:
   Type: AWS::EMR::Cluster
   Properties:
@@ -1641,6 +1725,114 @@ _TERRAFORM["CF-FH-001"] = """resource "aws_kinesis_firehose_delivery_stream" "$t
     key_type = "AWS_OWNED_CMK"
   }
 }"""
+_TERRAFORM["CF-S3-008"] = """# remove any aws_s3_bucket_acl for this bucket, and the inline acl argument
+resource "aws_s3_bucket_ownership_controls" "$tf_name" {
+  bucket = aws_s3_bucket.$tf_name.id
+
+  rule {
+    object_ownership = "BucketOwnerEnforced"
+  }
+}"""
+
+_TERRAFORM["CF-S3-009"] = """# remove any aws_s3_bucket_acl for this bucket, and the inline acl argument
+resource "aws_s3_bucket_ownership_controls" "$tf_name" {
+  bucket = aws_s3_bucket.$tf_name.id
+
+  rule {
+    object_ownership = "BucketOwnerEnforced"
+  }
+}
+
+resource "aws_s3_bucket_public_access_block" "$tf_name" {
+  bucket                  = aws_s3_bucket.$tf_name.id
+  block_public_acls       = true
+  ignore_public_acls      = true
+  block_public_policy     = true
+  restrict_public_buckets = true
+}"""
+
+_TERRAFORM["CF-S3-010"] = """# the bucket and the destination need versioning on
+resource "aws_s3_bucket_replication_configuration" "$tf_name" {
+  bucket = aws_s3_bucket.$tf_name.id
+  role   = aws_iam_role.replication.arn # a role S3 can assume to replicate
+
+  rule {
+    id     = "to-other-region"
+    status = "Enabled"
+
+    filter {}
+
+    delete_marker_replication {
+      status = "Enabled"
+    }
+
+    destination {
+      bucket = aws_s3_bucket.replica.arn # in another Region
+
+      metrics {
+        status = "Enabled"
+        event_threshold {
+          minutes = 15
+        }
+      }
+
+      replication_time {
+        status = "Enabled"
+        time {
+          minutes = 15
+        }
+      }
+    }
+  }
+}"""
+
+_TERRAFORM["CF-S3-011"] = """resource "aws_s3_bucket_replication_configuration" "$tf_name" {
+  bucket = aws_s3_bucket.$tf_name.id
+  role   = aws_iam_role.replication.arn
+
+  rule {
+    id     = "to-other-region" # in each rule, add metrics and replication_time
+    status = "Enabled"
+
+    filter {}
+
+    delete_marker_replication {
+      status = "Enabled"
+    }
+
+    destination {
+      bucket = aws_s3_bucket.replica.arn
+
+      metrics {
+        status = "Enabled"
+        event_threshold {
+          minutes = 15
+        }
+      }
+
+      replication_time {
+        status = "Enabled"
+        time {
+          minutes = 15
+        }
+      }
+    }
+  }
+}"""
+
+_TERRAFORM["CF-S3-012"] = """resource "aws_s3_bucket_server_side_encryption_configuration" "$tf_name" {
+  bucket = aws_s3_bucket.$tf_name.id
+
+  rule {
+    bucket_key_enabled = true
+
+    apply_server_side_encryption_by_default {
+      sse_algorithm     = "aws:kms"
+      kms_master_key_id = aws_kms_key.$tf_name.arn
+    }
+  }
+}"""
+
 _TERRAFORM["CF-EMR-001"] = """resource "aws_emr_cluster" "$tf_name" {
   # keep the other arguments as they are
   ec2_attributes {

@@ -67,6 +67,8 @@ CF_COVERS_STATIC: dict[str, tuple[str, ...]] = {
     "CF-MSK-002": ("SEC-045",),
     "CF-EBS-002": ("COST-008",),
     "CF-GEN-001": ("SUST-007",),
+    "CF-S3-010": ("REL-026",),
+    "CF-S3-011": ("OPS-025",),
     "CF-S3-006": ("COST-013",),
     "CF-S3-007": ("COST-007",),
     "CF-DDB-003": ("COST-003",),
@@ -444,6 +446,8 @@ CHECK_PROPERTIES: dict[str, frozenset[str]] = {
         # Template-level: _emr_dms_findings skips what it cannot read.
         **{c: set() for c in ("CF-EMR-001", "CF-EMR-002", "CF-EMR-003", "CF-DMS-001", "CF-DMS-002",
                               "CF-DMS-003", "CF-DMS-004")},
+        # Template-level: _s3_settings_findings skips what it cannot read.
+        **{c: set() for c in ("CF-S3-008", "CF-S3-009", "CF-S3-010", "CF-S3-011", "CF-S3-012")},
         # Template-level: _analytics_findings skips what it cannot read.
         **{c: set() for c in ("CF-ATH-001", "CF-ATH-002", "CF-GLUE-001", "CF-GLUE-002", "CF-GLUE-003",
                               "CF-FH-001")},
@@ -481,6 +485,8 @@ _F, _SB, _ID, _DP, _NET, _RES, _OBS, _SUS = (
     "network-exposure", "resilience", "observability", "sustainability",
 )
 CF_THEMES: dict[str, tuple[str, ...]] = {
+    "CF-S3-008": (_DP,), "CF-S3-009": (_NET, _DP), "CF-S3-010": (_RES, _DP), "CF-S3-011": (_OBS, _DP),
+    "CF-S3-012": (_F,),
     "CF-EMR-001": (_NET,), "CF-EMR-002": (_DP,), "CF-EMR-003": (_DP,),
     "CF-DMS-001": (_NET,), "CF-DMS-002": (_SB,), "CF-DMS-003": (_DP,), "CF-DMS-004": (_RES,),
     "CF-ATH-001": (_DP,), "CF-ATH-002": (_DP,), "CF-GLUE-001": (_DP,), "CF-GLUE-002": (_OBS,),
@@ -3771,6 +3777,247 @@ def _firehose_direct_put(stream: Resource) -> bool:
             and not any(key.endswith("SourceConfiguration") for key in stream.properties))
 
 
+def _s3_ownership(bucket: Resource) -> str | None:
+    """The bucket's literal ObjectOwnership, "" when unset, or None when the scan cannot read it."""
+    if "OwnershipControls" in bucket.unresolved:
+        return None
+    controls = bucket.properties.get("OwnershipControls")
+    if controls is None:
+        return ""
+    rules = controls.get("Rules") if isinstance(controls, dict) and not _is_intrinsic(controls) else None
+    if not isinstance(rules, list) or len(rules) != 1 or not isinstance(rules[0], dict):
+        return None
+    ownership = rules[0].get("ObjectOwnership")
+    return ownership if type(ownership) is str else None
+
+
+def _s3_public_acls_apply(bucket: Resource) -> bool:
+    """True when the bucket's Block Public Access settings are known not to stop a public ACL:
+    BlockPublicAcls rejects one and IgnorePublicAcls makes S3 ignore it."""
+    if "PublicAccessBlockConfiguration" in bucket.unresolved:
+        return False
+    block = bucket.properties.get("PublicAccessBlockConfiguration")
+    if block is None:
+        return True
+    if not isinstance(block, dict) or _is_intrinsic(block):
+        return False
+    return all(_flag(block.get(key)) is False for key in ("BlockPublicAcls", "IgnorePublicAcls"))
+
+
+def _s3_acls_in_use(acl: Any, ownership: str | None) -> bool:
+    """S3.12. An unset ownership is not ACL use: new buckets default to BucketOwnerEnforced, so
+    it needs an explicit ACL as well. LogDeliveryWrite only grants the S3 log delivery group,
+    not user access, so it passes that control. An ACL the scan cannot read may be that one."""
+    if (acl is not None and type(acl) is not str) or acl == "LogDeliveryWrite":
+        return False
+    if ownership in ("ObjectWriter", "BucketOwnerPreferred"):
+        return True
+    return ownership == "" and acl not in (None, "Private")
+
+
+def _names_bucket(value: Any, bucket: Resource) -> bool:
+    """True when a value names this bucket, by reference or by its literal name, ARN or domain."""
+    if _value_mentions(value, bucket.name):
+        return True
+    literal = bucket.properties.get("BucketName")
+    return (type(literal) is str and type(value) is str
+            and (value == literal or value.endswith(f":::{literal}") or value.startswith(f"{literal}.s3")))
+
+
+def _cloudfront_log_buckets(resources: List[Resource]) -> list[Any]:
+    """The buckets CloudFront standard logs go to, as written. Those logs need ACLs on the bucket."""
+    out = []
+    for dist in (r for r in resources if r.type == "cloudfront_distribution"):
+        config = dist.properties.get("DistributionConfig")
+        logging = config.get("Logging") if isinstance(config, dict) else None
+        if isinstance(logging, dict) and logging.get("Bucket") is not None:
+            out.append(logging["Bucket"])
+    return out
+
+
+def _s3_replication_rules(bucket: Resource) -> list[dict]:
+    """The replication rules the scan can read. A rule from Fn::If is left out."""
+    config = bucket.properties.get("ReplicationConfiguration")
+    if "ReplicationConfiguration" in bucket.unresolved or not isinstance(config, dict):
+        return []
+    rules = config.get("Rules")
+    if _is_intrinsic(config) or not isinstance(rules, list):
+        return []
+    return [rule for rule in rules if isinstance(rule, dict) and not _is_intrinsic(rule)]
+
+
+def _s3_rule_destination(rule: dict) -> dict | None:
+    destination = rule.get("Destination")
+    return destination if isinstance(destination, dict) and not _is_intrinsic(destination) else None
+
+
+def _s3_replication_gaps(bucket: Resource) -> list[str]:
+    """Metrics and ReplicationTime settings that are unset or not Enabled on an enabled rule whose
+    destination can be read. A status the scan cannot read is not judged."""
+    gaps: set[str] = set()
+    for rule in _s3_replication_rules(bucket):
+        destination = _s3_rule_destination(rule)
+        if destination is None or rule.get("Status") != "Enabled":
+            continue
+        for key in ("Metrics", "ReplicationTime"):
+            setting = destination.get(key)
+            if setting is None:
+                gaps.add(key)
+            elif isinstance(setting, dict) and not _is_intrinsic(setting):
+                status = setting.get("Status")
+                if type(status) is str and status != "Enabled":
+                    gaps.add(key)
+    return sorted(gaps)
+
+
+# The word critical, not noncritical, "non-critical" or "not critical".
+_CRITICAL_WORD = re.compile(r"(?<![a-z0-9])(?<!non[-_ ])(?<!not[-_ ])critical(?![a-z0-9])")
+# A log bucket or a replica, by its name. These have little reason to replicate.
+_LOG_OR_REPLICA_WORD = re.compile(r"(?<![a-z0-9])(?:log|logs|logging|replica|replicas)(?![a-z0-9])")
+# Tags holding a sentence, which can mention the word without saying the bucket is critical.
+_FREE_TEXT_TAGS = frozenset({"description", "desc", "notes", "note", "comment", "comments", "summary", "purpose"})
+
+
+def _name_words(text: str) -> str:
+    """Lower case, with camelCase split: CriticalDataBucket -> critical data bucket."""
+    return re.sub(r"(?<=[a-z0-9])(?=[A-Z])", " ", text).lower()
+
+
+def _bucket_names(bucket: Resource) -> list[str]:
+    """The logical id or Terraform label, and the literal bucket name if there is one."""
+    literal = bucket.properties.get("BucketName")
+    return [_name_words(n) for n in (bucket.name.rsplit(".", 1)[-1], literal) if type(n) is str]
+
+
+def _s3_marked_critical(bucket: Resource) -> bool:
+    """True when a literal name or tag says critical. A key such as Critical needs a true value."""
+    if any(_CRITICAL_WORD.search(name) for name in _bucket_names(bucket)):
+        return True
+    for key, value in (tag_policy.effective_tags(bucket) or {}).items():
+        if type(value) is not str or key.lower() in _FREE_TEXT_TAGS:
+            continue
+        if _CRITICAL_WORD.search(_name_words(value)):
+            return True
+        if _CRITICAL_WORD.search(_name_words(key)) and value.lower() in ("true", "yes", "1"):
+            return True
+    return False
+
+
+def _s3_receives_logs(bucket: Resource, buckets: List[Resource], resources: List[Resource],
+                      cloudfront_logs: list[Any]) -> bool:
+    """True when the template shows this bucket receiving logs."""
+    if bucket.properties.get("AccessControl") == "LogDeliveryWrite":
+        return True
+    for other in buckets:
+        logging = other.properties.get("LoggingConfiguration")
+        if (other is not bucket and isinstance(logging, dict)
+                and _names_bucket(logging.get("DestinationBucketName"), bucket)):
+            return True
+    return (any(_names_bucket(value, bucket) for value in cloudfront_logs)
+            or any(_refers_to(trail, bucket) for trail in resources if trail.type == "cloudtrail"))
+
+
+def _s3_needs_replication(bucket: Resource, buckets: List[Resource], resources: List[Resource],
+                          cloudfront_logs: list[Any], prod: bool) -> bool:
+    """A bucket marked critical or in a prod stack, with no replication, that is not itself a
+    replication destination or a log bucket."""
+    if "ReplicationConfiguration" in bucket.unresolved or bucket.properties.get("ReplicationConfiguration"):
+        return False
+    critical = _s3_marked_critical(bucket)
+    if not critical and not prod:
+        return False
+    if _s3_receives_logs(bucket, buckets, resources, cloudfront_logs):
+        return False
+    for other in buckets:
+        for rule in _s3_replication_rules(other):
+            destination = _s3_rule_destination(rule)
+            if destination is not None and _names_bucket(destination.get("Bucket"), bucket):
+                return False
+    # A bucket named for logs or as a replica may get them from outside this template.
+    return critical or not any(_LOG_OR_REPLICA_WORD.search(name) for name in _bucket_names(bucket))
+
+
+def _s3_bucket_key_off(bucket: Resource) -> bool:
+    """True when a default encryption rule uses SSE-KMS with no S3 Bucket Key. DSSE-KMS does not
+    support Bucket Keys, so aws:kms:dsse is not reported."""
+    encryption = bucket.properties.get("BucketEncryption")
+    if "BucketEncryption" in bucket.unresolved or not isinstance(encryption, dict):
+        return False
+    rules = encryption.get("ServerSideEncryptionConfiguration")
+    if not isinstance(rules, list):
+        return False
+    for rule in rules:
+        default = rule.get("ServerSideEncryptionByDefault") if isinstance(rule, dict) else None
+        if (isinstance(default, dict) and default.get("SSEAlgorithm") == "aws:kms"
+                and _flag(rule.get("BucketKeyEnabled")) is False):
+            return True
+    return False
+
+
+def _s3_settings_findings(resources: List[Resource], template_path: Path) -> List[Finding]:
+    """S3 ACLs (CF-S3-008, CF-S3-009), replication (CF-S3-010, CF-S3-011) and Bucket Keys
+    (CF-S3-012). A value the scan cannot read is not judged."""
+    usable = [r for r in resources if not r.malformed]
+    buckets = [r for r in usable if r.type == "s3_bucket"]
+    out: List[Finding] = []
+
+    def add(res: Resource, check_id: str, title: str, severity: Severity, category: str,
+            recommendation: str) -> None:
+        out.append(Finding(
+            id=check_id, title=title, severity=severity, category=category,
+            file=res.file or str(template_path), line=res.line,
+            evidence=f"{res.name} ({res.source_type})", recommendation=recommendation,
+        ))
+
+    prod = bool(buckets) and environments.resolve(template_path, resources) == "prod"
+    cloudfront_logs = _cloudfront_log_buckets(usable)
+    for bucket in buckets:
+        acl = bucket.properties.get("AccessControl")
+        ownership = _s3_ownership(bucket)
+        # A CloudFront log target needs ACLs. A log target the scan cannot tie to a bucket may be this one.
+        takes_cloudfront_logs = any(
+            _names_bucket(value, bucket)
+            or (type(value) is not str and not any(_names_bucket(value, b) for b in buckets))
+            for value in cloudfront_logs
+        )
+        if (acl in ("PublicRead", "PublicReadWrite") and ownership not in (None, "BucketOwnerEnforced")
+                and _s3_public_acls_apply(bucket)):
+            add(bucket, "CF-S3-009", "S3 bucket has a public ACL", "High", "Security",
+                f"AccessControl is {acl}, and Block Public Access on this bucket does not stop it, so anyone can "
+                "read the bucket (Security Hub S3.2), or write to it with PublicReadWrite (Security Hub S3.3). "
+                "Remove the ACL and turn on Block Public Access. To serve files publicly, use CloudFront with "
+                "origin access control. In CDK: remove accessControl and set "
+                "blockPublicAccess: s3.BlockPublicAccess.BLOCK_ALL.")
+        elif ("AccessControl" not in bucket.unresolved and not takes_cloudfront_logs
+              and _s3_acls_in_use(acl, ownership)):
+            add(bucket, "CF-S3-008", "S3 bucket uses ACLs to manage access", "Medium", "Security",
+                "This bucket has ACLs turned on or sets an ACL, and ACLs are a legacy way to grant access "
+                "(Security Hub S3.12). Set OwnershipControls to BucketOwnerEnforced, remove AccessControl, and "
+                "grant access with a bucket policy or IAM. Check first that no client still writes objects with "
+                "an ACL. In CDK: objectOwnership: s3.ObjectOwnership.BUCKET_OWNER_ENFORCED.")
+
+        if _s3_needs_replication(bucket, buckets, usable, cloudfront_logs, prod):
+            add(bucket, "CF-S3-010", "Critical or production S3 bucket has no replication", "Low", "Reliability",
+                "This bucket is marked critical or is in a prod stack, and has no ReplicationConfiguration, so "
+                "its only copy is in one Region (Security Hub S3.7). If the data must survive a Regional failure, "
+                "turn on versioning and replicate to a bucket in another Region. In CDK: replicationRules.")
+        gaps = _s3_replication_gaps(bucket)
+        if gaps:
+            add(bucket, "CF-S3-011", "S3 replication rule has no metrics or replication time control", "Low",
+                "Operational Excellence",
+                f"{' and '.join(gaps)} not enabled in Destination of a replication rule, so replication lag and "
+                "failures are hard to see. Set Metrics and ReplicationTime to Enabled, with a 15 minute threshold. "
+                "S3 Replication Time Control has an extra charge per GB. "
+                "In CDK: metrics and replicationTimeControl on the replication rule.")
+        if _s3_bucket_key_off(bucket):
+            add(bucket, "CF-S3-012", "S3 bucket uses SSE-KMS without an S3 Bucket Key", "Low", "Cost Optimization",
+                "Without a Bucket Key, S3 calls KMS for each object, which adds request cost. Set "
+                "BucketKeyEnabled to true on the encryption rule. Check first that no KMS key policy or audit "
+                "relies on the object ARN in the encryption context: with a Bucket Key it is the bucket ARN. "
+                "In CDK: bucketKeyEnabled: true.")
+    return out
+
+
 def _analytics_findings(resources: List[Resource], template_path: Path) -> List[Finding]:
     """Athena (CF-ATH-001/002), Glue (CF-GLUE-001..003) and Firehose (CF-FH-001). A value the scan
     cannot read is not judged."""
@@ -5639,6 +5886,9 @@ def _run_resource_checks(
 
     # --- Athena workgroups, Glue jobs and security configurations, Firehose delivery streams ---
     findings.extend(_analytics_findings(resources, template_path))
+
+    # --- S3 bucket ACLs and ownership, replication, S3 Bucket Keys ---
+    findings.extend(_s3_settings_findings(resources, template_path))
 
     # --- EMR clusters and security configurations, DMS replication instances and endpoints ---
     findings.extend(_emr_dms_findings(resources, template_path))

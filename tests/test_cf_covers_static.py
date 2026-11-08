@@ -247,6 +247,13 @@ PAIRS: list[tuple[str, str, dict, str]] = [
     ("CF-COST-002", "COST-006",
      {"Type": "AWS::EC2::NatGateway", "Properties": {"SubnetId": {"Ref": "Public"}}},
      "new ec2.Vpc(this, 'Vpc', { natGateways: 1 });"),
+    ("CF-S3-010", "REL-026",
+     {"Type": "AWS::S3::Bucket", "Properties": {"Tags": [{"Key": "Tier", "Value": "critical"}]}},
+     'new s3.Bucket(this, "B");'),
+    ("CF-S3-011", "OPS-025",
+     {"Type": "AWS::S3::Bucket", "Properties": {"ReplicationConfiguration": {"Role": "r", "Rules": [
+         {"Status": "Enabled", "Destination": {"Bucket": "arn:aws:s3:::dest"}}]}}},
+     "new s3.Bucket(this, 'B', { replicationRule: {} });"),
 ]
 
 
