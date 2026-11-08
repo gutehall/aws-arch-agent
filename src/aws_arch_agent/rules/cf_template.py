@@ -93,6 +93,13 @@ CF_COVERS_STATIC: dict[str, tuple[str, ...]] = {
     "CF-APIGW-V2-001": ("OPS-005",),
     # OPS-003 looks at API Gateway and Lambda only, which these three checks cover.
     "CF-APIGW-002": ("OPS-003",),
+    "CF-APIGW-003": ("SEC-009",),
+    "CF-APIGW-V2-003": ("SEC-009",),
+    "CF-APIGW-004": ("SEC-010",),
+    "CF-APIGW-005": ("REL-006",),
+    "CF-APIGW-V2-004": ("REL-006",),
+    "CF-APIGW-006": ("REL-028",),
+    "CF-APIGW-008": ("PERF-004",),
     "CF-APIGW-V2-002": ("OPS-003",),
     "CF-LAM-002": ("OPS-003",),
     # Reports every function without a DLQ, a superset of REL-003 (no DLQ and no onFailure).
@@ -374,6 +381,10 @@ CHECK_PROPERTIES: dict[str, frozenset[str]] = {
         "CF-APIGW-002": {"TracingEnabled"},
         "CF-APIGW-V2-001": {"AccessLogSettings"},
         "CF-APIGW-V2-002": {"TracingEnabled"},
+        # Template-level: _api_gateway_findings skips what it cannot read.
+        **{c: set() for c in ("CF-APIGW-003", "CF-APIGW-004", "CF-APIGW-005", "CF-APIGW-006",
+                              "CF-APIGW-007", "CF-APIGW-008", "CF-APIGW-009", "CF-APIGW-V2-003",
+                              "CF-APIGW-V2-004")},
         "CF-SUST-001": {"MixedInstancesPolicy"},
         "CF-SUST-002": {"CapacityProviderStrategy", "LaunchType"},
         "CF-EKS-001": {"Logging"},
@@ -404,6 +415,9 @@ CF_THEMES: dict[str, tuple[str, ...]] = {
     "CF-CLB-001": (_DP, _NET), "CF-CLB-002": (_DP,), "CF-CLB-003": (_OBS,), "CF-CLB-004": (_RES,),
     "CF-CLB-005": (_RES,), "CF-APIGW-001": (_OBS,), "CF-APIGW-002": (_OBS,),
     "CF-APIGW-V2-001": (_OBS,), "CF-APIGW-V2-002": (_OBS,),
+    "CF-APIGW-003": (_ID, _NET), "CF-APIGW-004": (_DP, _NET), "CF-APIGW-005": (_RES,),
+    "CF-APIGW-006": (_RES,), "CF-APIGW-007": (_DP,), "CF-APIGW-008": (_F,), "CF-APIGW-009": (_ID,),
+    "CF-APIGW-V2-003": (_ID, _NET), "CF-APIGW-V2-004": (_RES,),
     "CF-CF-001": (_DP, _NET), "CF-CF-002": (_DP, _NET), "CF-CF-003": (_NET,), "CF-CF-004": (_NET, _ID),
     "CF-COG-001": (_ID,), "CF-COG-002": (_ID,), "CF-COG-003": (_ID,),
     "CF-COST-002": (_F,), "CF-CT-001": (_OBS, _SB), "CF-CT-002": (_OBS,), "CF-CT-003": (_OBS, _DP),
@@ -1357,6 +1371,169 @@ def _lambda_wiring_findings(resources: List[Resource], template_path: Path) -> L
                     "All of this function's subnets are in one Availability Zone, so an AZ failure "
                     "stops it. Give it subnets in at least two AZs (Security Hub Lambda.5). In CDK: "
                     "vpcSubnets: { subnetType: ec2.SubnetType.PRIVATE_WITH_EGRESS }.")))
+    return out
+
+
+_BODY_METHODS = ("POST", "PUT", "PATCH", "ANY")
+
+
+def _is_true(value: Any) -> bool:
+    return value is True or (isinstance(value, str) and value.strip().lower() == "true")
+
+
+def _unread(value: Any) -> bool:
+    """True for a value only known at deploy time: a Ref, Fn::If, or an unknown Terraform value."""
+    return isinstance(value, dict) and _is_intrinsic(value)
+
+
+def _api_gateway_findings(resources: List[Resource], template_path: Path) -> List[Finding]:
+    """REST API (CF-APIGW-003..009) and HTTP / WebSocket API (CF-APIGW-V2-003/004) checks.
+
+    Methods and stages are tied to their API by RestApiId / ApiId, usage plans by ApiStages.
+    A value the scan cannot read is not judged; a usage plan it cannot tie to an API counts
+    as throttling all of them.
+    """
+    usable = [r for r in resources if not r.malformed]
+    of = {t: [r for r in usable if r.type == t] for t in (
+        "api_gateway_rest_api", "api_gateway_method", "api_gateway_stage", "api_gateway_domain_name",
+        "api_gateway_usage_plan", "apigatewayv2_api", "apigatewayv2_route", "apigatewayv2_stage",
+        "apigatewayv2_domain_name")}
+    out: List[Finding] = []
+
+    def add(res: Resource, check_id: str, title: str, severity: Severity, category: str,
+            recommendation: str) -> None:
+        out.append(Finding(
+            id=check_id, title=title, severity=severity, category=category,
+            file=res.file or str(template_path), line=res.line,
+            evidence=f"{res.name} ({res.source_type})", recommendation=recommendation,
+        ))
+
+    def api_of(res: Resource, key: str, kind: str) -> Resource | None:
+        return next((a for a in of[kind] if _points_at(res, key, a)), None)
+
+    # REST methods: no auth, no request validation.
+    for method in of["api_gateway_method"]:
+        props = method.properties
+        verb = props.get("HttpMethod")
+        if not isinstance(verb, str) or verb.upper() == "OPTIONS":
+            continue
+        auth = props.get("AuthorizationType") or "NONE"
+        if "AuthorizationType" not in method.unresolved and "ApiKeyRequired" not in method.unresolved \
+                and auth == "NONE" and not _is_true(props.get("ApiKeyRequired")) \
+                and not _unread(props.get("ApiKeyRequired")):
+            add(method, "CF-APIGW-003", "API Gateway method has no authorization", "High", "Security",
+                f"{verb.upper()} takes requests from anyone: AuthorizationType is NONE and no API key is "
+                "required. Use an IAM, Cognito or Lambda authorizer; if the API is public on purpose, "
+                "add throttling and WAF. In CDK: defaultMethodOptions with an authorizer.")
+        if verb.upper() in _BODY_METHODS and "RequestValidatorId" not in method.unresolved \
+                and not props.get("RequestValidatorId"):
+            add(method, "CF-APIGW-006", "API Gateway method does not validate requests", "Low", "Reliability",
+                f"{verb.upper()} takes a request body that API Gateway passes on unchecked. Add a request "
+                "validator (body and parameters) and a model, so malformed requests are rejected before "
+                "the backend. In CDK: requestValidatorOptions.")
+
+    # TLS on the default endpoint and on custom domains.
+    for rest_api in of["api_gateway_rest_api"]:
+        props = rest_api.properties
+        disabled = props.get("DisableExecuteApiEndpoint")
+        if "SecurityPolicy" in rest_api.unresolved or _is_true(disabled) or _unread(disabled):
+            continue
+        endpoint = props.get("EndpointConfiguration")
+        types = endpoint.get("Types") if isinstance(endpoint, dict) else None
+        private = isinstance(types, list) and "PRIVATE" in types
+        endpoint_unread = _unread(endpoint) or _unread(types) or (
+            isinstance(types, list) and any(_unread(t) for t in types))
+        policy = props.get("SecurityPolicy")
+        # Regional and edge APIs default to TLS_1_0; Terraform's provider may not expose it.
+        default_weak = policy is None and not private and not endpoint_unread \
+            and rest_api.source_type.startswith("AWS::")
+        if policy == "TLS_1_0" or default_weak:
+            add(rest_api, "CF-APIGW-004", "API Gateway endpoint allows TLS 1.0", "Medium", "Security",
+                ("No SecurityPolicy is set, so the default execute-api endpoint uses TLS_1_0. "
+                 if default_weak else "SecurityPolicy is TLS_1_0. ")
+                + "Set SecurityPolicy to TLS_1_2 or a SecurityPolicy_TLS13_* policy, or disable the "
+                "default endpoint and serve the API from a custom domain.")
+    for domain in of["api_gateway_domain_name"] + of["apigatewayv2_domain_name"]:
+        if domain.type == "api_gateway_domain_name":
+            policies = [domain.properties.get("SecurityPolicy")]
+        else:
+            configs = domain.properties.get("DomainNameConfigurations")
+            policies = [c.get("SecurityPolicy") for c in configs if isinstance(c, dict)] \
+                if isinstance(configs, list) else []
+        if "TLS_1_0" in policies:  # domains default to TLS_1_2
+            add(domain, "CF-APIGW-004", "API Gateway custom domain allows TLS 1.0", "Medium", "Security",
+                "SecurityPolicy is TLS_1_0. Set it to TLS_1_2 or a SecurityPolicy_TLS13_* policy. In CDK: "
+                "securityPolicy: apigateway.SecurityPolicy.TLS_1_2.")
+
+    # REST stages: throttling, cache encryption, caching for GET, client certificate.
+    plans = [p for p in of["api_gateway_usage_plan"] if p.properties.get("Throttle") or any(
+        isinstance(s, dict) and s.get("Throttle") for s in p.properties.get("ApiStages") or [])]
+    for stage in of["api_gateway_stage"]:
+        props = stage.properties
+        api = api_of(stage, "RestApiId", "api_gateway_rest_api")
+        settings_known = "MethodSettings" not in stage.unresolved
+        settings = props.get("MethodSettings")
+        settings = [m for m in settings if isinstance(m, dict)] if isinstance(settings, list) else []
+        throttled = any(m.get("ThrottlingRateLimit") is not None or m.get("ThrottlingBurstLimit") is not None
+                        for m in settings)
+        # A plan the scan cannot tie (or a stage with no known API) may throttle this stage.
+        planned = any(api is None or _points_at(p, "ApiStages", api) or _points_at(p, "ApiStages", stage)
+                      or not any(_points_at(p, "ApiStages", a) for a in of["api_gateway_rest_api"])
+                      for p in plans)
+        if settings_known and not throttled and not planned:
+            add(stage, "CF-APIGW-005", "API Gateway stage has no throttling", "Low", "Reliability",
+                "Set ThrottlingRateLimit and ThrottlingBurstLimit in MethodSettings, or attach a usage plan "
+                "with a throttle, so one client cannot use up the account's API Gateway limit. In CDK: "
+                "deployOptions: { throttlingRateLimit, throttlingBurstLimit }.")
+        if settings_known and any(_is_true(m.get("CachingEnabled")) and not _is_true(m.get("CacheDataEncrypted"))
+                                  and not _unread(m.get("CacheDataEncrypted")) for m in settings):
+            add(stage, "CF-APIGW-007", "API Gateway cache data is not encrypted", "Medium", "Security",
+                "Set CacheDataEncrypted: true in every MethodSettings entry that turns caching on "
+                "(Security Hub APIGateway.5). In CDK: cacheDataEncrypted: true.")
+        has_get = api is not None and any(
+            _points_at(m, "RestApiId", api) and str(m.properties.get("HttpMethod", "")).upper() == "GET"
+            for m in of["api_gateway_method"])
+        if has_get and "CacheClusterEnabled" not in stage.unresolved and not _is_true(props.get("CacheClusterEnabled")):
+            add(stage, "CF-APIGW-008", "API Gateway stage does not cache GET responses", "Low",
+                "Performance Efficiency",
+                "This API has GET methods and the stage has no cache. If responses can be reused, set "
+                "CacheClusterEnabled with a CacheClusterSize and turn CachingEnabled on for those methods "
+                "(the cache is billed per hour). In CDK: deployOptions: { cachingEnabled: true }.")
+        if "ClientCertificateId" not in stage.unresolved and not props.get("ClientCertificateId"):
+            add(stage, "CF-APIGW-009", "API Gateway stage has no client certificate", "Low", "Security",
+                "Set ClientCertificateId to an AWS::ApiGateway::ClientCertificate, so the backend can check "
+                "that calls come from API Gateway (Security Hub APIGateway.2). Not needed for Lambda "
+                "integrations, which API Gateway calls with IAM.")
+
+    # HTTP and WebSocket APIs.
+    for route in of["apigatewayv2_route"]:
+        key = route.properties.get("RouteKey")
+        if not isinstance(key, str) or key.upper().startswith("OPTIONS ") or "AuthorizationType" in route.unresolved:
+            continue
+        api = api_of(route, "ApiId", "apigatewayv2_api")
+        protocol = api.properties.get("ProtocolType") if api is not None else None
+        # WebSocket APIs authorize on $connect only; an HTTP route key is "VERB /path".
+        if (protocol == "WEBSOCKET" or (" " not in key and key != "$default")) and key != "$connect":
+            continue
+        # $default exists on both kinds of API, so it needs a known HTTP API.
+        if key == "$default" and protocol != "HTTP":
+            continue
+        if (route.properties.get("AuthorizationType") or "NONE") == "NONE":
+            add(route, "CF-APIGW-V2-003", "API Gateway route has no authorization", "High", "Security",
+                f"Route {key} takes requests from anyone. Set AuthorizationType to JWT, AWS_IAM or CUSTOM "
+                "with an authorizer (Security Hub APIGateway.8). In CDK: defaultAuthorizer on the HttpApi.")
+    for stage in of["apigatewayv2_stage"]:
+        if "DefaultRouteSettings" in stage.unresolved:
+            continue
+        defaults = stage.properties.get("DefaultRouteSettings")
+        if isinstance(defaults, dict) and _is_intrinsic(defaults):
+            continue
+        defaults = defaults if isinstance(defaults, dict) else {}
+        if defaults.get("ThrottlingRateLimit") is None and defaults.get("ThrottlingBurstLimit") is None:
+            add(stage, "CF-APIGW-V2-004", "API Gateway V2 stage has no default route throttling", "Low",
+                "Reliability",
+                "Set DefaultRouteSettings with ThrottlingRateLimit and ThrottlingBurstLimit, so one client "
+                "cannot use up the account's limit. In CDK: throttle on the HttpStage.")
     return out
 
 
@@ -3495,6 +3672,9 @@ def _run_resource_checks(
 
     # --- Gateway endpoints: S3 and DynamoDB through a NAT gateway (CF-VPC-002/003) ---
     findings.extend(_gateway_endpoint_findings(resources, template_path, _at))
+
+    # --- API Gateway auth, TLS, throttling, validation and caching ---
+    findings.extend(_api_gateway_findings(resources, template_path))
 
     # --- Lambda timeouts against their triggers, and VPC functions in one AZ ---
     findings.extend(_lambda_wiring_findings(resources, template_path))

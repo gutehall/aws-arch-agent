@@ -77,6 +77,11 @@ TF_TYPE_TO_CANONICAL: dict[str, str] = {
     "aws_api_gateway_stage": "api_gateway_stage",
     "aws_apigatewayv2_api": "apigatewayv2_api",
     "aws_apigatewayv2_stage": "apigatewayv2_stage",
+    "aws_api_gateway_method": "api_gateway_method",
+    "aws_api_gateway_domain_name": "api_gateway_domain_name",
+    "aws_api_gateway_usage_plan": "api_gateway_usage_plan",
+    "aws_apigatewayv2_domain_name": "apigatewayv2_domain_name",
+    "aws_apigatewayv2_route": "apigatewayv2_route",
     "aws_autoscaling_group": "autoscaling_group",
     "aws_launch_configuration": "launch_configuration",
     "aws_appautoscaling_target": "scalable_target",
@@ -1339,6 +1344,10 @@ def _api_stage(body: dict) -> dict:
     if logs:
         props["AccessLogSetting"] = {"DestinationArn": _ref(logs, "destination_arn")}
     _set(props, "TracingEnabled", _v(body, "xray_tracing_enabled"))
+    _set(props, "CacheClusterEnabled", _v(body, "cache_cluster_enabled"))
+    _set(props, "ClientCertificateId", _ref(body, "client_certificate_id"))
+    # aws_api_gateway_method_settings blocks are merged in by _merge_method_settings.
+    props["MethodSettings"] = []
     return props
 
 
@@ -1347,6 +1356,73 @@ def _apiv2_stage(body: dict) -> dict:
     logs = _first_block(body, "access_log_settings")
     if logs:
         props["AccessLogSettings"] = {"DestinationArn": _ref(logs, "destination_arn")}
+    if "default_route_settings" in _dynamic_names(body):
+        props["DefaultRouteSettings"] = UNRESOLVED
+    else:
+        route = _first_block(body, "default_route_settings")
+        settings: dict = {}
+        _set(settings, "ThrottlingRateLimit", _v(route, "throttling_rate_limit"))
+        _set(settings, "ThrottlingBurstLimit", _v(route, "throttling_burst_limit"))
+        props["DefaultRouteSettings"] = settings
+    return props
+
+
+def _api_method(body: dict) -> dict:
+    """aws_api_gateway_method in the AWS::ApiGateway::Method shape (CF-APIGW-003/006/008)."""
+    props: dict = {}
+    _set(props, "HttpMethod", _v(body, "http_method"))
+    _set(props, "AuthorizationType", _v(body, "authorization"))
+    _set(props, "ApiKeyRequired", _v(body, "api_key_required"))
+    _set(props, "RequestValidatorId", _ref(body, "request_validator_id"))
+    return props
+
+
+def _api_rest_api(body: dict) -> dict:
+    """aws_api_gateway_rest_api: an explicit TLS policy only (CF-APIGW-004). The default
+    is not judged for Terraform, whose provider may not expose the setting."""
+    props: dict = {}
+    _set(props, "SecurityPolicy", _v(body, "security_policy"))
+    _set(props, "DisableExecuteApiEndpoint", _v(body, "disable_execute_api_endpoint"))
+    return props
+
+
+def _api_domain_name(body: dict) -> dict:
+    props: dict = {}
+    _set(props, "SecurityPolicy", _v(body, "security_policy"))
+    return props
+
+
+def _apiv2_domain_name(body: dict) -> dict:
+    if "domain_name_configuration" in _dynamic_names(body):
+        return {"DomainNameConfigurations": UNRESOLVED}
+    configs = []
+    for item in _blocks(body, "domain_name_configuration"):
+        config: dict = {}
+        _set(config, "SecurityPolicy", _v(item, "security_policy"))
+        configs.append(config)
+    return {"DomainNameConfigurations": configs}
+
+
+def _api_usage_plan(body: dict) -> dict:
+    """aws_api_gateway_usage_plan: whether it throttles, on the plan or per stage (REL-006)."""
+    # A dynamic block may throttle, so it counts.
+    throttled = bool(_blocks(body, "throttle_settings")) or any(
+        _blocks(stage, "throttle") or "throttle" in _dynamic_names(stage)
+        for stage in _blocks(body, "api_stages")
+    ) or bool({"throttle_settings", "api_stages"} & set(_dynamic_names(body)))
+    return {"Throttle": {"Set": True}} if throttled else {}
+
+
+def _apiv2_api(body: dict) -> dict:
+    props: dict = {}
+    _set(props, "ProtocolType", _v(body, "protocol_type"))
+    return props
+
+
+def _apiv2_route(body: dict) -> dict:
+    props: dict = {}
+    _set(props, "RouteKey", _v(body, "route_key"))
+    _set(props, "AuthorizationType", _v(body, "authorization_type", "NONE"))
     return props
 
 
@@ -1472,6 +1548,13 @@ _ADAPTERS: dict[str, Callable[[dict], dict]] = {
     "aws_sqs_queue": _sqs,
     "aws_api_gateway_stage": _api_stage,
     "aws_apigatewayv2_stage": _apiv2_stage,
+    "aws_api_gateway_rest_api": _api_rest_api,
+    "aws_api_gateway_method": _api_method,
+    "aws_api_gateway_domain_name": _api_domain_name,
+    "aws_api_gateway_usage_plan": _api_usage_plan,
+    "aws_apigatewayv2_domain_name": _apiv2_domain_name,
+    "aws_apigatewayv2_route": _apiv2_route,
+    "aws_apigatewayv2_api": _apiv2_api,
     "aws_autoscaling_group": _asg,
     "aws_ecs_service": _ecs_service,
     "aws_eks_cluster": _eks,
@@ -1857,6 +1940,40 @@ def _merge_ecr_lifecycle(blocks: list[_Block], resources: dict[str, Resource]) -
                 repo.unresolved = repo.unresolved | {"LifecyclePolicy"}
 
 
+def _merge_method_settings(blocks: list[_Block], resources: dict[str, Resource]) -> None:
+    """Attach aws_api_gateway_method_settings to its aws_api_gateway_stage as a
+    MethodSettings entry (CF-APIGW-005/007/008).
+
+    Settings that point at no stage the scan can find may belong to any of them, so the
+    stages' MethodSettings become unresolved and those checks report nothing.
+    """
+    stages = [r for r in resources.values() if r.source_type == "aws_api_gateway_stage"]
+    unlinked = False
+    for block in blocks:
+        if block.type != "aws_api_gateway_method_settings":
+            continue
+        targets = [s for s in stages if s.name in block.references]
+        if not targets or "settings" in _dynamic_names(block.body):
+            unlinked = True
+            continue
+        settings = _first_block(block.body, "settings")
+        entry: dict = {"ResourcePath": _v(block.body, "method_path")}
+        for tf_key, cf_key in (
+            ("throttling_rate_limit", "ThrottlingRateLimit"),
+            ("throttling_burst_limit", "ThrottlingBurstLimit"),
+            ("caching_enabled", "CachingEnabled"),
+            ("cache_data_encrypted", "CacheDataEncrypted"),
+        ):
+            value = _v(settings, tf_key)
+            if value is not None:
+                entry[cf_key] = _OPAQUE if value is UNRESOLVED else value
+        for stage in targets:
+            stage.properties.setdefault("MethodSettings", []).append(entry)
+    if unlinked:
+        for stage in stages:
+            stage.unresolved = stage.unresolved | {"MethodSettings"}
+
+
 # --- terraform show -json ------------------------------------------------------
 
 
@@ -1991,6 +2108,7 @@ def resources_from_terraform(
         resources[resource.name] = resource
     _merge_s3_parts(blocks, resources)
     _merge_ecr_lifecycle(blocks, resources)
+    _merge_method_settings(blocks, resources)
     _resolve_iam(resources, blocks)
     return list(resources.values())
 

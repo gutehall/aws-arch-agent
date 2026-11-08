@@ -17,7 +17,6 @@ Which CDK rules have a template check, and which AWS Foundational Security Best 
 
 | Work | Adds template checks for |
 | -- | -- |
-| `api-gateway` | API Gateway auth, TLS, throttling and caching |
 | `ci-cd` | CodeBuild and CodePipeline |
 | `kms-ssm` | KMS key rotation and SSM parameters |
 | `search-streaming` | OpenSearch, MSK and Kinesis access and resilience |
@@ -39,7 +38,7 @@ Which CDK rules have a template check, and which AWS Foundational Security Best 
 
 ## CDK rules
 
-172 rules: 70 covered, 6 partial, 57 planned, 10 account, 5 cdk-only, 24 advice.
+172 rules: 75 covered, 6 partial, 52 planned, 10 account, 5 cdk-only, 24 advice.
 
 | Rule | Title | Template check | Status | Note |
 | -- | -- | -- | -- | -- |
@@ -51,8 +50,8 @@ Which CDK rules have a template check, and which AWS Foundational Security Best 
 | SEC-006 | S3 bucket encryption explicitly disabled | `CF-S3-002` | `covered` |  |
 | SEC-007 | KMS key policy may use wildcard principal | `CF-KMS-001` | `covered` |  |
 | SEC-008 | DynamoDB table may miss encryption | `CF-DDB-002` | `covered` |  |
-| SEC-009 | API Gateway missing authentication |  | `planned: api-gateway` |  |
-| SEC-010 | API Gateway may not enforce TLS 1.2+ |  | `planned: api-gateway` |  |
+| SEC-009 | API Gateway missing authentication | `CF-APIGW-003`, `CF-APIGW-V2-003` | `covered` |  |
+| SEC-010 | API Gateway may not enforce TLS 1.2+ | `CF-APIGW-004` | `covered` |  |
 | SEC-011 | ALB/NLB not enforcing HTTPS redirect | `CF-ALB-002` | `covered` |  |
 | SEC-012 | ALB using insecure SSL/TLS policy | `CF-ALB-003` | `covered` |  |
 | SEC-013 | SQS queue not encrypted | `CF-SQS-001` | `covered` |  |
@@ -116,7 +115,7 @@ Which CDK rules have a template check, and which AWS Foundational Security Best 
 | REL-003 | Lambda may miss DLQ / on-failure destination | `CF-LAM-001` | `covered` |  |
 | REL-004 | DynamoDB may miss point-in-time recovery | `CF-DDB-001` | `covered` |  |
 | REL-005 | DynamoDB may miss automated backups |  | `planned: data-resilience` |  |
-| REL-006 | API Gateway throttling not configured |  | `planned: api-gateway` |  |
+| REL-006 | API Gateway throttling not configured | `CF-APIGW-005`, `CF-APIGW-V2-004` | `covered` |  |
 | REL-007 | ALB health check configuration missing | `CF-ALB-007` | `covered` |  |
 | REL-008 | SQS missing dead-letter queue configuration | `CF-SQS-002` | `covered` |  |
 | REL-009 | Lambda timeout may be too low or too high | `CF-LAM-007` | `covered` |  |
@@ -138,7 +137,7 @@ Which CDK rules have a template check, and which AWS Foundational Security Best 
 | REL-025 | DynamoDB global tables not configured for multi-region |  | `advice` | Global tables depend on multi-Region needs. |
 | REL-026 | S3 replication not configured for critical buckets |  | `planned: s3` |  |
 | REL-027 | Lambda reserved concurrency not configured for critical functions | `CF-LAM-006` | `covered` |  |
-| REL-028 | API Gateway request validation not configured |  | `planned: api-gateway` |  |
+| REL-028 | API Gateway request validation not configured | `CF-APIGW-006` | `covered` |  |
 | REL-029 | EventBridge rule retry policy not configured |  | `planned: error-handling` |  |
 | REL-030 | RDS deletion protection not enabled | `CF-RDS-005` | `covered` |  |
 | REL-031 | S3 bucket versioning not enabled | `CF-S3-003` | `covered` |  |
@@ -192,7 +191,7 @@ Which CDK rules have a template check, and which AWS Foundational Security Best 
 | PERF-001 | Compute may not use Graviton/ARM (cost and performance) | `CF-PERF-001` | `partial` | Checks Lambda only; PERF-001 also flags EC2 and ECS. |
 | PERF-002 | No caching layer detected (performance) | `CF-PERF-002` | `partial` | API Gateway and Lambda only; PERF-002 also counts load balancers, API caches and DAX. |
 | PERF-003 | DynamoDB table may use provisioned capacity (consider on-demand) |  | `advice` | On-demand versus provisioned depends on traffic. |
-| PERF-004 | API Gateway caching not enabled |  | `planned: api-gateway` |  |
+| PERF-004 | API Gateway caching not enabled | `CF-APIGW-008` | `covered` |  |
 | PERF-005 | Lambda memory not optimized (too low/high) |  | `advice` | Memory tuning needs invocation data. |
 | PERF-006 | CloudFront caching strategy not optimized |  | `planned: cloudfront` |  |
 | PERF-007 | ECS task sizing (CPU/memory) may need review |  | `planned: containers` |  |
@@ -223,10 +222,10 @@ Controls a template can show. Account-level controls (for example S3.1, EC2.7 an
 | Control | Check | Resource type |
 | -- | -- | -- |
 | ACM.2 | `planned: dns-certs` | `AWS::CertificateManager::Certificate` |
-| APIGateway.2 | `planned: api-gateway` | `AWS::ApiGateway::Stage` |
+| APIGateway.2 | `CF-APIGW-009` | `AWS::ApiGateway::Stage` |
 | APIGateway.3 | `CF-APIGW-002` | `AWS::ApiGateway::Stage` |
-| APIGateway.5 | `planned: api-gateway` | `AWS::ApiGateway::Stage` |
-| APIGateway.8 | `planned: api-gateway` | `AWS::ApiGatewayV2::Route` |
+| APIGateway.5 | `CF-APIGW-007` | `AWS::ApiGateway::Stage` |
+| APIGateway.8 | `CF-APIGW-V2-003` | `AWS::ApiGatewayV2::Route` |
 | APIGateway.9 | `CF-APIGW-V2-001` | `AWS::ApiGatewayV2::Stage` |
 | AppSync.2 | `planned: app-services` | `AWS::AppSync::GraphQLApi` |
 | AppSync.5 | `planned: app-services` | `AWS::AppSync::GraphQLApi` |
