@@ -45,6 +45,7 @@ RULE_POLICY: dict[str, dict[Environment, Severity | None]] = {
     "CF-RDS-003": {"dev": None, "staging": None},  # Multi-AZ
     "CF-RDS-005": {"dev": None},           # deletion protection
     "CF-DEL-001": {"dev": None, "staging": None},  # retain on delete
+    "CF-OS-007": {"dev": None, "staging": None},  # three data nodes across zones
     # Never-expiring logs: CF-ENV-005 asks for 30 days or less there instead of 30-365.
     "CF-CW-001": {"dev": None, "staging": None},
     # DynamoDB autoscaling: CF-ENV-006 says on demand there instead.

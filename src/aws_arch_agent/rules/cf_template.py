@@ -47,14 +47,18 @@ CF_COVERS_STATIC: dict[str, tuple[str, ...]] = {
     "CF-WAF-001": ("SEC-024",),
     "CF-EFS-001": ("SEC-037",),
     "CF-KIN-001": ("SEC-038",),
+    "CF-KIN-002": ("REL-019",),
     "CF-EC-001": ("SEC-025",),
     "CF-EC-002": ("SEC-025",),
     "CF-OS-001": ("SEC-039",),
     "CF-OS-002": ("SEC-039",),
+    "CF-OS-003": ("SEC-041",),
+    "CF-OS-004": ("SEC-040",),
     "CF-RS-001": ("SEC-059",),
     "CF-DOCDB-001": ("SEC-060",),
     "CF-NEP-001": ("SEC-061",),
     "CF-MSK-001": ("SEC-044",),
+    "CF-MSK-002": ("SEC-045",),
     "CF-EBS-002": ("COST-008",),
     "CF-GEN-001": ("SUST-007",),
     "CF-S3-006": ("COST-013",),
@@ -388,6 +392,9 @@ CHECK_PROPERTIES: dict[str, frozenset[str]] = {
         "CF-APIGW-002": {"TracingEnabled"},
         "CF-APIGW-V2-001": {"AccessLogSettings"},
         "CF-APIGW-V2-002": {"TracingEnabled"},
+        # Template-level: _search_streaming_findings skips what it cannot read.
+        **{c: set() for c in ("CF-OS-003", "CF-OS-004", "CF-OS-005", "CF-OS-006", "CF-OS-007",
+                              "CF-MSK-002", "CF-MSK-003", "CF-KIN-002")},
         # Template-level: _kms_ssm_findings skips what it cannot read.
         **{c: set() for c in ("CF-KMS-002", "CF-KMS-003", "CF-SSM-001", "CF-SSM-002")},
         # Template-level: _ci_cd_findings skips what it cannot read.
@@ -447,6 +454,8 @@ CF_THEMES: dict[str, tuple[str, ...]] = {
     "CF-GEN-001": (_F, _SUS), "CF-IAM-001": (_ID,), "CF-IAM-002": (_ID,), "CF-IAM-003": (_ID,),
     "CF-IAM-004": (_ID,), "CF-IAM-005": (_ID,), "CF-IAM-006": (_ID,), "CF-IAM-007": (_ID,),
     "CF-IAM-008": (_ID,), "CF-KIN-001": (_DP,), "CF-KMS-001": (_ID, _DP),
+    "CF-KIN-002": (_RES,), "CF-MSK-002": (_ID,), "CF-MSK-003": (_NET,), "CF-OS-003": (_NET,),
+    "CF-OS-004": (_ID,), "CF-OS-005": (_DP, _NET), "CF-OS-006": (_OBS,), "CF-OS-007": (_RES,),
     "CF-KMS-002": (_DP,), "CF-KMS-003": (_RES,), "CF-SSM-001": (_DP,), "CF-SSM-002": (_F,),
     "CF-LAM-001": (_RES,), "CF-LAM-002": (_OBS,), "CF-LAM-003": (_SB,),
     "CF-LAM-004": (_ID, _NET), "CF-LAM-005": (_DP, _ID), "CF-LAM-006": (_RES,),
@@ -1751,10 +1760,10 @@ def _value_mentions(value: Any, name: str) -> bool:
     return value == name or value.startswith(f"{name}.") or _references(json.dumps(value), name)
 
 
-def _uses_key(res: Resource, key: Resource) -> bool:
-    """True when res refers to the KMS key anywhere in its properties (CloudFormation, and
-    merged Terraform blocks such as a bucket's encryption) or in its block (Terraform)."""
-    return key.name in res.references or _value_mentions(res.properties, key.name)
+def _refers_to(res: Resource, target: Resource) -> bool:
+    """True when res refers to target anywhere in its properties (CloudFormation, and merged
+    Terraform blocks such as a bucket's encryption) or in its block (Terraform)."""
+    return target.name in res.references or _value_mentions(res.properties, target.name)
 
 
 def _parameter_name(parameter: Resource) -> str:
@@ -1821,7 +1830,7 @@ def _kms_ssm_findings(resources: List[Resource], template_path: Path) -> List[Fi
             window = None
         users: list[str] = []
         if window is not None and window < 30:
-            found = {r.name for r in holders if _uses_key(r, key)}
+            found = {r.name for r in holders if _refers_to(r, key)}
             # A split Terraform block, such as a bucket's encryption, refers to both.
             for side in (r for r in usable if r.type is None and key.name in r.references):
                 found |= {r.name for r in holders if r.name in side.references}
@@ -1858,6 +1867,157 @@ def _kms_ssm_findings(resources: List[Resource], template_path: Path) -> List[Fi
                 "parameter is shared across accounts, use Tier: Standard. An advanced parameter cannot be "
                 "downgraded: delete it and create it again. The tier does not change throughput, which is "
                 "a separate account setting.")
+    return out
+
+
+_STREAM_CONSUMER_TYPES = frozenset({
+    "lambda_event_source_mapping", "kinesis_stream_consumer", "kinesis_analytics_application",
+    "firehose_delivery_stream",
+})
+_OPENSEARCH_LOGS = (("ES_APPLICATION_LOGS", "error"), ("AUDIT_LOGS", "audit"))
+
+
+def _missing_opensearch_logs(options: Any) -> list[str]:
+    """The log types not published. An entry with no Enabled value is on; an unread one counts."""
+    options = options if isinstance(options, dict) else {}
+    if _unread(options):
+        return []
+    missing = []
+    for key, label in _OPENSEARCH_LOGS:
+        entry = options.get(key)
+        if entry is None or (isinstance(entry, dict) and entry.get("Enabled") is not None
+                             and _flag(entry.get("Enabled")) is False):
+            missing.append(label)
+    return missing
+
+
+def _thin_opensearch_cluster(config: Any) -> str | None:
+    """Why the domain has too few data nodes or one zone. Unset means one node, zone awareness off."""
+    config = config if isinstance(config, dict) else {}
+    if _unread(config):
+        return None
+    try:
+        count: int | None = int(config.get("InstanceCount", 1))
+    except (TypeError, ValueError):
+        count = None
+    problems = []
+    if count is not None and count < 3:
+        problems.append(f"{count} data node{'' if count == 1 else 's'}")
+    if _flag(config.get("ZoneAwarenessEnabled")) is False:
+        problems.append("zone awareness off")
+    return " and ".join(problems) or None
+
+
+def _msk_auth_on(block: Any) -> bool | None:
+    """Whether one MSK authentication method is on: None when unread."""
+    if block is None:
+        return False
+    if not isinstance(block, dict) or _is_intrinsic(block):
+        return None
+    if block.get("Enabled") is None and block.get("CertificateAuthorityArnList"):
+        return True
+    return _flag(block.get("Enabled"))
+
+
+def _msk_allows_anonymous(authentication: Any) -> bool:
+    """True when anyone with network access can connect: unauthenticated is on, or no method
+    that identifies a client is. A value the scan cannot read is not judged."""
+    authentication = authentication if isinstance(authentication, dict) else {}
+    if _unread(authentication):
+        return False
+    sasl = authentication.get("Sasl")
+    if _unread(sasl):
+        return False
+    sasl = sasl if isinstance(sasl, dict) else {}
+    secure = [_msk_auth_on(sasl.get("Iam")), _msk_auth_on(sasl.get("Scram")), _msk_auth_on(authentication.get("Tls"))]
+    anonymous = _msk_auth_on(authentication.get("Unauthenticated"))
+    if anonymous is True:
+        return True
+    return anonymous is False and all(on is False for on in secure)
+
+
+def _search_streaming_findings(resources: List[Resource], template_path: Path) -> List[Finding]:
+    """OpenSearch (CF-OS-003..007), MSK (CF-MSK-002/003) and Kinesis (CF-KIN-002). A value the
+    scan cannot read is not judged."""
+    usable = [r for r in resources if not r.malformed]
+    consumers = [r for r in usable if r.type in _STREAM_CONSUMER_TYPES]
+    out: List[Finding] = []
+
+    def add(res: Resource, check_id: str, title: str, severity: Severity, category: str,
+            recommendation: str) -> None:
+        out.append(Finding(
+            id=check_id, title=title, severity=severity, category=category,
+            file=res.file or str(template_path), line=res.line,
+            evidence=f"{res.name} ({res.source_type})", recommendation=recommendation,
+        ))
+
+    for domain in (r for r in usable if r.type == "opensearch_domain"):
+        props = domain.properties
+        if "VPCOptions" not in domain.unresolved and not props.get("VPCOptions"):
+            add(domain, "CF-OS-003", "OpenSearch domain is not in a VPC", "Medium", "Security",
+                "With no VPCOptions the domain has a public endpoint, and a domain cannot move into a VPC "
+                "later: create a new one and migrate (Security Hub Opensearch.2). In CDK: vpc and "
+                "vpcSubnets.")
+        if "AdvancedSecurityOptions" not in domain.unresolved \
+                and _flag_off(props.get("AdvancedSecurityOptions"), "Enabled"):
+            add(domain, "CF-OS-004", "OpenSearch domain has no fine-grained access control", "Medium",
+                "Security",
+                "Set AdvancedSecurityOptions.Enabled: true, so access is decided per user, index and "
+                "document (Security Hub Opensearch.7). It also needs EnforceHTTPS and node-to-node and "
+                "at-rest encryption. In CDK: fineGrainedAccessControl.")
+        endpoint = props.get("DomainEndpointOptions")
+        if "DomainEndpointOptions" not in domain.unresolved and not _unread(endpoint):
+            endpoint = endpoint if isinstance(endpoint, dict) else {}
+            policy = endpoint.get("TLSSecurityPolicy")
+            weak = isinstance(policy, str) and "TLS-1-0" in policy
+            if _flag(endpoint.get("EnforceHTTPS")) is False or weak:
+                add(domain, "CF-OS-005", "OpenSearch domain allows HTTP or TLS below 1.2", "Medium", "Security",
+                    ("TLSSecurityPolicy allows TLS 1.0. " if weak else "EnforceHTTPS is not true. ")
+                    + "Set EnforceHTTPS: true and TLSSecurityPolicy to Policy-Min-TLS-1-2-PFS-2023-10 "
+                    "(Security Hub Opensearch.8). In CDK: enforceHttps: true and tlsSecurityPolicy.")
+        missing = [] if "LogPublishingOptions" in domain.unresolved else _missing_opensearch_logs(
+            props.get("LogPublishingOptions"))
+        if missing:
+            add(domain, "CF-OS-006", "OpenSearch domain does not publish all its logs", "Low",
+                "Operational Excellence",
+                f"Not published: {' and '.join(missing)} logs. Send ES_APPLICATION_LOGS and AUDIT_LOGS to "
+                "CloudWatch Logs in LogPublishingOptions (Security Hub Opensearch.4 and Opensearch.5). "
+                "Audit logs also need fine-grained access control. In CDK: logging.")
+        thin = None if "ClusterConfig" in domain.unresolved else _thin_opensearch_cluster(props.get("ClusterConfig"))
+        if thin:
+            add(domain, "CF-OS-007", "OpenSearch domain does not survive losing a node or zone", "Low", "Reliability",
+                f"This domain has {thin}. Set InstanceCount to at least 3 and ZoneAwarenessEnabled: true "
+                "(Security Hub Opensearch.6). In CDK: capacity.dataNodes and zoneAwareness.")
+
+    for cluster in (r for r in usable if r.type == "msk_cluster"):
+        props = cluster.properties
+        if "ClientAuthentication" not in cluster.unresolved and _msk_allows_anonymous(props.get("ClientAuthentication")):
+            add(cluster, "CF-MSK-002", "MSK cluster allows unauthenticated clients", "Medium", "Security",
+                "Any client that can reach the brokers can read and write topics. Turn on IAM, SASL/SCRAM "
+                "or mutual TLS in ClientAuthentication and turn Unauthenticated off (Security Hub MSK.6). "
+                "In CDK: clientAuthentication.")
+        info = props.get("BrokerNodeGroupInfo")
+        connectivity = info.get("ConnectivityInfo") if isinstance(info, dict) else None
+        public = connectivity.get("PublicAccess") if isinstance(connectivity, dict) else None
+        if "BrokerNodeGroupInfo" not in cluster.unresolved and isinstance(public, dict) \
+                and public.get("Type") == "SERVICE_PROVIDED_EIPS":
+            add(cluster, "CF-MSK-003", "MSK cluster has public access on", "High", "Security",
+                "PublicAccess gives the brokers internet addresses. Set PublicAccess.Type to DISABLED and "
+                "connect from inside the VPC, through peering or PrivateLink (Security Hub MSK.4).")
+
+    for stream in (r for r in usable if r.type == "kinesis_stream"):
+        if "RetentionPeriodHours" in stream.unresolved:
+            continue
+        try:
+            hours = int(stream.properties.get("RetentionPeriodHours", 24))
+        except (TypeError, ValueError):
+            continue
+        readers = sorted(r.name for r in consumers if _refers_to(r, stream))
+        if hours <= 24 and readers:
+            add(stream, "CF-KIN-002", "Kinesis stream keeps records for only 24 hours", "Low", "Reliability",
+                f"{', '.join(readers)} read this stream. If a consumer is down for longer than a day, "
+                "records are lost. Set RetentionPeriodHours to cover your longest expected outage, such "
+                "as 168 (billed per shard hour). In CDK: retentionPeriod: Duration.days(7).")
     return out
 
 
@@ -3996,6 +4156,9 @@ def _run_resource_checks(
 
     # --- Gateway endpoints: S3 and DynamoDB through a NAT gateway (CF-VPC-002/003) ---
     findings.extend(_gateway_endpoint_findings(resources, template_path, _at))
+
+    # --- OpenSearch, MSK and Kinesis access and resilience ---
+    findings.extend(_search_streaming_findings(resources, template_path))
 
     # --- KMS key rotation and deletion window, SSM parameters ---
     findings.extend(_kms_ssm_findings(resources, template_path))
