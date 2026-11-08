@@ -72,6 +72,9 @@ TF_TYPE_TO_CANONICAL: dict[str, str] = {
     "aws_kinesis_stream_consumer": "kinesis_stream_consumer",
     "aws_kinesisanalyticsv2_application": "kinesis_analytics_application",
     "aws_kinesis_firehose_delivery_stream": "firehose_delivery_stream",
+    "aws_athena_workgroup": "athena_workgroup",
+    "aws_glue_job": "glue_job",
+    "aws_glue_security_configuration": "glue_security_configuration",
     "aws_opensearch_domain": "opensearch_domain",
     "aws_redshift_cluster": "redshift_cluster",
     "aws_docdb_cluster": "docdb_cluster",
@@ -1882,6 +1885,112 @@ def _launch_configuration(body: dict) -> dict:
     return props
 
 
+def _athena_workgroup(body: dict) -> dict:
+    """aws_athena_workgroup. One unknown value must not hide the others, so each is kept apart."""
+    if "configuration" in _dynamic_names(body):
+        return {"WorkGroupConfiguration": UNRESOLVED}
+    config = _first_block(body, "configuration")
+    dynamic = _dynamic_names(config)
+    props: dict = {}
+    _set(props, "EnforceWorkGroupConfiguration", _known(_v(config, "enforce_workgroup_configuration")))
+    if "result_configuration" in dynamic:
+        props["ResultConfiguration"] = _OPAQUE
+    elif "result_configuration" in config:
+        result = _first_block(config, "result_configuration")
+        if "encryption_configuration" in _dynamic_names(result):
+            props["ResultConfiguration"] = {"EncryptionConfiguration": _OPAQUE}
+        elif "encryption_configuration" in result:
+            encryption = _first_block(result, "encryption_configuration")
+            props["ResultConfiguration"] = {"EncryptionConfiguration": {
+                "EncryptionOption": _known(_v(encryption, "encryption_option"))}}
+        else:
+            props["ResultConfiguration"] = {}
+    if "managed_query_results_configuration" in dynamic:
+        props["ManagedQueryResultsConfiguration"] = _OPAQUE
+    elif "managed_query_results_configuration" in config:
+        managed = _first_block(config, "managed_query_results_configuration")
+        props["ManagedQueryResultsConfiguration"] = {"Enabled": _known(_v(managed, "enabled"))}
+    if "engine_version" in dynamic:
+        props["EngineVersion"] = _OPAQUE
+    elif "engine_version" in config:
+        engine = _first_block(config, "engine_version")
+        props["EngineVersion"] = {"SelectedEngineVersion": _known(_v(engine, "selected_engine_version"))}
+    return {"WorkGroupConfiguration": props} if props else {}
+
+
+# Only the arguments the checks read: another argument may hold a secret.
+_GLUE_ARGUMENTS = ("--enable-metrics", "--job-bookmark-option")
+
+
+def _glue_arguments(body: dict, key: str) -> Any:
+    """A job's argument map. A map from an expression, or with a computed key, may hold any argument."""
+    value = body.get(key)
+    if value is None:
+        return None
+    if not isinstance(value, dict) or any("${" in name for name in value):
+        return UNRESOLVED
+    return {name: _known(value[name]) for name in _GLUE_ARGUMENTS if name in value}
+
+
+def _glue_job(body: dict) -> dict:
+    props: dict = {}
+    _set(props, "SecurityConfiguration", _ref(body, "security_configuration"))
+    _set(props, "DefaultArguments", _glue_arguments(body, "default_arguments"))
+    _set(props, "NonOverridableArguments", _glue_arguments(body, "non_overridable_arguments"))
+    if "command" in _dynamic_names(body):
+        props["Command"] = UNRESOLVED
+    else:
+        # The provider defaults the job type to a Spark ETL job.
+        props["Command"] = {"Name": _v(_first_block(body, "command"), "name", "glueetl")}
+    return props
+
+
+_GLUE_ENCRYPTIONS = (
+    ("cloudwatch_encryption", "cloudwatch_encryption_mode", "CloudWatchEncryption", "CloudWatchEncryptionMode"),
+    ("job_bookmarks_encryption", "job_bookmarks_encryption_mode", "JobBookmarksEncryption",
+     "JobBookmarksEncryptionMode"),
+)
+
+
+def _glue_security_configuration(body: dict) -> dict:
+    """aws_glue_security_configuration. An unset mode is DISABLED in the provider. One unknown mode
+    must not hide the others, so each is kept apart."""
+    if "encryption_configuration" in _dynamic_names(body):
+        return {"EncryptionConfiguration": UNRESOLVED}
+    encryption = _first_block(body, "encryption_configuration")
+    dynamic = _dynamic_names(encryption)
+    props: dict = {}
+    for block, mode, cf_block, cf_mode in _GLUE_ENCRYPTIONS:
+        props[cf_block] = _OPAQUE if block in dynamic else {
+            cf_mode: _known(_v(_first_block(encryption, block), mode))}
+    props["S3Encryptions"] = _OPAQUE if "s3_encryption" in dynamic else [
+        {"S3EncryptionMode": _known(_v(_first_block(encryption, "s3_encryption"), "s3_encryption_mode"))}]
+    return {"EncryptionConfiguration": props}
+
+
+_FIREHOSE_SOURCE = "_source_configuration"
+
+
+def _firehose_delivery_stream(body: dict) -> dict:
+    """aws_kinesis_firehose_delivery_stream. A *_source_configuration block marks a stream that is
+    not direct put. server_side_encryption is off unless enabled is true."""
+    props: dict = {}
+    dynamic = _dynamic_names(body)
+    if any(name.endswith(_FIREHOSE_SOURCE) for name in dynamic):
+        props["DeliveryStreamType"] = UNRESOLVED
+    elif any(name.endswith(_FIREHOSE_SOURCE) for name in body):
+        props["DeliveryStreamType"] = "AsSource"
+    if "server_side_encryption" in dynamic:
+        props["DeliveryStreamEncryptionConfigurationInput"] = UNRESOLVED
+    else:
+        enabled = _v(_first_block(body, "server_side_encryption"), "enabled")
+        if enabled is UNRESOLVED:
+            props["DeliveryStreamEncryptionConfigurationInput"] = UNRESOLVED
+        elif enabled is True:
+            props["DeliveryStreamEncryptionConfigurationInput"] = {"KeyType": "set"}
+    return props
+
+
 def _asg_link(body: dict) -> dict:
     """aws_autoscaling_policy, _schedule and _attachment: Terraform sets these from resources of
     their own, and each names its group (CF-ASG-001, CF-ASG-006)."""
@@ -1976,6 +2085,10 @@ def _eks(body: dict) -> dict:
 
 
 _ADAPTERS: dict[str, Callable[[dict], dict]] = {
+    "aws_athena_workgroup": _athena_workgroup,
+    "aws_glue_job": _glue_job,
+    "aws_glue_security_configuration": _glue_security_configuration,
+    "aws_kinesis_firehose_delivery_stream": _firehose_delivery_stream,
     "aws_s3_bucket": _s3_bucket,
     "aws_db_instance": _db,
     "aws_rds_cluster": _db,

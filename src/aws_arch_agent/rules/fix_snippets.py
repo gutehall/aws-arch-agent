@@ -1333,6 +1333,53 @@ _CLOUDFORMATION["CF-EFS-005"] = """$name:
     PosixUser:
       Uid: '1000'
       Gid: '1000'"""
+_CLOUDFORMATION["CF-ATH-001"] = """$name:
+  Type: AWS::Athena::WorkGroup
+  Properties:
+    WorkGroupConfiguration:
+      ResultConfiguration:
+        EncryptionConfiguration:
+          EncryptionOption: SSE_KMS
+          KmsKey: !GetAtt ResultsKey.Arn"""
+_CLOUDFORMATION["CF-ATH-002"] = """$name:
+  Type: AWS::Athena::WorkGroup
+  Properties:
+    WorkGroupConfiguration:
+      EnforceWorkGroupConfiguration: true"""
+_CLOUDFORMATION["CF-GLUE-001"] = """# Create an AWS::Glue::SecurityConfiguration with S3, CloudWatch and bookmark encryption, and name it here.
+$name:
+  Type: AWS::Glue::Job
+  Properties:
+    SecurityConfiguration: !Ref AppSecurityConfiguration"""
+_CLOUDFORMATION["CF-GLUE-001:AWS::Glue::SecurityConfiguration"] = """$name:
+  Type: AWS::Glue::SecurityConfiguration
+  Properties:
+    EncryptionConfiguration:
+      S3Encryptions:
+        - S3EncryptionMode: SSE-KMS
+          KmsKeyArn: !GetAtt GlueKey.Arn
+      CloudWatchEncryption:
+        CloudWatchEncryptionMode: SSE-KMS
+        KmsKeyArn: !GetAtt GlueKey.Arn
+      JobBookmarksEncryption:
+        JobBookmarksEncryptionMode: CSE-KMS
+        KmsKeyArn: !GetAtt GlueKey.Arn"""
+_CLOUDFORMATION["CF-GLUE-002"] = """$name:
+  Type: AWS::Glue::Job
+  Properties:
+    DefaultArguments:
+      --enable-metrics: 'true'"""
+_CLOUDFORMATION["CF-GLUE-003"] = """# For a job that loads data incrementally.
+$name:
+  Type: AWS::Glue::Job
+  Properties:
+    DefaultArguments:
+      --job-bookmark-option: job-bookmark-enable"""
+_CLOUDFORMATION["CF-FH-001"] = """$name:
+  Type: AWS::KinesisFirehose::DeliveryStream
+  Properties:
+    DeliveryStreamEncryptionConfigurationInput:
+      KeyType: AWS_OWNED_CMK"""
 _CLOUDFORMATION["CF-BAK-001"] = """$name:
   Type: AWS::Backup::BackupVault
   Properties:
@@ -1485,6 +1532,65 @@ _TERRAFORM["CF-EFS-005"] = """resource "aws_efs_access_point" "$tf_name" {
   posix_user {
     uid = 1000
     gid = 1000
+  }
+}"""
+_TERRAFORM["CF-ATH-001"] = """resource "aws_athena_workgroup" "$tf_name" {
+  # keep the other arguments as they are
+  configuration {
+    result_configuration {
+      encryption_configuration {
+        encryption_option = "SSE_KMS"
+        kms_key_arn       = aws_kms_key.results.arn
+      }
+    }
+  }
+}"""
+_TERRAFORM["CF-ATH-002"] = """resource "aws_athena_workgroup" "$tf_name" {
+  # keep the other arguments as they are
+  configuration {
+    enforce_workgroup_configuration = true
+  }
+}"""
+_TERRAFORM["CF-GLUE-001"] = """# Create an aws_glue_security_configuration with S3, CloudWatch and bookmark encryption, and name it here.
+resource "aws_glue_job" "$tf_name" {
+  # keep the other arguments as they are
+  security_configuration = aws_glue_security_configuration.app.name
+}"""
+_TERRAFORM["CF-GLUE-001:aws_glue_security_configuration"] = """resource "aws_glue_security_configuration" "$tf_name" {
+  # keep the other arguments as they are
+  encryption_configuration {
+    s3_encryption {
+      s3_encryption_mode = "SSE-KMS"
+      kms_key_arn        = aws_kms_key.glue.arn
+    }
+    cloudwatch_encryption {
+      cloudwatch_encryption_mode = "SSE-KMS"
+      kms_key_arn                = aws_kms_key.glue.arn
+    }
+    job_bookmarks_encryption {
+      job_bookmarks_encryption_mode = "CSE-KMS"
+      kms_key_arn                   = aws_kms_key.glue.arn
+    }
+  }
+}"""
+_TERRAFORM["CF-GLUE-002"] = """resource "aws_glue_job" "$tf_name" {
+  # keep the other arguments as they are
+  default_arguments = {
+    "--enable-metrics" = "true"
+  }
+}"""
+_TERRAFORM["CF-GLUE-003"] = """# For a job that loads data incrementally.
+resource "aws_glue_job" "$tf_name" {
+  # keep the other arguments as they are
+  default_arguments = {
+    "--job-bookmark-option" = "job-bookmark-enable"
+  }
+}"""
+_TERRAFORM["CF-FH-001"] = """resource "aws_kinesis_firehose_delivery_stream" "$tf_name" {
+  # keep the other arguments as they are
+  server_side_encryption {
+    enabled  = true
+    key_type = "AWS_OWNED_CMK"
   }
 }"""
 _TERRAFORM["CF-BAK-001"] = """resource "aws_backup_vault" "$tf_name" {

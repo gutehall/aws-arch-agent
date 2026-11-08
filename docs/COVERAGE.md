@@ -17,7 +17,6 @@ Which CDK rules have a template check, and which AWS Foundational Security Best 
 
 | Work | Adds template checks for |
 | -- | -- |
-| `analytics` | Athena, Glue and Firehose |
 | `emr-dms` | EMR and DMS |
 | `s3` | S3 replication, ownership and notifications |
 | `cloudfront` | More CloudFront settings |
@@ -29,7 +28,7 @@ Which CDK rules have a template check, and which AWS Foundational Security Best 
 
 ## CDK rules
 
-172 rules: 100 covered, 7 partial, 25 planned, 10 account, 5 cdk-only, 25 advice.
+172 rules: 104 covered, 7 partial, 21 planned, 10 account, 5 cdk-only, 25 advice.
 
 | Rule | Title | Template check | Status | Note |
 | -- | -- | -- | -- | -- |
@@ -74,8 +73,8 @@ Which CDK rules have a template check, and which AWS Foundational Security Best 
 | SEC-039 | OpenSearch domain encryption not enabled | `CF-OS-001`, `CF-OS-002` | `covered` |  |
 | SEC-040 | OpenSearch fine-grained access control not enabled | `CF-OS-004` | `covered` |  |
 | SEC-041 | OpenSearch domain not in VPC | `CF-OS-003` | `covered` |  |
-| SEC-042 | Athena query result encryption not enabled |  | `planned: analytics` |  |
-| SEC-043 | Glue job encryption not configured |  | `planned: analytics` |  |
+| SEC-042 | Athena query result encryption not enabled | `CF-ATH-001` | `covered` |  |
+| SEC-043 | Glue job encryption not configured | `CF-GLUE-001` | `covered` |  |
 | SEC-044 | MSK cluster encryption not configured | `CF-MSK-001` | `covered` |  |
 | SEC-045 | MSK cluster client authentication not configured | `CF-MSK-002` | `covered` |  |
 | SEC-046 | SageMaker notebook instance not in VPC |  | `planned: sagemaker-fsx` |  |
@@ -169,11 +168,11 @@ Which CDK rules have a template check, and which AWS Foundational Security Best 
 | OPS-012 | Step Functions not using X-Ray tracing | `CF-SFN-002` | `covered` |  |
 | OPS-013 | EventBridge rules not using DLQ | `CF-EB-001` | `covered` |  |
 | OPS-014 | AWS Config not enabled |  | `account` | AWS Config is an account service. account-baseline checks a recorder the repo defines. |
-| OPS-015 | Glue job CloudWatch metrics not enabled |  | `planned: analytics` |  |
+| OPS-015 | Glue job CloudWatch metrics not enabled | `CF-GLUE-002` | `covered` |  |
 | OPS-016 | Transit Gateway flow logs not enabled | `CF-TGW-002` | `covered` |  |
 | OPS-017 | CodePipeline notifications not configured | `CF-CP-003` | `covered` |  |
 | OPS-018 | App Runner observability not configured |  | `planned: app-services` |  |
-| OPS-019 | Glue job bookmarks not enabled |  | `planned: analytics` |  |
+| OPS-019 | Glue job bookmarks not enabled | `CF-GLUE-003` | `covered` | CF-GLUE-003 reports a literal job-bookmark-disable; a job with the option unset keeps OPS-019. |
 | OPS-020 | CodeBuild project logging not configured | `CF-CB-004` | `covered` |  |
 | OPS-021 | CloudWatch dashboards not configured |  | `planned: alarms` |  |
 | OPS-022 | Resource tagging strategy may be incomplete |  | `advice` | Tag choice. CF-TAG-001 checks a configured tag policy. |
@@ -245,7 +244,7 @@ Controls a template can show. Account-level controls (for example S3.1, EC2.7 an
 | CodeBuild.4 | `CF-CB-004` | `AWS::CodeBuild::Project` |
 | Cognito.1 | `CF-COG-003` | `AWS::Cognito::UserPool` |
 | Config.1 | `planned: account-baseline` | `AWS::Config::ConfigurationRecorder` |
-| DataFirehose.1 | `planned: analytics` | `AWS::KinesisFirehose::DeliveryStream` |
+| DataFirehose.1 | `CF-FH-001` | `AWS::KinesisFirehose::DeliveryStream` |
 | DMS.1 | `planned: emr-dms` | `AWS::DMS::ReplicationInstance` |
 | DMS.6 | `planned: emr-dms` | `AWS::DMS::ReplicationInstance` |
 | DMS.9 | `planned: emr-dms` | `AWS::DMS::Endpoint` |

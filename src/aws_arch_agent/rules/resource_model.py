@@ -118,6 +118,9 @@ CF_TYPE_TO_CANONICAL: dict[str, str] = {
     "AWS::Backup::BackupPlan": "backup_plan",
     "AWS::Backup::BackupSelection": "backup_selection",
     "AWS::FSx::FileSystem": "fsx_file_system",
+    "AWS::Athena::WorkGroup": "athena_workgroup",
+    "AWS::Glue::Job": "glue_job",
+    "AWS::Glue::SecurityConfiguration": "glue_security_configuration",
 }
 
 # Terraform only: CloudFormation sets these on the rule, the vault and the file system.

@@ -176,6 +176,12 @@ TOPICS: dict[str, tuple[str, str, str, str]] = {
         "Well-Architected SEC08-BP02: Enforce encryption at rest",
         "/wellarchitected/latest/security-pillar/sec_protect_data_rest_encrypt.html",
     ),
+    "athena_enforce": (
+        "Athena: override client-side settings",
+        "/athena/latest/ug/workgroups-settings-override.html",
+        "Well-Architected SEC08-BP02: Enforce encryption at rest",
+        "/wellarchitected/latest/security-pillar/sec_protect_data_rest_encrypt.html",
+    ),
     "aurora_io": (
         "Aurora: storage configurations (I/O-Optimized)",
         "/AmazonRDS/latest/AuroraUserGuide/Aurora.Overview.StorageReliability.html",
@@ -745,6 +751,12 @@ TOPICS: dict[str, tuple[str, str, str, str]] = {
         "/global-accelerator/latest/dg/about-endpoint-groups-health-check-options.html",
         "Well-Architected REL11-BP01: Monitor all components of the workload to detect failures",
         "/wellarchitected/latest/reliability-pillar/rel_withstand_component_failures_monitoring_health.html",
+    ),
+    "firehose_encryption": (
+        "Amazon Data Firehose: data protection",
+        "/firehose/latest/dev/encryption.html",
+        "Well-Architected SEC08-BP02: Enforce encryption at rest",
+        "/wellarchitected/latest/security-pillar/sec_protect_data_rest_encrypt.html",
     ),
     "glue_bookmarks": (
         "AWS Glue: job bookmarks",
@@ -1885,6 +1897,12 @@ RULE_TOPICS: dict[str, str] = {
     "CF-SFN-003": "sfn_logging",
     "CF-EB-001": "eb_dlq",
     "CF-EB-002": "eb_retry",
+    "CF-ATH-001": "athena_encryption",
+    "CF-ATH-002": "athena_enforce",
+    "CF-GLUE-001": "glue_encryption",
+    "CF-GLUE-002": "glue_metrics",
+    "CF-GLUE-003": "glue_bookmarks",
+    "CF-FH-001": "firehose_encryption",
     "CF-ASG-001": "asg_elb_health",
     "CF-ASG-002": "asg_multi_az",
     "CF-ASG-003": "imdsv2",

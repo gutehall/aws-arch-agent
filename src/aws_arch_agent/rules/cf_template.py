@@ -35,6 +35,11 @@ SENSITIVE_PORTS = {
 
 # Static rule dropped when the CF rule already reported that control.
 CF_COVERS_STATIC: dict[str, tuple[str, ...]] = {
+    "CF-ATH-001": ("SEC-042",),
+    "CF-GLUE-001": ("SEC-043",),
+    "CF-GLUE-002": ("OPS-015",),
+    # Reports only a literal job-bookmark-disable. A job that leaves the option unset keeps OPS-019.
+    "CF-GLUE-003": ("OPS-019",),
     "CF-S3-001": ("SEC-005",),
     "CF-S3-002": ("SEC-006",),
     "CF-VPC-001": ("SEC-022",),
@@ -297,6 +302,7 @@ _PER_RESOURCE_TYPES = frozenset({
     "backup_vault", "backup_vault_lock", "backup_plan", "backup_selection",
     "efs_access_point", "efs_backup_policy", "ecs_cluster",
     "autoscaling_policy", "autoscaling_schedule", "autoscaling_attachment",
+    "athena_workgroup", "glue_job", "glue_security_configuration", "firehose_delivery_stream",
 })
 # Parameter groups only feed CF-RDS-006; they have no checks of their own.
 
@@ -434,6 +440,9 @@ CHECK_PROPERTIES: dict[str, frozenset[str]] = {
         # Template-level: _autoscaling_findings skips what it cannot read.
         **{c: set() for c in ("CF-ASG-001", "CF-ASG-002", "CF-ASG-003", "CF-ASG-004", "CF-ASG-005",
                               "CF-ASG-006")},
+        # Template-level: _analytics_findings skips what it cannot read.
+        **{c: set() for c in ("CF-ATH-001", "CF-ATH-002", "CF-GLUE-001", "CF-GLUE-002", "CF-GLUE-003",
+                              "CF-FH-001")},
         # Template-level: _backup_findings skips what it cannot read.
         **{c: set() for c in ("CF-BAK-001", "CF-BAK-002", "CF-BAK-003", "CF-BAK-004", "CF-BAK-005")},
         # Template-level: _ci_cd_findings skips what it cannot read.
@@ -468,6 +477,8 @@ _F, _SB, _ID, _DP, _NET, _RES, _OBS, _SUS = (
     "network-exposure", "resilience", "observability", "sustainability",
 )
 CF_THEMES: dict[str, tuple[str, ...]] = {
+    "CF-ATH-001": (_DP,), "CF-ATH-002": (_DP,), "CF-GLUE-001": (_DP,), "CF-GLUE-002": (_OBS,),
+    "CF-GLUE-003": (_RES,), "CF-FH-001": (_DP,),
     "CF-ASG-001": (_RES,), "CF-ASG-002": (_RES,), "CF-ASG-003": (_SB, _ID), "CF-ASG-004": (_NET,),
     "CF-ASG-005": (_SB,), "CF-ASG-006": (_F,),
     "CF-ALB-001": (_OBS,), "CF-ALB-002": (_DP, _NET), "CF-ALB-003": (_DP, _NET),
@@ -3668,6 +3679,166 @@ def _asg_size(group: Resource, key: str) -> int | None:
 _ASG_SCALERS = ("autoscaling_policy", "autoscaling_schedule")
 
 
+def _athena_config(group: Resource) -> dict | None:
+    """The workgroup's configuration, {} when unset, None when the scan cannot read it. The older
+    WorkGroupConfigurationUpdates changes a workgroup on update, so it cannot be read as the whole
+    configuration."""
+    if "WorkGroupConfiguration" in group.unresolved or "WorkGroupConfigurationUpdates" in group.properties:
+        return None
+    config = group.properties.get("WorkGroupConfiguration", {})
+    return config if isinstance(config, dict) and not _unread(config) else None
+
+
+def _athena_results_unencrypted(config: dict) -> bool:
+    """True when the configuration is known to set no encryption for query results. Athena-managed
+    results are encrypted without this setting, and a Spark engine does not use it."""
+    managed = config.get("ManagedQueryResultsConfiguration")
+    if managed is not None and (not isinstance(managed, dict) or _unread(managed)
+                                or _flag(managed.get("Enabled")) is not False):
+        return False
+    engine = config.get("EngineVersion")
+    if engine is not None:
+        if not isinstance(engine, dict) or _unread(engine):
+            return False
+        selected = engine.get("SelectedEngineVersion")
+        if selected is not None and (type(selected) is not str or "spark" in selected.lower()):
+            return False
+    result = config.get("ResultConfiguration")
+    if result is None:
+        return True
+    if not isinstance(result, dict) or _unread(result):
+        return False
+    encryption = result.get("EncryptionConfiguration")
+    if encryption is None:
+        return True
+    return isinstance(encryption, dict) and not _unread(encryption) and encryption.get("EncryptionOption") is None
+
+
+def _glue_arguments(job: Resource) -> list[dict] | None:
+    """The job's argument maps, or None when one cannot be read: a parameter or a variable may hold
+    any argument."""
+    maps = []
+    for key in ("DefaultArguments", "NonOverridableArguments"):
+        value = job.properties.get(key)
+        if key in job.unresolved or (value is not None and not isinstance(value, dict)):
+            return None
+        if value is not None:
+            if any(isinstance(k, str) and (k == "Ref" or k.startswith("Fn::")) for k in value):
+                return None
+            maps.append(value)
+    return maps
+
+
+def _glue_mode_off(block: Any, key: str) -> bool:
+    """True when one encryption block is known to be off. No block or no mode encrypts nothing."""
+    if block is None:
+        return True
+    if not isinstance(block, dict) or _unread(block):
+        return False
+    mode = block.get(key)
+    return mode is None or (type(mode) is str and mode.upper() == "DISABLED")
+
+
+def _glue_encryption_gaps(config: Resource) -> list[str]:
+    """What a security configuration is known not to encrypt."""
+    encryption = config.properties.get("EncryptionConfiguration", {})
+    if "EncryptionConfiguration" in config.unresolved or not isinstance(encryption, dict) or _unread(encryption):
+        return []
+    gaps = []
+    s3 = encryption.get("S3Encryptions")
+    entries = s3 if isinstance(s3, list) else [s3]
+    if all(_glue_mode_off(entry, "S3EncryptionMode") for entry in entries):
+        gaps.append("S3 data")
+    if _glue_mode_off(encryption.get("CloudWatchEncryption"), "CloudWatchEncryptionMode"):
+        gaps.append("CloudWatch logs")
+    if _glue_mode_off(encryption.get("JobBookmarksEncryption"), "JobBookmarksEncryptionMode"):
+        gaps.append("job bookmarks")
+    return gaps
+
+
+def _firehose_direct_put(stream: Resource) -> bool:
+    """True when the stream is known to take direct puts. A stream with a source takes its encryption
+    from that source."""
+    if "DeliveryStreamType" in stream.unresolved:
+        return False
+    return (stream.properties.get("DeliveryStreamType", "DirectPut") == "DirectPut"
+            and not any(key.endswith("SourceConfiguration") for key in stream.properties))
+
+
+def _analytics_findings(resources: List[Resource], template_path: Path) -> List[Finding]:
+    """Athena (CF-ATH-001/002), Glue (CF-GLUE-001..003) and Firehose (CF-FH-001). A value the scan
+    cannot read is not judged."""
+    usable = [r for r in resources if not r.malformed]
+    out: List[Finding] = []
+
+    def add(res: Resource, check_id: str, title: str, severity: Severity, category: str,
+            recommendation: str) -> None:
+        out.append(Finding(
+            id=check_id, title=title, severity=severity, category=category,
+            file=res.file or str(template_path), line=res.line,
+            evidence=f"{res.name} ({res.source_type})", recommendation=recommendation,
+        ))
+
+    for group in (r for r in usable if r.type == "athena_workgroup"):
+        config = _athena_config(group)
+        if config is None:
+            continue
+        if _athena_results_unencrypted(config):
+            add(group, "CF-ATH-001", "Athena workgroup does not encrypt query results", "Medium", "Security",
+                "Query results can hold the data the query read. Set ResultConfiguration.EncryptionConfiguration "
+                "in WorkGroupConfiguration, with SSE_KMS and a key of your own where you need to control access. "
+                "In CDK: workGroupConfiguration.resultConfiguration.encryptionConfiguration.")
+        enforce = config.get("EnforceWorkGroupConfiguration")
+        if enforce is not None and _flag(enforce) is False:
+            add(group, "CF-ATH-002", "Athena workgroup lets clients override its settings", "Low", "Security",
+                "EnforceWorkGroupConfiguration is false, so a client can choose its own result location and "
+                "encryption. Set it to true so the workgroup's settings apply to every query. "
+                "In CDK: workGroupConfiguration.enforceWorkGroupConfiguration.")
+
+    for job in (r for r in usable if r.type == "glue_job"):
+        secured = job.properties.get("SecurityConfiguration")
+        if "SecurityConfiguration" not in job.unresolved and (secured is None or secured == ""):
+            add(job, "CF-GLUE-001", "Glue job or security configuration does not encrypt its data", "Medium",
+                "Security",
+                "The job has no SecurityConfiguration, so its S3 data, CloudWatch logs and job bookmarks are "
+                "not encrypted by Glue. Create an AWS::Glue::SecurityConfiguration and name it on the job. "
+                "In CDK: securityConfiguration.")
+        command = job.properties.get("Command")
+        kind = command.get("Name") if isinstance(command, dict) else None
+        arguments = _glue_arguments(job)
+        if arguments is None or "Command" in job.unresolved:
+            continue
+        if kind in ("glueetl", "gluestreaming") and not any("--enable-metrics" in m for m in arguments):
+            add(job, "CF-GLUE-002", "Glue job does not publish CloudWatch metrics", "Low",
+                "Operational Excellence",
+                "Without job metrics a slow or failing run is harder to see. Add --enable-metrics to "
+                "DefaultArguments. In CDK: defaultArguments.")
+        # Only Spark ETL jobs have bookmarks: streaming jobs use checkpoints.
+        if kind == "glueetl" and any(m.get("--job-bookmark-option") == "job-bookmark-disable" for m in arguments):
+            add(job, "CF-GLUE-003", "Glue job has job bookmarks turned off", "Low", "Operational Excellence",
+                "--job-bookmark-option is job-bookmark-disable, so each run processes all the data again. A "
+                "full reload may be intended. If the job loads data incrementally, set it to "
+                "job-bookmark-enable. In CDK: defaultArguments.")
+
+    for security in (r for r in usable if r.type == "glue_security_configuration"):
+        gaps = _glue_encryption_gaps(security)
+        if gaps:
+            add(security, "CF-GLUE-001", "Glue job or security configuration does not encrypt its data", "Medium",
+                "Security",
+                f"Encryption is off for {', '.join(gaps)}. Set S3EncryptionMode, CloudWatchEncryptionMode and "
+                "JobBookmarksEncryptionMode to an encrypting mode, with a KMS key. "
+                "In CDK: s3Encryption, cloudWatchEncryption and jobBookmarksEncryption.")
+
+    for stream in (r for r in usable if r.type == "firehose_delivery_stream"):
+        if (_firehose_direct_put(stream) and "DeliveryStreamEncryptionConfigurationInput" not in stream.unresolved
+                and stream.properties.get("DeliveryStreamEncryptionConfigurationInput") is None):
+            add(stream, "CF-FH-001", "Firehose delivery stream is not encrypted at rest", "Medium", "Security",
+                "This stream takes direct puts and has no server-side encryption. Set "
+                "DeliveryStreamEncryptionConfigurationInput (Security Hub DataFirehose.1). "
+                "In CDK: encryption on the delivery stream.")
+    return out
+
+
 def _autoscaling_findings(resources: List[Resource], template_path: Path) -> List[Finding]:
     """Auto Scaling groups and launch configurations (CF-ASG-001..006). A value the scan cannot read
     is not judged."""
@@ -5313,6 +5484,9 @@ def _run_resource_checks(
 
     # --- Auto Scaling groups and launch configurations ---
     findings.extend(_autoscaling_findings(resources, template_path))
+
+    # --- Athena workgroups, Glue jobs and security configurations, Firehose delivery streams ---
+    findings.extend(_analytics_findings(resources, template_path))
 
     # --- AWS Backup vaults, plans and which resources they select ---
     findings.extend(_backup_findings(resources, template_path))

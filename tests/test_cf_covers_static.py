@@ -235,6 +235,15 @@ PAIRS: list[tuple[str, str, dict, str]] = [
     ("CF-ECS-011", "PERF-007", {"Type": "AWS::ECS::TaskDefinition", "Properties": {
         "RequiresCompatibilities": ["FARGATE"], "Cpu": "256", "Memory": "600"}},
      "new ecs.FargateTaskDefinition(this, 'Td');"),
+    ("CF-ATH-001", "SEC-042", {"Type": "AWS::Athena::WorkGroup", "Properties": {"Name": "wg"}},
+     "new athena.CfnWorkGroup(this, 'W', { name: 'wg' });"),
+    ("CF-GLUE-001", "SEC-043", {"Type": "AWS::Glue::Job", "Properties": {"Command": {"Name": "glueetl"}}},
+     "new glue.CfnJob(this, 'J', { command: { name: 'glueetl' }, role: role.roleArn });"),
+    ("CF-GLUE-002", "OPS-015", {"Type": "AWS::Glue::Job", "Properties": {"Command": {"Name": "glueetl"}}},
+     "new glue.CfnJob(this, 'J', { command: { name: 'glueetl' }, role: role.roleArn });"),
+    ("CF-GLUE-003", "OPS-019", {"Type": "AWS::Glue::Job", "Properties": {
+        "Command": {"Name": "glueetl"}, "DefaultArguments": {"--job-bookmark-option": "job-bookmark-disable"}}},
+     "new glue.CfnJob(this, 'J', { command: { name: 'glueetl' }, role: role.roleArn });"),
     ("CF-COST-002", "COST-006",
      {"Type": "AWS::EC2::NatGateway", "Properties": {"SubnetId": {"Ref": "Public"}}},
      "new ec2.Vpc(this, 'Vpc', { natGateways: 1 });"),

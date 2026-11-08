@@ -89,6 +89,7 @@ _SERVICES: list[tuple[str, str, str]] = [
     (r"\bAthena\b", "Amazon Athena", "/athena/latest/ug/"),
     (r"\bGlue\b", "AWS Glue", "/glue/latest/dg/"),
     (r"\bMSK\b", "Amazon MSK", "/msk/latest/developerguide/"),
+    (r"\bFirehose\b", "Amazon Data Firehose", "/firehose/latest/dev/"),
     (r"\bKinesis\b", "Amazon Kinesis Data Streams", "/streams/latest/dev/"),
     (r"\bSQS\b|\bqueue\b|\bdead-letter\b", "Amazon SQS", "/AWSSimpleQueueService/latest/SQSDeveloperGuide/"),
     (r"\bSNS\b", "Amazon SNS", "/sns/latest/dg/"),
