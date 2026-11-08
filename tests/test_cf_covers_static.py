@@ -215,6 +215,13 @@ PAIRS: list[tuple[str, str, dict, str]] = [
      "new codepipeline.Pipeline(this, 'P', { pipelineName: 'prod-release' });"),
     ("CF-CP-003", "OPS-017", {"Type": "AWS::CodePipeline::Pipeline", "Properties": {}},
      "new codepipeline.Pipeline(this, 'P');"),
+    ("CF-BAK-001", "SEC-063", {"Type": "AWS::Backup::BackupVault", "Properties": {}},
+     "new backup.BackupVault(this, 'V');"),
+    ("CF-BAK-002", "REL-014", {"Type": "AWS::Backup::BackupPlan", "Properties": {"BackupPlan": {
+        "BackupPlanName": "p", "BackupPlanRule": [{"RuleName": "daily"}]}}},
+     "new backup.BackupPlan(this, 'P');"),
+    ("CF-BAK-005", "REL-013", {"Type": "AWS::DynamoDB::Table", "Properties": {}},
+     "new DynamoDB.Table(this, 'T');"),
     ("CF-COST-002", "COST-006",
      {"Type": "AWS::EC2::NatGateway", "Properties": {"SubnetId": {"Ref": "Public"}}},
      "new ec2.Vpc(this, 'Vpc', { natGateways: 1 });"),

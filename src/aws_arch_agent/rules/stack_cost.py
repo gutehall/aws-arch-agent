@@ -34,7 +34,8 @@ _FREE_CF = re.compile(
     r"Logs::SubscriptionFilter|Logs::MetricFilter|ECR::RegistryPolicy|"
     r"SecretsManager::RotationSchedule|SecretsManager::ResourcePolicy|"
     r"ElasticLoadBalancingV2::(?:Listener|ListenerRule|TargetGroup)|"
-    r"ApiGateway::(?:Resource|Method|Deployment|Account)|WAFv2::WebACLAssociation)$"
+    r"ApiGateway::(?:Resource|Method|Deployment|Account)|WAFv2::WebACLAssociation|"
+    r"Backup::(?:BackupPlan|BackupSelection))$"
 )
 _FREE_TF = re.compile(
     r"^aws_(?:iam_\w+|security_group\w*|vpc_security_group_\w+|vpc|subnet|"
@@ -44,7 +45,8 @@ _FREE_TF = re.compile(
     r"cloudwatch_event_\w+|s3_bucket_(?!object)\w+|sqs_queue_policy|sns_topic_\w+|"
     r"ecr_lifecycle_policy|ecr_repository_policy|secretsmanager_secret_\w+|"
     r"eip_association|lb_listener\w*|lb_target_group\w*|wafv2_web_acl_association|"
-    r"api_gateway_(?:resource|method|integration|deployment)\w*|cloudwatch_log_subscription_filter)$"
+    r"api_gateway_(?:resource|method|integration|deployment)\w*|cloudwatch_log_subscription_filter|"
+    r"backup_plan|backup_selection|backup_vault_lock_configuration)$"
 )
 
 

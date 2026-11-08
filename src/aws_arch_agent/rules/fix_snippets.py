@@ -1279,6 +1279,49 @@ _CLOUDFORMATION["CF-RS-002"] = """$name:
   Type: AWS::Redshift::Cluster
   Properties:
     PubliclyAccessible: false"""
+_CLOUDFORMATION["CF-BAK-001"] = """$name:
+  Type: AWS::Backup::BackupVault
+  Properties:
+    BackupVaultName: my-vault
+    EncryptionKeyArn: !GetAtt BackupKey.Arn"""
+_CLOUDFORMATION["CF-BAK-002"] = """$name:
+  Type: AWS::Backup::BackupPlan
+  Properties:
+    BackupPlan:
+      BackupPlanName: my-plan
+      BackupPlanRule:
+        - RuleName: daily
+          TargetBackupVault: my-vault
+          CopyActions:
+            - DestinationBackupVaultArn: arn:aws:backup:eu-north-1:111122223333:backup-vault:my-dr-vault"""
+_CLOUDFORMATION["CF-BAK-003"] = """$name:
+  Type: AWS::Backup::BackupPlan
+  Properties:
+    BackupPlan:
+      BackupPlanName: my-plan
+      BackupPlanRule:
+        - RuleName: daily
+          TargetBackupVault: my-vault
+          Lifecycle:
+            DeleteAfterDays: 35"""
+_CLOUDFORMATION["CF-BAK-004"] = """$name:
+  Type: AWS::Backup::BackupVault
+  Properties:
+    BackupVaultName: my-vault
+    LockConfiguration:
+      MinRetentionDays: 7"""
+_CLOUDFORMATION["CF-BAK-005"] = """${name}Selection:
+  Type: AWS::Backup::BackupSelection
+  Properties:
+    BackupPlanId: !Ref BackupPlan
+    BackupSelection:
+      SelectionName: $name
+      IamRoleArn: !GetAtt BackupRole.Arn
+      # Give $name the tag backup=true, or list its ARN in Resources.
+      ListOfTags:
+        - ConditionType: STRINGEQUALS
+          ConditionKey: backup
+          ConditionValue: 'true'"""
 _CLOUDFORMATION["CF-RS-003"] = """$name:
   Type: AWS::Redshift::Cluster
   Properties:
@@ -1337,6 +1380,50 @@ _CLOUDFORMATION["CF-NEP-005"] = """$name:
     IamAuthEnabled: true"""
 _TERRAFORM["CF-RS-002"] = """resource "aws_redshift_cluster" "$tf_name" {
   publicly_accessible = false
+}"""
+_TERRAFORM["CF-BAK-001"] = """resource "aws_backup_vault" "$tf_name" {
+  name        = "my-vault"
+  kms_key_arn = aws_kms_key.backup.arn
+}"""
+_TERRAFORM["CF-BAK-002"] = """resource "aws_backup_plan" "$tf_name" {
+  name = "my-plan"
+
+  rule {
+    rule_name         = "daily"
+    target_vault_name = aws_backup_vault.main.name
+
+    copy_action {
+      destination_vault_arn = aws_backup_vault.dr.arn # a vault in another Region
+    }
+  }
+}"""
+_TERRAFORM["CF-BAK-003"] = """resource "aws_backup_plan" "$tf_name" {
+  name = "my-plan"
+
+  rule {
+    rule_name         = "daily"
+    target_vault_name = aws_backup_vault.main.name
+
+    lifecycle {
+      delete_after = 35
+    }
+  }
+}"""
+_TERRAFORM["CF-BAK-004"] = """resource "aws_backup_vault_lock_configuration" "$tf_name" {
+  backup_vault_name  = aws_backup_vault.$tf_name.name
+  min_retention_days = 7
+}"""
+_TERRAFORM["CF-BAK-005"] = """resource "aws_backup_selection" "$tf_name" {
+  name         = "$tf_name"
+  plan_id      = aws_backup_plan.main.id
+  iam_role_arn = aws_iam_role.backup.arn
+
+  # Give the resource the tag backup=true, or list its ARN in resources.
+  selection_tag {
+    type  = "STRINGEQUALS"
+    key   = "backup"
+    value = "true"
+  }
 }"""
 _TERRAFORM["CF-RS-003"] = """resource "aws_redshift_cluster" "$tf_name" {
   automated_snapshot_retention_period = 7

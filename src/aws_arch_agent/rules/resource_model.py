@@ -110,10 +110,16 @@ CF_TYPE_TO_CANONICAL: dict[str, str] = {
     "AWS::Events::EventBus": "event_bus",
     "AWS::Events::EventBusPolicy": "event_bus_policy",
     "AWS::StepFunctions::StateMachine": "sfn_state_machine",
+    "AWS::Backup::BackupVault": "backup_vault",
+    "AWS::Backup::BackupPlan": "backup_plan",
+    "AWS::Backup::BackupSelection": "backup_selection",
+    "AWS::FSx::FileSystem": "fsx_file_system",
 }
 
-# events_target is Terraform only: CloudFormation lists a rule's targets on the rule.
-CANONICAL_TYPES: frozenset[str] = frozenset(CF_TYPE_TO_CANONICAL.values()) | {"events_target"}
+# Terraform only: CloudFormation lists a rule's targets on the rule, and a vault's lock on the vault.
+CANONICAL_TYPES: frozenset[str] = frozenset(CF_TYPE_TO_CANONICAL.values()) | {
+    "events_target", "backup_vault_lock",
+}
 
 
 @dataclass

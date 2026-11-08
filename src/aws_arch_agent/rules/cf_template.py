@@ -128,6 +128,9 @@ CF_COVERS_STATIC: dict[str, tuple[str, ...]] = {
     "CF-RDS-006": ("SEC-021",),
     "CF-RDS-007": ("OPS-009",),
     "CF-RDS-014": ("COST-010",),
+    "CF-BAK-001": ("SEC-063",),
+    "CF-BAK-002": ("REL-014",),
+    "CF-BAK-005": ("REL-013",),
     "CF-S3-003": ("REL-031",),
     "CF-KMS-001": ("SEC-007",),
     "CF-KMS-002": ("SEC-023",),
@@ -282,6 +285,7 @@ _PER_RESOURCE_TYPES = frozenset({
     "security_group_egress_rule", "network_acl_entry", "network_acl", "transit_gateway",
     "lb_listener", "lb_target_group", "elb", "lambda_url",
     "sfn_state_machine", "events_rule", "events_target", "event_bus", "event_bus_policy",
+    "backup_vault", "backup_vault_lock", "backup_plan", "backup_selection",
 })
 # Parameter groups only feed CF-RDS-006; they have no checks of their own.
 
@@ -410,6 +414,8 @@ CHECK_PROPERTIES: dict[str, frozenset[str]] = {
                               "CF-MSK-002", "CF-MSK-003", "CF-KIN-002")},
         # Template-level: _kms_ssm_findings skips what it cannot read.
         **{c: set() for c in ("CF-KMS-002", "CF-KMS-003", "CF-SSM-001", "CF-SSM-002")},
+        # Template-level: _backup_findings skips what it cannot read.
+        **{c: set() for c in ("CF-BAK-001", "CF-BAK-002", "CF-BAK-003", "CF-BAK-004", "CF-BAK-005")},
         # Template-level: _ci_cd_findings skips what it cannot read.
         **{c: set() for c in ("CF-CB-001", "CF-CB-002", "CF-CB-003", "CF-CB-004", "CF-CB-005",
                               "CF-CP-001", "CF-CP-002", "CF-CP-003")},
@@ -489,6 +495,8 @@ CF_THEMES: dict[str, tuple[str, ...]] = {
     "CF-S3-006": (_F, _DP), "CF-S3-007": (_F,), "CF-DDB-003": (_F, _RES),
     "CF-S3-005": (_DP, _NET), "CF-SG-001": (_NET,), "CF-SG-002": (_NET,), "CF-SG-003": (_NET,),
     "CF-NACL-001": (_NET,), "CF-NAT-001": (_RES,), "CF-TGW-001": (_NET, _ID), "CF-TGW-002": (_OBS, _NET), "CF-SM-001": (_DP, _ID), "CF-SNS-001": (_DP,),
+    "CF-BAK-001": (_DP,), "CF-BAK-002": (_RES, _DP), "CF-BAK-003": (_RES, _DP),
+    "CF-BAK-004": (_DP, _RES), "CF-BAK-005": (_RES, _DP),
     "CF-SFN-001": (_RES,), "CF-SFN-002": (_OBS,), "CF-SFN-003": (_OBS,), "CF-EB-001": (_OBS, _RES),
     "CF-EB-002": (_RES,), "CF-SQS-003": (_RES,),
     "CF-SQS-001": (_DP,), "CF-SQS-002": (_RES,),
@@ -2061,6 +2069,186 @@ def _short_backups(res: Resource) -> int | None:
         return None
     days = _days(res, "BackupRetentionPeriod", 1)
     return days if days is not None and days < _MIN_BACKUP_DAYS else None
+
+
+# The AWS service in the ARN of each type AWS Backup can select (CF-BAK-005).
+_BACKUP_SERVICES = {
+    "db_instance": "rds", "rds_cluster": "rds", "dynamodb_table": "dynamodb",
+    "efs_file_system": "elasticfilesystem", "ebs_volume": "ec2", "fsx_file_system": "fsx",
+}
+# Sources that name where this stack runs. The others are only the scan's default.
+_STACK_REGION_SOURCES = frozenset({
+    "Terraform provider", "Terraform plan", "CDK stack env", "availability zones", "--region / config",
+})
+_BACKUP_ARN_REGION = re.compile(r"arn:[^:\s]+:backup:([^:$\s]+):")
+
+
+def _copies_to_another_region(action: Any, vaults: List[Resource], region: regions.Resolved) -> bool:
+    """False only when a copy action stays in the stack's region. One the scan cannot place counts."""
+    if not isinstance(action, dict):
+        return True
+    arn = action.get("DestinationBackupVaultArn")
+    text = arn
+    if isinstance(arn, dict):
+        if any(_value_mentions(arn, v.name) for v in vaults):
+            return False  # a vault in this template, and a template deploys to one region
+        sub = arn.get("Fn::Sub")
+        text = sub[0] if isinstance(sub, list) and sub else sub
+    if type(text) is not str:
+        return True  # an intrinsic, or a Terraform expression: its provider may be another region
+    if "${AWS::Region}" in text:
+        return False
+    match = _BACKUP_ARN_REGION.search(text)
+    if match is None or region.source not in _STACK_REGION_SOURCES:
+        return True
+    return match.group(1) != region.region
+
+
+def _tag_may_match(tags: dict[str, Any] | None, condition: Any) -> bool:
+    """False only when the resource's readable tags rule the condition out."""
+    if not isinstance(condition, dict):
+        return True
+    key, value = condition.get("ConditionKey"), condition.get("ConditionValue")
+    if tags is None or type(key) is not str or type(value) is not str:
+        return True
+    key = key.removeprefix("aws:ResourceTag/")
+    if key not in tags:
+        return False
+    return type(tags[key]) is not str or tags[key] == value
+
+
+def _entry_may_select(entry: Any, res: Resource, resources: List[Resource]) -> bool:
+    """False only when an entry in a selection's Resources cannot be this resource. A literal ARN
+    of the same service counts: the template does not show the ARN the resource will get."""
+    if type(entry) is str:
+        parts = entry.split(":")
+        return len(parts) < 3 or parts[2] in ("*", _BACKUP_SERVICES.get(res.type or ""))
+    if _value_mentions(entry, res.name):
+        return True
+    return not any(_value_mentions(entry, r.name) for r in resources)  # a parameter or variable
+
+
+def _selection_may_select(selection: Resource, res: Resource, resources: List[Resource]) -> bool:
+    """False only when the scan can read the selection and it leaves this resource out.
+    NotResources and conditions other than StringEquals only narrow it, so they are not read."""
+    body = selection.properties.get("BackupSelection")
+    if "BackupSelection" in selection.unresolved or not isinstance(body, dict):
+        return True
+    tags = tag_policy.effective_tags(res)
+    conditions = body.get("Conditions")
+    equals = conditions.get("StringEquals") if isinstance(conditions, dict) else None
+    if isinstance(equals, list) and not all(_tag_may_match(tags, c) for c in equals):
+        return False
+    entries, tag_list = body.get("Resources") or [], body.get("ListOfTags") or []
+    if not isinstance(entries, list) or not isinstance(tag_list, list) or not (entries or tag_list):
+        return True
+    return (any(_entry_may_select(e, res, resources) for e in entries)
+            or any(_tag_may_match(tags, c) for c in tag_list))
+
+
+def _vault_is_locked(vault: Resource, vaults: List[Resource], locks: List[Resource]) -> bool:
+    """True when the vault is locked, or may be: a Terraform lock the scan cannot tie to a vault
+    counts for all of them."""
+    if "LockConfiguration" in vault.unresolved or vault.properties.get("LockConfiguration"):
+        return True
+
+    def ties(lock: Resource, target: Resource) -> bool:
+        name = lock.properties.get("BackupVaultName")
+        return target.name in lock.references or (
+            type(name) is str and name == target.properties.get("BackupVaultName"))
+
+    return any(ties(lock, vault) or not any(ties(lock, v) for v in vaults) for lock in locks)
+
+
+def _short_lifecycle(rule: dict) -> bool:
+    """True when a plan rule deletes recovery points before the minimum. Unset keeps them forever."""
+    lifecycle = rule.get("Lifecycle")
+    days = lifecycle.get("DeleteAfterDays") if isinstance(lifecycle, dict) else None
+    if days is None or isinstance(days, bool):
+        return False
+    try:
+        return int(days) < _MIN_BACKUP_DAYS
+    except (TypeError, ValueError):
+        return False
+
+
+def _backup_findings(resources: List[Resource], template_path: Path) -> List[Finding]:
+    """AWS Backup vaults, plans and coverage (CF-BAK-001..005). A value the scan cannot read is
+    not judged."""
+    usable = [r for r in resources if not r.malformed]
+    vaults = [r for r in usable if r.type == "backup_vault"]
+    locks = [r for r in usable if r.type == "backup_vault_lock"]
+    plans = [r for r in usable if r.type == "backup_plan"]
+    selections = [r for r in usable if r.type == "backup_selection"]
+    out: List[Finding] = []
+
+    def add(res: Resource, check_id: str, title: str, severity: Severity, category: str,
+            recommendation: str) -> None:
+        out.append(Finding(
+            id=check_id, title=title, severity=severity, category=category,
+            file=res.file or str(template_path), line=res.line,
+            evidence=f"{res.name} ({res.source_type})", recommendation=recommendation,
+        ))
+
+    prod = bool(vaults) and environments.resolve(template_path, resources) == "prod"
+    for vault in vaults:
+        if "EncryptionKeyArn" not in vault.unresolved and not vault.properties.get("EncryptionKeyArn"):
+            add(vault, "CF-BAK-001", "Backup vault has no customer managed key", "Low", "Security",
+                "With no EncryptionKeyArn, the vault uses the AWS managed aws/backup key. Set a customer "
+                "managed KMS key to control its policy and who can decrypt recovery points. In CDK: "
+                "encryptionKey on the BackupVault.")
+        if prod and not _vault_is_locked(vault, vaults, locks):
+            add(vault, "CF-BAK-004", "Production backup vault has no Vault Lock", "Low", "Reliability",
+                "Without Vault Lock, anyone with delete rights can remove recovery points. Set LockConfiguration (Terraform "
+                "aws_backup_vault_lock_configuration) with a minimum retention. In CDK: lockConfiguration "
+                "on the BackupVault.")
+
+    region = regions.resolve(template_path, usable)
+    for plan in plans:
+        body = plan.properties.get("BackupPlan")
+        rules = body.get("BackupPlanRule") if isinstance(body, dict) else None
+        if "BackupPlan" in plan.unresolved or not isinstance(rules, list):
+            continue
+        rules = [r for r in rules if isinstance(r, dict)]
+        named = {i: r.get("RuleName") if type(r.get("RuleName")) is str else f"rule {i + 1}"
+                 for i, r in enumerate(rules)}
+        no_copy = [named[i] for i, r in enumerate(rules) if isinstance(r.get("CopyActions") or [], list)
+                   and not any(_copies_to_another_region(a, vaults, region) for a in r.get("CopyActions") or [])]
+        short = [named[i] for i, r in enumerate(rules) if _short_lifecycle(r)]
+        if no_copy:
+            add(plan, "CF-BAK-002", "Backup plan does not copy to another Region", "Low", "Reliability",
+                f"Recovery points stay in one Region under these rules: {', '.join(no_copy)}. A Regional "
+                "outage reaches the backups too. Add CopyActions with a vault in another Region as "
+                "DestinationBackupVaultArn. In CDK: copyActions on the BackupPlanRule.")
+        if short:
+            add(plan, "CF-BAK-003", "Backup plan keeps recovery points under 7 days", "Low", "Reliability",
+                f"Lifecycle.DeleteAfterDays is below 7 on these rules: {', '.join(short)}. That may leave no "
+                "good copy by the time a problem is found. Keep them at least 7 days. In CDK: deleteAfter on "
+                "the BackupPlanRule.")
+
+    # An Aurora member or a replica holds no data of its own to back up.
+    stateful = [r for r in usable if r.type in _BACKUP_SERVICES and not (
+        r.type == "db_instance" and any(
+            r.properties.get(k) or k in r.unresolved
+            for k in ("DBClusterIdentifier", "SourceDBInstanceIdentifier", "SourceDBClusterIdentifier")
+        ))]
+    unreadable = any(r.malformed and r.type in ("backup_plan", "backup_selection") for r in resources)
+    if not stateful or unreadable:
+        return out
+    if not plans and not selections:
+        add(stateful[0], "CF-BAK-005", "Stack has stateful resources and no AWS Backup plan", "Low",
+            "Reliability",
+            f"This stack has {len(stateful)} stateful resource(s) and no BackupPlan. Add a plan and a "
+            "BackupSelection, unless another stack or an organization backup policy covers them. In "
+            "CDK: backup.BackupPlan with addSelection.")
+        return out
+    for res in stateful:
+        if not any(_selection_may_select(s, res, usable) for s in selections):
+            add(res, "CF-BAK-005", "No AWS Backup selection covers this resource", "Low", "Reliability",
+                "No BackupSelection in this template selects the resource by ARN or tag, so the plan does "
+                "not back it up. Add it to a selection's Resources, or give it a tag in ListOfTags. In "
+                "CDK: addSelection on the BackupPlan.")
+    return out
 
 
 def _exports_audit_logs(res: Resource) -> bool | None:
@@ -4572,6 +4760,9 @@ def _run_resource_checks(
 
     # --- CodeBuild and CodePipeline ---
     findings.extend(_ci_cd_findings(resources, template_path))
+
+    # --- AWS Backup vaults, plans and which resources they select ---
+    findings.extend(_backup_findings(resources, template_path))
 
     # --- API Gateway auth, TLS, throttling, validation and caching ---
     findings.extend(_api_gateway_findings(resources, template_path))
