@@ -164,6 +164,26 @@ PAIRS: list[tuple[str, str, dict, str]] = [
         "Map": {"Type": "AWS::Lambda::EventSourceMapping", "Properties": {
             "FunctionName": {"Ref": "Fn"}, "EventSourceArn": "arn:aws:sqs:eu-west-1:1:q"}},
     }, _FN),
+    ("CF-APIGW-003", "SEC-009", {"Type": "AWS::ApiGateway::Method", "Properties": {
+        "HttpMethod": "GET", "AuthorizationType": "NONE", "RestApiId": "a", "ResourceId": "r"}},
+     "new apigateway.RestApi(this, 'Api');"),
+    ("CF-APIGW-V2-003", "SEC-009", {"Type": "AWS::ApiGatewayV2::Route", "Properties": {
+        "ApiId": "a", "RouteKey": "GET /items"}}, "new apigateway.RestApi(this, 'Api');"),
+    ("CF-APIGW-004", "SEC-010", {"Type": "AWS::ApiGateway::RestApi", "Properties": {"Name": "a"}},
+     "new apigateway.RestApi(this, 'Api');"),
+    ("CF-APIGW-005", "REL-006", {"Type": "AWS::ApiGateway::Stage", "Properties": {
+        "RestApiId": "a", "StageName": "prod"}}, "new apigateway.RestApi(this, 'Api');"),
+    ("CF-APIGW-V2-004", "REL-006", {"Type": "AWS::ApiGatewayV2::Stage", "Properties": {
+        "ApiId": "a", "StageName": "$default"}}, "new apigateway.RestApi(this, 'Api');"),
+    ("CF-APIGW-006", "REL-028", {"Type": "AWS::ApiGateway::Method", "Properties": {
+        "HttpMethod": "POST", "AuthorizationType": "AWS_IAM", "RestApiId": "a", "ResourceId": "r"}},
+     "new apigateway.RestApi(this, 'Api');"),
+    ("CF-APIGW-008", "PERF-004", {
+        "Api": {"Type": "AWS::ApiGateway::RestApi", "Properties": {"Name": "a"}},
+        "Get": {"Type": "AWS::ApiGateway::Method", "Properties": {
+            "HttpMethod": "GET", "RestApiId": {"Ref": "Api"}, "ResourceId": "r"}},
+        "Stage": {"Type": "AWS::ApiGateway::Stage", "Properties": {"RestApiId": {"Ref": "Api"}}},
+    }, "new apigateway.RestApi(this, 'Api');"),
     ("CF-COST-002", "COST-006",
      {"Type": "AWS::EC2::NatGateway", "Properties": {"SubnetId": {"Ref": "Public"}}},
      "new ec2.Vpc(this, 'Vpc', { natGateways: 1 });"),
