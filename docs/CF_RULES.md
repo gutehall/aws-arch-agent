@@ -352,9 +352,9 @@ CloudFormation template rules run when the agent has access to template files. T
   - CF-CP-003 (Low): no `AWS::CodeStarNotifications::NotificationRule` or EventBridge rule (`source: aws.codepipeline`) for the pipeline; a rule the scan cannot tie to a resource counts, unless it is for CodeBuild. In V2 it replaces OPS-017
 - **KMS rotation and deletion window** (`AWS::KMS::Key`, `aws_kms_key`):
   - CF-KMS-002 (Medium, Security Hub KMS.4): `EnableKeyRotation` not true on a symmetric key with AWS KMS key material. Rotation does not exist for asymmetric, HMAC, `EXTERNAL` or custom key store keys, so they are not reported. In V2 it replaces SEC-023
-  - CF-KMS-003 (Low): `PendingWindowInDays` (Terraform `deletion_window_in_days`) below 30 on a key that a data store in the same template refers to. A key used through an alias is not tied to its data store
+  - CF-KMS-003 (Low): `PendingWindowInDays` (Terraform `deletion_window_in_days`) below 30 on a key that a data store or `SecureString` parameter in the same template refers to. A key used through an alias is not tied to its data store
 - **SSM parameters** (`AWS::SSM::Parameter`, `aws_ssm_parameter`):
-  - CF-SSM-001 (Medium): type `String` and a name that looks like a secret, read from the last part of `Name`, or the logical id or Terraform label when `Name` cannot be read. A literal ARN, flag or number as the value is not reported. Findings never quote the value. In V2 it replaces SEC-033
+  - CF-SSM-001 (Medium): type `String` and a name that looks like a secret, read from the last part of `Name`, or the logical id or Terraform label when `Name` cannot be read. A value that cannot be the secret is not reported: an ARN, a flag, a number, or a reference to a resource in the template. A value from a template parameter or a Terraform variable is reported, because a `String` parameter stores it in plain text. Findings never quote the value. In V2 it replaces SEC-033
   - CF-SSM-002 (Low): `Tier: Advanced` with a literal value under 4 KB, no parameter policy, and a data type the standard tier supports. A parameter shared across accounts needs this tier, and the scan cannot see that, so the finding says so
 - **Auto Scaling**: CF-SUST-001 (no Spot / mixed instances)
 - **ECS**: CF-SUST-002 (Fargate without FARGATE_SPOT)

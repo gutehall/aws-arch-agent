@@ -94,6 +94,12 @@ def test_deletion_window_needs_a_data_store_that_uses_the_key(tmp_path: Path) ->
     }) == {"CF-KMS-003": {"Short", "ShortText"}}
 
 
+def test_a_tag_named_key_is_not_a_reference_to_a_key_named_key(tmp_path: Path) -> None:
+    tagged = {"Type": "AWS::S3::Bucket", "Properties": {"Tags": [{"Key": "team", "Value": "a"}]}}
+    assert _cf(tmp_path, {"Key": _key(PendingWindowInDays=7), "B": tagged}) == {}
+    assert _cf(tmp_path, {"Key": _key(PendingWindowInDays=7), "B": _bucket("Key")}) == {"CF-KMS-003": {"Key"}}
+
+
 @pytest.mark.parametrize("name", [
     "/app/db/password", "db_password", "/app/api-key", "/app/API_KEY", "/app/github-token",
     "/app/client-secret", {"Fn::Sub": "/${Env}/db/password"},
@@ -126,11 +132,19 @@ def test_logical_id_is_used_when_the_name_cannot_be_read(tmp_path: Path) -> None
     ({"Value": "arn:aws:secretsmanager:eu-west-1:1:secret:s"}, False),
     ({"Value": "true"}, False),
     ({"Value": "12"}, False),
+    ({"Value": 3306}, False),
+    ({"Value": True}, False),
+    ({"Value": {"Fn::GetAtt": ["Thing", "Arn"]}}, False),
+    ({"Value": {"Fn::GetAtt": "Thing.Arn"}}, False),
+    ({"Value": {"Fn::Sub": "arn:${AWS::Partition}:kms:r:1:key/k"}}, False),
+    ({"Value": {"Ref": "Thing"}}, False),
+    ({"Value": {"Fn::GetAtt": ["Thing", "Secret"]}}, True),
     ({"Type": "StringList"}, False),
     ({"Type": _PARAM}, False),
 ])
 def test_parameter_type_and_value(tmp_path: Path, props: dict, fires: bool) -> None:
-    found = _cf(tmp_path, {"P": _parameter(Name="/app/password", **props)})
+    thing = {"Type": "AWS::SNS::Topic", "Properties": {"KmsMasterKeyId": "alias/aws/sns"}}
+    found = _cf(tmp_path, {"P": _parameter(Name="/app/password", **props), "Thing": thing})
     assert found == ({"CF-SSM-001": {"P"}} if fires else {})
 
 
@@ -246,6 +260,21 @@ resource "aws_ssm_parameter" "from_var" {
   type  = var.kind
   value = "x"
 }
+resource "aws_ssm_parameter" "signing_key" {
+  name  = "/app/signing-key"
+  type  = "String"
+  value = aws_kms_key.rotated.arn
+}
+resource "aws_kms_key" "secure_param" {
+  enable_key_rotation     = true
+  deletion_window_in_days = 7
+}
+resource "aws_ssm_parameter" "encrypted" {
+  name   = "/app/encrypted"
+  type   = "SecureString"
+  key_id = aws_kms_key.secure_param.arn
+  value  = var.value
+}
 resource "aws_ssm_parameter" "host" {
   name  = "/app/host"
   type  = "String"
@@ -265,7 +294,7 @@ resource "aws_ssm_parameter" "advanced_var" {
 }
 """)
     assert found["CF-KMS-002"] == {"aws_kms_key.plain"}
-    assert found["CF-KMS-003"] == {"aws_kms_key.short", "aws_kms_key.short_sse"}
+    assert found["CF-KMS-003"] == {"aws_kms_key.short", "aws_kms_key.short_sse", "aws_kms_key.secure_param"}
     assert found["CF-SSM-001"] == {
         "aws_ssm_parameter.plain", "aws_ssm_parameter.db_token", "aws_ssm_parameter.insecure"}
     assert found["CF-SSM-002"] == {"aws_ssm_parameter.advanced"}

@@ -1740,12 +1740,21 @@ _STANDARD_TIER_BYTES = 4096
 _ADVANCED_DATA_TYPES = ("url", "json", "jsonc")
 
 
+def _value_mentions(value: Any, name: str) -> bool:
+    """True when a value, not a map key, names a resource. A tag's "Key" is not a key named Key."""
+    if isinstance(value, dict):
+        return any(_value_mentions(v, name) for v in value.values())
+    if isinstance(value, list):
+        return any(_value_mentions(v, name) for v in value)
+    if not isinstance(value, str):
+        return False
+    return value == name or value.startswith(f"{name}.") or _references(json.dumps(value), name)
+
+
 def _uses_key(res: Resource, key: Resource) -> bool:
     """True when res refers to the KMS key anywhere in its properties (CloudFormation, and
     merged Terraform blocks such as a bucket's encryption) or in its block (Terraform)."""
-    if key.name in res.references:
-        return True
-    return _references(json.dumps(res.properties, default=str), key.name)
+    return key.name in res.references or _value_mentions(res.properties, key.name)
 
 
 def _parameter_name(parameter: Resource) -> str:
@@ -1760,17 +1769,30 @@ def _parameter_name(parameter: Resource) -> str:
     return last.replace("-", "_")  # is_secret_name reads api_key, not api-key
 
 
-def _holds_setting(value: Any) -> bool:
-    """True for a literal value that cannot be the secret itself: an ARN, a flag or a number.
-    A dynamic reference is resolved into the parameter, so it still holds the secret."""
+def _holds_setting(value: Any, resource_names: set[str]) -> bool:
+    """True for a value that cannot be the secret itself: an ARN, a flag, a number, or a reference
+    to a resource in the template. A template parameter or a dynamic reference can hold the
+    secret, and a String parameter stores it in plain text."""
+    if isinstance(value, (bool, int, float)):
+        return True
+    if isinstance(value, dict):
+        attribute = value.get("Fn::GetAtt")
+        attribute = attribute[-1] if isinstance(attribute, list) and attribute else attribute
+        template = value.get("Fn::Sub")
+        return value.get("Ref") in resource_names \
+            or (isinstance(attribute, str) and attribute.endswith("Arn")) \
+            or (isinstance(template, str) and template.startswith("arn:"))
     return type(value) is str and "{{resolve:" not in value and not is_literal_secret(value)
 
 
 def _kms_ssm_findings(resources: List[Resource], template_path: Path) -> List[Finding]:
-    """KMS keys (CF-KMS-002/003) and SSM parameters (CF-SSM-001/002). A value the scan cannot
-    read is not judged. Findings never quote a parameter's value."""
+    """KMS keys (CF-KMS-002/003) and SSM parameters (CF-SSM-001/002). A setting the scan cannot
+    read is not judged. CF-SSM-001 judges the name and type, so a value from a template parameter
+    still counts. Findings never quote a parameter's value."""
     usable = [r for r in resources if not r.malformed]
-    holders = [r for r in usable if r.type in _KEY_DATA_TYPES]
+    names = {r.name for r in usable}
+    holders = [r for r in usable if r.type in _KEY_DATA_TYPES
+               or (r.type == "ssm_parameter" and r.properties.get("Type") == "SecureString")]
     out: List[Finding] = []
 
     def add(res: Resource, check_id: str, title: str, severity: Severity, category: str,
@@ -1815,7 +1837,7 @@ def _kms_ssm_findings(resources: List[Resource], template_path: Path) -> List[Fi
         props = parameter.properties
         value = props.get("Value")
         if props.get("Type") == "String" and is_secret_name(_parameter_name(parameter)) \
-                and not _holds_setting(value):
+                and not _holds_setting(value, names):
             add(parameter, "CF-SSM-001", "SSM parameter that looks like a secret is not encrypted", "Medium",
                 "Security",
                 ("Its name looks like a secret and its type is String, so anyone who can read the parameter "
@@ -1824,7 +1846,7 @@ def _kms_ssm_findings(resources: List[Resource], template_path: Path) -> List[Fi
                  "Its name looks like a secret and its type is String, so anyone who can read the parameter "
                  "sees the value in plain text. CloudFormation cannot create a SecureString: use "
                  "AWS::SecretsManager::Secret, or create the SecureString outside the stack and read it "
-                 "with an ssm-secure dynamic reference.")
+                 "with an ssm-secure dynamic reference, in a property that supports one.")
                 + " In CDK: secretsmanager.Secret.")
         if "Tier" in parameter.unresolved or props.get("Tier") != "Advanced" or props.get("Policies") \
                 or props.get("DataType") in _ADVANCED_DATA_TYPES or type(value) is not str:

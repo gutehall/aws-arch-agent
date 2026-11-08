@@ -1125,7 +1125,11 @@ def _ssm_parameter(body: dict) -> dict:
     _set(props, "Type", _v(body, "type"))
     _set(props, "Tier", _v(body, "tier"))
     _set(props, "DataType", _v(body, "data_type"))
-    _set(props, "Value", _known(_v(body, "value" if "value" in body else "insecure_value")))
+    key = "value" if "value" in body else "insecure_value"
+    raw = body.get(key)
+    # A resource's ARN is not a secret, and an unknown value should not hide the other arguments.
+    arn = isinstance(raw, _Expr) and raw.strip("${} ").endswith(".arn")
+    _set(props, "Value", "arn:from-a-reference" if arn else _known(_v(body, key)))
     return props
 
 
