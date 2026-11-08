@@ -1141,6 +1141,126 @@ _CLOUDFORMATION["CF-EBS-002"] = """$name:
     VolumeType: gp3
     # over 1,000 GiB: Iops: <3 x size in GiB> to keep the gp2 baseline"""
 # Unused Elastic IPs: delete the resource to release it, or attach it.
+_CLOUDFORMATION["CF-OS-003"] = """$name:
+  Type: AWS::OpenSearchService::Domain
+  Properties:
+    VPCOptions:
+      SubnetIds:
+        - !Ref PrivateSubnet
+      SecurityGroupIds:
+        - !Ref DomainSecurityGroup"""
+_CLOUDFORMATION["CF-OS-004"] = """$name:
+  Type: AWS::OpenSearchService::Domain
+  Properties:
+    AdvancedSecurityOptions:
+      Enabled: true
+      InternalUserDatabaseEnabled: false
+      MasterUserOptions:
+        MasterUserARN: !GetAtt AdminRole.Arn"""
+_CLOUDFORMATION["CF-OS-005"] = """$name:
+  Type: AWS::OpenSearchService::Domain
+  Properties:
+    DomainEndpointOptions:
+      EnforceHTTPS: true
+      TLSSecurityPolicy: Policy-Min-TLS-1-2-PFS-2023-10"""
+_CLOUDFORMATION["CF-OS-006"] = """$name:
+  Type: AWS::OpenSearchService::Domain
+  Properties:
+    LogPublishingOptions:
+      ES_APPLICATION_LOGS:
+        Enabled: true
+        CloudWatchLogsLogGroupArn: !GetAtt ErrorLogs.Arn
+      AUDIT_LOGS:
+        Enabled: true
+        CloudWatchLogsLogGroupArn: !GetAtt AuditLogs.Arn"""
+_CLOUDFORMATION["CF-OS-007"] = """$name:
+  Type: AWS::OpenSearchService::Domain
+  Properties:
+    ClusterConfig:
+      InstanceCount: 3
+      ZoneAwarenessEnabled: true
+      ZoneAwarenessConfig:
+        AvailabilityZoneCount: 3"""
+_CLOUDFORMATION["CF-MSK-002"] = """$name:
+  Type: AWS::MSK::Cluster
+  Properties:
+    ClientAuthentication:
+      Sasl:
+        Iam:
+          Enabled: true
+      Unauthenticated:
+        Enabled: false"""
+_CLOUDFORMATION["CF-MSK-003"] = """$name:
+  Type: AWS::MSK::Cluster
+  Properties:
+    BrokerNodeGroupInfo:
+      ConnectivityInfo:
+        PublicAccess:
+          Type: DISABLED"""
+_CLOUDFORMATION["CF-KIN-002"] = """$name:
+  Type: AWS::Kinesis::Stream
+  Properties:
+    RetentionPeriodHours: 168"""
+_TERRAFORM["CF-OS-003"] = """resource "aws_opensearch_domain" "$tf_name" {
+  vpc_options {
+    subnet_ids         = [aws_subnet.private.id]
+    security_group_ids = [aws_security_group.domain.id]
+  }
+}"""
+_TERRAFORM["CF-OS-004"] = """resource "aws_opensearch_domain" "$tf_name" {
+  advanced_security_options {
+    enabled                        = true
+    internal_user_database_enabled = false
+    master_user_options {
+      master_user_arn = aws_iam_role.admin.arn
+    }
+  }
+}"""
+_TERRAFORM["CF-OS-005"] = """resource "aws_opensearch_domain" "$tf_name" {
+  domain_endpoint_options {
+    enforce_https       = true
+    tls_security_policy = "Policy-Min-TLS-1-2-PFS-2023-10"
+  }
+}"""
+_TERRAFORM["CF-OS-006"] = """resource "aws_opensearch_domain" "$tf_name" {
+  log_publishing_options {
+    log_type                 = "ES_APPLICATION_LOGS"
+    cloudwatch_log_group_arn = aws_cloudwatch_log_group.errors.arn
+  }
+  log_publishing_options {
+    log_type                 = "AUDIT_LOGS"
+    cloudwatch_log_group_arn = aws_cloudwatch_log_group.audit.arn
+  }
+}"""
+_TERRAFORM["CF-OS-007"] = """resource "aws_opensearch_domain" "$tf_name" {
+  cluster_config {
+    instance_count         = 3
+    zone_awareness_enabled = true
+    zone_awareness_config {
+      availability_zone_count = 3
+    }
+  }
+}"""
+_TERRAFORM["CF-MSK-002"] = """resource "aws_msk_cluster" "$tf_name" {
+  client_authentication {
+    unauthenticated = false
+    sasl {
+      iam = true
+    }
+  }
+}"""
+_TERRAFORM["CF-MSK-003"] = """resource "aws_msk_cluster" "$tf_name" {
+  broker_node_group_info {
+    connectivity_info {
+      public_access {
+        type = "DISABLED"
+      }
+    }
+  }
+}"""
+_TERRAFORM["CF-KIN-002"] = """resource "aws_kinesis_stream" "$tf_name" {
+  retention_period = 168
+}"""
 _CLOUDFORMATION["CF-KMS-002"] = """$name:
   Type: AWS::KMS::Key
   Properties:

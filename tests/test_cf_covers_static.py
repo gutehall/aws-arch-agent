@@ -184,6 +184,17 @@ PAIRS: list[tuple[str, str, dict, str]] = [
             "HttpMethod": "GET", "RestApiId": {"Ref": "Api"}, "ResourceId": "r"}},
         "Stage": {"Type": "AWS::ApiGateway::Stage", "Properties": {"RestApiId": {"Ref": "Api"}}},
     }, "new apigateway.RestApi(this, 'Api');"),
+    ("CF-OS-003", "SEC-041", {"Type": "AWS::OpenSearchService::Domain", "Properties": {}},
+     "new opensearch.Domain(this, 'D');"),
+    ("CF-OS-004", "SEC-040", {"Type": "AWS::OpenSearchService::Domain", "Properties": {}},
+     "new opensearch.Domain(this, 'D');"),
+    ("CF-MSK-002", "SEC-045", {"Type": "AWS::MSK::Cluster", "Properties": {}},
+     "new msk.Cluster(this, 'C');"),
+    ("CF-KIN-002", "REL-019", {
+        "Stream": {"Type": "AWS::Kinesis::Stream", "Properties": {}},
+        "Map": {"Type": "AWS::Lambda::EventSourceMapping", "Properties": {
+            "FunctionName": "f", "EventSourceArn": {"Fn::GetAtt": ["Stream", "Arn"]}}},
+    }, "new kinesis.Stream(this, 'S');"),
     ("CF-KMS-002", "SEC-023", {"Type": "AWS::KMS::Key", "Properties": {}},
      "new kms.Key(this, 'K');"),
     ("CF-SSM-001", "SEC-033", {"Type": "AWS::SSM::Parameter", "Properties": {

@@ -17,7 +17,6 @@ Which CDK rules have a template check, and which AWS Foundational Security Best 
 
 | Work | Adds template checks for |
 | -- | -- |
-| `search-streaming` | OpenSearch, MSK and Kinesis access and resilience |
 | `data-resilience` | DynamoDB, ElastiCache and EFS resilience |
 | `warehouses` | Redshift, DocumentDB and Neptune beyond encryption |
 | `error-handling` | Step Functions, EventBridge and SQS error handling |
@@ -36,7 +35,7 @@ Which CDK rules have a template check, and which AWS Foundational Security Best 
 
 ## CDK rules
 
-172 rules: 82 covered, 6 partial, 44 planned, 10 account, 5 cdk-only, 25 advice.
+172 rules: 86 covered, 6 partial, 40 planned, 10 account, 5 cdk-only, 25 advice.
 
 | Rule | Title | Template check | Status | Note |
 | -- | -- | -- | -- | -- |
@@ -79,12 +78,12 @@ Which CDK rules have a template check, and which AWS Foundational Security Best 
 | SEC-037 | EFS encryption not enabled | `CF-EFS-001` | `covered` |  |
 | SEC-038 | Kinesis stream encryption not enabled | `CF-KIN-001` | `covered` |  |
 | SEC-039 | OpenSearch domain encryption not enabled | `CF-OS-001`, `CF-OS-002` | `covered` |  |
-| SEC-040 | OpenSearch fine-grained access control not enabled |  | `planned: search-streaming` |  |
-| SEC-041 | OpenSearch domain not in VPC |  | `planned: search-streaming` |  |
+| SEC-040 | OpenSearch fine-grained access control not enabled | `CF-OS-004` | `covered` |  |
+| SEC-041 | OpenSearch domain not in VPC | `CF-OS-003` | `covered` |  |
 | SEC-042 | Athena query result encryption not enabled |  | `planned: analytics` |  |
 | SEC-043 | Glue job encryption not configured |  | `planned: analytics` |  |
 | SEC-044 | MSK cluster encryption not configured | `CF-MSK-001` | `covered` |  |
-| SEC-045 | MSK cluster client authentication not configured |  | `planned: search-streaming` |  |
+| SEC-045 | MSK cluster client authentication not configured | `CF-MSK-002` | `covered` |  |
 | SEC-046 | SageMaker notebook instance not in VPC |  | `planned: sagemaker-fsx` |  |
 | SEC-047 | SageMaker encryption not enabled |  | `planned: sagemaker-fsx` |  |
 | SEC-048 | AppSync API logging not enabled |  | `planned: app-services` |  |
@@ -126,7 +125,7 @@ Which CDK rules have a template check, and which AWS Foundational Security Best 
 | REL-016 | ElastiCache not using multi-AZ |  | `planned: data-resilience` |  |
 | REL-017 | EFS backup policy not configured |  | `planned: data-resilience` |  |
 | REL-018 | EFS lifecycle policy not configured |  | `planned: data-resilience` |  |
-| REL-019 | Kinesis stream retention period too short |  | `planned: search-streaming` |  |
+| REL-019 | Kinesis stream retention period too short | `CF-KIN-002` | `covered` |  |
 | REL-020 | Global Accelerator health checks not configured |  | `planned: dns-certs` |  |
 | REL-021 | CodePipeline missing manual approval for production | `CF-CP-002` | `covered` |  |
 | REL-022 | ACM certificate validation method not specified |  | `planned: dns-certs` |  |
@@ -325,20 +324,21 @@ Controls a template can show. Account-level controls (for example S3.1, EC2.7 an
 | Lambda.2 | `CF-LAM-003` | `AWS::Lambda::Function` |
 | Lambda.5 | `CF-LAM-008` | `AWS::Lambda::Function` |
 | MSK.1 | `CF-MSK-001` | `AWS::MSK::Cluster` |
-| MSK.4 | `planned: search-streaming` | `AWS::MSK::Cluster` |
+| MSK.4 | `CF-MSK-003` | `AWS::MSK::Cluster` |
+| MSK.6 | `CF-MSK-002` | `AWS::MSK::Cluster` |
 | Neptune.1 | `CF-NEP-001` | `AWS::Neptune::DBCluster` |
 | Neptune.2 | `planned: warehouses` | `AWS::Neptune::DBCluster` |
 | Neptune.4 | `planned: warehouses` | `AWS::Neptune::DBCluster` |
 | Neptune.5 | `planned: warehouses` | `AWS::Neptune::DBCluster` |
 | Neptune.7 | `planned: warehouses` | `AWS::Neptune::DBCluster` |
 | Opensearch.1 | `CF-OS-001` | `AWS::OpenSearchService::Domain` |
-| Opensearch.2 | `planned: search-streaming` | `AWS::OpenSearchService::Domain` |
+| Opensearch.2 | `CF-OS-003` | `AWS::OpenSearchService::Domain` |
 | Opensearch.3 | `CF-OS-002` | `AWS::OpenSearchService::Domain` |
-| Opensearch.4 | `planned: search-streaming` | `AWS::OpenSearchService::Domain` |
-| Opensearch.5 | `planned: search-streaming` | `AWS::OpenSearchService::Domain` |
-| Opensearch.6 | `planned: search-streaming` | `AWS::OpenSearchService::Domain` |
-| Opensearch.7 | `planned: search-streaming` | `AWS::OpenSearchService::Domain` |
-| Opensearch.8 | `planned: search-streaming` | `AWS::OpenSearchService::Domain` |
+| Opensearch.4 | `CF-OS-006` | `AWS::OpenSearchService::Domain` |
+| Opensearch.5 | `CF-OS-006` | `AWS::OpenSearchService::Domain` |
+| Opensearch.6 | `CF-OS-007` | `AWS::OpenSearchService::Domain` |
+| Opensearch.7 | `CF-OS-004` | `AWS::OpenSearchService::Domain` |
+| Opensearch.8 | `CF-OS-005` | `AWS::OpenSearchService::Domain` |
 | RDS.2 | `CF-RDS-004` | `AWS::RDS::DBInstance` |
 | RDS.3 | `CF-RDS-001` | `AWS::RDS::DBInstance` |
 | RDS.5 | `CF-RDS-003` | `AWS::RDS::DBInstance` |
