@@ -392,6 +392,10 @@ CHECK_PROPERTIES: dict[str, frozenset[str]] = {
         "CF-APIGW-002": {"TracingEnabled"},
         "CF-APIGW-V2-001": {"AccessLogSettings"},
         "CF-APIGW-V2-002": {"TracingEnabled"},
+        # Template-level: _warehouse_findings skips what it cannot read.
+        **{c: set() for c in ("CF-RS-002", "CF-RS-003", "CF-RS-004", "CF-RS-005", "CF-RS-006", "CF-RS-007",
+                              "CF-DOCDB-002", "CF-DOCDB-003", "CF-DOCDB-004", "CF-NEP-002", "CF-NEP-003",
+                              "CF-NEP-004", "CF-NEP-005")},
         # Template-level: _search_streaming_findings skips what it cannot read.
         **{c: set() for c in ("CF-OS-003", "CF-OS-004", "CF-OS-005", "CF-OS-006", "CF-OS-007",
                               "CF-MSK-002", "CF-MSK-003", "CF-KIN-002")},
@@ -454,6 +458,10 @@ CF_THEMES: dict[str, tuple[str, ...]] = {
     "CF-GEN-001": (_F, _SUS), "CF-IAM-001": (_ID,), "CF-IAM-002": (_ID,), "CF-IAM-003": (_ID,),
     "CF-IAM-004": (_ID,), "CF-IAM-005": (_ID,), "CF-IAM-006": (_ID,), "CF-IAM-007": (_ID,),
     "CF-IAM-008": (_ID,), "CF-KIN-001": (_DP,), "CF-KMS-001": (_ID, _DP),
+    "CF-RS-002": (_NET,), "CF-RS-003": (_RES,), "CF-RS-004": (_OBS,), "CF-RS-005": (_SB,),
+    "CF-RS-006": (_NET,), "CF-RS-007": (_SB,), "CF-DOCDB-002": (_RES,), "CF-DOCDB-003": (_OBS,),
+    "CF-DOCDB-004": (_RES, _DP), "CF-NEP-002": (_OBS,), "CF-NEP-003": (_RES, _DP), "CF-NEP-004": (_RES,),
+    "CF-NEP-005": (_ID,),
     "CF-KIN-002": (_RES,), "CF-MSK-002": (_ID,), "CF-MSK-003": (_NET,), "CF-OS-003": (_NET,),
     "CF-OS-004": (_ID,), "CF-OS-005": (_DP, _NET), "CF-OS-006": (_OBS,), "CF-OS-007": (_RES,),
     "CF-KMS-002": (_DP,), "CF-KMS-003": (_RES,), "CF-SSM-001": (_DP,), "CF-SSM-002": (_F,),
@@ -2018,6 +2026,145 @@ def _search_streaming_findings(resources: List[Resource], template_path: Path) -
                 f"{', '.join(readers)} read this stream. If a consumer is down for longer than a day, "
                 "records are lost. Set RetentionPeriodHours to cover your longest expected outage, such "
                 "as 168 (billed per shard hour). In CDK: retentionPeriod: Duration.days(7).")
+    return out
+
+
+_MIN_BACKUP_DAYS = 7
+
+
+def _days(res: Resource, key: str, default: int) -> int | None:
+    """A retention setting in days, or None when the scan cannot read it."""
+    if key in res.unresolved:
+        return None
+    try:
+        return int(res.properties.get(key, default))
+    except (TypeError, ValueError):
+        return None
+
+
+def _short_backups(res: Resource) -> int | None:
+    """Days of backup under the minimum, or None. Unset on a cluster restored from a snapshot or
+    another cluster is not judged: the template does not show what it starts with."""
+    restored = any(res.properties.get(k) is not None for k in ("SnapshotIdentifier", "SourceDBClusterIdentifier"))
+    if restored and res.properties.get("BackupRetentionPeriod") is None:
+        return None
+    days = _days(res, "BackupRetentionPeriod", 1)
+    return days if days is not None and days < _MIN_BACKUP_DAYS else None
+
+
+def _exports_audit_logs(res: Resource) -> bool | None:
+    """Whether audit is in EnableCloudwatchLogsExports: None when the list cannot be read."""
+    exports = res.properties.get("EnableCloudwatchLogsExports")
+    if "EnableCloudwatchLogsExports" in res.unresolved:
+        return None
+    if exports is None:
+        return False
+    if not isinstance(exports, list):
+        return None
+    if any(isinstance(e, str) and e.lower() == "audit" for e in exports):
+        return True
+    # A Terraform expression is a str subclass, and may name audit once it is resolved.
+    return False if all(type(e) is str for e in exports) else None
+
+
+def _redshift_logs(cluster: Resource, clusters: List[Resource], logging: List[Resource]) -> bool:
+    """True when the cluster logs, or may: an aws_redshift_logging the scan cannot tie to a
+    cluster counts for all of them."""
+    if "LoggingProperties" in cluster.unresolved or cluster.properties.get("LoggingProperties"):
+        return True
+    return any(cluster.name in r.references or not any(c.name in r.references for c in clusters)
+               for r in logging)
+
+
+def _warehouse_findings(resources: List[Resource], template_path: Path) -> List[Finding]:
+    """Redshift (CF-RS-002..007), DocumentDB (CF-DOCDB-002..004) and Neptune (CF-NEP-002..005)
+    beyond encryption. A value the scan cannot read is not judged."""
+    usable = [r for r in resources if not r.malformed]
+    clusters = [r for r in usable if r.type == "redshift_cluster"]
+    logging = [r for r in usable if r.source_type == "aws_redshift_logging"]
+    out: List[Finding] = []
+
+    def add(res: Resource, check_id: str, title: str, severity: Severity, category: str,
+            recommendation: str) -> None:
+        out.append(Finding(
+            id=check_id, title=title, severity=severity, category=category,
+            file=res.file or str(template_path), line=res.line,
+            evidence=f"{res.name} ({res.source_type})", recommendation=recommendation,
+        ))
+
+    for cluster in clusters:
+        props = cluster.properties
+        if _is_true(props.get("PubliclyAccessible")):
+            add(cluster, "CF-RS-002", "Redshift cluster is publicly accessible", "High", "Security",
+                "PubliclyAccessible gives the cluster an internet-facing address. Set it to false and "
+                "connect from inside the VPC (Security Hub Redshift.1). In CDK: publiclyAccessible: false.")
+        if _days(cluster, "AutomatedSnapshotRetentionPeriod", 1) == 0:
+            add(cluster, "CF-RS-003", "Redshift cluster has no automated snapshots", "Medium", "Reliability",
+                "AutomatedSnapshotRetentionPeriod is 0, which turns automated snapshots off. Set it to at "
+                "least 7 days, the minimum Security Hub Redshift.3 expects. In CDK: "
+                "automatedSnapshotRetentionPeriod on a CfnCluster.")
+        if not _redshift_logs(cluster, clusters, logging):
+            add(cluster, "CF-RS-004", "Redshift cluster has no audit logging", "Low", "Operational Excellence",
+                "Set LoggingProperties (Terraform aws_redshift_logging) to send connection and user logs "
+                "to S3 or CloudWatch Logs (Security Hub Redshift.4). In CDK: loggingProperties.")
+        upgrade = props.get("AllowVersionUpgrade")
+        if upgrade is not None and _flag(upgrade) is False:  # unset: on
+            add(cluster, "CF-RS-005", "Redshift cluster does not take major version upgrades", "Low", "Security",
+                "AllowVersionUpgrade is false, so the cluster misses major version updates, which can "
+                "include security patches. Set it to true (Security Hub Redshift.6). In CDK: "
+                "allowVersionUpgrade: true.")
+        if "EnhancedVpcRouting" not in cluster.unresolved and _flag(props.get("EnhancedVpcRouting")) is False:
+            add(cluster, "CF-RS-006", "Redshift cluster does not use enhanced VPC routing", "Low", "Security",
+                "COPY and UNLOAD traffic can leave the VPC, out of reach of its security groups and flow "
+                "logs. Set EnhancedVpcRouting: true (Security Hub Redshift.7). In CDK: enhancedVpcRouting: true.")
+        # A cluster restored from a snapshot keeps the snapshot's names.
+        if props.get("SnapshotIdentifier") is None:
+            defaults = []
+            for key, default, label in (("MasterUsername", "awsuser", "admin user"), ("DBName", "dev", "database")):
+                value = props.get(key)
+                if isinstance(value, str) and value.lower() == default:
+                    defaults.append(f"{label} {default}")
+            if defaults:
+                add(cluster, "CF-RS-007", "Redshift cluster uses a default name", "Low", "Security",
+                    f"This cluster uses the default {' and '.join(defaults)}, which anyone can guess. Choose "
+                    "other names (Security Hub Redshift.8 covers the admin user). The admin user cannot be "
+                    "changed later: create a new cluster. In CDK: masterUser and defaultDatabaseName.")
+
+    for docdb in (r for r in usable if r.type == "docdb_cluster"):
+        days = _short_backups(docdb)
+        if days is not None:
+            add(docdb, "CF-DOCDB-002", "DocumentDB cluster keeps backups for under 7 days", "Low", "Reliability",
+                f"BackupRetentionPeriod is {days}. Set it to at least 7 (Security Hub DocumentDB.2). In "
+                "CDK: backup: { retention: Duration.days(7) }.")
+        if _exports_audit_logs(docdb) is False:
+            add(docdb, "CF-DOCDB-003", "DocumentDB cluster does not export audit logs", "Low", "Operational Excellence",
+                "Add audit to EnableCloudwatchLogsExports (Security Hub DocumentDB.4), and set audit_logs in "
+                "the cluster parameter group, or no events are logged. In CDK: "
+                "exportAuditLogsToCloudWatch: true.")
+        if "DeletionProtection" not in docdb.unresolved and _flag(docdb.properties.get("DeletionProtection")) is False:
+            add(docdb, "CF-DOCDB-004", "DocumentDB cluster has no deletion protection", "Low", "Reliability",
+                "Set DeletionProtection: true, so the cluster cannot be deleted by mistake (Security Hub "
+                "DocumentDB.5). In CDK: deletionProtection: true.")
+
+    for neptune in (r for r in usable if r.type == "neptune_cluster"):
+        if _exports_audit_logs(neptune) is False:
+            add(neptune, "CF-NEP-002", "Neptune cluster does not export audit logs", "Low", "Operational Excellence",
+                "Add audit to EnableCloudwatchLogsExports (Security Hub Neptune.2), and set "
+                "neptune_enable_audit_log to 1 in the cluster parameter group, or no events are logged. In "
+                "CDK: cloudwatchLogsExports: [neptune.LogType.AUDIT].")
+        if "DeletionProtection" not in neptune.unresolved and _flag(neptune.properties.get("DeletionProtection")) is False:
+            add(neptune, "CF-NEP-003", "Neptune cluster has no deletion protection", "Low", "Reliability",
+                "Set DeletionProtection: true, so the cluster cannot be deleted by mistake (Security Hub "
+                "Neptune.4). In CDK: deletionProtection: true.")
+        days = _short_backups(neptune)
+        if days is not None:
+            add(neptune, "CF-NEP-004", "Neptune cluster keeps backups for under 7 days", "Low", "Reliability",
+                f"BackupRetentionPeriod is {days}. Set it to at least 7 (Security Hub Neptune.5). In CDK: "
+                "backupRetention: Duration.days(7).")
+        if "IamAuthEnabled" not in neptune.unresolved and _flag(neptune.properties.get("IamAuthEnabled")) is False:
+            add(neptune, "CF-NEP-005", "Neptune cluster does not use IAM authentication", "Low", "Security",
+                "Set IamAuthEnabled: true, so connections are signed with IAM credentials (Security Hub "
+                "Neptune.7). In CDK: iamAuthentication: true.")
     return out
 
 
@@ -4156,6 +4303,9 @@ def _run_resource_checks(
 
     # --- Gateway endpoints: S3 and DynamoDB through a NAT gateway (CF-VPC-002/003) ---
     findings.extend(_gateway_endpoint_findings(resources, template_path, _at))
+
+    # --- Redshift, DocumentDB and Neptune beyond encryption ---
+    findings.extend(_warehouse_findings(resources, template_path))
 
     # --- OpenSearch, MSK and Kinesis access and resilience ---
     findings.extend(_search_streaming_findings(resources, template_path))

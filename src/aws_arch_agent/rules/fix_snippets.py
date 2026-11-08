@@ -1141,6 +1141,108 @@ _CLOUDFORMATION["CF-EBS-002"] = """$name:
     VolumeType: gp3
     # over 1,000 GiB: Iops: <3 x size in GiB> to keep the gp2 baseline"""
 # Unused Elastic IPs: delete the resource to release it, or attach it.
+_CLOUDFORMATION["CF-RS-002"] = """$name:
+  Type: AWS::Redshift::Cluster
+  Properties:
+    PubliclyAccessible: false"""
+_CLOUDFORMATION["CF-RS-003"] = """$name:
+  Type: AWS::Redshift::Cluster
+  Properties:
+    AutomatedSnapshotRetentionPeriod: 7"""
+_CLOUDFORMATION["CF-RS-004"] = """$name:
+  Type: AWS::Redshift::Cluster
+  Properties:
+    LoggingProperties:
+      LogDestinationType: cloudwatch
+      LogExports:
+        - connectionlog
+        - userlog
+        - useractivitylog"""
+_CLOUDFORMATION["CF-RS-005"] = """$name:
+  Type: AWS::Redshift::Cluster
+  Properties:
+    AllowVersionUpgrade: true"""
+_CLOUDFORMATION["CF-RS-006"] = """$name:
+  Type: AWS::Redshift::Cluster
+  Properties:
+    EnhancedVpcRouting: true"""
+_CLOUDFORMATION["CF-RS-007"] = """$name:
+  Type: AWS::Redshift::Cluster
+  Properties:
+    MasterUsername: warehouse_admin  # cannot change later
+    DBName: analytics"""
+_CLOUDFORMATION["CF-DOCDB-002"] = """$name:
+  Type: AWS::DocDB::DBCluster
+  Properties:
+    BackupRetentionPeriod: 7"""
+_CLOUDFORMATION["CF-DOCDB-003"] = """$name:
+  Type: AWS::DocDB::DBCluster
+  Properties:
+    EnableCloudwatchLogsExports:
+      - audit  # also set audit_logs in the parameter group"""
+_CLOUDFORMATION["CF-DOCDB-004"] = """$name:
+  Type: AWS::DocDB::DBCluster
+  Properties:
+    DeletionProtection: true"""
+_CLOUDFORMATION["CF-NEP-002"] = """$name:
+  Type: AWS::Neptune::DBCluster
+  Properties:
+    EnableCloudwatchLogsExports:
+      - audit  # also set neptune_enable_audit_log to 1"""
+_CLOUDFORMATION["CF-NEP-003"] = """$name:
+  Type: AWS::Neptune::DBCluster
+  Properties:
+    DeletionProtection: true"""
+_CLOUDFORMATION["CF-NEP-004"] = """$name:
+  Type: AWS::Neptune::DBCluster
+  Properties:
+    BackupRetentionPeriod: 7"""
+_CLOUDFORMATION["CF-NEP-005"] = """$name:
+  Type: AWS::Neptune::DBCluster
+  Properties:
+    IamAuthEnabled: true"""
+_TERRAFORM["CF-RS-002"] = """resource "aws_redshift_cluster" "$tf_name" {
+  publicly_accessible = false
+}"""
+_TERRAFORM["CF-RS-003"] = """resource "aws_redshift_cluster" "$tf_name" {
+  automated_snapshot_retention_period = 7
+}"""
+_TERRAFORM["CF-RS-004"] = """resource "aws_redshift_logging" "$tf_name" {
+  cluster_identifier   = aws_redshift_cluster.$tf_name.id
+  log_destination_type = "cloudwatch"
+  log_exports          = ["connectionlog", "userlog", "useractivitylog"]
+}"""
+_TERRAFORM["CF-RS-005"] = """resource "aws_redshift_cluster" "$tf_name" {
+  allow_version_upgrade = true
+}"""
+_TERRAFORM["CF-RS-006"] = """resource "aws_redshift_cluster" "$tf_name" {
+  enhanced_vpc_routing = true
+}"""
+_TERRAFORM["CF-RS-007"] = """resource "aws_redshift_cluster" "$tf_name" {
+  master_username = "warehouse_admin" # cannot change later
+  database_name   = "analytics"
+}"""
+_TERRAFORM["CF-DOCDB-002"] = """resource "aws_docdb_cluster" "$tf_name" {
+  backup_retention_period = 7
+}"""
+_TERRAFORM["CF-DOCDB-003"] = """resource "aws_docdb_cluster" "$tf_name" {
+  enabled_cloudwatch_logs_exports = ["audit"] # also set audit_logs in the parameter group
+}"""
+_TERRAFORM["CF-DOCDB-004"] = """resource "aws_docdb_cluster" "$tf_name" {
+  deletion_protection = true
+}"""
+_TERRAFORM["CF-NEP-002"] = """resource "aws_neptune_cluster" "$tf_name" {
+  enable_cloudwatch_logs_exports = ["audit"] # also set neptune_enable_audit_log to 1
+}"""
+_TERRAFORM["CF-NEP-003"] = """resource "aws_neptune_cluster" "$tf_name" {
+  deletion_protection = true
+}"""
+_TERRAFORM["CF-NEP-004"] = """resource "aws_neptune_cluster" "$tf_name" {
+  backup_retention_period = 7
+}"""
+_TERRAFORM["CF-NEP-005"] = """resource "aws_neptune_cluster" "$tf_name" {
+  iam_database_authentication_enabled = true
+}"""
 _CLOUDFORMATION["CF-OS-003"] = """$name:
   Type: AWS::OpenSearchService::Domain
   Properties:
