@@ -15,6 +15,7 @@ def render_json(
     data = {
         "context": ctx.model_dump(),
         "summary": build_summary(findings),
+        "llm": ctx.llm.to_dict(),
         "findings": [f.model_dump() for f in findings],
     }
     if warnings:

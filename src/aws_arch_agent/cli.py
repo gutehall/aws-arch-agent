@@ -269,7 +269,7 @@ def analyze(
         )
 
     console.print(Panel.fit(
-        f"[bold]Analyzing[/bold] {repo_path}\nMode: {mode_value} | Source: {source} | Format: {cfg.format} | LLM: {'off' if cfg.no_llm else 'on'}",
+        f"[bold]Analyzing[/bold] {repo_path}\nMode: {mode_value} | Source: {source} | Format: {cfg.format}",
         title="aws-arch-agent",
     ))
 
@@ -323,6 +323,14 @@ def analyze(
             group_by=cfg.group_by,
         )
 
+    # What happened, not what was configured. soft_wrap keeps the line whole for anyone grepping it.
+    console.print(
+        ctx_report.llm.line,
+        style=None if ctx_report.llm.status in ("ok", "skipped") else "yellow",
+        markup=False,
+        soft_wrap=True,
+    )
+
     if ctx_report.notes.get("tag_policy") == "not checked":
         console.print(
             "tags.required is checked on templates, and this scan read none "
@@ -363,7 +371,7 @@ def analyze(
         )
         content = render_html(ctx_report, findings, warnings=warnings, baselined=baselined)
     else:
-        content = report_md
+        content = f"{ctx_report.llm.line}\n\n{report_md}"
 
     if enforce_baseline and cfg.format != "html":
         content = _mark_baselined(content, cfg.format, findings, accepted_before or set())

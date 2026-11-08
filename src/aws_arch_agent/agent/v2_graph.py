@@ -4,9 +4,10 @@ from __future__ import annotations
 import hashlib
 import json
 import logging
+import operator
 import subprocess
 from pathlib import Path
-from typing import Literal, TypedDict, List
+from typing import Annotated, Literal, TypedDict, List
 
 from aws_arch_agent.models import Finding, IacSource, RepoContext
 from aws_arch_agent.agent.v1 import (
@@ -16,7 +17,7 @@ from aws_arch_agent.agent.v1 import (
     resolve_source,
 )
 from aws_arch_agent.tools.files import iter_files
-from aws_arch_agent.tools.llm import LLMClient
+from aws_arch_agent.tools.llm import NO_LLM, LLMClient, LLMResult, aggregate_results
 from aws_arch_agent.rules.fix_snippets import attach_fixes
 from aws_arch_agent.rules.registry import ALL_RULES
 from aws_arch_agent.rules.runner import filter_by_severity, run_all_rules
@@ -42,7 +43,8 @@ from langgraph.graph import StateGraph, END
 logger = logging.getLogger(__name__)
 
 LLMMode = Literal["full", "compact"]
-_pillar_cache: dict[str, str] = {}
+# Holds the whole result: a cache hit must report what the call that filled it did.
+_pillar_cache: dict[str, LLMResult] = {}
 
 
 class State(TypedDict, total=False):
@@ -80,6 +82,8 @@ class State(TypedDict, total=False):
     sustainability_notes: str
     merged_notes: str
     final_report: str
+    # Pillars run in parallel, so every call's result is appended rather than overwritten.
+    llm_results: Annotated[List[LLMResult], operator.add]
 
 
 # Map pillar node names to finding categories (static rules use "Operational Excellence", not "Observability")
@@ -145,17 +149,20 @@ def _summarize_role(
     llm: LLMClient,
     use_llm: bool = True,
     rag_block: str = "",
-) -> str:
+) -> tuple[str, LLMResult | None]:
+    """Return the pillar notes and the LLM result behind them (None when no LLM was asked)."""
     categories = PILLAR_CATEGORIES.get(role, [role])
     rel = [f for f in findings if f.category.lower() in [c.lower() for c in categories]]
     if not rel:
-        return f"## {role}\n\nNo findings in this pillar.\n"
+        return f"## {role}\n\nNo findings in this pillar.\n", None
     snippet = "\n".join([f"- [{x.id}] {x.title}: {x.recommendation}" for x in rel[:12]])
     if not use_llm:
-        return f"## {role}\n(skipped LLM)\n\n{snippet}\n\nSynth summary: {synth_summary[:500]}"
+        notes = f"## {role}\n(skipped LLM)\n\n{snippet}\n\nSynth summary: {synth_summary[:500]}"
+        return notes, None
     cache_key = _findings_hash(rel, synth_summary, role)
     if cache_key in _pillar_cache:
-        return _pillar_cache[cache_key]
+        cached = _pillar_cache[cache_key]
+        return cached.text, cached
     prompt = f"""Role: {role} reviewer
 
 You have:
@@ -176,7 +183,7 @@ CloudFormation synth summary:
 """
     result = llm.polish(prompt, system=f"You are a senior AWS {role} reviewer. Return concise Markdown only.")
     _pillar_cache[cache_key] = result
-    return result
+    return result.text, result
 
 
 def _parts_under(path: Path, root: Path) -> tuple[str, ...]:
@@ -391,6 +398,7 @@ def _pillar_node(role: str, state_key: str):
         findings = state.get("raw_findings", [])
         synth_summary = state.get("synth_summary", "")
         rag_block = _rag_block(state, query=f"{role} AWS Well-Architected best practices")
+        result: LLMResult | None = None
         if llm_mode == "compact":
             categories = PILLAR_CATEGORIES.get(role, [role])
             rel = [f for f in findings if f.category.lower() in [c.lower() for c in categories]]
@@ -398,11 +406,13 @@ def _pillar_node(role: str, state_key: str):
             notes = f"## {role}\n\n{snippet}\n{rag_block}\n"
         else:
             llm = LLMClient()
-            notes = _summarize_role(
+            notes, result = _summarize_role(
                 role, findings, synth_summary, llm, use_llm=use_llm, rag_block=rag_block
             )
         out: State = {}
         out[state_key] = notes  # type: ignore[literal-required]
+        if result is not None:
+            out["llm_results"] = [result]
         return out
 
     return _node
@@ -437,7 +447,7 @@ Findings:
 """
         llm = LLMClient()
         merged = llm.polish(prompt, system="You are the lead reviewer. Return Markdown only.")
-        return {"merged_notes": merged}
+        return {"merged_notes": merged.text, "llm_results": [merged]}
 
     prompt = f"""Merge these into a single coherent review section with headings (AWS Well-Architected 6 pillars).
 Be specific, avoid repetition, and keep it to ~350-550 words.
@@ -465,11 +475,10 @@ Be specific, avoid repetition, and keep it to ~350-550 words.
 {rag_block}
 """
     if not use_llm:
-        merged = prompt
-    else:
-        llm = LLMClient()
-        merged = llm.polish(prompt, system="You are the lead reviewer. Return Markdown only.")
-    return {"merged_notes": merged}
+        return {"merged_notes": prompt}
+    llm = LLMClient()
+    merged = llm.polish(prompt, system="You are the lead reviewer. Return Markdown only.")
+    return {"merged_notes": merged.text, "llm_results": [merged]}
 
 
 def node_report(state: State) -> State:
@@ -609,4 +618,5 @@ def analyze_v2(
     warnings = out.get("rule_warnings") or []
     if ctx is None:
         ctx = RepoContext(repo_path=str(repo_path), language="unknown")
+    ctx.llm = aggregate_results(out.get("llm_results") or []) if use_llm else NO_LLM
     return report, ctx, findings, warnings

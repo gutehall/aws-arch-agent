@@ -150,13 +150,15 @@ def test_first_location_prefers_a_finding_with_a_file() -> None:
 
 def test_llm_polish_never_rewrites_the_summary(tmp_path: Path, monkeypatch) -> None:
     from aws_arch_agent.agent import v1
+    from aws_arch_agent.tools.llm import LLMResult
 
     seen: list[str] = []
 
     class FakeLLM:
-        def polish(self, text: str) -> str:
+        def polish(self, text: str) -> LLMResult:
             seen.append(text)
-            return text.replace("## Executive Summary", "## Executive Summary (polished)")
+            polished = text.replace("## Executive Summary", "## Executive Summary (polished)")
+            return LLMResult(polished, "ok", "ollama", "llama3:8b")
 
     monkeypatch.setattr(v1, "LLMClient", FakeLLM)
     (tmp_path / "stack.json").write_text(json.dumps({"AWSTemplateFormatVersion": "2010-09-09",

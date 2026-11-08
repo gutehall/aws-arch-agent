@@ -26,7 +26,7 @@ from aws_arch_agent.rules.runner import filter_by_severity, run_all_rules
 from aws_arch_agent.rules import cf_template, effort, environments, nonprod, regions, stack_cost, themes
 from aws_arch_agent.rules.tag_policy import TagPolicy, policy_checked, use_tag_policy
 from aws_arch_agent.report.markdown import insert_summary, render_markdown
-from aws_arch_agent.tools.llm import LLMClient
+from aws_arch_agent.tools.llm import NO_LLM, LLMClient, aggregate_results
 from aws_arch_agent.tools.files import iter_files, read_text_safe
 from aws_arch_agent.tools.cdk_synth import list_templates_from_path
 from aws_arch_agent.tools.cfn_yaml import is_cf_template
@@ -444,12 +444,14 @@ def analyze_v1(
         ctx.notes["prices"] = regions.note()
 
     if not use_llm:
+        ctx.llm = NO_LLM
         return render_markdown(ctx, findings, warnings=warnings, group_by=group_by), ctx, findings, warnings
     # The summary is built from rule output: the LLM polishes the rest, never its numbers.
     llm = LLMClient()
     polished = llm.polish(render_markdown(ctx, findings, warnings=warnings, include_summary=False,
                                           group_by=group_by))
-    return insert_summary(polished, findings), ctx, findings, warnings
+    ctx.llm = aggregate_results([polished])
+    return insert_summary(polished.text, findings), ctx, findings, warnings
 
 
 def collect_ctx_findings(

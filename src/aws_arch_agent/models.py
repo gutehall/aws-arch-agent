@@ -3,6 +3,8 @@ from __future__ import annotations
 from pydantic import BaseModel, Field
 from typing import Literal, List, Dict, Any
 
+from aws_arch_agent.tools.llm import NO_CALL, LLMResult
+
 
 Severity = Literal["High", "Medium", "Low"]
 Effort = Literal["low", "medium", "high"]
@@ -46,3 +48,5 @@ class RepoContext(BaseModel):
     files_scanned: int = 0
     key_files: List[str] = Field(default_factory=list)
     notes: Dict[str, Any] = Field(default_factory=dict)
+    # Run-level LLM outcome. Excluded from `context`: the JSON report has its own `llm`.
+    llm: LLMResult = Field(default=NO_CALL, exclude=True)

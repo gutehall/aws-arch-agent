@@ -2,6 +2,7 @@
 from pathlib import Path
 from unittest.mock import patch
 
+from aws_arch_agent.agent import v2_graph
 from aws_arch_agent.agent.v2_graph import (
     analyze_v2,
     build_graph,
@@ -13,6 +14,11 @@ from aws_arch_agent.agent.v2_graph import (
     node_performance_efficiency,
     node_sustainability,
 )
+from aws_arch_agent.tools.llm import LLMResult
+
+
+def _ok(text: str) -> LLMResult:
+    return LLMResult(text, "ok", "ollama", "llama3:8b")
 
 
 def test_v2_max_files_respected(tmp_path: Path) -> None:
@@ -28,7 +34,7 @@ def test_v2_max_files_respected(tmp_path: Path) -> None:
 def test_v2_compact_llm_mode(tmp_path: Path) -> None:
     (tmp_path / "package.json").write_text("{}", encoding="utf-8")
     with patch("aws_arch_agent.agent.v2_graph.LLMClient") as mock_cls:
-        mock_cls.return_value.polish.return_value = "## Compact review"
+        mock_cls.return_value.polish.return_value = _ok("## Compact review")
         report, _, _, _ = analyze_v2(
             tmp_path, use_llm=True, skip_synth=True, llm_mode="compact"
         )
@@ -45,7 +51,7 @@ def test_v2_full_llm_mode_calls_pillar_and_merge(tmp_path: Path) -> None:
         encoding="utf-8",
     )
     with patch("aws_arch_agent.agent.v2_graph.LLMClient") as mock_cls:
-        mock_cls.return_value.polish.return_value = "## LLM section"
+        mock_cls.return_value.polish.return_value = _ok("## LLM section")
         report, _, findings, _ = analyze_v2(
             tmp_path, use_llm=True, skip_synth=True, llm_mode="full"
         )
@@ -61,7 +67,7 @@ def test_v2_rag_included_in_pillar_prompt(tmp_path: Path) -> None:
     (tmp_path / "lib").mkdir()
     (tmp_path / "lib" / "stack.ts").write_text('Action: "*"', encoding="utf-8")
     with patch("aws_arch_agent.agent.v2_graph.LLMClient") as mock_cls:
-        mock_cls.return_value.polish.return_value = "review"
+        mock_cls.return_value.polish.return_value = _ok("review")
         analyze_v2(
             tmp_path,
             use_llm=True,
@@ -159,3 +165,71 @@ def test_pillar_nodes_run_without_error() -> None:
 def test_build_graph_compiles() -> None:
     graph = build_graph()
     assert graph is not None
+
+
+def _stack_repo(root: Path) -> None:
+    (root / "package.json").write_text("{}", encoding="utf-8")
+    (root / "lib").mkdir()
+    (root / "lib" / "stack.ts").write_text('Action: "*"', encoding="utf-8")
+
+
+def _failed(prompt: str) -> LLMResult:
+    return LLMResult(prompt, "fallback", "ollama", "llama3:8b", "Ollama request failed")
+
+
+def test_v2_all_calls_ok_reports_responded(tmp_path: Path, monkeypatch) -> None:
+    monkeypatch.setattr(v2_graph, "_pillar_cache", {})
+    _stack_repo(tmp_path)
+    with patch("aws_arch_agent.agent.v2_graph.LLMClient") as mock_cls:
+        mock_cls.return_value.polish.return_value = _ok("review")
+        _, ctx, _, _ = analyze_v2(tmp_path, use_llm=True, skip_synth=True)
+    assert mock_cls.return_value.polish.call_count >= 2  # a pillar and the merge
+    assert ctx.llm.line == "LLM: ollama/llama3:8b responded"
+
+
+def test_v2_partial_failure_never_claims_responded(tmp_path: Path, monkeypatch) -> None:
+    """A pillar fails and the merge answers: the run is still a fallback."""
+    monkeypatch.setattr(v2_graph, "_pillar_cache", {})
+    _stack_repo(tmp_path)
+
+    def polish(prompt: str, system: str = "") -> LLMResult:
+        return _ok("merged") if "lead reviewer" in system else _failed(prompt)
+
+    with patch("aws_arch_agent.agent.v2_graph.LLMClient") as mock_cls:
+        mock_cls.return_value.polish.side_effect = polish
+        _, ctx, _, _ = analyze_v2(tmp_path, use_llm=True, skip_synth=True)
+    assert ctx.llm.status == "fallback"
+    assert ctx.llm.line == "LLM: fallback (Ollama request failed)"
+
+
+def test_v2_cached_pillar_keeps_its_failure(tmp_path: Path, monkeypatch) -> None:
+    """A second run reads the failed pillar from the cache and must not report ok."""
+    monkeypatch.setattr(v2_graph, "_pillar_cache", {})
+    _stack_repo(tmp_path)
+
+    def polish(prompt: str, system: str = "") -> LLMResult:
+        return _ok("merged") if "lead reviewer" in system else _failed(prompt)
+
+    with patch("aws_arch_agent.agent.v2_graph.LLMClient") as mock_cls:
+        mock_cls.return_value.polish.side_effect = polish
+        analyze_v2(tmp_path, use_llm=True, skip_synth=True)
+        calls = mock_cls.return_value.polish.call_count
+        _, ctx, _, _ = analyze_v2(tmp_path, use_llm=True, skip_synth=True)
+    assert mock_cls.return_value.polish.call_count == calls + 1  # only the merge ran again
+    assert ctx.llm.status == "fallback"
+
+
+def test_v2_compact_failure_is_reported(tmp_path: Path) -> None:
+    _stack_repo(tmp_path)
+    with patch("aws_arch_agent.agent.v2_graph.LLMClient") as mock_cls:
+        mock_cls.return_value.polish.return_value = _failed("prompt")
+        _, ctx, _, _ = analyze_v2(tmp_path, use_llm=True, skip_synth=True, llm_mode="compact")
+    assert ctx.llm.status == "fallback"
+
+
+def test_v2_no_llm_is_skipped_with_no_call(tmp_path: Path) -> None:
+    _stack_repo(tmp_path)
+    with patch("aws_arch_agent.agent.v2_graph.LLMClient") as mock_cls:
+        _, ctx, _, _ = analyze_v2(tmp_path, use_llm=False, skip_synth=True)
+    mock_cls.return_value.polish.assert_not_called()
+    assert ctx.llm.line == "LLM: skipped (--no-llm)"
