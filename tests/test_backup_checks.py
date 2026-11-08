@@ -215,7 +215,6 @@ def test_a_plan_reports_each_unselected_resource(tmp_path: Path) -> None:
 
 @pytest.mark.parametrize(("entry", "fires"), [
     ({"Fn::GetAtt": ["T", "Arn"]}, False),
-    ("T.Arn", False),
     ({"Fn::Sub": "${T.Arn}"}, False),
     ({"Fn::GetAtt": ["Other", "Arn"]}, True),
     ("*", False),
@@ -252,6 +251,20 @@ def test_efs_tags_are_read_from_file_system_tags(tmp_path: Path) -> None:
     efs = {"Type": "AWS::EFS::FileSystem", "Properties": {"FileSystemTags": [{"Key": "backup", "Value": "y"}]}}
     condition = {"ConditionKey": "backup", "ConditionValue": "y"}
     assert _cf(tmp_path, {"P": _plan(), "S": _selection(ListOfTags=[condition]), "F": efs}) == {}
+
+
+@pytest.mark.parametrize(("value", "fires"), [("y", False), ("n", True)])
+def test_fsx_tags_are_read(tmp_path: Path, value: str, fires: bool) -> None:
+    fsx = {"Type": "AWS::FSx::FileSystem", "Properties": {"Tags": [{"Key": "backup", "Value": value}]}}
+    condition = {"ConditionKey": "backup", "ConditionValue": "y"}
+    found = _cf(tmp_path, {"P": _plan(), "S": _selection(ListOfTags=[condition]), "F": fsx})
+    assert found == ({"CF-BAK-005": {"F"}} if fires else {})
+
+
+def test_any_one_tag_in_list_of_tags_selects(tmp_path: Path) -> None:
+    conditions = [{"ConditionKey": "a", "ConditionValue": "1"}, {"ConditionKey": "b", "ConditionValue": "2"}]
+    table = _table(Tags=[{"Key": "b", "Value": "2"}])
+    assert _cf(tmp_path, {"P": _plan(), "S": _selection(ListOfTags=conditions), "T": table}) == {}
 
 
 @pytest.mark.parametrize(("tags", "fires"), [

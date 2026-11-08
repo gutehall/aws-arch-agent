@@ -2078,7 +2078,7 @@ _BACKUP_SERVICES = {
 }
 # Sources that name where this stack runs. The others are only the scan's default.
 _STACK_REGION_SOURCES = frozenset({
-    "Terraform provider", "CDK stack env", "availability zones", "--region / config",
+    "Terraform provider", "Terraform plan", "CDK stack env", "availability zones", "--region / config",
 })
 _BACKUP_ARN_REGION = re.compile(r"arn:[^:\s]+:backup:([^:$\s]+):")
 
@@ -2199,8 +2199,7 @@ def _backup_findings(resources: List[Resource], template_path: Path) -> List[Fin
                 "encryptionKey on the BackupVault.")
         if prod and not _vault_is_locked(vault, vaults, locks):
             add(vault, "CF-BAK-004", "Production backup vault has no Vault Lock", "Low", "Reliability",
-                "Without Vault Lock, anyone with delete rights can remove recovery points, and so can "
-                "ransomware using those rights. Set LockConfiguration (Terraform "
+                "Without Vault Lock, anyone with delete rights can remove recovery points. Set LockConfiguration (Terraform "
                 "aws_backup_vault_lock_configuration) with a minimum retention. In CDK: lockConfiguration "
                 "on the BackupVault.")
 
@@ -2218,13 +2217,13 @@ def _backup_findings(resources: List[Resource], template_path: Path) -> List[Fin
         short = [named[i] for i, r in enumerate(rules) if _short_lifecycle(r)]
         if no_copy:
             add(plan, "CF-BAK-002", "Backup plan does not copy to another Region", "Low", "Reliability",
-                f"Rules {', '.join(no_copy)} keep recovery points in one Region, so a Regional outage "
-                "reaches the backups too. Add CopyActions with a vault in another Region as "
+                f"Recovery points stay in one Region under these rules: {', '.join(no_copy)}. A Regional "
+                "outage reaches the backups too. Add CopyActions with a vault in another Region as "
                 "DestinationBackupVaultArn. In CDK: copyActions on the BackupPlanRule.")
         if short:
             add(plan, "CF-BAK-003", "Backup plan keeps recovery points under 7 days", "Low", "Reliability",
-                f"Rules {', '.join(short)} set Lifecycle.DeleteAfterDays below 7, which may leave no good "
-                "copy by the time a problem is found. Keep them at least 7 days. In CDK: deleteAfter on "
+                f"Lifecycle.DeleteAfterDays is below 7 on these rules: {', '.join(short)}. That may leave no "
+                "good copy by the time a problem is found. Keep them at least 7 days. In CDK: deleteAfter on "
                 "the BackupPlanRule.")
 
     # An Aurora member or a replica holds no data of its own to back up.

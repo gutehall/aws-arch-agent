@@ -443,6 +443,7 @@ Like Infracost's view, it is an approximation: on-demand prices, 730 hours a mon
 Every rule has one or more themes, which cut across pillars: `finops`, `security-baseline`, `identity`, `data-protection`, `network-exposure`, `resilience`, `observability`, `sustainability`. `--theme finops` (repeatable, or comma-separated; config `themes`) limits a scan to those themes. JSON findings carry `themes`. SARIF carries them as result `properties.themes` and rule `properties.tags`. `--group-by theme` (config `group_by`) groups Markdown findings by theme; a finding in two themes is listed under both. The HTML report has a theme filter next to the severity tabs, and the Markdown and JSON summary add one line per theme. CDK source rules declare their themes in their class; template checks declare them in `CF_THEMES` in `rules/cf_template.py`.
 
 <!-- themes:start -->
+
 | Rule | Themes |
 |------|--------|
 | CF-ALB-001 | observability |
@@ -800,4 +801,5 @@ Every rule has one or more themes, which cut across pillars: `finops`, `security
 | SUST-005 | sustainability |
 | SUST-006 | sustainability, finops |
 | SUST-007 | sustainability, finops |
+
 <!-- themes:end -->

@@ -1317,8 +1317,11 @@ _CLOUDFORMATION["CF-BAK-005"] = """${name}Selection:
     BackupSelection:
       SelectionName: $name
       IamRoleArn: !GetAtt BackupRole.Arn
-      Resources:
-        - !GetAtt $name.Arn"""
+      # Give $name the tag backup=true, or list its ARN in Resources.
+      ListOfTags:
+        - ConditionType: STRINGEQUALS
+          ConditionKey: backup
+          ConditionValue: 'true'"""
 _CLOUDFORMATION["CF-RS-003"] = """$name:
   Type: AWS::Redshift::Cluster
   Properties:
@@ -1414,7 +1417,13 @@ _TERRAFORM["CF-BAK-005"] = """resource "aws_backup_selection" "$tf_name" {
   name         = "$tf_name"
   plan_id      = aws_backup_plan.main.id
   iam_role_arn = aws_iam_role.backup.arn
-  resources    = [aws_dynamodb_table.$tf_name.arn]
+
+  # Give the resource the tag backup=true, or list its ARN in resources.
+  selection_tag {
+    type  = "STRINGEQUALS"
+    key   = "backup"
+    value = "true"
+  }
 }"""
 _TERRAFORM["CF-RS-003"] = """resource "aws_redshift_cluster" "$tf_name" {
   automated_snapshot_retention_period = 7
