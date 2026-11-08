@@ -81,6 +81,11 @@ CF_COVERS_STATIC: dict[str, tuple[str, ...]] = {
     "CF-IAM-008": ("SEC-067", "SEC-001", "SEC-002"),
     "CF-SQS-001": ("SEC-013",),
     "CF-SQS-002": ("REL-008",),
+    "CF-SQS-003": ("REL-024",),
+    "CF-SFN-001": ("REL-015",),
+    "CF-SFN-002": ("OPS-012",),
+    "CF-EB-001": ("OPS-013",),
+    "CF-EB-002": ("REL-029",),
     # Sensitive ports include SSH (SEC-003) and the DB ports (SEC-004). CF-SG-002 is the
     # same rule open on every port, reported instead of CF-SG-001.
     "CF-SG-001": ("SEC-003", "SEC-004"),
@@ -276,6 +281,7 @@ _PER_RESOURCE_TYPES = frozenset({
     "elasticache_cluster", "scalable_target",
     "security_group_egress_rule", "network_acl_entry", "network_acl", "transit_gateway",
     "lb_listener", "lb_target_group", "elb", "lambda_url",
+    "sfn_state_machine", "events_rule", "events_target", "event_bus", "event_bus_policy",
 })
 # Parameter groups only feed CF-RDS-006; they have no checks of their own.
 
@@ -334,7 +340,7 @@ CHECK_PROPERTIES: dict[str, frozenset[str]] = {
         "CF-NEP-001": {"StorageEncrypted", "SnapshotIdentifier", "SourceDBClusterIdentifier"},
         "CF-MSK-001": {"EncryptionInfo"},
         "CF-RP-001": {
-            "PolicyDocument", "RepositoryPolicyText",
+            "PolicyDocument", "RepositoryPolicyText", "Policy", "Statement", "Condition",
             "Principal", "SourceArn", "SourceAccount", "PrincipalOrgID", "FunctionUrlAuthType",
         },
         "CF-LAM-001": {"DeadLetterConfig"},
@@ -392,6 +398,9 @@ CHECK_PROPERTIES: dict[str, frozenset[str]] = {
         "CF-APIGW-002": {"TracingEnabled"},
         "CF-APIGW-V2-001": {"AccessLogSettings"},
         "CF-APIGW-V2-002": {"TracingEnabled"},
+        # Template-level: _error_handling_findings skips what it cannot read.
+        **{c: set() for c in ("CF-SFN-001", "CF-SFN-002", "CF-SFN-003", "CF-EB-001", "CF-EB-002",
+                              "CF-SQS-003")},
         # Template-level: _warehouse_findings skips what it cannot read.
         **{c: set() for c in ("CF-RS-002", "CF-RS-003", "CF-RS-004", "CF-RS-005", "CF-RS-006", "CF-RS-007",
                               "CF-DOCDB-002", "CF-DOCDB-003", "CF-DOCDB-004", "CF-NEP-002", "CF-NEP-003",
@@ -480,6 +489,8 @@ CF_THEMES: dict[str, tuple[str, ...]] = {
     "CF-S3-006": (_F, _DP), "CF-S3-007": (_F,), "CF-DDB-003": (_F, _RES),
     "CF-S3-005": (_DP, _NET), "CF-SG-001": (_NET,), "CF-SG-002": (_NET,), "CF-SG-003": (_NET,),
     "CF-NACL-001": (_NET,), "CF-NAT-001": (_RES,), "CF-TGW-001": (_NET, _ID), "CF-TGW-002": (_OBS, _NET), "CF-SM-001": (_DP, _ID), "CF-SNS-001": (_DP,),
+    "CF-SFN-001": (_RES,), "CF-SFN-002": (_OBS,), "CF-SFN-003": (_OBS,), "CF-EB-001": (_OBS, _RES),
+    "CF-EB-002": (_RES,), "CF-SQS-003": (_RES,),
     "CF-SQS-001": (_DP,), "CF-SQS-002": (_RES,),
     "CF-SUST-001": (_SUS, _F), "CF-SUST-002": (_SUS, _F), "CF-SUST-003": (_SUS, _F),
     "CF-TAG-001": (_F,), "CF-VPC-001": (_NET, _F), "CF-VPC-002": (_F,), "CF-VPC-003": (_F,), "CF-WAF-001": (_NET,),
@@ -2168,6 +2179,228 @@ def _warehouse_findings(resources: List[Resource], template_path: Path) -> List[
     return out
 
 
+_DEFINITION_MAX_BYTES = 1_000_000
+
+
+def _definition_text(value: Any) -> str | None:
+    """A DefinitionString as text. Fn::Join parts that are not text become a placeholder: inside
+    a JSON string that is harmless, and anywhere else the text no longer parses, so it is not judged."""
+    if isinstance(value, str):
+        return value
+    if not isinstance(value, dict) or len(value) != 1:
+        return None
+    sub = value.get("Fn::Sub")
+    if isinstance(sub, list) and sub:
+        sub = sub[0]
+    if isinstance(sub, str):
+        return sub
+    join = value.get("Fn::Join")
+    if isinstance(join, list) and len(join) == 2 and isinstance(join[0], str) and isinstance(join[1], list):
+        return join[0].join(p if isinstance(p, str) else "x" for p in join[1])
+    return None
+
+
+def _local_definition(location: str, res: Resource, template_path: Path) -> dict | None:
+    """A DefinitionS3Location that is a local path, as `aws cloudformation package` takes it.
+    Only a file under the template's own folder is read."""
+    try:
+        base = Path(res.file or template_path).parent.resolve()
+        path = (base / location).resolve()
+        if not path.is_relative_to(base) or not path.is_file() or path.stat().st_size > _DEFINITION_MAX_BYTES:
+            return None
+    except (OSError, ValueError):
+        return None
+    doc, error = _read_template(path)
+    return None if error else doc
+
+
+def _state_machine_definition(res: Resource, template_path: Path) -> dict | None:
+    """The definition as data, or None when the scan cannot read it."""
+    props = res.properties
+    definition = props.get("Definition")
+    if definition is not None:
+        return definition if isinstance(definition, dict) and not _is_intrinsic(definition) else None
+    if props.get("DefinitionString") is not None:
+        text = _definition_text(props["DefinitionString"])
+        try:
+            parsed = json.loads(text) if text is not None else None
+        except ValueError:
+            return None
+        return parsed if isinstance(parsed, dict) else None
+    location = props.get("DefinitionS3Location")
+    return _local_definition(location, res, template_path) if isinstance(location, str) else None
+
+
+def _states(definition: Any) -> dict[str, dict]:
+    states = definition.get("States") if isinstance(definition, dict) else None
+    if not isinstance(states, dict):
+        return {}
+    return {str(name): state for name, state in states.items() if isinstance(state, dict)}
+
+
+def _task_states(definition: Any) -> list[tuple[str, dict]]:
+    """Every Task state, including those inside Parallel branches and Map states."""
+    out: list[tuple[str, dict]] = []
+    for name, state in _states(definition).items():
+        if state.get("Type") == "Task":
+            out.append((name, state))
+        branches = state.get("Branches")
+        nested = list(branches) if isinstance(branches, list) else []
+        nested += [state.get("ItemProcessor"), state.get("Iterator")]
+        for inner in nested:
+            out.extend(_task_states(inner))
+    return out
+
+
+def _last_tasks(definition: Any) -> list[tuple[str, dict]]:
+    """Top-level Task states that end the workflow. A failure inside a Parallel or Map state
+    reaches the state around it, so nested tasks are not asked for a Catch."""
+    states = _states(definition)
+    return [
+        (name, state) for name, state in states.items()
+        if state.get("Type") == "Task" and (
+            state.get("End") is True or states.get(str(state.get("Next")), {}).get("Type") == "Succeed")
+    ]
+
+
+def _shown(names: List[str]) -> str:
+    return ", ".join(names[:5]) + (" ..." if len(names) > 5 else "")
+
+
+def _no_retry_or_catch(definition: dict) -> str | None:
+    """What CF-SFN-001 reports for a definition, or None."""
+    parts = []
+    no_retry = [name for name, state in _task_states(definition) if not state.get("Retry")]
+    if no_retry:
+        parts.append(f"Task states with no Retry: {_shown(no_retry)}.")
+    no_catch = [name for name, state in _last_tasks(definition) if not state.get("Catch")]
+    if no_catch:
+        parts.append(f"Last tasks with no Catch: {_shown(no_catch)}.")
+    return " ".join(parts) or None
+
+
+def _tracing_off(res: Resource) -> bool:
+    config = res.properties.get("TracingConfiguration")
+    if "TracingConfiguration" in res.unresolved:
+        return False
+    if config is None:
+        return True
+    if not isinstance(config, dict) or _is_intrinsic(config):
+        return False
+    return _flag(config.get("Enabled")) is False
+
+
+def _logging_off(res: Resource) -> bool:
+    config = res.properties.get("LoggingConfiguration")
+    if "LoggingConfiguration" in res.unresolved:
+        return False
+    if config is None:
+        return True
+    if not isinstance(config, dict) or (config and _is_intrinsic(config)):
+        return False
+    level = config.get("Level", "OFF")  # the service default
+    return isinstance(level, str) and level.upper() == "OFF"
+
+
+def _no_dead_letter(target: dict, res: Resource) -> bool:
+    if "DeadLetterConfig" in res.unresolved:
+        return False
+    config = target.get("DeadLetterConfig")
+    if not config:
+        return True
+    return isinstance(config, dict) and not _is_intrinsic(config) and not config.get("Arn")
+
+
+def _no_retries(target: dict, res: Resource) -> bool:
+    if "RetryPolicy" in res.unresolved:
+        return False
+    policy = target.get("RetryPolicy")
+    if policy is None:
+        return True
+    return isinstance(policy, dict) and not _is_intrinsic(policy) \
+        and policy.get("MaximumRetryAttempts") in (0, "0")
+
+
+def _rule_targets(res: Resource) -> list[tuple[str, dict]]:
+    """(label, target) for a Terraform target, or for each target of a CloudFormation rule."""
+    if res.type == "events_target":
+        return [(res.name, res.properties)]
+    targets = res.properties.get("Targets")
+    if not isinstance(targets, list):
+        return []
+    return [(str(t.get("Id", "unnamed")), t) for t in targets if isinstance(t, dict) and not _is_intrinsic(t)]
+
+
+def _error_handling_findings(resources: List[Resource], template_path: Path) -> List[Finding]:
+    """Step Functions (CF-SFN-001..003), EventBridge targets (CF-EB-001/002) and SQS visibility
+    against its Lambda consumer (CF-SQS-003). A value the scan cannot read is not judged."""
+    usable = [r for r in resources if not r.malformed]
+    out: List[Finding] = []
+
+    def add(res: Resource, check_id: str, title: str, severity: Severity, category: str,
+            recommendation: str) -> None:
+        out.append(Finding(
+            id=check_id, title=title, severity=severity, category=category,
+            file=res.file or str(template_path), line=res.line,
+            evidence=f"{res.name} ({res.source_type})", recommendation=recommendation,
+        ))
+
+    for machine in (r for r in usable if r.type == "sfn_state_machine"):
+        definition = _state_machine_definition(machine, template_path)
+        gaps = _no_retry_or_catch(definition) if definition is not None else None
+        if gaps:
+            add(machine, "CF-SFN-001", "Step Functions tasks have no retry or catch", "Low", "Reliability",
+                f"{gaps} A short failure then fails the whole execution, with no handling. Add Retry for "
+                "errors that pass, and Catch on the last task. In CDK: addRetry() and addCatch().")
+        if _tracing_off(machine):
+            add(machine, "CF-SFN-002", "Step Functions state machine has no X-Ray tracing", "Low",
+                "Operational Excellence",
+                "Set TracingConfiguration.Enabled: true to trace executions across services. In CDK: "
+                "tracingEnabled: true.")
+        if _logging_off(machine):
+            add(machine, "CF-SFN-003", "Step Functions state machine has no logging", "Medium",
+                "Operational Excellence",
+                "Set LoggingConfiguration with Level ERROR or ALL and a CloudWatch Logs destination, or "
+                "failed executions leave no log (Security Hub StepFunctions.1). In CDK: logs: { destination, "
+                "level: sfn.LogLevel.ERROR }.")
+
+    for res in (r for r in usable if r.type in ("events_rule", "events_target")):
+        targets = _rule_targets(res)
+        no_dlq = [label for label, target in targets if _no_dead_letter(target, res)]
+        no_retry = [label for label, target in targets if _no_retries(target, res)]
+        if no_dlq:
+            add(res, "CF-EB-001", "EventBridge rule target has no dead-letter queue", "Low",
+                "Operational Excellence",
+                f"Targets: {_shown(no_dlq)}. An event that cannot be delivered is lost when retries run out. "
+                "Set DeadLetterConfig.Arn to an SQS queue. In CDK: deadLetterQueue on the target.")
+        if no_retry:
+            add(res, "CF-EB-002", "EventBridge rule target has no retry policy", "Low", "Reliability",
+                f"Targets: {_shown(no_retry)}. With no RetryPolicy, a failing target is retried on the "
+                "default of 185 attempts over 24 hours; with MaximumRetryAttempts 0, it is not retried. Set "
+                "RetryPolicy to what the target can take. In CDK: retryAttempts and maxEventAge on the target.")
+
+    functions = [r for r in usable if r.type == "lambda_function"]
+    mappings = [r for r in usable if r.type == "lambda_event_source_mapping"]
+    for queue in (r for r in usable if r.type == "sqs_queue"):
+        visibility = _days(queue, "VisibilityTimeout", 30)
+        if visibility is None:
+            continue
+        consumers = {
+            fn.name: timeout for m in mappings if _points_at(m, "EventSourceArn", queue)
+            for fn in functions if _points_at(m, "FunctionName", fn)
+            for timeout in [_days(fn, "Timeout", 3)]
+            if timeout is not None and timeout > visibility
+        }
+        if consumers:
+            name, timeout = max(consumers.items(), key=lambda item: item[1])
+            add(queue, "CF-SQS-003", "SQS visibility timeout is shorter than its Lambda timeout", "Medium",
+                "Reliability",
+                f"VisibilityTimeout is {visibility} seconds and {name} can run for {timeout}, so a message "
+                "becomes visible again while it is still being handled and runs twice. Set VisibilityTimeout "
+                "to at least 6 times the function timeout, as AWS advises. In CDK: visibilityTimeout.")
+    return out
+
+
 _WORLD_V4, _WORLD_V6 = "0.0.0.0/0", "::/0"
 _ALL_PROTOCOLS = ("-1", -1, "all")
 
@@ -3124,12 +3357,33 @@ _RP_RECOMMENDATION = (
 )
 
 
+def _event_bus_policy_document(res: Resource) -> dict | None:
+    """AWS::Events::EventBusPolicy as a document: its one Statement, or the older Principal,
+    Action and Condition properties (also aws_cloudwatch_event_permission)."""
+    props = res.properties
+    statement = props.get("Statement")
+    if isinstance(statement, str):
+        try:
+            statement = json.loads(statement)
+        except ValueError:
+            return None
+    if isinstance(statement, (dict, list)):
+        return {"Statement": statement}
+    if statement is None and props.get("Principal") == "*" and props.get("Condition") is None:
+        action = props.get("Action", "events:PutEvents")
+        return {"Statement": [{"Effect": "Allow", "Principal": "*", "Action": action}]}
+    return None
+
+
 def _public_policy_finding(res: Resource, template_path: Path) -> Finding | None:
-    """CF-RP-001 for a queue, topic, bucket or ECR repository policy, or CF-KMS-001 for a key
-    policy, when an Allow statement is open to Principal "*" with no limiting condition."""
-    key = {"ecr_repository": "RepositoryPolicyText", "kms_key": "KeyPolicy"}.get(
-        res.type or "", "PolicyDocument")
-    doc = iam_policy.as_document(res.properties.get(key))
+    """CF-RP-001 for a queue, topic, bucket, event bus or ECR repository policy, or CF-KMS-001 for
+    a key policy, when an Allow statement is open to Principal "*" with no limiting condition."""
+    if res.type == "event_bus_policy":
+        doc = _event_bus_policy_document(res)
+    else:
+        key = {"ecr_repository": "RepositoryPolicyText", "kms_key": "KeyPolicy", "event_bus": "Policy"}.get(
+            res.type or "", "PolicyDocument")
+        doc = iam_policy.as_document(res.properties.get(key))
     actions = iam_policy.public_actions(doc) if doc is not None else None
     if actions is None:
         return None
@@ -3905,7 +4159,7 @@ def _run_resource_checks(
                 findings.extend(_encryption_findings(res, template_path))
 
                 # --- Resource policies open to any principal (and KMS key policies) ---
-                if ctype in ("resource_policy", "ecr_repository", "kms_key"):
+                if ctype in ("resource_policy", "ecr_repository", "kms_key", "event_bus", "event_bus_policy"):
                     public = _public_policy_finding(res, template_path)
                     if public is not None:
                         findings.append(public)
@@ -4303,6 +4557,9 @@ def _run_resource_checks(
 
     # --- Gateway endpoints: S3 and DynamoDB through a NAT gateway (CF-VPC-002/003) ---
     findings.extend(_gateway_endpoint_findings(resources, template_path, _at))
+
+    # --- Step Functions, EventBridge and SQS error handling ---
+    findings.extend(_error_handling_findings(resources, template_path))
 
     # --- Redshift, DocumentDB and Neptune beyond encryption ---
     findings.extend(_warehouse_findings(resources, template_path))
