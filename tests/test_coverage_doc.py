@@ -106,7 +106,7 @@ def test_fsbp_rows_name_a_check() -> None:
 def test_docs_state_the_real_counts() -> None:
     with_check = sum(1 for _i, status, _c, _w in _rule_rows() if status in ("covered", "partial"))
     total = len(ALL_RULES)
-    stated = f"{total} CDK rules and {len(CF_THEMES)} template checks"
+    stated = f"{len(CF_THEMES)} template checks"
     share = f"{with_check} of the {total} CDK rules ({round(100 * with_check / total)}%)"
     for path in ("README.md", "docs/CF_RULES.md"):
         text = (ROOT / path).read_text(encoding="utf-8")
