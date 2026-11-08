@@ -2488,6 +2488,67 @@ _CLOUDFORMATION.update({
     ContainerDefinitions:
       - Name: app # each container: keep its other keys as they are
         User: '1000'""",
+    "CF-ECS-004": """$name:
+  Type: AWS::ECS::TaskDefinition
+  Properties:
+    # keep the other properties as they are
+    NetworkMode: awsvpc""",
+    "CF-ECS-005": """$name:
+  Type: AWS::ECS::Service
+  Properties:
+    # keep the other properties as they are
+    NetworkConfiguration:
+      AwsvpcConfiguration:
+        AssignPublicIp: DISABLED""",
+    "CF-ECS-006": """$name:
+  Type: AWS::ECS::TaskDefinition
+  Properties:
+    # keep the other properties as they are; remove PidMode, or share only within the task
+    PidMode: task""",
+    "CF-ECS-007": """$name:
+  Type: AWS::ECS::TaskDefinition
+  Properties:
+    # keep the other properties as they are
+    ContainerDefinitions:
+      - Name: app # each container: keep its other keys, and remove the variable from Environment
+        Secrets:
+          - Name: DB_PASSWORD
+            ValueFrom: arn:aws:secretsmanager:eu-north-1:111122223333:secret:app-db""",
+    "CF-ECS-008": """$name:
+  Type: AWS::ECS::TaskDefinition
+  Properties:
+    # keep the other properties as they are
+    ContainerDefinitions:
+      - Name: app # each container: keep its other keys as they are
+        LogConfiguration:
+          LogDriver: awslogs
+          Options:
+            awslogs-group: /ecs/app
+            awslogs-region: eu-north-1
+            awslogs-stream-prefix: app""",
+    "CF-ECS-009": """$name:
+  Type: AWS::ECS::Service
+  Properties:
+    # keep the other properties as they are
+    PlatformVersion: LATEST""",
+    "CF-ECS-010": """$name:
+  Type: AWS::ECS::Cluster
+  Properties:
+    # keep the other properties as they are
+    ClusterSettings:
+      - Name: containerInsights
+        Value: enabled""",
+    "CF-ECS-011": """$name:
+  Type: AWS::ECS::TaskDefinition
+  Properties:
+    # keep the other properties as they are; use a pair Fargate offers
+    Cpu: '256'
+    Memory: '512'""",
+    "CF-EKS-004": """$name:
+  Type: AWS::EKS::Cluster
+  Properties:
+    # keep the other properties as they are; upgrade one minor version at a time
+    Version: '1.34'""",
 })
 _TERRAFORM.update({
     "CF-ECR-001": """resource "aws_ecr_repository" "$tf_name" {
@@ -2536,6 +2597,65 @@ _TERRAFORM.update({
     name = "app" # each container: keep its other keys as they are
     user = "1000"
   }])
+}""",
+    "CF-ECS-004": """resource "aws_ecs_task_definition" "$tf_name" {
+  # keep the other arguments as they are
+  network_mode = "awsvpc"
+}""",
+    "CF-ECS-005": """resource "aws_ecs_service" "$tf_name" {
+  # keep the other arguments as they are
+  network_configuration {
+    subnets          = var.private_subnet_ids
+    assign_public_ip = false
+  }
+}""",
+    "CF-ECS-006": """resource "aws_ecs_task_definition" "$tf_name" {
+  # keep the other arguments as they are; remove pid_mode, or share only within the task
+  pid_mode = "task"
+}""",
+    "CF-ECS-007": """resource "aws_ecs_task_definition" "$tf_name" {
+  # keep the other arguments as they are
+  container_definitions = jsonencode([{
+    name = "app" # each container: keep its other keys, and remove the variable from environment
+    secrets = [{
+      name      = "DB_PASSWORD"
+      valueFrom = aws_secretsmanager_secret.app_db.arn
+    }]
+  }])
+}""",
+    "CF-ECS-008": """resource "aws_ecs_task_definition" "$tf_name" {
+  # keep the other arguments as they are
+  container_definitions = jsonencode([{
+    name = "app" # each container: keep its other keys as they are
+    logConfiguration = {
+      logDriver = "awslogs"
+      options = {
+        awslogs-group         = "/ecs/app"
+        awslogs-region        = "eu-north-1"
+        awslogs-stream-prefix = "app"
+      }
+    }
+  }])
+}""",
+    "CF-ECS-009": """resource "aws_ecs_service" "$tf_name" {
+  # keep the other arguments as they are
+  platform_version = "LATEST"
+}""",
+    "CF-ECS-010": """resource "aws_ecs_cluster" "$tf_name" {
+  # keep the other arguments as they are
+  setting {
+    name  = "containerInsights"
+    value = "enabled"
+  }
+}""",
+    "CF-ECS-011": """resource "aws_ecs_task_definition" "$tf_name" {
+  # keep the other arguments as they are; use a pair Fargate offers
+  cpu    = "256"
+  memory = "512"
+}""",
+    "CF-EKS-004": """resource "aws_eks_cluster" "$tf_name" {
+  # keep the other arguments as they are; upgrade one minor version at a time
+  version = "1.34"
 }""",
 })
 

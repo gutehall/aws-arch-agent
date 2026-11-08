@@ -19,6 +19,7 @@ from pathlib import Path
 from typing import Any, Callable
 
 from aws_arch_agent.rules.resource_model import Resource
+from aws_arch_agent.rules.secret_names import is_literal_secret
 from aws_arch_agent.rules.tag_policy import TF_TAGGABLE
 from aws_arch_agent.rules.tag_policy import UNKNOWN as UNKNOWN_TAG
 
@@ -106,6 +107,7 @@ TF_TYPE_TO_CANONICAL: dict[str, str] = {
     "aws_autoscaling_group": "autoscaling_group",
     "aws_launch_configuration": "launch_configuration",
     "aws_appautoscaling_target": "scalable_target",
+    "aws_ecs_cluster": "ecs_cluster",
     "aws_ecs_service": "ecs_service",
     "aws_eks_cluster": "eks_cluster",
     "aws_cloudfront_distribution": "cloudfront_distribution",
@@ -1331,8 +1333,34 @@ def _container_definitions(value: Any) -> Any:
     for item in decoded:
         if not isinstance(item, dict):
             return UNRESOLVED
-        out.append({cf: item[tf] for tf, cf in _CONTAINER_KEYS.items() if tf in item})
+        container = {cf: item[tf] for tf, cf in _CONTAINER_KEYS.items() if tf in item}
+        if "environment" in item:
+            container["Environment"] = _container_environment(item["environment"])
+        if "logConfiguration" in item:
+            container["LogConfiguration"] = _container_logs(item["logConfiguration"])
+        out.append(container)
     return out
+
+
+# Stands for a literal environment value, so that the secret stays out of the model.
+_LITERAL_VALUE = "<literal>"
+
+
+def _container_environment(value: Any) -> Any:
+    """environment -> Environment, with each value reduced to whether it is a literal secret."""
+    if not isinstance(value, list):
+        return _OPAQUE
+    return [
+        {"Name": item.get("name"), "Value": _LITERAL_VALUE if is_literal_secret(item.get("value")) else _OPAQUE}
+        for item in value if isinstance(item, dict)
+    ]
+
+
+def _container_logs(value: Any) -> Any:
+    """logConfiguration -> LogConfiguration, with only the driver: options may hold secrets."""
+    if not isinstance(value, dict):
+        return _OPAQUE
+    return {"LogDriver": value.get("logDriver")}
 
 
 def _json_or_unresolved(text: str) -> Any:
@@ -1350,6 +1378,11 @@ def _ecs_task_definition(body: dict) -> dict:
     platform = _first_block(body, "runtime_platform")
     if "operating_system_family" in platform:
         props["RuntimePlatform"] = {"OperatingSystemFamily": _v(platform, "operating_system_family")}
+    _set(props, "NetworkMode", _v(body, "network_mode"))
+    _set(props, "PidMode", _v(body, "pid_mode"))
+    _set(props, "RequiresCompatibilities", _v(body, "requires_compatibilities"))
+    _set(props, "Cpu", _v(body, "cpu"))
+    _set(props, "Memory", _v(body, "memory"))
     return props
 
 
@@ -1840,9 +1873,32 @@ def _elasticache_cluster(body: dict) -> dict:
     return props
 
 
+def _ecs_cluster(body: dict) -> dict:
+    if "setting" in _dynamic_names(body):
+        return {"ClusterSettings": UNRESOLVED}
+    settings = [{"Name": _v(item, "name"), "Value": _v(item, "value")} for item in _blocks(body, "setting")]
+    return {"ClusterSettings": settings} if settings else {}
+
+
+def _assign_public_ip(body: dict) -> Any:
+    """network_configuration.assign_public_ip -> ENABLED or DISABLED, or None when unset."""
+    value = _v(_first_block(body, "network_configuration"), "assign_public_ip")
+    if value is None or value is UNRESOLVED:
+        return value
+    text = str(value).lower()
+    return {"true": "ENABLED", "false": "DISABLED"}.get(text, UNRESOLVED)
+
+
 def _ecs_service(body: dict) -> dict:
     props: dict = {}
     _set(props, "LaunchType", _v(body, "launch_type"))
+    _set(props, "PlatformVersion", _v(body, "platform_version"))
+    if "network_configuration" in _dynamic_names(body):
+        props["NetworkConfiguration"] = UNRESOLVED
+    else:
+        assign = _assign_public_ip(body)
+        if assign is not None:
+            props["NetworkConfiguration"] = {"AwsvpcConfiguration": {"AssignPublicIp": assign}}
     strategy = [
         {"CapacityProvider": _v(item, "capacity_provider")}
         for item in _blocks(body, "capacity_provider_strategy")
@@ -1937,6 +1993,7 @@ _ADAPTERS: dict[str, Callable[[dict], dict]] = {
     "aws_apigatewayv2_route": _apiv2_route,
     "aws_apigatewayv2_api": _apiv2_api,
     "aws_autoscaling_group": _asg,
+    "aws_ecs_cluster": _ecs_cluster,
     "aws_ecs_service": _ecs_service,
     "aws_eks_cluster": _eks,
     "aws_iam_policy": _iam_policy,

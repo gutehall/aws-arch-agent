@@ -17,7 +17,6 @@ Which CDK rules have a template check, and which AWS Foundational Security Best 
 
 | Work | Adds template checks for |
 | -- | -- |
-| `containers` | More ECS and EKS settings |
 | `auto-scaling` | Auto Scaling groups and launch configurations |
 | `analytics` | Athena, Glue and Firehose |
 | `emr-dms` | EMR and DMS |
@@ -31,7 +30,7 @@ Which CDK rules have a template check, and which AWS Foundational Security Best 
 
 ## CDK rules
 
-172 rules: 98 covered, 6 partial, 28 planned, 10 account, 5 cdk-only, 25 advice.
+172 rules: 100 covered, 6 partial, 26 planned, 10 account, 5 cdk-only, 25 advice.
 
 | Rule | Title | Template check | Status | Note |
 | -- | -- | -- | -- | -- |
@@ -164,7 +163,7 @@ Which CDK rules have a template check, and which AWS Foundational Security Best 
 | OPS-005 | API Gateway access logging not enabled | `CF-APIGW-001`, `CF-APIGW-V2-001` | `covered` |  |
 | OPS-006 | ALB/NLB access logs not enabled | `CF-ALB-001` | `covered` |  |
 | OPS-007 | CloudFront access logging not enabled |  | `planned: cloudfront` |  |
-| OPS-008 | ECS container insights not enabled |  | `planned: containers` |  |
+| OPS-008 | ECS container insights not enabled | `CF-ECS-010` | `covered` |  |
 | OPS-009 | RDS enhanced monitoring not enabled | `CF-RDS-007` | `covered` |  |
 | OPS-010 | CloudWatch alarms not configured for critical resources |  | `planned: alarms` |  |
 | OPS-011 | No SNS topics for alarm notifications |  | `planned: alarms` |  |
@@ -187,7 +186,7 @@ Which CDK rules have a template check, and which AWS Foundational Security Best 
 | PERF-004 | API Gateway caching not enabled | `CF-APIGW-008` | `covered` |  |
 | PERF-005 | Lambda memory not optimized (too low/high) |  | `advice` | Memory tuning needs invocation data. |
 | PERF-006 | CloudFront caching strategy not optimized |  | `planned: cloudfront` |  |
-| PERF-007 | ECS task sizing (CPU/memory) may need review |  | `planned: containers` |  |
+| PERF-007 | ECS task sizing (CPU/memory) may need review | `CF-ECS-011` | `covered` |  |
 | PERF-008 | RDS instance class may be oversized | `CF-PERF-003`, `CF-PERF-004` | `partial` | CF-PERF-003 checks RDS and CF-PERF-004 checks EC2; PERF-008 matches any large instanceType. |
 | PERF-009 | Kinesis enhanced fan-out not used |  | `advice` | Enhanced fan-out depends on consumer count. |
 | PERF-010 | OpenSearch instance types not optimized |  | `advice` | Instance choice depends on the workload. |
@@ -272,22 +271,22 @@ Controls a template can show. Account-level controls (for example S3.1, EC2.7 an
 | ECR.1 | `CF-ECR-001` | `AWS::ECR::Repository` |
 | ECR.2 | `CF-ECR-002` | `AWS::ECR::Repository` |
 | ECR.3 | `CF-ECR-003` | `AWS::ECR::Repository` |
-| ECS.1 | `planned: containers` | `AWS::ECS::TaskDefinition` |
-| ECS.2 | `planned: containers` | `AWS::ECS::Service` |
-| ECS.3 | `planned: containers` | `AWS::ECS::TaskDefinition` |
+| ECS.1 | `CF-ECS-004` | `AWS::ECS::TaskDefinition` |
+| ECS.2 | `CF-ECS-005` | `AWS::ECS::Service` |
+| ECS.3 | `CF-ECS-006` | `AWS::ECS::TaskDefinition` |
 | ECS.4 | `CF-ECS-001` | `AWS::ECS::TaskDefinition` |
 | ECS.5 | `CF-ECS-002` | `AWS::ECS::TaskDefinition` |
-| ECS.8 | `planned: containers` | `AWS::ECS::TaskDefinition` |
-| ECS.9 | `planned: containers` | `AWS::ECS::TaskDefinition` |
-| ECS.10 | `planned: containers` | `AWS::ECS::Service` |
-| ECS.12 | `planned: containers` | `AWS::ECS::Cluster` |
+| ECS.8 | `CF-ECS-007` | `AWS::ECS::TaskDefinition` |
+| ECS.9 | `CF-ECS-008` | `AWS::ECS::TaskDefinition` |
+| ECS.10 | `CF-ECS-009` | `AWS::ECS::Service` |
+| ECS.12 | `CF-ECS-010` | `AWS::ECS::Cluster` |
 | EFS.1 | `CF-EFS-001` | `AWS::EFS::FileSystem` |
 | EFS.2 | `CF-BAK-005` | `AWS::EFS::FileSystem` |
 | EFS.3 | `CF-EFS-004` | `AWS::EFS::AccessPoint` |
 | EFS.4 | `CF-EFS-005` | `AWS::EFS::AccessPoint` |
 | EFS.7 | `CF-EFS-002` | `AWS::EFS::FileSystem` |
 | EKS.1 | `CF-EKS-002` | `AWS::EKS::Cluster` |
-| EKS.2 | `planned: containers` | `AWS::EKS::Cluster` |
+| EKS.2 | `CF-EKS-004` | `AWS::EKS::Cluster` |
 | EKS.3 | `CF-EKS-003` | `AWS::EKS::Cluster` |
 | EKS.8 | `CF-EKS-001` | `AWS::EKS::Cluster` |
 | ElastiCache.1 | `CF-EC-004` | `AWS::ElastiCache::ReplicationGroup` |

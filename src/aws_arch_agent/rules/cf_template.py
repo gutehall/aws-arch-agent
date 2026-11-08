@@ -8,6 +8,7 @@ from typing import Any, Callable, List
 from aws_arch_agent.models import Finding, Severity
 from aws_arch_agent.rules.secret_names import is_literal_secret, is_secret_name
 from aws_arch_agent.rules import (
+    eks_versions,
     environments,
     estimates,
     generations,
@@ -74,6 +75,8 @@ CF_COVERS_STATIC: dict[str, tuple[str, ...]] = {
     "CF-ECR-003": ("SEC-030",),
     "CF-ECS-002": ("SEC-020",),
     "CF-ECS-003": ("SEC-058",),
+    "CF-ECS-010": ("OPS-008",),
+    "CF-ECS-011": ("PERF-007",),
     "CF-IAM-001": ("SEC-001",),
     "CF-IAM-002": ("SEC-001",),
     "CF-IAM-003": ("SEC-002",),
@@ -290,7 +293,7 @@ _PER_RESOURCE_TYPES = frozenset({
     "lb_listener", "lb_target_group", "elb", "lambda_url",
     "sfn_state_machine", "events_rule", "events_target", "event_bus", "event_bus_policy",
     "backup_vault", "backup_vault_lock", "backup_plan", "backup_selection",
-    "efs_access_point", "efs_backup_policy",
+    "efs_access_point", "efs_backup_policy", "ecs_cluster",
 })
 # Parameter groups only feed CF-RDS-006; they have no checks of their own.
 
@@ -422,6 +425,9 @@ CHECK_PROPERTIES: dict[str, frozenset[str]] = {
         # Template-level: _data_store_findings skips what it cannot read.
         **{c: set() for c in ("CF-DDB-004", "CF-DDB-005", "CF-EC-003", "CF-EC-004", "CF-EC-005", "CF-EC-006",
                               "CF-EC-007", "CF-EFS-002", "CF-EFS-003", "CF-EFS-004", "CF-EFS-005")},
+        # Template-level: _container_findings skips what it cannot read.
+        **{c: set() for c in ("CF-ECS-004", "CF-ECS-005", "CF-ECS-006", "CF-ECS-007", "CF-ECS-008",
+                              "CF-ECS-009", "CF-ECS-010", "CF-ECS-011", "CF-EKS-004")},
         # Template-level: _backup_findings skips what it cannot read.
         **{c: set() for c in ("CF-BAK-001", "CF-BAK-002", "CF-BAK-003", "CF-BAK-004", "CF-BAK-005")},
         # Template-level: _ci_cd_findings skips what it cannot read.
@@ -474,7 +480,10 @@ CF_THEMES: dict[str, tuple[str, ...]] = {
     "CF-EBS-001": (_DP,), "CF-EBS-002": (_F,), "CF-EC-001": (_DP,), "CF-EC-002": (_DP,),
     "CF-EC2-001": (_SB, _ID), "CF-EC2-002": (_NET,), "CF-EC2-003": (_NET,),
     "CF-ECR-001": (_SB,), "CF-ECR-002": (_SB,), "CF-ECR-003": (_SB, _F),
-    "CF-ECS-001": (_SB,), "CF-ECS-002": (_SB,), "CF-ECS-003": (_SB,), "CF-EFS-001": (_DP,),
+    "CF-ECS-001": (_SB,), "CF-ECS-002": (_SB,), "CF-ECS-003": (_SB,), "CF-ECS-004": (_SB, _NET),
+    "CF-ECS-005": (_NET,), "CF-ECS-006": (_SB,), "CF-ECS-007": (_DP, _ID), "CF-ECS-008": (_OBS,),
+    "CF-ECS-009": (_SB,), "CF-ECS-010": (_OBS,), "CF-ECS-011": (_F,), "CF-EKS-004": (_SB,),
+    "CF-EFS-001": (_DP,),
     "CF-EIP-001": (_F,), "CF-EKS-001": (_OBS,), "CF-EKS-002": (_NET,), "CF-EKS-003": (_DP,),
     "CF-ENV-001": (_F,), "CF-ENV-002": (_F,), "CF-ENV-003": (_F,), "CF-ENV-004": (_F,),
     "CF-ENV-005": (_F,), "CF-ENV-006": (_F,), "CF-FL-001": (_OBS, _NET),
@@ -3447,6 +3456,224 @@ def _ecs_findings(res: Resource, template_path: Path) -> List[Finding]:
     return out
 
 
+# Security Hub ECS.8 names these. The shared name rules do not: *_ID points at a value.
+_ECS_SECRET_NAMES = _AWS_KEY_NAMES | {"ECS_ENGINE_AUTH_DATA"}
+# Below this a pin is out of date (Security Hub ECS.10: latest Linux version 1.4.0).
+_LATEST_FARGATE_LINUX = (1, 4, 0)
+# The only Windows platform version. A service does not say which OS it runs, so not judged.
+_FARGATE_WINDOWS_VERSION = (1, 0, 0)
+# Task CPU units -> memory in MiB that Fargate offers with it.
+_FARGATE_SIZES: dict[int, tuple[int, ...]] = {
+    256: (512, 1024, 2048),
+    512: tuple(range(1024, 4097, 1024)),
+    1024: tuple(range(2048, 8193, 1024)),
+    2048: tuple(range(4096, 16385, 1024)),
+    4096: tuple(range(8192, 30721, 1024)),
+    8192: tuple(range(16384, 61441, 4096)),
+    16384: tuple(range(32768, 122881, 8192)),
+}
+
+
+def _literal_units(value: Any) -> int | None:
+    """A Cpu or Memory value as a number. "1 vCPU", "2 GB" and an expression are not read."""
+    if type(value) is int:
+        return value
+    return int(value) if type(value) is str and value.strip().isdigit() else None
+
+
+def _fargate_size_note(cpu: int, memory: int) -> str | None:
+    """None for a size Fargate offers, else what to use instead."""
+    if memory in _FARGATE_SIZES.get(cpu, ()):
+        return None
+    for size_cpu, memories in _FARGATE_SIZES.items():
+        fits = [m for m in memories if size_cpu >= cpu and m >= memory]
+        if fits:
+            return f"The smallest pair that fits is Cpu {size_cpu} with Memory {fits[0]}."
+    return "It is above the largest pair, Cpu 16384 with Memory 122880."
+
+
+def _uses_fargate(service: Resource) -> bool:
+    """True when a service states Fargate by LaunchType or a literal capacity provider."""
+    launch = service.properties.get("LaunchType")
+    if type(launch) is str and launch.upper() == "FARGATE":
+        return True
+    strategy = service.properties.get("CapacityProviderStrategy")
+    return isinstance(strategy, list) and any(
+        isinstance(s, dict) and type(s.get("CapacityProvider")) is str
+        and s["CapacityProvider"].upper() in ("FARGATE", "FARGATE_SPOT")
+        for s in strategy
+    )
+
+
+def _old_fargate_version(version: Any) -> bool:
+    if type(version) is not str:
+        return False
+    match = re.fullmatch(r"(\d+)\.(\d+)\.(\d+)", version.strip())
+    if not match:
+        return False  # LATEST, or a form this check does not read
+    parts = (int(match[1]), int(match[2]), int(match[3]))
+    return parts < _LATEST_FARGATE_LINUX and parts != _FARGATE_WINDOWS_VERSION
+
+
+def _insights_off(cluster: Resource) -> bool:
+    """True when Container Insights is unset or disabled. A value the scan cannot read is not judged."""
+    if "ClusterSettings" in cluster.unresolved:
+        return False
+    settings = cluster.properties.get("ClusterSettings")
+    if settings is None:
+        return True
+    if not isinstance(settings, list):
+        return False
+    value = None
+    for item in settings:
+        if not isinstance(item, dict) or _is_intrinsic(item) or type(item.get("Name")) is not str:
+            return False  # may be the setting, such as an Fn::If entry
+        if item["Name"] == "containerInsights":
+            value = item.get("Value")
+    if value is None:
+        return True
+    return type(value) is str and value.lower() == "disabled"
+
+
+def _container_label(container: dict, index: int) -> str:
+    name = container.get("Name")
+    return name if type(name) is str else f"#{index + 1}"
+
+
+def _literal_containers(task: Resource) -> list[tuple[str, dict]]:
+    """(label, container) for each container the scan can read. A container that is an
+    intrinsic is left out; ContainerDefinitions it cannot read gives none."""
+    containers = task.properties.get("ContainerDefinitions")
+    if not isinstance(containers, list):
+        return []
+    return [
+        (_container_label(c, i), c)
+        for i, c in enumerate(containers)
+        if isinstance(c, dict) and not _is_intrinsic(c)
+    ]
+
+
+def _container_secret_names(container: dict) -> list[str]:
+    """Names of environment variables that hold a literal secret. Never the values: they go in reports."""
+    environment = container.get("Environment")
+    names: list[str] = []
+    for item in environment if isinstance(environment, list) else []:
+        if not isinstance(item, dict) or type(item.get("Name")) is not str:
+            continue
+        name = item["Name"]
+        if (name in _ECS_SECRET_NAMES or is_secret_name(name)) and is_literal_secret(item.get("Value")):
+            names.append(name)
+    return names
+
+
+def _no_log_driver(container: dict) -> bool:
+    config = container.get("LogConfiguration")
+    if config is None:
+        return True
+    return isinstance(config, dict) and not _is_intrinsic(config) and config.get("LogDriver") is None
+
+
+def _container_findings(resources: List[Resource], template_path: Path) -> List[Finding]:
+    """ECS tasks, services and clusters (CF-ECS-004..011) and the EKS version (CF-EKS-004).
+    A value the scan cannot read is not judged."""
+    usable = [r for r in resources if not r.malformed]
+    out: List[Finding] = []
+
+    def add(res: Resource, check_id: str, title: str, severity: Severity, category: str,
+            recommendation: str) -> None:
+        out.append(Finding(
+            id=check_id, title=title, severity=severity, category=category,
+            file=res.file or str(template_path), line=res.line,
+            evidence=f"{res.name} ({res.source_type})", recommendation=recommendation,
+        ))
+
+    for task in (r for r in usable if r.type == "ecs_task_definition"):
+        props = task.properties
+        containers = _literal_containers(task)
+        network_mode = props.get("NetworkMode")
+        if type(network_mode) is str and network_mode.lower() == "host":
+            exposed = [
+                label for label, c in containers
+                if _flag(c.get("Privileged")) is True
+                or (type(c.get("User")) is str and _is_root_user(c["User"]))
+                or (type(c.get("User")) is int and c["User"] == 0)
+            ]
+            if exposed:
+                add(task, "CF-ECS-004", "ECS container with host networking runs privileged or as root", "High",
+                    "Security",
+                    f"NetworkMode is host and {', '.join(exposed)} is privileged or runs as root, so a "
+                    "compromised container acts on the host's network as a powerful user. Use awsvpc "
+                    "networking, or set Privileged to false and User to a non-root UID (Security Hub "
+                    "ECS.17 reports any host networking). In CDK: networkMode: ecs.NetworkMode.AWS_VPC.")
+        pid_mode = props.get("PidMode")
+        if type(pid_mode) is str and pid_mode.lower() == "host":
+            add(task, "CF-ECS-006", "ECS task shares the host's process namespace", "High", "Security",
+                "PidMode is host, so containers can see the processes on the host. Remove PidMode, or "
+                "use task to share processes only within the task (Security Hub ECS.3). "
+                "In CDK: pidMode: ecs.PidMode.TASK.")
+        secrets = sorted({n for _label, c in containers for n in _container_secret_names(c)})
+        if secrets:
+            add(task, "CF-ECS-007", "ECS container environment variable holds a secret", "High", "Security",
+                f"{', '.join(secrets)} set a literal value in Environment, in plain text in the task "
+                "definition. Move it to Secrets Manager or Parameter Store and pass it with Secrets "
+                "(Security Hub ECS.8). In CDK: secrets: { NAME: ecs.Secret.fromSecretsManager(secret) }.")
+        no_logs = [label for label, c in containers if _no_log_driver(c)]
+        if no_logs:
+            add(task, "CF-ECS-008", "ECS container has no logging configuration", "Medium",
+                "Operational Excellence",
+                f"LogConfiguration or its LogDriver is not set on {', '.join(no_logs)}, so ECS does not "
+                "send its output anywhere. Set a log driver, such as awslogs (Security Hub ECS.9). "
+                "In CDK: logging: ecs.LogDrivers.awsLogs({ streamPrefix: 'app' }).")
+        compatibilities = props.get("RequiresCompatibilities")
+        cpu, memory = _literal_units(props.get("Cpu")), _literal_units(props.get("Memory"))
+        if isinstance(compatibilities, list) and "FARGATE" in compatibilities and cpu and memory:
+            note = _fargate_size_note(cpu, memory)
+            if note:
+                add(task, "CF-ECS-011", "Fargate task CPU and memory are not a published pair", "Low",
+                    "Performance Efficiency",
+                    f"Cpu {cpu} with Memory {memory} is not a size Fargate offers. {note} Set a published "
+                    "pair so that the size you pay for is the size you ask for. "
+                    "In CDK: cpu and memoryLimitMiB on ecs.FargateTaskDefinition.")
+
+    for service in (r for r in usable if r.type == "ecs_service"):
+        network = service.properties.get("NetworkConfiguration")
+        awsvpc = network.get("AwsvpcConfiguration") if isinstance(network, dict) else None
+        assign = awsvpc.get("AssignPublicIp") if isinstance(awsvpc, dict) else None
+        if type(assign) is str and assign.upper() == "ENABLED":
+            add(service, "CF-ECS-005", "ECS service assigns public IP addresses", "Medium", "Security",
+                "AssignPublicIp is ENABLED, so each task gets an address reachable from the internet. "
+                "Set it to DISABLED and run tasks in private subnets behind a load balancer "
+                "(Security Hub ECS.2). In CDK: assignPublicIp: false.")
+        version = service.properties.get("PlatformVersion")
+        if _uses_fargate(service) and _old_fargate_version(version):
+            add(service, "CF-ECS-009", "ECS Fargate service is pinned to an old platform version", "Low",
+                "Security",
+                f"PlatformVersion is {version}, below the latest Linux version. Set it to LATEST "
+                "(Security Hub ECS.10). In CDK: platformVersion: ecs.FargatePlatformVersion.LATEST.")
+
+    for cluster in (r for r in usable if r.type == "ecs_cluster"):
+        if _insights_off(cluster):
+            add(cluster, "CF-ECS-010", "ECS cluster does not use Container Insights", "Low",
+                "Operational Excellence",
+                "containerInsights in ClusterSettings is unset or disabled, so the cluster has no task and "
+                "service metrics unless the account default turns it on. Set it to enabled or enhanced "
+                "(Security Hub ECS.12). In CDK: containerInsightsV2: ecs.ContainerInsights.ENABLED.")
+
+    for cluster in (r for r in usable if r.type == "eks_cluster"):
+        minor = _k8s_minor(cluster.properties.get("Version"))
+        if minor is None:
+            continue
+        past, ended = eks_versions.past_standard_support(minor)
+        if past:
+            since = f"ended on {ended.isoformat()}" if ended else "has ended"
+            add(cluster, "CF-EKS-004", "EKS cluster runs a Kubernetes version past standard support", "Medium",
+                "Security",
+                f"Standard support for Kubernetes 1.{minor} {since}, so the cluster is on extended support "
+                "at extra cost, or unsupported. Upgrade to a version in standard support "
+                "(Security Hub EKS.2). In CDK: version: a newer eks.KubernetesVersion.")
+    return out
+
+
 def _runtime_finding(res: Resource, template_path: Path) -> Finding | None:
     """CF-LAM-003: a deprecated (High) or soon-deprecated (Low) Lambda runtime.
 
@@ -4912,6 +5139,9 @@ def _run_resource_checks(
 
     # --- DynamoDB, ElastiCache and EFS resilience and access ---
     findings.extend(_data_store_findings(resources, template_path))
+
+    # --- ECS network, secrets, logging, platform, insights and sizing; EKS version ---
+    findings.extend(_container_findings(resources, template_path))
 
     # --- AWS Backup vaults, plans and which resources they select ---
     findings.extend(_backup_findings(resources, template_path))

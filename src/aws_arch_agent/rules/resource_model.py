@@ -75,6 +75,7 @@ CF_TYPE_TO_CANONICAL: dict[str, str] = {
     "AWS::AutoScaling::AutoScalingGroup": "autoscaling_group",
     "AWS::AutoScaling::LaunchConfiguration": "launch_configuration",
     "AWS::ApplicationAutoScaling::ScalableTarget": "scalable_target",
+    "AWS::ECS::Cluster": "ecs_cluster",
     "AWS::ECS::Service": "ecs_service",
     "AWS::EKS::Cluster": "eks_cluster",
     "AWS::CloudFront::Distribution": "cloudfront_distribution",

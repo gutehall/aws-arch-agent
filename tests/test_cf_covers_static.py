@@ -230,6 +230,11 @@ PAIRS: list[tuple[str, str, dict, str]] = [
      "new backup.BackupPlan(this, 'P');"),
     ("CF-BAK-005", "REL-013", {"Type": "AWS::DynamoDB::Table", "Properties": {}},
      "new DynamoDB.Table(this, 'T');"),
+    ("CF-ECS-010", "OPS-008", {"Type": "AWS::ECS::Cluster", "Properties": {}},
+     "new ecs.Cluster(this, 'C');"),
+    ("CF-ECS-011", "PERF-007", {"Type": "AWS::ECS::TaskDefinition", "Properties": {
+        "RequiresCompatibilities": ["FARGATE"], "Cpu": "256", "Memory": "600"}},
+     "new ecs.FargateTaskDefinition(this, 'Td');"),
     ("CF-COST-002", "COST-006",
      {"Type": "AWS::EC2::NatGateway", "Properties": {"SubnetId": {"Ref": "Public"}}},
      "new ec2.Vpc(this, 'Vpc', { natGateways: 1 });"),
