@@ -13,12 +13,6 @@ logger = logging.getLogger(__name__)
 # Same bound as the Ollama request. A stalled cloud call must not use the SDK default.
 LLM_TIMEOUT_S = 120
 
-DEFAULT_SYSTEM = """You are an AWS Solutions Architect reviewer.
-You will receive findings from static analysis of a CDK repo.
-Rewrite them into crisp, actionable recommendations.
-Do NOT invent resources. If unsure, say so.
-Return Markdown only."""
-
 LLMStatus = Literal["ok", "fallback", "skipped", "invalid"]
 
 
@@ -74,7 +68,7 @@ class LLMClient:
         self.openai_model = os.getenv("OPENAI_MODEL", "gpt-4o-mini")
         self.anthropic_model = os.getenv("ANTHROPIC_MODEL", "claude-3-5-sonnet-latest")
 
-    def polish(self, markdown: str, system: str = DEFAULT_SYSTEM) -> LLMResult:
+    def polish(self, markdown: str, system: str) -> LLMResult:
         """Send content to LLM with system prompt; a failure returns the original as its text."""
         if self.provider == "openai":
             return self._openai(markdown, system)
@@ -145,7 +139,7 @@ class LLMClient:
             msg = client.messages.create(
                 model=model,
                 system=system,
-                max_tokens=1200,
+                max_tokens=4096,  # 20 verdicts must not be cut into invalid JSON
                 messages=[{"role": "user", "content": prompt}],
             )
             reply = "".join([b.text for b in msg.content if hasattr(b, "text")])

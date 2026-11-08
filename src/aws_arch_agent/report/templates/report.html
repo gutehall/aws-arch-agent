@@ -152,6 +152,7 @@
         <span>Pillar: <b>{{ f.pillar }}</b></span>
         {% if f.environment %}<span>Environment: <b>{{ f.environment }}</b></span>{% endif %}
         {% if f.location %}<span>File: <code>{{ f.location }}</code></span>{% endif %}
+        {% if f.verdict %}<span>LLM verdict: <b>{{ f.verdict.label }}</b> — {{ f.verdict.why }}</span>{% endif %}
       </div>
       {% if f.estimates %}
       <h4>Estimate</h4>

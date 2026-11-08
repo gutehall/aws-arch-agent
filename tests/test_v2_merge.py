@@ -32,18 +32,29 @@ def test_v2_max_files_respected(tmp_path: Path) -> None:
 
 
 def test_v2_compact_llm_mode(tmp_path: Path) -> None:
-    (tmp_path / "package.json").write_text("{}", encoding="utf-8")
+    _stack_repo(tmp_path)
     with patch("aws_arch_agent.agent.v2_graph.LLMClient") as mock_cls:
-        mock_cls.return_value.polish.return_value = _ok("## Compact review")
-        report, _, _, _ = analyze_v2(
-            tmp_path, use_llm=True, skip_synth=True, llm_mode="compact"
-        )
-    assert "Compact review" in report
+        mock_cls.return_value.polish.return_value = _ok("[]")
+        _, ctx, _, _ = analyze_v2(tmp_path, use_llm=True, skip_synth=True, llm_mode="compact")
+    assert ctx.llm.status == "ok"
     assert mock_cls.return_value.polish.call_count == 1
 
 
-def test_v2_full_llm_mode_calls_pillar_and_merge(tmp_path: Path) -> None:
-    """V2 with use_llm=True completes; pillar + merge LLM calls are mocked."""
+def test_v2_compact_with_no_findings_makes_no_call(tmp_path: Path) -> None:
+    (tmp_path / "package.json").write_text("{}", encoding="utf-8")
+    with patch("aws_arch_agent.agent.v2_graph.LLMClient") as mock_cls:
+        _, ctx, findings, _ = analyze_v2(
+            tmp_path, use_llm=True, skip_synth=True, llm_mode="compact",
+            rules_include=["SEC-001"],
+        )
+    assert findings == []
+    mock_cls.return_value.polish.assert_not_called()
+    assert ctx.llm.line == "LLM: skipped (no LLM call made)"
+
+
+def test_v2_full_llm_mode_calls_pillars_and_not_merge(tmp_path: Path, monkeypatch) -> None:
+    """V2 with use_llm=True completes; a reply never becomes report text."""
+    monkeypatch.setattr(v2_graph, "_pillar_cache", {})
     (tmp_path / "package.json").write_text("{}", encoding="utf-8")
     (tmp_path / "lib").mkdir()
     (tmp_path / "lib" / "stack.ts").write_text(
@@ -51,23 +62,25 @@ def test_v2_full_llm_mode_calls_pillar_and_merge(tmp_path: Path) -> None:
         encoding="utf-8",
     )
     with patch("aws_arch_agent.agent.v2_graph.LLMClient") as mock_cls:
-        mock_cls.return_value.polish.return_value = _ok("## LLM section")
+        mock_cls.return_value.polish.return_value = _ok("[]")
         report, _, findings, _ = analyze_v2(
             tmp_path, use_llm=True, skip_synth=True, llm_mode="full"
         )
-    assert "## LLM section" in report
+    assert "## Security" in report
+    assert "(skipped LLM)" not in report
     assert mock_cls.return_value.polish.call_count >= 1
     assert any(f.id == "SEC-001" for f in findings)
 
 
-def test_v2_rag_included_in_pillar_prompt(tmp_path: Path) -> None:
+def test_v2_rag_included_in_pillar_prompt(tmp_path: Path, monkeypatch) -> None:
+    monkeypatch.setattr(v2_graph, "_pillar_cache", {})
     rag_doc = tmp_path / "waf.md"
     rag_doc.write_text("# Security\nUse least privilege IAM.", encoding="utf-8")
     (tmp_path / "package.json").write_text("{}", encoding="utf-8")
     (tmp_path / "lib").mkdir()
     (tmp_path / "lib" / "stack.ts").write_text('Action: "*"', encoding="utf-8")
     with patch("aws_arch_agent.agent.v2_graph.LLMClient") as mock_cls:
-        mock_cls.return_value.polish.return_value = _ok("review")
+        mock_cls.return_value.polish.return_value = _ok("[]")
         analyze_v2(
             tmp_path,
             use_llm=True,
@@ -181,42 +194,39 @@ def test_v2_all_calls_ok_reports_responded(tmp_path: Path, monkeypatch) -> None:
     monkeypatch.setattr(v2_graph, "_pillar_cache", {})
     _stack_repo(tmp_path)
     with patch("aws_arch_agent.agent.v2_graph.LLMClient") as mock_cls:
-        mock_cls.return_value.polish.return_value = _ok("review")
+        mock_cls.return_value.polish.return_value = _ok("[]")
         _, ctx, _, _ = analyze_v2(tmp_path, use_llm=True, skip_synth=True)
-    assert mock_cls.return_value.polish.call_count >= 2  # a pillar and the merge
+    assert mock_cls.return_value.polish.call_count == 1  # the one pillar with findings
     assert ctx.llm.line == "LLM: ollama/llama3:8b responded"
 
 
+def _security_pillar_fails(prompt: str, system: str = "") -> LLMResult:
+    return _failed(prompt) if "SEC-001" in prompt else _ok("[]")
+
+
 def test_v2_partial_failure_never_claims_responded(tmp_path: Path, monkeypatch) -> None:
-    """A pillar fails and the merge answers: the run is still a fallback."""
+    """A pillar fails and the others answer: the run is still a fallback."""
     monkeypatch.setattr(v2_graph, "_pillar_cache", {})
     _stack_repo(tmp_path)
-
-    def polish(prompt: str, system: str = "") -> LLMResult:
-        return _ok("merged") if "lead reviewer" in system else _failed(prompt)
-
     with patch("aws_arch_agent.agent.v2_graph.LLMClient") as mock_cls:
-        mock_cls.return_value.polish.side_effect = polish
+        mock_cls.return_value.polish.side_effect = _security_pillar_fails
         _, ctx, _, _ = analyze_v2(tmp_path, use_llm=True, skip_synth=True)
     assert ctx.llm.status == "fallback"
     assert ctx.llm.line == "LLM: fallback (Ollama request failed)"
 
 
-def test_v2_cached_pillar_keeps_its_failure(tmp_path: Path, monkeypatch) -> None:
-    """A second run reads the failed pillar from the cache and must not report ok."""
+def test_v2_failed_pillar_is_asked_again(tmp_path: Path, monkeypatch) -> None:
+    """A failure must not stick: only ok outcomes are cached, so only the failed pillar reruns."""
     monkeypatch.setattr(v2_graph, "_pillar_cache", {})
     _stack_repo(tmp_path)
-
-    def polish(prompt: str, system: str = "") -> LLMResult:
-        return _ok("merged") if "lead reviewer" in system else _failed(prompt)
-
     with patch("aws_arch_agent.agent.v2_graph.LLMClient") as mock_cls:
-        mock_cls.return_value.polish.side_effect = polish
+        mock_cls.return_value.polish.side_effect = _security_pillar_fails
         analyze_v2(tmp_path, use_llm=True, skip_synth=True)
         calls = mock_cls.return_value.polish.call_count
+        mock_cls.return_value.polish.side_effect = lambda prompt, system="": _ok("[]")
         _, ctx, _, _ = analyze_v2(tmp_path, use_llm=True, skip_synth=True)
-    assert mock_cls.return_value.polish.call_count == calls + 1  # only the merge ran again
-    assert ctx.llm.status == "fallback"
+    assert mock_cls.return_value.polish.call_count == calls + 1
+    assert ctx.llm.status == "ok"
 
 
 def test_v2_compact_failure_is_reported(tmp_path: Path) -> None:

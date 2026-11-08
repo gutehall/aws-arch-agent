@@ -1,4 +1,4 @@
-"""V1 pipeline: collect files, run rules, optional LLM polish, return report."""
+"""V1 pipeline: collect files, run rules, optional LLM verdicts, return report."""
 from __future__ import annotations
 
 import json
@@ -25,8 +25,15 @@ from aws_arch_agent.rules.terraform_model import (
 from aws_arch_agent.rules.runner import filter_by_severity, run_all_rules
 from aws_arch_agent.rules import cf_template, effort, environments, nonprod, regions, stack_cost, themes
 from aws_arch_agent.rules.tag_policy import TagPolicy, policy_checked, use_tag_policy
-from aws_arch_agent.report.markdown import insert_summary, render_markdown
-from aws_arch_agent.tools.llm import NO_LLM, LLMClient, aggregate_results
+from aws_arch_agent.report.markdown import render_markdown
+from aws_arch_agent.agent.verdicts import (
+    MAX_VERDICT_BATCHES,
+    apply_verdicts,
+    judge_batch,
+    make_batches,
+)
+from aws_arch_agent.models import Verdict
+from aws_arch_agent.tools.llm import NO_LLM, LLMClient, LLMResult, aggregate_results
 from aws_arch_agent.tools.files import iter_files, read_text_safe
 from aws_arch_agent.tools.cdk_synth import list_templates_from_path
 from aws_arch_agent.tools.cfn_yaml import is_cf_template
@@ -420,7 +427,7 @@ def analyze_v1(
     theme_filter: list[str] | None = None,
     group_by: str = "severity",
 ) -> tuple[str, RepoContext, list[Finding], list[str]]:
-    """Run V1 pipeline: scan repo, run rules, optionally polish with LLM; return (report_md, ctx, findings, warnings)."""
+    """Run V1 pipeline: scan repo, run rules, optionally judge findings with the LLM; return (report_md, ctx, findings, warnings)."""
     with (
         regions.use_regions(price_region),
         use_tag_policy(tag_policy),
@@ -443,15 +450,28 @@ def analyze_v1(
             ctx.notes["cost"] = cost
         ctx.notes["prices"] = regions.note()
 
-    if not use_llm:
+    if use_llm:
+        ctx.llm = _judge(findings, repo_path)
+    else:
         ctx.llm = NO_LLM
-        return render_markdown(ctx, findings, warnings=warnings, group_by=group_by), ctx, findings, warnings
-    # The summary is built from rule output: the LLM polishes the rest, never its numbers.
+    return render_markdown(ctx, findings, warnings=warnings, group_by=group_by), ctx, findings, warnings
+
+
+def _judge(findings: list[Finding], repo_path: Path) -> LLMResult:
+    """Label findings when every batch answered; the report stays rule output either way."""
     llm = LLMClient()
-    polished = llm.polish(render_markdown(ctx, findings, warnings=warnings, include_summary=False,
-                                          group_by=group_by))
-    ctx.llm = aggregate_results([polished])
-    return insert_summary(polished.text, findings), ctx, findings, warnings
+    verdicts: dict[str, Verdict] = {}
+    results: list[LLMResult] = []
+    for batch in make_batches(findings)[:MAX_VERDICT_BATCHES]:
+        judged, result = judge_batch(llm, batch, repo_path)
+        verdicts.update(judged)
+        results.append(result)
+        if result.status != "ok":
+            break
+    run = aggregate_results(results)
+    if run.status == "ok":
+        apply_verdicts(findings, verdicts)
+    return run
 
 
 def collect_ctx_findings(

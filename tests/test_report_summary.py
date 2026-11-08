@@ -1,5 +1,6 @@
 """Opening summary: top fixes, one line per pillar, quick wins."""
 import json
+import re
 from pathlib import Path
 
 from typer.testing import CliRunner
@@ -148,26 +149,26 @@ def test_first_location_prefers_a_finding_with_a_file() -> None:
     assert build_summary(items)["top_fixes"][0]["first_location"] == "b.tf:3"
 
 
-def test_llm_polish_never_rewrites_the_summary(tmp_path: Path, monkeypatch) -> None:
+def test_garbage_llm_reply_cannot_alter_summary_or_findings(tmp_path: Path, monkeypatch) -> None:
     from aws_arch_agent.agent import v1
     from aws_arch_agent.tools.llm import LLMResult
 
-    seen: list[str] = []
-
     class FakeLLM:
-        def polish(self, text: str) -> LLMResult:
-            seen.append(text)
-            polished = text.replace("## Executive Summary", "## Executive Summary (polished)")
-            return LLMResult(polished, "ok", "ollama", "llama3:8b")
+        def polish(self, text: str, system: str = "") -> LLMResult:
+            return LLMResult("## Summary\n0 findings. All clear!", "ok", "ollama", "llama3:8b")
 
-    monkeypatch.setattr(v1, "LLMClient", FakeLLM)
     (tmp_path / "stack.json").write_text(json.dumps({"AWSTemplateFormatVersion": "2010-09-09",
                                                      "Resources": STACK}), encoding="utf-8")
-    report, _ctx, findings, _w = v1.analyze_v1(tmp_path, use_llm=True)
-    assert "## Summary" not in seen[0]  # the LLM never saw it
+    plain, _ctx, plain_findings, _w = v1.analyze_v1(tmp_path, use_llm=False)
+    monkeypatch.setattr(v1, "LLMClient", FakeLLM)
+    report, ctx, findings, _w = v1.analyze_v1(tmp_path, use_llm=True)
+    assert ctx.llm.status == "invalid"
+    assert "All clear" not in report
     assert report.count("## Summary") == 1
-    assert report.index("## Summary") < report.index("## Executive Summary (polished)")
     assert f"{len(findings)} findings:" in report
+    assert findings == plain_findings
+    generated = re.compile(r"^- Generated: .*$", re.MULTILINE)
+    assert generated.sub("", report) == generated.sub("", plain)
 
 
 def test_effort_is_set_on_terraform_and_v2_paths(tmp_path: Path) -> None:

@@ -75,6 +75,7 @@ def render_html(
             "themes": list(f.themes),
             "docs": doc_links(f),
             "baseline": None if flag is None else ("accepted" if flag else "new"),
+            "verdict": f.verdict,
         }
         for f, flag in ordered
     ]

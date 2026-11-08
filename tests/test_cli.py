@@ -759,7 +759,7 @@ def test_answering_model_is_reported(tmp_path: Path, monkeypatch) -> None:
     monkeypatch.setenv("LLM_PROVIDER", "ollama")
     monkeypatch.setenv("OLLAMA_MODEL", "llama3:8b")
     reply = MagicMock()
-    reply.json.return_value = {"message": {"content": "# Polished\n\n## Executive Summary\n"}}
+    reply.json.return_value = {"message": {"content": "[]"}}
     monkeypatch.setattr("aws_arch_agent.tools.llm.requests.post", lambda *_a, **_k: reply)
     out_file = tmp_path / "report.md"
     result = runner.invoke(app, ["--repo", str(tmp_path), "--out", str(out_file)])

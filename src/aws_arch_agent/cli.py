@@ -72,6 +72,12 @@ def _should_fail(fail_on: str, findings: list) -> bool:
     return any(f.severity in threshold for f in findings)
 
 
+def _verdict_line(findings: list[Finding]) -> str | None:
+    """How many findings the model judged, so a capped or partial run says so. None if none."""
+    judged = sum(1 for f in findings if f.verdict is not None)
+    return f"Verdicts: {judged} of {len(findings)} findings judged" if judged else None
+
+
 def _resolve_baseline_path(repo_path: Path, baseline: str | None) -> Path:
     if baseline:
         return Path(baseline).expanduser().resolve()
@@ -330,6 +336,11 @@ def analyze(
         markup=False,
         soft_wrap=True,
     )
+    llm_lines = [ctx_report.llm.line]
+    verdict_line = _verdict_line(findings)
+    if verdict_line:
+        llm_lines.append(verdict_line)
+        console.print(verdict_line, markup=False, soft_wrap=True)
 
     if ctx_report.notes.get("tag_policy") == "not checked":
         console.print(
@@ -371,7 +382,7 @@ def analyze(
         )
         content = render_html(ctx_report, findings, warnings=warnings, baselined=baselined)
     else:
-        content = f"{ctx_report.llm.line}\n\n{report_md}"
+        content = "\n".join(llm_lines) + f"\n\n{report_md}"
 
     if enforce_baseline and cfg.format != "html":
         content = _mark_baselined(content, cfg.format, findings, accepted_before or set())

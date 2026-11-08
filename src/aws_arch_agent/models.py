@@ -9,6 +9,25 @@ from aws_arch_agent.tools.llm import NO_CALL, LLMResult
 Severity = Literal["High", "Medium", "Low"]
 Effort = Literal["low", "medium", "high"]
 IacSource = Literal["cdk", "cloudformation", "terraform", "mixed"]
+VerdictValue = Literal["confirm", "false_positive", "unsure"]
+
+_VERDICT_LABELS: Dict[str, str] = {
+    "confirm": "confirmed",
+    "false_positive": "likely false positive",
+    "unsure": "unsure",
+}
+
+
+class Verdict(BaseModel):
+    """What the model said about one finding. It labels the finding and changes nothing else."""
+
+    verdict: VerdictValue
+    why: str
+
+    @property
+    def label(self) -> str:
+        """The words the Markdown and HTML reports show."""
+        return _VERDICT_LABELS[self.verdict]
 
 
 class Finding(BaseModel):
@@ -37,6 +56,9 @@ class Finding(BaseModel):
     # The rule's themes: finops, security-baseline, identity, data-protection,
     # network-exposure, resilience, observability, sustainability.
     themes: List[str] = Field(default_factory=list)
+    # The model's opinion. Excluded so JSON findings, SARIF, the baseline and fail-on cannot
+    # depend on it; the renderers that show it read it explicitly.
+    verdict: Verdict | None = Field(default=None, exclude=True)
 
 
 class RepoContext(BaseModel):
