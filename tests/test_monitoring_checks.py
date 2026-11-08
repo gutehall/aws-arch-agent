@@ -325,6 +325,11 @@ def test_dash_001_counts_only_modelled_types(tmp_path: Path) -> None:
     assert "CF-DASH-001" not in _cf(tmp_path, {**_queues(20), **unmapped})
 
 
+def test_dash_001_wiring_does_not_count(tmp_path: Path) -> None:
+    resources = {f"R{i}": {"Type": "AWS::Lambda::Permission", "Properties": {}} for i in range(30)}
+    assert "CF-DASH-001" not in _cf(tmp_path, resources)
+
+
 def test_dash_001_dashboard_present(tmp_path: Path) -> None:
     dashboard = {"Type": "AWS::CloudWatch::Dashboard", "Properties": {"DashboardBody": "{}"}}
     assert "CF-DASH-001" not in _cf(tmp_path, {**_queues(21), "D": dashboard})
@@ -370,7 +375,7 @@ def test_module_call_does_not_count_as_a_resource(tmp_path: Path) -> None:
 
 
 def test_module_call_is_not_listed_as_not_priced() -> None:
-    assert stack_cost._free(TF_MODULE_CALL)
+    assert stack_cost.is_free(TF_MODULE_CALL)
 
 
 def test_dashboards_limit_reaches_the_scan(tmp_path: Path) -> None:

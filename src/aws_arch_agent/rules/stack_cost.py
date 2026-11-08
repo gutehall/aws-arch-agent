@@ -72,7 +72,7 @@ def collect() -> Iterator[None]:
         _stacks = previous
 
 
-def _free(source_type: str) -> bool:
+def is_free(source_type: str) -> bool:
     return bool(source_type == TF_MODULE_CALL or _FREE_CF.match(source_type) or _FREE_TF.match(source_type))
 
 
@@ -89,7 +89,7 @@ def record(template_path: Path, resources: List[Resource]) -> None:
         cost = estimates.resource_cost(res)
         if cost is not None:
             stack.priced.append((res, cost))
-        elif not _free(res.source_type):
+        elif not is_free(res.source_type):
             stack.not_priced[res.source_type] += 1
     _stacks[stack.path] = stack
 

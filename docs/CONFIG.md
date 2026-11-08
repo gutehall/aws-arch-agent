@@ -85,7 +85,7 @@ rules:
   nonprod:
     max_instance_size: xlarge
   ```
-- **dashboards.min_resources**: a stack with more resources than this and no CloudWatch dashboard is reported (CF-DASH-001). Default `20`. A positive integer. Only resources the scan models count, so unmapped types and Terraform `module` calls do not:
+- **dashboards.min_resources**: a stack with more resources than this and no CloudWatch dashboard is reported (CF-DASH-001). Default `20`. A positive integer. Only resources the scan models count, so unmapped types and Terraform `module` calls do not, and neither does wiring that costs nothing, such as a security group rule or a permission:
 
   ```yaml
   dashboards:

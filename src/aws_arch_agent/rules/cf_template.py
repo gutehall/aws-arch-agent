@@ -54,7 +54,7 @@ CF_COVERS_STATIC: dict[str, tuple[str, ...]] = {
     "CF-ATH-001": ("SEC-042",),
     "CF-GLUE-001": ("SEC-043",),
     "CF-GLUE-002": ("OPS-015",),
-    # Reports only a literal job-bookmark-disable. A job that leaves the option unset keeps OPS-019.
+    # Reports only a literal job-bookmark-disable. A scan with none of those keeps OPS-019.
     "CF-GLUE-003": ("OPS-019",),
     "CF-S3-001": ("SEC-005",),
     "CF-S3-002": ("SEC-006",),
@@ -3425,7 +3425,8 @@ def _monitoring_findings(resources: List[Resource], template_path: Path) -> List
                 "composite alarm or EventBridge rule in another stack reads it. In CDK: "
                 "alarm.addAlarmAction(new SnsAction(topic)).")
 
-    counted = [r for r in resources if r.type is not None]
+    # Wiring such as a security group rule or a permission does not make a stack large.
+    counted = [r for r in resources if r.type is not None and not r.malformed and not stack_cost.is_free(r.source_type)]
     if (len(counted) > _dashboard_min_resources
             and not any(r.type == "cloudwatch_dashboard" for r in resources)
             and not _may_be_out_of_sight(resources, ("aws_cloudwatch_dashboard",))):
