@@ -1206,7 +1206,7 @@ _CLOUDFORMATION["CF-RP-001:AWS::Events::EventBus"] = """$name:
           Principal:
             AWS: arn:aws:iam::111122223333:root # the account that sends events
           Action: events:PutEvents
-          Resource: '*'"""
+          Resource: !Sub arn:aws:events:$${AWS::Region}:$${AWS::AccountId}:event-bus/my-bus"""
 _CLOUDFORMATION["CF-RP-001:AWS::Events::EventBusPolicy"] = """$name:
   Type: AWS::Events::EventBusPolicy
   Properties:
@@ -1216,7 +1216,7 @@ _CLOUDFORMATION["CF-RP-001:AWS::Events::EventBusPolicy"] = """$name:
       Principal:
         AWS: arn:aws:iam::111122223333:root # the account that sends events
       Action: events:PutEvents
-      Resource: '*'"""
+      Resource: !Sub arn:aws:events:$${AWS::Region}:$${AWS::AccountId}:event-bus/my-bus"""
 _TERRAFORM["CF-SFN-001"] = """resource "aws_sfn_state_machine" "$tf_name" {
   definition = jsonencode({
     StartAt = "Work"
