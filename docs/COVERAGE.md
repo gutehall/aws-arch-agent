@@ -17,7 +17,6 @@ Which CDK rules have a template check, and which AWS Foundational Security Best 
 
 | Work | Adds template checks for |
 | -- | -- |
-| `auto-scaling` | Auto Scaling groups and launch configurations |
 | `analytics` | Athena, Glue and Firehose |
 | `emr-dms` | EMR and DMS |
 | `s3` | S3 replication, ownership and notifications |
@@ -30,7 +29,7 @@ Which CDK rules have a template check, and which AWS Foundational Security Best 
 
 ## CDK rules
 
-172 rules: 100 covered, 6 partial, 26 planned, 10 account, 5 cdk-only, 25 advice.
+172 rules: 100 covered, 7 partial, 25 planned, 10 account, 5 cdk-only, 25 advice.
 
 | Rule | Title | Template check | Status | Note |
 | -- | -- | -- | -- | -- |
@@ -134,7 +133,7 @@ Which CDK rules have a template check, and which AWS Foundational Security Best 
 | REL-030 | RDS deletion protection not enabled | `CF-RDS-005` | `covered` |  |
 | REL-031 | S3 bucket versioning not enabled | `CF-S3-003` | `covered` |  |
 | COST-001 | Log retention may be infinite (cost risk) | `CF-CW-001` | `covered` |  |
-| COST-002 | Compute resources may miss autoscaling |  | `planned: auto-scaling` |  |
+| COST-002 | Compute resources may miss autoscaling | `CF-ASG-006` | `partial` | CF-ASG-006 checks Auto Scaling groups of fixed size; COST-002 reports ECS services in code with no Auto Scaling at all. |
 | COST-003 | DynamoDB provisioned capacity may miss autoscaling | `CF-DDB-003` | `covered` |  |
 | COST-004 | Lambda provisioned concurrency may be overprovisioned |  | `advice` | Provisioned concurrency sizing needs traffic data. |
 | COST-005 | RDS not using Reserved Instances (savings opportunity) |  | `account` | Reserved Instances are bought for the account. |
@@ -221,11 +220,11 @@ Controls a template can show. Account-level controls (for example S3.1, EC2.7 an
 | APIGateway.9 | `CF-APIGW-V2-001` | `AWS::ApiGatewayV2::Stage` |
 | AppSync.2 | `planned: app-services` | `AWS::AppSync::GraphQLApi` |
 | AppSync.5 | `planned: app-services` | `AWS::AppSync::GraphQLApi` |
-| AutoScaling.1 | `planned: auto-scaling` | `AWS::AutoScaling::AutoScalingGroup` |
-| AutoScaling.2 | `planned: auto-scaling` | `AWS::AutoScaling::AutoScalingGroup` |
-| AutoScaling.3 | `planned: auto-scaling` | `AWS::AutoScaling::LaunchConfiguration` |
-| AutoScaling.5 | `planned: auto-scaling` | `AWS::AutoScaling::LaunchConfiguration` |
-| AutoScaling.9 | `planned: auto-scaling` | `AWS::AutoScaling::AutoScalingGroup` |
+| AutoScaling.1 | `CF-ASG-001` | `AWS::AutoScaling::AutoScalingGroup` |
+| AutoScaling.2 | `CF-ASG-002` | `AWS::AutoScaling::AutoScalingGroup` |
+| AutoScaling.3 | `CF-ASG-003` | `AWS::AutoScaling::LaunchConfiguration` |
+| AutoScaling.5 | `CF-ASG-004` | `AWS::AutoScaling::LaunchConfiguration` |
+| AutoScaling.9 | `CF-ASG-005` | `AWS::AutoScaling::AutoScalingGroup` |
 | CloudFront.1 | `planned: cloudfront` | `AWS::CloudFront::Distribution` |
 | CloudFront.3 | `CF-CF-001` | `AWS::CloudFront::Distribution` |
 | CloudFront.4 | `planned: cloudfront` | `AWS::CloudFront::Distribution` |

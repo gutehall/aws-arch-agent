@@ -74,6 +74,8 @@ CF_TYPE_TO_CANONICAL: dict[str, str] = {
     "AWS::ApiGatewayV2::Route": "apigatewayv2_route",
     "AWS::AutoScaling::AutoScalingGroup": "autoscaling_group",
     "AWS::AutoScaling::LaunchConfiguration": "launch_configuration",
+    "AWS::AutoScaling::ScalingPolicy": "autoscaling_policy",
+    "AWS::AutoScaling::ScheduledAction": "autoscaling_schedule",
     "AWS::ApplicationAutoScaling::ScalableTarget": "scalable_target",
     "AWS::ECS::Cluster": "ecs_cluster",
     "AWS::ECS::Service": "ecs_service",
@@ -120,7 +122,7 @@ CF_TYPE_TO_CANONICAL: dict[str, str] = {
 
 # Terraform only: CloudFormation sets these on the rule, the vault and the file system.
 CANONICAL_TYPES: frozenset[str] = frozenset(CF_TYPE_TO_CANONICAL.values()) | {
-    "events_target", "backup_vault_lock", "efs_backup_policy",
+    "events_target", "backup_vault_lock", "efs_backup_policy", "autoscaling_attachment",
 }
 
 

@@ -106,6 +106,9 @@ TF_TYPE_TO_CANONICAL: dict[str, str] = {
     "aws_apigatewayv2_route": "apigatewayv2_route",
     "aws_autoscaling_group": "autoscaling_group",
     "aws_launch_configuration": "launch_configuration",
+    "aws_autoscaling_policy": "autoscaling_policy",
+    "aws_autoscaling_schedule": "autoscaling_schedule",
+    "aws_autoscaling_attachment": "autoscaling_attachment",
     "aws_appautoscaling_target": "scalable_target",
     "aws_ecs_cluster": "ecs_cluster",
     "aws_ecs_service": "ecs_service",
@@ -1822,17 +1825,33 @@ def _apiv2_route(body: dict) -> dict:
     return props
 
 
+def _entries(value: Any) -> Any:
+    """A list keeps its length when an entry comes from a variable, which would otherwise hide the
+    whole list. A list that is itself a variable stays UNRESOLVED."""
+    if isinstance(value, list):
+        return [_Expr("<unresolved>") if item is UNRESOLVED else item for item in value]
+    return value
+
+
 def _asg(body: dict) -> dict:
+    props: dict = {}
+    _set(props, "AutoScalingGroupName", _v(body, "name"))
+    _set(props, "HealthCheckType", _v(body, "health_check_type"))
+    _set(props, "MinSize", _v(body, "min_size"))
+    _set(props, "MaxSize", _v(body, "max_size"))
+    _set(props, "TargetGroupARNs", _entries(_ref(body, "target_group_arns")))
+    _set(props, "LoadBalancerNames", _entries(_ref(body, "load_balancers")))
+    _set(props, "AvailabilityZones", _entries(_ref(body, "availability_zones")))
+    _set(props, "VPCZoneIdentifier", _entries(_ref(body, "vpc_zone_identifier")))
+    _set(props, "LaunchConfigurationName", _ref(body, "launch_configuration"))
     mixed = _first_block(body, "mixed_instances_policy")
     if not mixed:
-        return {}
+        return props
     dist = _first_block(mixed, "instances_distribution")
-    props: dict = {
-        "MixedInstancesPolicy": {
-            "InstancesDistribution": {
-                "SpotMaxPrice": _ref(dist, "spot_max_price"),
-                "SpotAllocationStrategy": _ref(dist, "spot_allocation_strategy"),
-            }
+    props["MixedInstancesPolicy"] = {
+        "InstancesDistribution": {
+            "SpotMaxPrice": _ref(dist, "spot_max_price"),
+            "SpotAllocationStrategy": _ref(dist, "spot_allocation_strategy"),
         }
     }
     # Override instance types, apart from the policy so an unknown one hides only CF-GEN-001.
@@ -1858,6 +1877,16 @@ def _scalable_target(body: dict) -> dict:
 def _launch_configuration(body: dict) -> dict:
     props: dict = {}
     _set(props, "InstanceType", _v(body, "instance_type"))
+    _set(props, "MetadataOptions", _metadata_options(body))
+    _set(props, "AssociatePublicIpAddress", _v(body, "associate_public_ip_address"))
+    return props
+
+
+def _asg_link(body: dict) -> dict:
+    """aws_autoscaling_policy, _schedule and _attachment: Terraform sets these from resources of
+    their own, and each names its group (CF-ASG-001, CF-ASG-006)."""
+    props: dict = {}
+    _set(props, "AutoScalingGroupName", _ref(body, "autoscaling_group_name"))
     return props
 
 
@@ -1993,6 +2022,9 @@ _ADAPTERS: dict[str, Callable[[dict], dict]] = {
     "aws_apigatewayv2_route": _apiv2_route,
     "aws_apigatewayv2_api": _apiv2_api,
     "aws_autoscaling_group": _asg,
+    "aws_autoscaling_policy": _asg_link,
+    "aws_autoscaling_schedule": _asg_link,
+    "aws_autoscaling_attachment": _asg_link,
     "aws_ecs_cluster": _ecs_cluster,
     "aws_ecs_service": _ecs_service,
     "aws_eks_cluster": _eks,

@@ -298,6 +298,7 @@ KNOWN_SAME_CONTROL: list[tuple[str, str]] = [
     ("CF-CT-003", "OPS-001"),
     ("CF-TAG-001", "BP-001"),
     ("CF-NACL-001", "SEC-055"),
+    ("CF-ASG-006", "COST-002"),
 ]
 
 # Title words that do not name a control.

@@ -167,6 +167,8 @@ CF_PARTLY_COVERS_STATIC: dict[str, tuple[tuple[str, ...], str]] = {
                     "instances and ECS services"),
     "CF-SUST-002": (("SUST-001",), "Fargate only; SUST-001 also flags EC2 instances"),
     "CF-SUST-003": (("SUST-001",), "launch templates only; SUST-001 also flags ECS services"),
+    "CF-ASG-006": (("COST-002",), "Auto Scaling groups of fixed size only; COST-002 reports ECS "
+                   "services in code with no Auto Scaling at all"),
     "CF-CT-001": (("OPS-001",), "checks an existing trail; OPS-001 reports no trail at all"),
     "CF-CT-002": (("OPS-001",), "checks an existing trail; OPS-001 reports no trail at all"),
     "CF-CT-003": (("OPS-001",), "checks an existing trail; OPS-001 reports no trail at all"),
@@ -294,6 +296,7 @@ _PER_RESOURCE_TYPES = frozenset({
     "sfn_state_machine", "events_rule", "events_target", "event_bus", "event_bus_policy",
     "backup_vault", "backup_vault_lock", "backup_plan", "backup_selection",
     "efs_access_point", "efs_backup_policy", "ecs_cluster",
+    "autoscaling_policy", "autoscaling_schedule", "autoscaling_attachment",
 })
 # Parameter groups only feed CF-RDS-006; they have no checks of their own.
 
@@ -428,6 +431,9 @@ CHECK_PROPERTIES: dict[str, frozenset[str]] = {
         # Template-level: _container_findings skips what it cannot read.
         **{c: set() for c in ("CF-ECS-004", "CF-ECS-005", "CF-ECS-006", "CF-ECS-007", "CF-ECS-008",
                               "CF-ECS-009", "CF-ECS-010", "CF-ECS-011", "CF-EKS-004")},
+        # Template-level: _autoscaling_findings skips what it cannot read.
+        **{c: set() for c in ("CF-ASG-001", "CF-ASG-002", "CF-ASG-003", "CF-ASG-004", "CF-ASG-005",
+                              "CF-ASG-006")},
         # Template-level: _backup_findings skips what it cannot read.
         **{c: set() for c in ("CF-BAK-001", "CF-BAK-002", "CF-BAK-003", "CF-BAK-004", "CF-BAK-005")},
         # Template-level: _ci_cd_findings skips what it cannot read.
@@ -462,6 +468,8 @@ _F, _SB, _ID, _DP, _NET, _RES, _OBS, _SUS = (
     "network-exposure", "resilience", "observability", "sustainability",
 )
 CF_THEMES: dict[str, tuple[str, ...]] = {
+    "CF-ASG-001": (_RES,), "CF-ASG-002": (_RES,), "CF-ASG-003": (_SB, _ID), "CF-ASG-004": (_NET,),
+    "CF-ASG-005": (_SB,), "CF-ASG-006": (_F,),
     "CF-ALB-001": (_OBS,), "CF-ALB-002": (_DP, _NET), "CF-ALB-003": (_DP, _NET),
     "CF-ALB-004": (_NET,), "CF-ALB-005": (_RES,), "CF-ALB-006": (_NET,), "CF-ALB-007": (_RES,),
     "CF-CLB-001": (_DP, _NET), "CF-CLB-002": (_DP,), "CF-CLB-003": (_OBS,), "CF-CLB-004": (_RES,),
@@ -525,8 +533,8 @@ CF_THEMES: dict[str, tuple[str, ...]] = {
 }
 
 
-def _imds_finding(res: Resource, template_path: Path, options: Any, defers: bool) -> Finding | None:
-    """CF-EC2-001 for one instance or launch template.
+def _imds_gap(options: Any, defers: bool) -> tuple[Severity, str] | None:
+    """(severity, what is wrong) when MetadataOptions does not require IMDSv2, else None.
 
     options: the MetadataOptions object. defers: an instance that takes its metadata
     settings from a launch template (that template is checked on its own).
@@ -554,6 +562,15 @@ def _imds_finding(res: Resource, template_path: Path, options: Any, defers: bool
         detail = "MetadataOptions.HttpTokens is optional, so IMDSv1 requests are accepted."
     else:
         return None
+    return severity, detail
+
+
+def _imds_finding(res: Resource, template_path: Path, options: Any, defers: bool) -> Finding | None:
+    """CF-EC2-001 for one instance or launch template."""
+    gap = _imds_gap(options, defers)
+    if gap is None:
+        return None
+    severity, detail = gap
     return Finding(
         id="CF-EC2-001",
         title="EC2 instance metadata does not require IMDSv2",
@@ -1380,6 +1397,20 @@ def _lambda_access_findings(res: Resource, template_path: Path) -> List[Finding]
     return out
 
 
+def _subnets_in_one_az(ids: list, subnets: List[Resource]) -> bool:
+    """True when every subnet is in this template and all are in one AZ. A subnet that is not in
+    this template, or whose AZ cannot be read, gives False."""
+    azs: set[str] = set()
+    for item in ids:
+        text = item if type(item) is str else json.dumps(item, default=str)
+        subnet = next((s for s in subnets if _references(text, s.name)), None)
+        az = _az_key(subnet) if subnet is not None else None
+        if az is None:
+            return False
+        azs.add(az)
+    return len(azs) == 1
+
+
 def _lambda_wiring_findings(resources: List[Resource], template_path: Path) -> List[Finding]:
     """CF-LAM-007: the 3 second default timeout on a function an event source mapping
     polls for, or the 900 second maximum behind API Gateway (which stops waiting at 29
@@ -1427,16 +1458,7 @@ def _lambda_wiring_findings(resources: List[Resource], template_path: Path) -> L
         ids = vpc.get("SubnetIds") if isinstance(vpc, dict) and "VpcConfig" not in fn.unresolved else None
         if not isinstance(ids, list) or not ids:
             continue
-        azs: set[str] = set()
-        for item in ids:
-            text = item if type(item) is str else json.dumps(item, default=str)
-            subnet = next((s for s in subnets if _references(text, s.name)), None)
-            az = _az_key(subnet) if subnet is not None else None
-            if az is None:
-                azs = set()
-                break
-            azs.add(az)
-        if len(azs) == 1:
+        if _subnets_in_one_az(ids, subnets):
             out.append(finding(
                 fn, "CF-LAM-008", "Lambda function in a VPC uses subnets in one AZ", "Medium", (
                     "All of this function's subnets are in one Availability Zone, so an AZ failure "
@@ -3573,6 +3595,152 @@ def _no_log_driver(container: dict) -> bool:
     return isinstance(config, dict) and not _is_intrinsic(config) and config.get("LogDriver") is None
 
 
+def _asg_link_names(link: Resource, group: Resource) -> bool:
+    """True when a scaling policy, schedule or attachment names this group: by Ref or Terraform
+    address, or by the group's literal name."""
+    if _points_at(link, "AutoScalingGroupName", group):
+        return True
+    name = group.properties.get("AutoScalingGroupName")
+    return type(name) is str and link.properties.get("AutoScalingGroupName") == name
+
+
+def _asg_behind_load_balancer(group: Resource, attachments: List[Resource]) -> bool:
+    """True when the group is known to have a load balancer. A list from a parameter or a variable
+    may be empty, and so may an entry under Fn::If. An attachment the scan cannot tie to this group
+    says nothing about it."""
+    for key in ("TargetGroupARNs", "LoadBalancerNames"):
+        value = group.properties.get(key)
+        if isinstance(value, list) and any(not (isinstance(v, dict) and "Fn::If" in v) for v in value):
+            return True
+    return any(_asg_link_names(a, group) for a in attachments)
+
+
+def _one_subnet(item: Any, subnets: List[Resource]) -> bool:
+    """True for a VPCZoneIdentifier entry known to hold one subnet: a literal with no comma, an
+    attribute or list element, or a subnet in this template. A parameter or variable may hold a
+    comma-separated list, and so may an import, a join or a function call."""
+    if isinstance(item, dict):
+        if len(item) != 1:
+            return False
+        return ("Fn::GetAtt" in item or "Fn::Select" in item
+                or any(s.name == item.get("Ref") for s in subnets))
+    if type(item) is str:
+        return "," not in item
+    return (isinstance(item, str) and not any(mark in item for mark in ("(", "*", " for "))
+            and "aws_subnet." in item)
+
+
+def _asg_in_one_az(group: Resource, subnets: List[Resource]) -> bool:
+    """True when the group's AZ count is known to be one: one literal Availability Zone, one subnet,
+    or several subnets from this template that are all in one AZ (as CF-LAM-008 reads them)."""
+    azs = group.properties.get("AvailabilityZones")
+    if isinstance(azs, list) and len(azs) == 1 and type(azs[0]) is str:
+        return True
+    ids = group.properties.get("VPCZoneIdentifier")
+    if not isinstance(ids, list) or not ids:
+        return False
+    return _one_subnet(ids[0], subnets) if len(ids) == 1 else _subnets_in_one_az(ids, subnets)
+
+
+def _asg_uses_launch_configuration(group: Resource, configurations: List[Resource]) -> bool:
+    """True for a literal name or a launch configuration in this template. A parameter or a variable
+    may be empty, with the launch template set instead, and Fn::If may choose either."""
+    value = group.properties.get("LaunchConfigurationName")
+    if type(value) is str:
+        return bool(value.strip())
+    if value is None or (isinstance(value, dict) and "Fn::If" in value):
+        return False
+    text = value if isinstance(value, str) else json.dumps(value, default=str)
+    return any(_references(text, c.name) for c in configurations)
+
+
+def _asg_size(group: Resource, key: str) -> int | None:
+    """MinSize or MaxSize, or None when the scan cannot read it. CloudFormation writes a string."""
+    value = None if key in group.unresolved else group.properties.get(key)
+    if type(value) is int or type(value) is str:
+        try:
+            return int(value)
+        except ValueError:
+            return None
+    return None
+
+
+_ASG_SCALERS = ("autoscaling_policy", "autoscaling_schedule")
+
+
+def _autoscaling_findings(resources: List[Resource], template_path: Path) -> List[Finding]:
+    """Auto Scaling groups and launch configurations (CF-ASG-001..006). A value the scan cannot read
+    is not judged."""
+    usable = [r for r in resources if not r.malformed]
+    groups = [r for r in usable if r.type == "autoscaling_group"]
+    configurations = [r for r in usable if r.type == "launch_configuration"]
+    attachments = [r for r in usable if r.type == "autoscaling_attachment"]
+    subnets = [r for r in usable if r.type == "subnet"]
+    scalers = [r for r in usable if r.type in _ASG_SCALERS]
+    # A policy or schedule the scan cannot tie to a group may scale any of them.
+    scaler_for_any = any(r.malformed and r.type in _ASG_SCALERS for r in resources) or any(
+        not any(_asg_link_names(s, g) for g in groups) for s in scalers)
+    out: List[Finding] = []
+
+    def add(res: Resource, check_id: str, title: str, severity: Severity, category: str,
+            recommendation: str) -> None:
+        out.append(Finding(
+            id=check_id, title=title, severity=severity, category=category,
+            file=res.file or str(template_path), line=res.line,
+            evidence=f"{res.name} ({res.source_type})", recommendation=recommendation,
+        ))
+
+    for group in groups:
+        health = None if "HealthCheckType" in group.unresolved else group.properties.get("HealthCheckType", "EC2")
+        if type(health) is str and "ELB" not in (part.strip().upper() for part in health.split(",")) \
+                and _asg_behind_load_balancer(group, attachments):
+            add(group, "CF-ASG-001", "Auto Scaling group behind a load balancer does not use ELB health checks",
+                "Low", "Reliability",
+                "The group only sees EC2 status checks, so it keeps an instance that the load balancer "
+                "reports as unhealthy. Set HealthCheckType: ELB and a HealthCheckGracePeriod (Security Hub "
+                "AutoScaling.1). In CDK: healthCheck: autoscaling.HealthCheck.elb({ grace: Duration.minutes(5) }).")
+        if _asg_in_one_az(group, subnets):
+            add(group, "CF-ASG-002", "Auto Scaling group uses one Availability Zone", "Medium", "Reliability",
+                "The group can only launch instances in one AZ, so it cannot replace capacity if that AZ "
+                "fails. Give it subnets in at least two AZs, unless one AZ is intended, as for a batch job "
+                "(Security Hub AutoScaling.2). In CDK: vpcSubnets: { subnetType: "
+                "ec2.SubnetType.PRIVATE_WITH_EGRESS }.")
+        if _asg_uses_launch_configuration(group, configurations):
+            add(group, "CF-ASG-005", "Auto Scaling group uses a launch configuration", "Low",
+                "Operational Excellence",
+                "Launch configurations get no new EC2 features and cannot be versioned. Use a launch "
+                "template instead, and set LaunchTemplate in place of LaunchConfigurationName (Security Hub "
+                "AutoScaling.9). In CDK: launchTemplate: new ec2.LaunchTemplate(...).")
+        size = _asg_size(group, "MinSize")
+        if size and size == _asg_size(group, "MaxSize") and not scaler_for_any \
+                and not any(_asg_link_names(s, group) for s in scalers):
+            add(group, "CF-ASG-006", "Auto Scaling group has a fixed size and no scaling policy", "Low",
+                "Cost Optimization",
+                f"MinSize and MaxSize are both {size}, and no scaling policy or schedule in the template "
+                "changes them, so the group cannot follow demand. A fixed fleet can be intended. If not, "
+                "raise MaxSize and add a target tracking policy. In CDK: "
+                "autoScalingGroup.scaleOnCpuUtilization('Cpu', { targetUtilizationPercent: 60 }).")
+
+    for config in configurations:
+        gap = None if "MetadataOptions" in config.unresolved else _imds_gap(
+            config.properties.get("MetadataOptions"), defers=False)
+        if gap is not None:
+            add(config, "CF-ASG-003", "Launch configuration does not require IMDSv2", "High", "Security",
+                f"{gap[1]} With IMDSv1, an SSRF bug in the workload can read the instance role's "
+                "credentials. Launch configurations cannot be changed, so create a new one with "
+                "MetadataOptions.HttpTokens: required, or move to a launch template (Security Hub "
+                "AutoScaling.3). In CDK: requireImdsv2: true on the AutoScalingGroup.")
+        public_ip = None if "AssociatePublicIpAddress" in config.unresolved else config.properties.get(
+            "AssociatePublicIpAddress")
+        if _is_true(public_ip):
+            add(config, "CF-ASG-004", "Launch configuration assigns public IP addresses", "Medium", "Security",
+                "Every instance gets a public address and can be reached directly from the internet if its "
+                "security group allows it. Set AssociatePublicIpAddress: false, use private subnets and put "
+                "a load balancer in front (Security Hub AutoScaling.5). In CDK: associatePublicIpAddress: "
+                "false on the AutoScalingGroup.")
+    return out
+
+
 def _container_findings(resources: List[Resource], template_path: Path) -> List[Finding]:
     """ECS tasks, services and clusters (CF-ECS-004..011) and the EKS version (CF-EKS-004).
     A value the scan cannot read is not judged."""
@@ -5142,6 +5310,9 @@ def _run_resource_checks(
 
     # --- ECS network, secrets, logging, platform, insights and sizing; EKS version ---
     findings.extend(_container_findings(resources, template_path))
+
+    # --- Auto Scaling groups and launch configurations ---
+    findings.extend(_autoscaling_findings(resources, template_path))
 
     # --- AWS Backup vaults, plans and which resources they select ---
     findings.extend(_backup_findings(resources, template_path))

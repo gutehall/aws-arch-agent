@@ -2846,6 +2846,93 @@ resource "aws_iam_role" "$tf_name" {
 
 
 _CLOUDFORMATION.update({
+    "CF-ASG-001": """$name:
+  Type: AWS::AutoScaling::AutoScalingGroup
+  Properties:
+    HealthCheckType: ELB
+    HealthCheckGracePeriod: 300""",
+    "CF-ASG-002": """$name:
+  Type: AWS::AutoScaling::AutoScalingGroup
+  Properties:
+    VPCZoneIdentifier:  # subnets in at least two AZs
+      - !Ref PrivateSubnetA
+      - !Ref PrivateSubnetB""",
+    "CF-ASG-003": """# A launch configuration cannot be changed: create a new one and point the group at it.
+$name:
+  Type: AWS::AutoScaling::LaunchConfiguration
+  Properties:
+    MetadataOptions:
+      HttpTokens: required
+      HttpEndpoint: enabled""",
+    "CF-ASG-004": """# A launch configuration cannot be changed: create a new one and point the group at it.
+$name:
+  Type: AWS::AutoScaling::LaunchConfiguration
+  Properties:
+    AssociatePublicIpAddress: false""",
+    "CF-ASG-005": """$name:
+  Type: AWS::AutoScaling::AutoScalingGroup
+  Properties:
+    # Remove LaunchConfigurationName, and create the template with the same settings.
+    LaunchTemplate:
+      LaunchTemplateId: !Ref AppLaunchTemplate
+      Version: !GetAtt AppLaunchTemplate.LatestVersionNumber""",
+    "CF-ASG-006": """# If the fixed size is not intended, raise MaxSize on $name and scale on load.
+${name}ScaleOnCpu:
+  Type: AWS::AutoScaling::ScalingPolicy
+  Properties:
+    AutoScalingGroupName: !Ref $name
+    PolicyType: TargetTrackingScaling
+    TargetTrackingConfiguration:
+      PredefinedMetricSpecification:
+        PredefinedMetricType: ASGAverageCPUUtilization
+      TargetValue: 60""",
+})
+
+_TERRAFORM.update({
+    "CF-ASG-001": """resource "aws_autoscaling_group" "$tf_name" {
+  # keep the other arguments as they are
+  health_check_type         = "ELB"
+  health_check_grace_period = 300
+}""",
+    "CF-ASG-002": """resource "aws_autoscaling_group" "$tf_name" {
+  # keep the other arguments as they are
+  vpc_zone_identifier = var.private_subnet_ids # subnets in at least two AZs
+}""",
+    "CF-ASG-003": """# A launch configuration cannot be changed in place: Terraform replaces it.
+resource "aws_launch_configuration" "$tf_name" {
+  # keep the other arguments as they are
+  metadata_options {
+    http_tokens   = "required"
+    http_endpoint = "enabled"
+  }
+}""",
+    "CF-ASG-004": """# A launch configuration cannot be changed in place: Terraform replaces it.
+resource "aws_launch_configuration" "$tf_name" {
+  # keep the other arguments as they are
+  associate_public_ip_address = false
+}""",
+    "CF-ASG-005": """resource "aws_autoscaling_group" "$tf_name" {
+  # keep the other arguments as they are; remove launch_configuration
+  launch_template {
+    id      = aws_launch_template.app.id
+    version = aws_launch_template.app.latest_version
+  }
+}""",
+    "CF-ASG-006": """# If the fixed size is not intended, raise max_size on aws_autoscaling_group.$tf_name and scale on load.
+resource "aws_autoscaling_policy" "${tf_name}_cpu" {
+  name                   = "${tf_name}-cpu"
+  autoscaling_group_name = aws_autoscaling_group.$tf_name.name
+  policy_type            = "TargetTrackingScaling"
+  target_tracking_configuration {
+    predefined_metric_specification {
+      predefined_metric_type = "ASGAverageCPUUtilization"
+    }
+    target_value = 60
+  }
+}""",
+})
+
+_CLOUDFORMATION.update({
     "CF-IAM-004": _cf_trust("""        - Effect: Allow
           Principal:
             AWS: arn:aws:iam::111122223333:role/caller  # only who needs it
