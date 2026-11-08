@@ -57,6 +57,7 @@ TF_TYPE_TO_CANONICAL: dict[str, str] = {
     "aws_elb": "elb",
     "aws_cloudtrail": "cloudtrail",
     "aws_kms_key": "kms_key",
+    "aws_ssm_parameter": "ssm_parameter",
     "aws_lambda_function": "lambda_function",
     "aws_dynamodb_table": "dynamodb_table",
     "aws_cloudwatch_log_group": "cloudwatch_log_group",
@@ -1110,6 +1111,25 @@ def _kms_key(body: dict) -> dict:
     props: dict = {}
     # Raw value: resolve_policy_document reads it field by field in _resolve_iam.
     _set(props, "KeyPolicy", _ref(body, "policy"))
+    _set(props, "EnableKeyRotation", _v(body, "enable_key_rotation"))
+    _set(props, "KeySpec", _v(body, "customer_master_key_spec"))
+    _set(props, "CustomKeyStoreId", _ref(body, "custom_key_store_id"))
+    _set(props, "PendingWindowInDays", _v(body, "deletion_window_in_days"))
+    return props
+
+
+def _ssm_parameter(body: dict) -> dict:
+    """aws_ssm_parameter. insecure_value is the provider's plain text form of value."""
+    props: dict = {}
+    _set(props, "Name", _v(body, "name"))
+    _set(props, "Type", _v(body, "type"))
+    _set(props, "Tier", _v(body, "tier"))
+    _set(props, "DataType", _v(body, "data_type"))
+    key = "value" if "value" in body else "insecure_value"
+    raw = body.get(key)
+    # A resource's ARN is not a secret, and an unknown value should not hide the other arguments.
+    arn = isinstance(raw, _Expr) and raw.strip("${} ").endswith(".arn")
+    _set(props, "Value", "arn:from-a-reference" if arn else _known(_v(body, key)))
     return props
 
 
@@ -1639,6 +1659,7 @@ _ADAPTERS: dict[str, Callable[[dict], dict]] = {
     "aws_elb": _elb,
     "aws_cloudtrail": _cloudtrail,
     "aws_kms_key": _kms_key,
+    "aws_ssm_parameter": _ssm_parameter,
     "aws_lambda_function": _lambda,
     "aws_dynamodb_table": _dynamodb,
     "aws_appautoscaling_target": _scalable_target,

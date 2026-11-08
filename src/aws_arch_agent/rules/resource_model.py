@@ -41,6 +41,7 @@ CF_TYPE_TO_CANONICAL: dict[str, str] = {
     "AWS::ElasticLoadBalancing::LoadBalancer": "elb",
     "AWS::CloudTrail::Trail": "cloudtrail",
     "AWS::KMS::Key": "kms_key",
+    "AWS::SSM::Parameter": "ssm_parameter",
     "AWS::Lambda::Function": "lambda_function",
     "AWS::DynamoDB::Table": "dynamodb_table",
     "AWS::Logs::LogGroup": "cloudwatch_log_group",
