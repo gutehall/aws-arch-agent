@@ -1141,6 +1141,140 @@ _CLOUDFORMATION["CF-EBS-002"] = """$name:
     VolumeType: gp3
     # over 1,000 GiB: Iops: <3 x size in GiB> to keep the gp2 baseline"""
 # Unused Elastic IPs: delete the resource to release it, or attach it.
+# Step Functions, EventBridge and SQS error handling.
+_CLOUDFORMATION["CF-SFN-001"] = """$name:
+  Type: AWS::StepFunctions::StateMachine
+  Properties:
+    Definition:
+      StartAt: Work
+      States:
+        Work:
+          Type: Task
+          Resource: arn:aws:states:::lambda:invoke
+          Retry:
+            - ErrorEquals: ["States.TaskFailed"]
+              MaxAttempts: 3
+              BackoffRate: 2
+          Catch:
+            - ErrorEquals: ["States.ALL"]
+              Next: Failed
+          End: true
+        Failed:
+          Type: Fail"""
+_CLOUDFORMATION["CF-SFN-002"] = """$name:
+  Type: AWS::StepFunctions::StateMachine
+  Properties:
+    TracingConfiguration:
+      Enabled: true"""
+_CLOUDFORMATION["CF-SFN-003"] = """$name:
+  Type: AWS::StepFunctions::StateMachine
+  Properties:
+    LoggingConfiguration:
+      Level: ERROR
+      Destinations:
+        - CloudWatchLogsLogGroup:
+            LogGroupArn: !GetAtt MyLogGroup.Arn"""
+_CLOUDFORMATION["CF-EB-001"] = """$name:
+  Type: AWS::Events::Rule
+  Properties:
+    Targets:
+      - Id: my-target
+        Arn: !GetAtt MyFunction.Arn
+        DeadLetterConfig:
+          Arn: !GetAtt MyDeadLetterQueue.Arn"""
+_CLOUDFORMATION["CF-EB-002"] = """$name:
+  Type: AWS::Events::Rule
+  Properties:
+    Targets:
+      - Id: my-target
+        Arn: !GetAtt MyFunction.Arn
+        RetryPolicy:
+          MaximumRetryAttempts: 3
+          MaximumEventAgeInSeconds: 3600"""
+_CLOUDFORMATION["CF-SQS-003"] = """$name:
+  Type: AWS::SQS::Queue
+  Properties:
+    VisibilityTimeout: 180 # at least 6 times the function timeout"""
+_CLOUDFORMATION["CF-RP-001:AWS::Events::EventBus"] = """$name:
+  Type: AWS::Events::EventBus
+  Properties:
+    Name: my-bus
+    Policy:
+      Version: "2012-10-17"
+      Statement:
+        - Effect: Allow
+          Principal:
+            AWS: arn:aws:iam::111122223333:root # the account that sends events
+          Action: events:PutEvents
+          Resource: '*'"""
+_CLOUDFORMATION["CF-RP-001:AWS::Events::EventBusPolicy"] = """$name:
+  Type: AWS::Events::EventBusPolicy
+  Properties:
+    StatementId: allow-sender
+    Statement:
+      Effect: Allow
+      Principal:
+        AWS: arn:aws:iam::111122223333:root # the account that sends events
+      Action: events:PutEvents
+      Resource: '*'"""
+_TERRAFORM["CF-SFN-001"] = """resource "aws_sfn_state_machine" "$tf_name" {
+  definition = jsonencode({
+    StartAt = "Work"
+    States = {
+      Work = {
+        Type     = "Task"
+        Resource = "arn:aws:states:::lambda:invoke"
+        Retry    = [{ ErrorEquals = ["States.TaskFailed"], MaxAttempts = 3, BackoffRate = 2 }]
+        Catch    = [{ ErrorEquals = ["States.ALL"], Next = "Failed" }]
+        End      = true
+      }
+      Failed = { Type = "Fail" }
+    }
+  })
+}"""
+_TERRAFORM["CF-SFN-002"] = """resource "aws_sfn_state_machine" "$tf_name" {
+  tracing_configuration {
+    enabled = true
+  }
+}"""
+_TERRAFORM["CF-SFN-003"] = """resource "aws_sfn_state_machine" "$tf_name" {
+  logging_configuration {
+    level                  = "ERROR"
+    include_execution_data = false
+    log_destination        = "$${aws_cloudwatch_log_group.my_group.arn}:*"
+  }
+}"""
+_TERRAFORM["CF-EB-001"] = """resource "aws_cloudwatch_event_target" "$tf_name" {
+  dead_letter_config {
+    arn = aws_sqs_queue.dead_letter.arn
+  }
+}"""
+_TERRAFORM["CF-EB-002"] = """resource "aws_cloudwatch_event_target" "$tf_name" {
+  retry_policy {
+    maximum_retry_attempts       = 3
+    maximum_event_age_in_seconds = 3600
+  }
+}"""
+_TERRAFORM["CF-SQS-003"] = """resource "aws_sqs_queue" "$tf_name" {
+  visibility_timeout_seconds = 180 # at least 6 times the function timeout
+}"""
+_TERRAFORM["CF-RP-001:aws_cloudwatch_event_bus_policy"] = """resource "aws_cloudwatch_event_bus_policy" "$tf_name" {
+  event_bus_name = aws_cloudwatch_event_bus.my_bus.name
+  policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [{
+      Effect    = "Allow"
+      Principal = { AWS = "arn:aws:iam::111122223333:root" } # the account that sends events
+      Action    = "events:PutEvents"
+      Resource  = aws_cloudwatch_event_bus.my_bus.arn
+    }]
+  })
+}"""
+_TERRAFORM["CF-RP-001:aws_cloudwatch_event_permission"] = """resource "aws_cloudwatch_event_permission" "$tf_name" {
+  principal    = "111122223333" # the account that sends events
+  statement_id = "allow-sender"
+}"""
+
 _CLOUDFORMATION["CF-RS-002"] = """$name:
   Type: AWS::Redshift::Cluster
   Properties:

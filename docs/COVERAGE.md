@@ -18,7 +18,6 @@ Which CDK rules have a template check, and which AWS Foundational Security Best 
 | Work | Adds template checks for |
 | -- | -- |
 | `data-resilience` | DynamoDB, ElastiCache and EFS resilience |
-| `error-handling` | Step Functions, EventBridge and SQS error handling |
 | `backup` | AWS Backup plans, vaults and coverage |
 | `containers` | More ECS and EKS settings |
 | `auto-scaling` | Auto Scaling groups and launch configurations |
@@ -34,7 +33,7 @@ Which CDK rules have a template check, and which AWS Foundational Security Best 
 
 ## CDK rules
 
-172 rules: 86 covered, 6 partial, 40 planned, 10 account, 5 cdk-only, 25 advice.
+172 rules: 91 covered, 6 partial, 35 planned, 10 account, 5 cdk-only, 25 advice.
 
 | Rule | Title | Template check | Status | Note |
 | -- | -- | -- | -- | -- |
@@ -120,7 +119,7 @@ Which CDK rules have a template check, and which AWS Foundational Security Best 
 | REL-012 | NAT Gateway single point of failure (need multi-AZ) | `CF-NAT-001` | `covered` |  |
 | REL-013 | AWS Backup vault not configured |  | `planned: backup` |  |
 | REL-014 | Cross-region backup replication missing |  | `planned: backup` |  |
-| REL-015 | Step Functions retry/catch not configured |  | `planned: error-handling` |  |
+| REL-015 | Step Functions retry/catch not configured | `CF-SFN-001` | `covered` |  |
 | REL-016 | ElastiCache not using multi-AZ |  | `planned: data-resilience` |  |
 | REL-017 | EFS backup policy not configured |  | `planned: data-resilience` |  |
 | REL-018 | EFS lifecycle policy not configured |  | `planned: data-resilience` |  |
@@ -129,12 +128,12 @@ Which CDK rules have a template check, and which AWS Foundational Security Best 
 | REL-021 | CodePipeline missing manual approval for production | `CF-CP-002` | `covered` |  |
 | REL-022 | ACM certificate validation method not specified |  | `planned: dns-certs` |  |
 | REL-023 | Blue-green deployment not configured for critical services |  | `advice` | Deployment strategy, not a resource property. |
-| REL-024 | SQS visibility timeout may need review |  | `planned: error-handling` |  |
+| REL-024 | SQS visibility timeout may need review | `CF-SQS-003` | `covered` |  |
 | REL-025 | DynamoDB global tables not configured for multi-region |  | `advice` | Global tables depend on multi-Region needs. |
 | REL-026 | S3 replication not configured for critical buckets |  | `planned: s3` |  |
 | REL-027 | Lambda reserved concurrency not configured for critical functions | `CF-LAM-006` | `covered` |  |
 | REL-028 | API Gateway request validation not configured | `CF-APIGW-006` | `covered` |  |
-| REL-029 | EventBridge rule retry policy not configured |  | `planned: error-handling` |  |
+| REL-029 | EventBridge rule retry policy not configured | `CF-EB-002` | `covered` |  |
 | REL-030 | RDS deletion protection not enabled | `CF-RDS-005` | `covered` |  |
 | REL-031 | S3 bucket versioning not enabled | `CF-S3-003` | `covered` |  |
 | COST-001 | Log retention may be infinite (cost risk) | `CF-CW-001` | `covered` |  |
@@ -171,8 +170,8 @@ Which CDK rules have a template check, and which AWS Foundational Security Best 
 | OPS-009 | RDS enhanced monitoring not enabled | `CF-RDS-007` | `covered` |  |
 | OPS-010 | CloudWatch alarms not configured for critical resources |  | `planned: alarms` |  |
 | OPS-011 | No SNS topics for alarm notifications |  | `planned: alarms` |  |
-| OPS-012 | Step Functions not using X-Ray tracing |  | `planned: error-handling` |  |
-| OPS-013 | EventBridge rules not using DLQ |  | `planned: error-handling` |  |
+| OPS-012 | Step Functions not using X-Ray tracing | `CF-SFN-002` | `covered` |  |
+| OPS-013 | EventBridge rules not using DLQ | `CF-EB-001` | `covered` |  |
 | OPS-014 | AWS Config not enabled |  | `account` | AWS Config is an account service. account-baseline checks a recorder the repo defines. |
 | OPS-015 | Glue job CloudWatch metrics not enabled |  | `planned: analytics` |  |
 | OPS-016 | Transit Gateway flow logs not enabled | `CF-TGW-002` | `covered` |  |
@@ -377,5 +376,5 @@ Controls a template can show. Account-level controls (for example S3.1, EC2.7 an
 | SecretsManager.1 | `CF-SM-001` | `AWS::SecretsManager::Secret` |
 | SNS.1 | `CF-SNS-001` | `AWS::SNS::Topic` |
 | SQS.1 | `CF-SQS-001` | `AWS::SQS::Queue` |
-| StepFunctions.1 | `planned: error-handling` | `AWS::StepFunctions::StateMachine` |
+| StepFunctions.1 | `CF-SFN-003` | `AWS::StepFunctions::StateMachine` |
 | Transfer.2 | `planned: app-services` | `AWS::Transfer::Server` |
