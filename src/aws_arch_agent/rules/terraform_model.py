@@ -1405,8 +1405,11 @@ def _apiv2_domain_name(body: dict) -> dict:
 
 def _api_usage_plan(body: dict) -> dict:
     """aws_api_gateway_usage_plan: whether it throttles, on the plan or per stage (REL-006)."""
+    # A dynamic block may throttle, so it counts.
     throttled = bool(_blocks(body, "throttle_settings")) or any(
-        _blocks(stage, "throttle") for stage in _blocks(body, "api_stages"))
+        _blocks(stage, "throttle") or "throttle" in _dynamic_names(stage)
+        for stage in _blocks(body, "api_stages")
+    ) or bool({"throttle_settings", "api_stages"} & set(_dynamic_names(body)))
     return {"Throttle": {"Set": True}} if throttled else {}
 
 

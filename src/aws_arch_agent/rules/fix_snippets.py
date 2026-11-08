@@ -1149,7 +1149,7 @@ _CLOUDFORMATION["CF-APIGW-003"] = """$name:
 _CLOUDFORMATION["CF-APIGW-004"] = """$name:
   Type: AWS::ApiGateway::RestApi
   Properties:
-    SecurityPolicy: TLS_1_2  # AWS::ApiGateway::DomainName takes the same setting"""
+    SecurityPolicy: TLS_1_2  # same on AWS::ApiGateway::DomainName; V2 domains: in DomainNameConfigurations"""
 _CLOUDFORMATION["CF-APIGW-005"] = """$name:
   Type: AWS::ApiGateway::Stage
   Properties:
@@ -1178,7 +1178,7 @@ _CLOUDFORMATION["CF-APIGW-008"] = """$name:
     CacheClusterEnabled: true
     CacheClusterSize: "0.5"
     MethodSettings:
-      - ResourcePath: "/~1items/GET"  # the cacheable GET methods
+      - ResourcePath: "/~1items"  # one entry per cacheable GET method; "/" is written as ~1
         HttpMethod: GET
         CachingEnabled: true
         CacheDataEncrypted: true"""
@@ -1202,7 +1202,7 @@ _TERRAFORM["CF-APIGW-003"] = """resource "aws_api_gateway_method" "$tf_name" {
   authorizer_id = aws_api_gateway_authorizer.example.id
 }"""
 _TERRAFORM["CF-APIGW-004"] = """resource "$tf_type" "$tf_name" {
-  security_policy = "TLS_1_2"
+  security_policy = "TLS_1_2" # aws_apigatewayv2_domain_name: inside domain_name_configuration
 }"""
 _TERRAFORM["CF-APIGW-005"] = """resource "aws_api_gateway_method_settings" "$tf_name" {
   rest_api_id = aws_api_gateway_rest_api.example.id

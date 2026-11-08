@@ -1381,6 +1381,11 @@ def _is_true(value: Any) -> bool:
     return value is True or (isinstance(value, str) and value.strip().lower() == "true")
 
 
+def _unread(value: Any) -> bool:
+    """True for a value only known at deploy time: a Ref, Fn::If, or an unknown Terraform value."""
+    return isinstance(value, dict) and _is_intrinsic(value)
+
+
 def _api_gateway_findings(resources: List[Resource], template_path: Path) -> List[Finding]:
     """REST API (CF-APIGW-003..009) and HTTP / WebSocket API (CF-APIGW-V2-003/004) checks.
 
@@ -1414,7 +1419,8 @@ def _api_gateway_findings(resources: List[Resource], template_path: Path) -> Lis
             continue
         auth = props.get("AuthorizationType") or "NONE"
         if "AuthorizationType" not in method.unresolved and "ApiKeyRequired" not in method.unresolved \
-                and auth == "NONE" and not _is_true(props.get("ApiKeyRequired")):
+                and auth == "NONE" and not _is_true(props.get("ApiKeyRequired")) \
+                and not _unread(props.get("ApiKeyRequired")):
             add(method, "CF-APIGW-003", "API Gateway method has no authorization", "High", "Security",
                 f"{verb.upper()} takes requests from anyone: AuthorizationType is NONE and no API key is "
                 "required. Use an IAM, Cognito or Lambda authorizer; if the API is public on purpose, "
@@ -1429,14 +1435,18 @@ def _api_gateway_findings(resources: List[Resource], template_path: Path) -> Lis
     # TLS on the default endpoint and on custom domains.
     for rest_api in of["api_gateway_rest_api"]:
         props = rest_api.properties
-        if "SecurityPolicy" in rest_api.unresolved or _is_true(props.get("DisableExecuteApiEndpoint")):
+        disabled = props.get("DisableExecuteApiEndpoint")
+        if "SecurityPolicy" in rest_api.unresolved or _is_true(disabled) or _unread(disabled):
             continue
-        types = (props.get("EndpointConfiguration") or {}).get("Types") if isinstance(
-            props.get("EndpointConfiguration"), dict) else None
+        endpoint = props.get("EndpointConfiguration")
+        types = endpoint.get("Types") if isinstance(endpoint, dict) else None
         private = isinstance(types, list) and "PRIVATE" in types
+        endpoint_unread = _unread(endpoint) or _unread(types) or (
+            isinstance(types, list) and any(_unread(t) for t in types))
         policy = props.get("SecurityPolicy")
         # Regional and edge APIs default to TLS_1_0; Terraform's provider may not expose it.
-        default_weak = policy is None and not private and rest_api.source_type.startswith("AWS::")
+        default_weak = policy is None and not private and not endpoint_unread \
+            and rest_api.source_type.startswith("AWS::")
         if policy == "TLS_1_0" or default_weak:
             add(rest_api, "CF-APIGW-004", "API Gateway endpoint allows TLS 1.0", "Medium", "Security",
                 ("No SecurityPolicy is set, so the default execute-api endpoint uses TLS_1_0. "
@@ -1476,7 +1486,7 @@ def _api_gateway_findings(resources: List[Resource], template_path: Path) -> Lis
                 "with a throttle, so one client cannot use up the account's API Gateway limit. In CDK: "
                 "deployOptions: { throttlingRateLimit, throttlingBurstLimit }.")
         if settings_known and any(_is_true(m.get("CachingEnabled")) and not _is_true(m.get("CacheDataEncrypted"))
-                                  for m in settings):
+                                  and not _unread(m.get("CacheDataEncrypted")) for m in settings):
             add(stage, "CF-APIGW-007", "API Gateway cache data is not encrypted", "Medium", "Security",
                 "Set CacheDataEncrypted: true in every MethodSettings entry that turns caching on "
                 "(Security Hub APIGateway.5). In CDK: cacheDataEncrypted: true.")
@@ -1501,9 +1511,12 @@ def _api_gateway_findings(resources: List[Resource], template_path: Path) -> Lis
         if not isinstance(key, str) or key.upper().startswith("OPTIONS ") or "AuthorizationType" in route.unresolved:
             continue
         api = api_of(route, "ApiId", "apigatewayv2_api")
-        websocket = api is not None and api.properties.get("ProtocolType") == "WEBSOCKET"
+        protocol = api.properties.get("ProtocolType") if api is not None else None
         # WebSocket APIs authorize on $connect only; an HTTP route key is "VERB /path".
-        if (websocket or (" " not in key and key != "$default")) and key != "$connect":
+        if (protocol == "WEBSOCKET" or (" " not in key and key != "$default")) and key != "$connect":
+            continue
+        # $default exists on both kinds of API, so it needs a known HTTP API.
+        if key == "$default" and protocol != "HTTP":
             continue
         if (route.properties.get("AuthorizationType") or "NONE") == "NONE":
             add(route, "CF-APIGW-V2-003", "API Gateway route has no authorization", "High", "Security",

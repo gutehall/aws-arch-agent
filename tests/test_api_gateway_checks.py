@@ -50,6 +50,103 @@ def test_a_hardened_rest_api_has_no_findings(tmp_path: Path) -> None:
                           "Stage": _stage()}) == {}
 
 
+_PARAM = {"Ref": "Param"}
+
+
+def _settings(**props: object) -> list[dict]:
+    return [{"ResourcePath": "/*", "HttpMethod": "*", "ThrottlingRateLimit": 1, **props}]
+
+
+def test_values_known_only_at_deploy_time_are_not_judged(tmp_path: Path) -> None:
+    found = _cf(tmp_path, {
+        "Api": _SECURE_API,
+        "KeyParam": _method("GET", AuthorizationType="NONE", ApiKeyRequired=_PARAM),
+        "CacheParam": _stage(MethodSettings=_settings(CachingEnabled=True, CacheDataEncrypted=_PARAM)),
+        "DisabledParam": {"Type": "AWS::ApiGateway::RestApi", "Properties": {
+            "Name": "a", "DisableExecuteApiEndpoint": _PARAM}},
+        "EndpointParam": {"Type": "AWS::ApiGateway::RestApi", "Properties": {
+            "Name": "a", "EndpointConfiguration": _PARAM}},
+        "TypesParam": {"Type": "AWS::ApiGateway::RestApi", "Properties": {
+            "Name": "a", "EndpointConfiguration": {"Types": _PARAM}}},
+        "TypeParam": {"Type": "AWS::ApiGateway::RestApi", "Properties": {
+            "Name": "a", "EndpointConfiguration": {"Types": [_PARAM]}}},
+    })
+    assert found == {}
+
+
+def test_cache_encryption_set_to_false_is_still_reported(tmp_path: Path) -> None:
+    found = _cf(tmp_path, {
+        "Api": _SECURE_API,
+        "Stage": _stage(MethodSettings=_settings(CachingEnabled=True, CacheDataEncrypted=False)),
+    })
+    assert found == {"CF-APIGW-007": {"Stage"}}
+
+
+def test_default_route_needs_a_known_http_api(tmp_path: Path) -> None:
+    def route(api: object) -> dict:
+        return {"Type": "AWS::ApiGatewayV2::Route", "Properties": {"ApiId": api, "RouteKey": "$default"}}
+
+    found = _cf(tmp_path, {
+        "Http": {"Type": "AWS::ApiGatewayV2::Api", "Properties": {"Name": "h", "ProtocolType": "HTTP"}},
+        "OnHttp": route({"Ref": "Http"}),
+        "OnUnknown": route("imported-api-id"),
+    })
+    assert found == {"CF-APIGW-V2-003": {"OnHttp"}}
+
+
+def _terraform(tmp_path: Path, text: str) -> dict[str, set[str]]:
+    (tmp_path / "main.tf").write_text(text, encoding="utf-8")
+    resources = resources_from_terraform(tmp_path)
+    return _by_id(run_resource_checks(resources, tmp_path / "main.tf"))
+
+
+_TF_STAGE = """
+resource "aws_api_gateway_rest_api" "a" {
+  name = "a"
+}
+resource "aws_api_gateway_stage" "s" {
+  rest_api_id           = aws_api_gateway_rest_api.a.id
+  stage_name            = "p"
+  deployment_id         = "d"
+  cache_cluster_enabled = true
+  client_certificate_id = "c"
+}
+"""
+
+
+def test_terraform_cache_encryption_from_a_variable_is_not_judged(tmp_path: Path) -> None:
+    assert _terraform(tmp_path, _TF_STAGE + """
+resource "aws_api_gateway_method_settings" "m" {
+  rest_api_id = aws_api_gateway_rest_api.a.id
+  stage_name  = aws_api_gateway_stage.s.stage_name
+  method_path = "*/*"
+  settings {
+    throttling_rate_limit = 1
+    caching_enabled       = true
+    cache_data_encrypted  = var.encrypted
+  }
+}
+""") == {}
+
+
+def test_terraform_dynamic_usage_plan_throttle_counts(tmp_path: Path) -> None:
+    assert _terraform(tmp_path, _TF_STAGE + """
+resource "aws_api_gateway_usage_plan" "u" {
+  name = "u"
+  api_stages {
+    api_id = aws_api_gateway_rest_api.a.id
+    stage  = aws_api_gateway_stage.s.stage_name
+  }
+  dynamic "throttle_settings" {
+    for_each = var.throttle
+    content {
+      rate_limit = 1
+    }
+  }
+}
+""") == {}
+
+
 def test_methods(tmp_path: Path) -> None:
     found = _cf(tmp_path, {
         "Api": _SECURE_API,
