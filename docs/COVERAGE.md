@@ -18,7 +18,6 @@ Which CDK rules have a template check, and which AWS Foundational Security Best 
 | Work | Adds template checks for |
 | -- | -- |
 | `data-resilience` | DynamoDB, ElastiCache and EFS resilience |
-| `warehouses` | Redshift, DocumentDB and Neptune beyond encryption |
 | `error-handling` | Step Functions, EventBridge and SQS error handling |
 | `backup` | AWS Backup plans, vaults and coverage |
 | `containers` | More ECS and EKS settings |
@@ -256,9 +255,9 @@ Controls a template can show. Account-level controls (for example S3.1, EC2.7 an
 | DMS.6 | `planned: emr-dms` | `AWS::DMS::ReplicationInstance` |
 | DMS.9 | `planned: emr-dms` | `AWS::DMS::Endpoint` |
 | DocumentDB.1 | `CF-DOCDB-001` | `AWS::DocDB::DBCluster` |
-| DocumentDB.2 | `planned: warehouses` | `AWS::DocDB::DBCluster` |
-| DocumentDB.4 | `planned: warehouses` | `AWS::DocDB::DBCluster` |
-| DocumentDB.5 | `planned: warehouses` | `AWS::DocDB::DBCluster` |
+| DocumentDB.2 | `CF-DOCDB-002` | `AWS::DocDB::DBCluster` |
+| DocumentDB.4 | `CF-DOCDB-003` | `AWS::DocDB::DBCluster` |
+| DocumentDB.5 | `CF-DOCDB-004` | `AWS::DocDB::DBCluster` |
 | DynamoDB.1 | `CF-DDB-003` | `AWS::DynamoDB::Table` |
 | DynamoDB.2 | `CF-DDB-001` | `AWS::DynamoDB::Table` |
 | DynamoDB.6 | `planned: data-resilience` | `AWS::DynamoDB::Table` |
@@ -327,10 +326,10 @@ Controls a template can show. Account-level controls (for example S3.1, EC2.7 an
 | MSK.4 | `CF-MSK-003` | `AWS::MSK::Cluster` |
 | MSK.6 | `CF-MSK-002` | `AWS::MSK::Cluster` |
 | Neptune.1 | `CF-NEP-001` | `AWS::Neptune::DBCluster` |
-| Neptune.2 | `planned: warehouses` | `AWS::Neptune::DBCluster` |
-| Neptune.4 | `planned: warehouses` | `AWS::Neptune::DBCluster` |
-| Neptune.5 | `planned: warehouses` | `AWS::Neptune::DBCluster` |
-| Neptune.7 | `planned: warehouses` | `AWS::Neptune::DBCluster` |
+| Neptune.2 | `CF-NEP-002` | `AWS::Neptune::DBCluster` |
+| Neptune.4 | `CF-NEP-003` | `AWS::Neptune::DBCluster` |
+| Neptune.5 | `CF-NEP-004` | `AWS::Neptune::DBCluster` |
+| Neptune.7 | `CF-NEP-005` | `AWS::Neptune::DBCluster` |
 | Opensearch.1 | `CF-OS-001` | `AWS::OpenSearchService::Domain` |
 | Opensearch.2 | `CF-OS-003` | `AWS::OpenSearchService::Domain` |
 | Opensearch.3 | `CF-OS-002` | `AWS::OpenSearchService::Domain` |
@@ -356,13 +355,12 @@ Controls a template can show. Account-level controls (for example S3.1, EC2.7 an
 | RDS.24 | `CF-RDS-013` | `AWS::RDS::DBCluster` |
 | RDS.25 | `CF-RDS-013` | `AWS::RDS::DBInstance` |
 | RDS.27 | `CF-RDS-001` | `AWS::RDS::DBCluster` |
-| Redshift.1 | `planned: warehouses` | `AWS::Redshift::Cluster` |
-| Redshift.3 | `planned: warehouses` | `AWS::Redshift::Cluster` |
-| Redshift.4 | `planned: warehouses` | `AWS::Redshift::Cluster` |
-| Redshift.6 | `planned: warehouses` | `AWS::Redshift::Cluster` |
-| Redshift.7 | `planned: warehouses` | `AWS::Redshift::Cluster` |
-| Redshift.8 | `planned: warehouses` | `AWS::Redshift::Cluster` |
-| Redshift.9 | `planned: warehouses` | `AWS::Redshift::Cluster` |
+| Redshift.1 | `CF-RS-002` | `AWS::Redshift::Cluster` |
+| Redshift.3 | `CF-RS-003` | `AWS::Redshift::Cluster` |
+| Redshift.4 | `CF-RS-004` | `AWS::Redshift::Cluster` |
+| Redshift.6 | `CF-RS-005` | `AWS::Redshift::Cluster` |
+| Redshift.7 | `CF-RS-006` | `AWS::Redshift::Cluster` |
+| Redshift.8 | `CF-RS-007` | `AWS::Redshift::Cluster` |
 | Redshift.10 | `CF-RS-001` | `AWS::Redshift::Cluster` |
 | Route53.2 | `planned: dns-certs` | `AWS::Route53::HostedZone` |
 | S3.5 | `CF-S3-005` | `AWS::S3::BucketPolicy` |
