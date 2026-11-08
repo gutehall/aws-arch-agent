@@ -476,6 +476,26 @@ resource "aws_cloudwatch_event_rule" "state" {
     assert found == {}
 
 
+@pytest.mark.parametrize(("pattern", "fires"), [
+    ('file("pattern.json")', False),
+    ("data.template_file.pattern.rendered", False),
+    ("var.pattern", False),
+    ("jsonencode({ source = [var.source] })", False),
+    ('jsonencode({ source = ["aws.codepipeline"] })', False),
+    ('jsonencode({ source = ["aws.s3"] })', True),
+])
+def test_terraform_event_pattern_known_only_at_deploy_time(tmp_path: Path, pattern: str, fires: bool) -> None:
+    found = _tf(tmp_path, f"""\
+resource "aws_codepipeline" "a" {{
+  name = "a"
+}}
+resource "aws_cloudwatch_event_rule" "state" {{
+  event_pattern = {pattern}
+}}
+""")
+    assert found == ({"CF-CP-003": {"aws_codepipeline.a"}} if fires else {})
+
+
 def test_terraform_event_rule_tied_to_another_pipeline(tmp_path: Path) -> None:
     found = _tf(tmp_path, """\
 resource "aws_codepipeline" "a" {

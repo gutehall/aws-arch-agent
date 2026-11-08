@@ -1457,8 +1457,11 @@ def _notification_rule(body: dict) -> dict:
 
 
 def _event_rule(body: dict) -> dict:
+    """An expression that names no event source (file(), data.*, a source from var.*) may
+    match any, so it is not read."""
+    value = _ref(body, "event_pattern")
     props: dict = {}
-    _set(props, "EventPattern", _ref(body, "event_pattern"))
+    _set(props, "EventPattern", _OPAQUE if isinstance(value, _Expr) and "aws." not in value else value)
     return props
 
 

@@ -1669,8 +1669,8 @@ def _ci_cd_findings(resources: List[Resource], template_path: Path) -> List[Find
         if names:
             add(project, "CF-CB-001", "CodeBuild environment variable holds a secret in plain text", "High",
                 "Security",
-                f"Stored as PLAINTEXT: {', '.join(names)}. The values are in the template, the console and "
-                "the project configuration (Security Hub CodeBuild.2). Store them in Secrets Manager or SSM "
+                f"Stored as PLAINTEXT: {', '.join(names)}. Anyone who can read the project configuration "
+                "or the console sees the values (Security Hub CodeBuild.2). Store them in Secrets Manager or SSM "
                 "Parameter Store and set Type to SECRETS_MANAGER or PARAMETER_STORE, or use the build "
                 "role instead of AWS keys. In CDK: type: BuildEnvironmentVariableType.SECRETS_MANAGER.")
         secondary = props.get("SecondarySources")
