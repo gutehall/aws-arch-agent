@@ -122,6 +122,13 @@ CF_TYPE_TO_CANONICAL: dict[str, str] = {
     "AWS::FSx::DataRepositoryAssociation": "fsx_data_repository_association",
     "AWS::SageMaker::NotebookInstance": "sagemaker_notebook_instance",
     "AWS::SageMaker::EndpointConfig": "sagemaker_endpoint_config",
+    "AWS::Route53::HostedZone": "route53_hosted_zone",
+    "AWS::Route53::RecordSet": "route53_record_set",
+    "AWS::Route53::RecordSetGroup": "route53_record_set_group",
+    "AWS::Route53::DNSSEC": "route53_dnssec",
+    "AWS::Route53::KeySigningKey": "route53_key_signing_key",
+    "AWS::CertificateManager::Certificate": "acm_certificate",
+    "AWS::GlobalAccelerator::EndpointGroup": "globalaccelerator_endpoint_group",
     "AWS::AppSync::GraphQLApi": "appsync_graphql_api",
     "AWS::AppSync::ApiCache": "appsync_api_cache",
     "AWS::Transfer::Server": "transfer_server",
@@ -140,6 +147,7 @@ CF_TYPE_TO_CANONICAL: dict[str, str] = {
 # Terraform only: CloudFormation sets these on the rule, the vault and the file system.
 CANONICAL_TYPES: frozenset[str] = frozenset(CF_TYPE_TO_CANONICAL.values()) | {
     "events_target", "backup_vault_lock", "efs_backup_policy", "autoscaling_attachment",
+    "route53_query_log",
 }
 
 

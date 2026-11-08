@@ -17,13 +17,12 @@ Which CDK rules have a template check, and which AWS Foundational Security Best 
 
 | Work | Adds template checks for |
 | -- | -- |
-| `dns-certs` | Route 53, ACM and Global Accelerator |
 | `alarms` | Alarms, dashboards and trail integration |
 | `account-baseline` | Account baseline resources a repo defines |
 
 ## CDK rules
 
-172 rules: 118 covered, 7 partial, 7 planned, 10 account, 5 cdk-only, 25 advice.
+172 rules: 122 covered, 7 partial, 3 planned, 10 account, 5 cdk-only, 25 advice.
 
 | Rule | Title | Template check | Status | Note |
 | -- | -- | -- | -- | -- |
@@ -57,8 +56,8 @@ Which CDK rules have a template check, and which AWS Foundational Security Best 
 | SEC-028 | ECR repository image scanning not enabled | `CF-ECR-001` | `covered` |  |
 | SEC-029 | ECR image tag immutability not configured | `CF-ECR-002` | `covered` |  |
 | SEC-030 | ECR repository lifecycle policy missing | `CF-ECR-003` | `covered` |  |
-| SEC-031 | Route 53 health checks not configured |  | `planned: dns-certs` |  |
-| SEC-032 | Route 53 DNSSEC not enabled |  | `planned: dns-certs` |  |
+| SEC-031 | Route 53 health checks not configured | `CF-R53-003` | `covered` | Primary failover and weighted records. A secondary record is not judged. |
+| SEC-032 | Route 53 DNSSEC not enabled | `CF-R53-002` | `covered` | Public zones. A private zone is not judged. |
 | SEC-033 | SSM Parameter Store not using SecureString | `CF-SSM-001` | `covered` |  |
 | SEC-034 | Cognito User Pool MFA not required | `CF-COG-001` | `covered` |  |
 | SEC-035 | Cognito User Pool password policy may be weak | `CF-COG-002` | `covered` |  |
@@ -114,9 +113,9 @@ Which CDK rules have a template check, and which AWS Foundational Security Best 
 | REL-017 | EFS backup policy not configured | `CF-EFS-002` | `covered` |  |
 | REL-018 | EFS lifecycle policy not configured | `CF-EFS-003` | `covered` |  |
 | REL-019 | Kinesis stream retention period too short | `CF-KIN-002` | `covered` |  |
-| REL-020 | Global Accelerator health checks not configured |  | `planned: dns-certs` |  |
+| REL-020 | Global Accelerator health checks not configured | `CF-GA-001` | `covered` | Advice: EC2 and Elastic IP endpoints. A load balancer's own health checks decide. |
 | REL-021 | CodePipeline missing manual approval for production | `CF-CP-002` | `covered` |  |
-| REL-022 | ACM certificate validation method not specified |  | `planned: dns-certs` |  |
+| REL-022 | ACM certificate validation method not specified | `CF-ACM-001` | `covered` | An imported or private CA certificate is not judged. |
 | REL-023 | Blue-green deployment not configured for critical services |  | `advice` | Deployment strategy, not a resource property. |
 | REL-024 | SQS visibility timeout may need review | `CF-SQS-003` | `covered` |  |
 | REL-025 | DynamoDB global tables not configured for multi-region |  | `advice` | Global tables depend on multi-Region needs. |
@@ -206,7 +205,7 @@ Controls a template can show. Account-level controls (for example S3.1, EC2.7 an
 
 | Control | Check | Resource type |
 | -- | -- | -- |
-| ACM.2 | `planned: dns-certs` | `AWS::CertificateManager::Certificate` |
+| ACM.2 | `CF-ACM-002` | `AWS::CertificateManager::Certificate` |
 | APIGateway.2 | `CF-APIGW-009` | `AWS::ApiGateway::Stage` |
 | APIGateway.3 | `CF-APIGW-002` | `AWS::ApiGateway::Stage` |
 | APIGateway.5 | `CF-APIGW-007` | `AWS::ApiGateway::Stage` |
@@ -354,7 +353,7 @@ Controls a template can show. Account-level controls (for example S3.1, EC2.7 an
 | Redshift.7 | `CF-RS-006` | `AWS::Redshift::Cluster` |
 | Redshift.8 | `CF-RS-007` | `AWS::Redshift::Cluster` |
 | Redshift.10 | `CF-RS-001` | `AWS::Redshift::Cluster` |
-| Route53.2 | `planned: dns-certs` | `AWS::Route53::HostedZone` |
+| Route53.2 | `CF-R53-001` | `AWS::Route53::HostedZone` |
 | S3.5 | `CF-S3-005` | `AWS::S3::BucketPolicy` |
 | S3.7 | `CF-S3-010` | `AWS::S3::Bucket` |
 | S3.8 | `CF-S3-001` | `AWS::S3::Bucket` |

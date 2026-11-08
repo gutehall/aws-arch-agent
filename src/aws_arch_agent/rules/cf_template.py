@@ -35,6 +35,10 @@ SENSITIVE_PORTS = {
 
 # Static rule dropped when the CF rule already reported that control.
 CF_COVERS_STATIC: dict[str, tuple[str, ...]] = {
+    "CF-R53-002": ("SEC-032",),
+    "CF-R53-003": ("SEC-031",),
+    "CF-ACM-001": ("REL-022",),
+    "CF-GA-001": ("REL-020",),
     "CF-APPSYNC-001": ("SEC-048",),
     "CF-APPSYNC-003": ("SEC-049",),
     "CF-APPSYNC-004": ("PERF-013",),
@@ -324,6 +328,9 @@ _PER_RESOURCE_TYPES = frozenset({
     "fsx_file_system", "fsx_data_repository_association",
     "appsync_graphql_api", "appsync_api_cache", "transfer_server", "apprunner_service",
     "elastic_beanstalk_environment", "elastic_beanstalk_configuration_template",
+    "route53_hosted_zone", "route53_record_set", "route53_record_set_group", "route53_dnssec",
+    "route53_key_signing_key", "route53_query_log", "acm_certificate",
+    "globalaccelerator_endpoint_group",
 })
 # Parameter groups only feed CF-RDS-006; they have no checks of their own.
 
@@ -479,6 +486,9 @@ CHECK_PROPERTIES: dict[str, frozenset[str]] = {
         **{c: set() for c in ("CF-APPSYNC-001", "CF-APPSYNC-002", "CF-APPSYNC-003", "CF-APPSYNC-004",
                               "CF-TRANSFER-001", "CF-TRANSFER-002", "CF-TRANSFER-003", "CF-APPRUNNER-001",
                               "CF-BEANSTALK-001", "CF-BEANSTALK-002", "CF-BEANSTALK-003")},
+        # Template-level: _dns_certificate_findings skips what it cannot read.
+        **{c: set() for c in ("CF-R53-001", "CF-R53-002", "CF-R53-003", "CF-ACM-001", "CF-ACM-002",
+                              "CF-ACM-003", "CF-GA-001")},
         # Template-level: _backup_findings skips what it cannot read.
         **{c: set() for c in ("CF-BAK-001", "CF-BAK-002", "CF-BAK-003", "CF-BAK-004", "CF-BAK-005")},
         # Template-level: _ci_cd_findings skips what it cannot read.
@@ -513,6 +523,8 @@ _F, _SB, _ID, _DP, _NET, _RES, _OBS, _SUS = (
     "network-exposure", "resilience", "observability", "sustainability",
 )
 CF_THEMES: dict[str, tuple[str, ...]] = {
+    "CF-R53-001": (_OBS, _SB), "CF-R53-002": (_SB,), "CF-R53-003": (_RES,),
+    "CF-ACM-001": (_RES,), "CF-ACM-002": (_DP,), "CF-ACM-003": (_SB,), "CF-GA-001": (_RES,),
     "CF-APPSYNC-001": (_OBS, _SB), "CF-APPSYNC-002": (_ID,), "CF-APPSYNC-003": (_NET,), "CF-APPSYNC-004": (_RES,),
     "CF-TRANSFER-001": (_DP,), "CF-TRANSFER-002": (_OBS, _SB), "CF-TRANSFER-003": (_NET,),
     "CF-APPRUNNER-001": (_OBS,),
@@ -2997,6 +3009,146 @@ def _app_services_findings(resources: List[Resource], template_path: Path) -> Li
                 "instances and are lost when one is replaced. Set it to true, and set RetentionInDays "
                 "(Security Hub ElasticBeanstalk.3). A value set in .ebextensions is not read. In CDK: "
                 "optionSettings on the CfnEnvironment.")
+    return out
+
+
+def _zone_is_linked(zone: Resource, zones: List[Resource], links: List[Resource]) -> bool:
+    """True when a query log, DNSSEC or KSK resource names this zone in HostedZoneId. One the scan
+    cannot read or tie to a zone in this template counts for all of them."""
+
+    def ties(link: Resource, target: Resource) -> bool:
+        return _value_mentions(link.properties.get("HostedZoneId"), target.name)
+
+    return any(link.malformed or ties(link, zone) or not any(ties(link, z) for z in zones) for link in links)
+
+
+def _record_lacks_health_signal(record: dict, unknown: frozenset[str] = frozenset()) -> bool:
+    """True for a primary failover or a weighted record with no health check, and no alias target
+    health to go by. A secondary failover record may go without one: Route 53 documents that it then
+    always answers with the secondary when the primary is unhealthy. SetIdentifier alone is not read:
+    latency, geolocation and multivalue records have it too."""
+    if unknown & {"Failover", "Weight", "HealthCheckId", "AliasTarget"}:
+        return False
+    failover = record.get("Failover")
+    primary = type(failover) is str and failover.upper() == "PRIMARY"
+    if not (primary or type(record.get("Weight")) in (int, str)) or record.get("HealthCheckId"):
+        return False
+    alias = record.get("AliasTarget")
+    return alias is None or (_readable(alias) and _flag(alias.get("EvaluateTargetHealth")) is False)
+
+
+def _ga_group_uses_own_health_check(group: Resource, targets: List[Resource]) -> bool:
+    """True when an endpoint is an EC2 instance or an Elastic IP address. Global Accelerator takes a
+    load balancer's health from its target groups, so these settings do nothing for one. An endpoint
+    the scan cannot read is not judged."""
+    if "EndpointConfigurations" in group.unresolved:
+        return False
+    endpoints = group.properties.get("EndpointConfigurations")
+    if not isinstance(endpoints, list):
+        return False
+
+    def own(endpoint_id: Any) -> bool:
+        if type(endpoint_id) is str and endpoint_id.startswith(("i-", "eipalloc-")):
+            return True
+        return any(_value_mentions(endpoint_id, target.name) for target in targets)
+
+    return any(_readable(e) and own(e.get("EndpointId")) for e in endpoints)
+
+
+def _dns_certificate_findings(resources: List[Resource], template_path: Path) -> List[Finding]:
+    """Route 53 (CF-R53-001..003), ACM (CF-ACM-001..003) and Global Accelerator (CF-GA-001). A value
+    the scan cannot read is not judged."""
+    usable = [r for r in resources if not r.malformed]
+    zones = [r for r in resources if r.type == "route53_hosted_zone"]
+    query_logs = [r for r in resources if r.type == "route53_query_log"]
+    signing = [r for r in resources if r.type in ("route53_dnssec", "route53_key_signing_key")]
+    out: List[Finding] = []
+
+    def add(res: Resource, check_id: str, title: str, severity: Severity, category: str,
+            recommendation: str) -> None:
+        out.append(Finding(
+            id=check_id, title=title, severity=severity, category=category,
+            file=res.file or str(template_path), line=res.line,
+            evidence=f"{res.name} ({res.source_type})", recommendation=recommendation,
+        ))
+
+    for zone in (r for r in zones if not r.malformed):
+        if "VPCs" in zone.unresolved or zone.properties.get("VPCs"):
+            continue  # a private zone, or one that may be
+        if ("QueryLoggingConfig" not in zone.unresolved and zone.properties.get("QueryLoggingConfig") is None
+                and not _zone_is_linked(zone, zones, query_logs)):
+            add(zone, "CF-R53-001", "Public hosted zone does not log DNS queries", "Low", "Security",
+                "With no QueryLoggingConfig on the zone (Terraform aws_route53_query_log), nothing records "
+                "which names were queried, when, or the response, which DNS abuse and incident work rely "
+                "on. Point it at a CloudWatch Logs group in us-east-1 (Security Hub Route53.2). In CDK: "
+                "queryLogsLogGroupArn on the PublicHostedZone.")
+        if not _zone_is_linked(zone, zones, signing):
+            add(zone, "CF-R53-002", "Public hosted zone has no DNSSEC in this template", "Low", "Security",
+                "No AWS::Route53::DNSSEC or AWS::Route53::KeySigningKey (Terraform "
+                "aws_route53_hosted_zone_dnssec, aws_route53_key_signing_key) in this template points at "
+                "this zone, so resolvers cannot verify its answers are genuine. Add a key-signing key and "
+                "enable signing, then add the DS record at the parent, or exclude this check if it is "
+                "managed in another stack. In CDK: new route53.CfnKeySigningKey and new "
+                "route53.CfnDNSSEC.")
+
+    for res in usable:
+        if res.type == "route53_record_set":
+            flagged = _record_lacks_health_signal(res.properties, res.unresolved)
+        elif res.type == "route53_record_set_group":
+            records = None if "RecordSets" in res.unresolved else res.properties.get("RecordSets")
+            flagged = isinstance(records, list) and any(
+                _readable(record) and _record_lacks_health_signal(record) for record in records)
+        else:
+            continue
+        if flagged:
+            add(res, "CF-R53-003", "Failover or weighted DNS record has no health check", "Medium", "Reliability",
+                "With no HealthCheckId (and, on an alias record, no EvaluateTargetHealth: true), Route 53 "
+                "treats this record as always healthy, so it keeps sending traffic to a failed endpoint. "
+                "Add an AWS::Route53::HealthCheck and set HealthCheckId, or exclude this check for a plain "
+                "traffic split that needs none. In CDK: healthCheck on the record.")
+
+    for cert in (r for r in usable if r.type == "acm_certificate"):
+        imported = any(k in cert.unresolved or cert.properties.get(k) for k in ("PrivateKey", "CertificateBody"))
+        if imported:
+            continue  # no validation method, no logging choice, and the key is not visible
+        private = "CertificateAuthorityArn" in cert.unresolved or cert.properties.get("CertificateAuthorityArn")
+        if not private:
+            # CloudFormation documents email as the default. Terraform requires the argument.
+            method_is_email = (_unset_or_is(cert, "ValidationMethod", "EMAIL")
+                               if cert.source_type.startswith("AWS::")
+                               else _literal_upper(cert, "ValidationMethod") == "EMAIL")
+            if method_is_email:
+                add(cert, "CF-ACM-001", "ACM certificate does not use DNS validation", "Low", "Reliability",
+                    "ValidationMethod is EMAIL, which is also what CloudFormation uses when it is unset. Each "
+                    "renewal then waits for someone to answer an email, and an unanswered one lets the "
+                    "certificate expire. Set ValidationMethod: DNS, so ACM renews it by itself. In CDK: "
+                    "validation: acm.CertificateValidation.fromDns().")
+            if _literal_upper(cert, "CertificateTransparencyLoggingPreference") == "DISABLED":
+                add(cert, "CF-ACM-003", "ACM certificate opts out of certificate transparency logging", "Low",
+                    "Security",
+                    "With CertificateTransparencyLoggingPreference: DISABLED, the certificate is not in the "
+                    "public logs that domain owners watch for wrongly issued certificates, and browsers may "
+                    "refuse it. Set it to ENABLED, unless the host names must stay out of public logs. In "
+                    "CDK: transparencyLoggingEnabled: true.")
+        if _literal_upper(cert, "KeyAlgorithm") == "RSA_1024":
+            add(cert, "CF-ACM-002", "ACM certificate uses an RSA key shorter than 2,048 bits", "Medium", "Security",
+                "KeyAlgorithm: RSA_1024 is too short to protect traffic against today's computing power. Use "
+                "RSA_2048 or an EC_ algorithm (Security Hub ACM.2). The key length cannot change after "
+                "issue, so request a new certificate. In CDK: keyAlgorithm: "
+                "acm.KeyAlgorithm.RSA_2048.")
+
+    health_targets = [r for r in resources if r.type in ("instance", "eip")]
+    for group in (r for r in usable if r.type == "globalaccelerator_endpoint_group"):
+        settings = ("HealthCheckProtocol", "HealthCheckPath", "HealthCheckPort")
+        if (_ga_group_uses_own_health_check(group, health_targets)
+                and not any(k in group.unresolved or group.properties.get(k) is not None for k in settings)):
+            add(group, "CF-GA-001", "Global Accelerator endpoint group has no health check settings", "Low",
+                "Reliability",
+                "This group sends traffic to an EC2 instance or Elastic IP address and sets none of "
+                "HealthCheckProtocol, HealthCheckPath or HealthCheckPort. AWS then uses a TCP check on the "
+                "listener's port, which can pass while the application is failing. Consider an HTTP or "
+                "HTTPS check on a path that shows it works. In CDK: healthCheckProtocol and healthCheckPath "
+                "on the endpoint group.")
     return out
 
 
@@ -6585,6 +6737,9 @@ def _run_resource_checks(
 
     # --- AppSync, Transfer Family, App Runner and Elastic Beanstalk ---
     findings.extend(_app_services_findings(resources, template_path))
+
+    # --- Route 53, ACM and Global Accelerator ---
+    findings.extend(_dns_certificate_findings(resources, template_path))
 
     # --- AWS Backup vaults, plans and which resources they select ---
     findings.extend(_backup_findings(resources, template_path))

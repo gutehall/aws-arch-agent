@@ -1489,6 +1489,62 @@ _CLOUDFORMATION["CF-FSX-003"] = """$name:
     LustreConfiguration:
       AutomaticBackupRetentionDays: 7"""
 
+_CLOUDFORMATION["CF-R53-001"] = """$name:
+  Type: AWS::Route53::HostedZone
+  Properties:
+    # keep the other settings as they are
+    QueryLoggingConfig:
+      CloudWatchLogsLogGroupArn: arn:aws:logs:us-east-1:111122223333:log-group:/aws/route53/example"""
+
+_CLOUDFORMATION["CF-R53-002"] = """${name}Dnssec:
+  Type: AWS::Route53::DNSSEC
+  # needs an active AWS::Route53::KeySigningKey for this zone first (DependsOn it)
+  Properties:
+    HostedZoneId: !Ref $name"""
+
+_CLOUDFORMATION["CF-R53-003"] = """$name:
+  Type: AWS::Route53::RecordSet
+  Properties:
+    # keep the other settings as they are
+    HealthCheckId: !Ref MyHealthCheck  # an AWS::Route53::HealthCheck"""
+
+_CLOUDFORMATION["CF-R53-003:AWS::Route53::RecordSetGroup"] = """$name:
+  Type: AWS::Route53::RecordSetGroup
+  Properties:
+    # keep the other settings as they are
+    RecordSets:
+      - Name: app.example.com
+        Type: A
+        SetIdentifier: primary
+        Failover: PRIMARY
+        HealthCheckId: !Ref MyHealthCheck  # an AWS::Route53::HealthCheck"""
+
+_CLOUDFORMATION["CF-ACM-001"] = """$name:
+  Type: AWS::CertificateManager::Certificate
+  Properties:
+    # keep the other settings as they are
+    ValidationMethod: DNS"""
+
+_CLOUDFORMATION["CF-ACM-002"] = """$name:
+  Type: AWS::CertificateManager::Certificate
+  Properties:
+    # keep the other settings as they are; a new key means a new certificate
+    KeyAlgorithm: RSA_2048"""
+
+_CLOUDFORMATION["CF-ACM-003"] = """$name:
+  Type: AWS::CertificateManager::Certificate
+  Properties:
+    # keep the other settings as they are
+    CertificateTransparencyLoggingPreference: ENABLED"""
+
+_CLOUDFORMATION["CF-GA-001"] = """$name:
+  Type: AWS::GlobalAccelerator::EndpointGroup
+  Properties:
+    # keep the other settings as they are
+    HealthCheckProtocol: HTTPS
+    HealthCheckPort: 443
+    HealthCheckPath: /health"""
+
 _CLOUDFORMATION["CF-APPSYNC-001"] = """$name:
   Type: AWS::AppSync::GraphQLApi
   Properties:
@@ -2052,6 +2108,59 @@ _TERRAFORM["CF-APPSYNC-001"] = """resource "aws_appsync_graphql_api" "$tf_name" 
 _TERRAFORM["CF-APPSYNC-002"] = """resource "aws_appsync_graphql_api" "$tf_name" {
   # keep the other arguments as they are
   authentication_type = "AWS_IAM"
+}"""
+
+_TERRAFORM["CF-R53-001"] = """resource "aws_route53_query_log" "$tf_name" {
+  zone_id                  = aws_route53_zone.$tf_name.zone_id
+  cloudwatch_log_group_arn = aws_cloudwatch_log_group.route53_queries.arn
+}"""
+
+_TERRAFORM["CF-R53-002"] = """resource "aws_route53_key_signing_key" "$tf_name" {
+  hosted_zone_id             = aws_route53_zone.$tf_name.id
+  key_management_service_arn = aws_kms_key.dnssec.arn
+  name                       = "ksk1"
+}
+
+resource "aws_route53_hosted_zone_dnssec" "$tf_name" {
+  hosted_zone_id = aws_route53_key_signing_key.$tf_name.hosted_zone_id
+}"""
+
+_TERRAFORM["CF-R53-003"] = """resource "aws_route53_health_check" "$tf_name" {
+  type              = "HTTPS"
+  fqdn              = "app.example.com"
+  port              = 443
+  resource_path     = "/health"
+  failure_threshold = 3
+  request_interval  = 30
+}
+
+resource "aws_route53_record" "$tf_name" {
+  # keep the other arguments as they are
+  health_check_id = aws_route53_health_check.$tf_name.id
+}"""
+
+_TERRAFORM["CF-ACM-001"] = """resource "aws_acm_certificate" "$tf_name" {
+  # keep the other arguments as they are
+  validation_method = "DNS"
+}"""
+
+_TERRAFORM["CF-ACM-002"] = """resource "aws_acm_certificate" "$tf_name" {
+  # keep the other arguments as they are; a new key means a new certificate
+  key_algorithm = "RSA_2048"
+}"""
+
+_TERRAFORM["CF-ACM-003"] = """resource "aws_acm_certificate" "$tf_name" {
+  # keep the other arguments as they are
+  options {
+    certificate_transparency_logging_preference = "ENABLED"
+  }
+}"""
+
+_TERRAFORM["CF-GA-001"] = """resource "aws_globalaccelerator_endpoint_group" "$tf_name" {
+  # keep the other arguments as they are
+  health_check_protocol = "HTTPS"
+  health_check_port     = 443
+  health_check_path     = "/health"
 }"""
 
 _TERRAFORM["CF-APPSYNC-003"] = """resource "aws_wafv2_web_acl_association" "${tf_name}_web_acl" {

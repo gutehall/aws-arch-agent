@@ -260,6 +260,17 @@ PAIRS: list[tuple[str, str, dict, str]] = [
      "new sagemaker.CfnNotebookInstance(this, 'N', {});"),
     ("CF-FSX-001", "SEC-050", {"Type": "AWS::FSx::FileSystem", "Properties": {"FileSystemType": "WINDOWS"}},
      "new fsx.LustreFileSystem(this, 'F', {});"),
+    ("CF-R53-002", "SEC-032", {"Type": "AWS::Route53::HostedZone", "Properties": {"Name": "example.com"}},
+     "new route53.PublicHostedZone(this, 'Z', { zoneName: 'example.com' });"),
+    ("CF-R53-003", "SEC-031", {"Type": "AWS::Route53::RecordSet", "Properties": {
+        "Name": "a.example.com", "Type": "A", "Weight": 10, "SetIdentifier": "a"}},
+     "new route53.RecordSet(this, 'R', { zone, recordName: 'a' });"),
+    ("CF-ACM-001", "REL-022", {"Type": "AWS::CertificateManager::Certificate", "Properties": {
+        "DomainName": "example.com"}},
+     "new acm.Certificate(this, 'C', { domainName: 'example.com' });"),
+    ("CF-GA-001", "REL-020", {"Type": "AWS::GlobalAccelerator::EndpointGroup", "Properties": {
+        "EndpointConfigurations": [{"EndpointId": "i-0123456789abcdef0"}]}},
+     "new globalaccelerator.Accelerator(this, 'A');"),
     ("CF-APPSYNC-001", "SEC-048", {"Type": "AWS::AppSync::GraphQLApi", "Properties": {"AuthenticationType": "AWS_IAM"}},
      "new appsync.GraphqlApi(this, 'A', { name: 'api', schema: schema });"),
     ("CF-APPSYNC-003", "SEC-049", {"Type": "AWS::AppSync::GraphQLApi", "Properties": {"AuthenticationType": "AWS_IAM"}},

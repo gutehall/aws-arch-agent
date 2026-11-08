@@ -109,6 +109,13 @@ TF_TYPE_TO_CANONICAL: dict[str, str] = {
     "aws_fsx_data_repository_association": "fsx_data_repository_association",
     "aws_sagemaker_notebook_instance": "sagemaker_notebook_instance",
     "aws_sagemaker_endpoint_configuration": "sagemaker_endpoint_config",
+    "aws_route53_zone": "route53_hosted_zone",
+    "aws_route53_record": "route53_record_set",
+    "aws_route53_hosted_zone_dnssec": "route53_dnssec",
+    "aws_route53_key_signing_key": "route53_key_signing_key",
+    "aws_route53_query_log": "route53_query_log",
+    "aws_acm_certificate": "acm_certificate",
+    "aws_globalaccelerator_endpoint_group": "globalaccelerator_endpoint_group",
     "aws_appsync_graphql_api": "appsync_graphql_api",
     "aws_appsync_api_cache": "appsync_api_cache",
     "aws_transfer_server": "transfer_server",
@@ -1428,6 +1435,73 @@ def _block_is_unknown(body: dict, key: str) -> bool:
     return key in _dynamic_names(body) or isinstance(body.get(key), _Expr)
 
 
+def _route53_zone(body: dict) -> dict:
+    """aws_route53_zone. A vpc block makes the zone private."""
+    if _block_is_unknown(body, "vpc"):
+        return {"VPCs": UNRESOLVED}
+    return {"VPCs": _OPAQUE} if _blocks(body, "vpc") else {}
+
+
+def _route53_zone_link(key: str) -> Callable[[dict], dict]:
+    """A resource that points at a zone. HostedZoneId is compared, so each.key or var.x is unknown."""
+
+    def adapt(body: dict) -> dict:
+        return {"HostedZoneId": _known(_ref(body, key))}
+
+    return adapt
+
+
+def _route53_record(body: dict) -> dict:
+    """aws_route53_record, in the shape of AWS::Route53::RecordSet."""
+    props: dict = {}
+    _set(props, "HealthCheckId", _ref(body, "health_check_id"))
+    if _block_is_unknown(body, "failover_routing_policy"):
+        props["Failover"] = UNRESOLVED
+    elif block := _first_block(body, "failover_routing_policy"):
+        _set(props, "Failover", _v(block, "type"))
+    if _block_is_unknown(body, "weighted_routing_policy"):
+        props["Weight"] = UNRESOLVED
+    elif block := _first_block(body, "weighted_routing_policy"):
+        _set(props, "Weight", _v(block, "weight"))
+    if _block_is_unknown(body, "alias"):
+        props["AliasTarget"] = UNRESOLVED
+    elif block := _first_block(body, "alias"):
+        props["AliasTarget"] = {"EvaluateTargetHealth": _known(_v(block, "evaluate_target_health"))}
+    return props
+
+
+def _acm_certificate(body: dict) -> dict:
+    """aws_acm_certificate. The imported key and body are kept only as present: never their value."""
+    props: dict = {}
+    _set(props, "ValidationMethod", _v(body, "validation_method"))
+    _set(props, "KeyAlgorithm", _v(body, "key_algorithm"))
+    _set(props, "CertificateAuthorityArn", _ref(body, "certificate_authority_arn"))
+    if body.get("private_key") is not None:
+        props["PrivateKey"] = _OPAQUE
+    if body.get("certificate_body") is not None:
+        props["CertificateBody"] = _OPAQUE
+    if _block_is_unknown(body, "options"):
+        props["CertificateTransparencyLoggingPreference"] = UNRESOLVED
+    elif block := _first_block(body, "options"):
+        _set(props, "CertificateTransparencyLoggingPreference",
+             _v(block, "certificate_transparency_logging_preference"))
+    return props
+
+
+def _globalaccelerator_endpoint_group(body: dict) -> dict:
+    props: dict = {}
+    _set(props, "HealthCheckProtocol", _ref(body, "health_check_protocol"))
+    _set(props, "HealthCheckPath", _ref(body, "health_check_path"))
+    _set(props, "HealthCheckPort", _ref(body, "health_check_port"))
+    if _block_is_unknown(body, "endpoint_configuration"):
+        props["EndpointConfigurations"] = UNRESOLVED
+    else:
+        endpoints = [{"EndpointId": _known(_ref(block, "endpoint_id"))}
+                     for block in _blocks(body, "endpoint_configuration")]
+        _set(props, "EndpointConfigurations", endpoints or None)
+    return props
+
+
 def _appsync_graphql_api(body: dict) -> dict:
     """aws_appsync_graphql_api. A WAF web ACL is attached by aws_wafv2_web_acl_association: there is
     no inline argument."""
@@ -2503,6 +2577,13 @@ _ADAPTERS: dict[str, Callable[[dict], dict]] = {
     "aws_fsx_ontap_file_system": _fsx_file_system("ONTAP", "OntapConfiguration"),
     "aws_fsx_openzfs_file_system": _fsx_file_system("OPENZFS", "OpenZFSConfiguration"),
     "aws_fsx_data_repository_association": _fsx_data_repository_association,
+    "aws_route53_zone": _route53_zone,
+    "aws_route53_record": _route53_record,
+    "aws_route53_hosted_zone_dnssec": _route53_zone_link("hosted_zone_id"),
+    "aws_route53_key_signing_key": _route53_zone_link("hosted_zone_id"),
+    "aws_route53_query_log": _route53_zone_link("zone_id"),
+    "aws_acm_certificate": _acm_certificate,
+    "aws_globalaccelerator_endpoint_group": _globalaccelerator_endpoint_group,
     "aws_appsync_graphql_api": _appsync_graphql_api,
     "aws_appsync_api_cache": _appsync_api_cache,
     "aws_transfer_server": _transfer_server,

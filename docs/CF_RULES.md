@@ -361,6 +361,16 @@ CloudFormation template rules run when the agent has access to template files. T
   - CF-TRANSFER-001 (Medium, Security Hub Transfer.2): literal `FTP` in `Protocols`. Unset means `SFTP` and is not reported, and `FTPS` is not `FTP`.
   - CF-TRANSFER-002 (Low): no `LoggingRole` and no `StructuredLogDestinations`, or both empty. A value from a parameter or a variable counts as set. Security Hub Transfer.3 is about connectors, so it is not cited.
   - CF-TRANSFER-003 (Low): literal `EndpointType: PUBLIC`, or Terraform `endpoint_type` unset with no `endpoint_details`, which the provider documents as `PUBLIC`. Unset in CloudFormation is not judged: no default is documented.
+- **Route 53** (`AWS::Route53::HostedZone`, `AWS::Route53::RecordSet`, `AWS::Route53::RecordSetGroup`, `AWS::Route53::DNSSEC`, `AWS::Route53::KeySigningKey`; Terraform `aws_route53_zone`, `aws_route53_record`, `aws_route53_query_log`, `aws_route53_hosted_zone_dnssec`, `aws_route53_key_signing_key`). A zone is public with no `VPCs` (Terraform no `vpc` block). A private zone, and an unknown `VPCs` or a dynamic `vpc` block, is not judged. A linked resource the scan cannot tie to a zone in this template counts for all zones.
+  - CF-R53-001 (Low, Security Hub Route53.2): public zone with no `QueryLoggingConfig` and no `aws_route53_query_log` pointing at it.
+  - CF-R53-002 (Low): public zone with no DNSSEC or key-signing key resource pointing at it. A key-signing key alone counts, and so does a `signing_status` of `NOT_SIGNING`: signing may be turned on outside the template.
+  - CF-R53-003 (Medium): a `PRIMARY` failover record or a weighted record, including weight 0, with no `HealthCheckId`. In a `RecordSetGroup` each entry of `RecordSets` is read. An alias record with `EvaluateTargetHealth` true is not reported. A `SECONDARY` record is not reported: with no health check Route 53 answers with it whenever the primary is unhealthy, which is a documented design. A routing value from a parameter, a variable or a dynamic block is not judged, and neither is `SetIdentifier` alone.
+- **ACM** (`AWS::CertificateManager::Certificate`; Terraform `aws_acm_certificate`). An imported certificate (Terraform `private_key` or `certificate_body`) is not judged. A private CA certificate (`CertificateAuthorityArn`) is judged only by CF-ACM-002.
+  - CF-ACM-001 (Low): literal `ValidationMethod: EMAIL`, or unset in CloudFormation, which documents email as the default. Terraform requires the argument, so unset there is not reported. `DomainValidationOptions` does not change it.
+  - CF-ACM-002 (Medium, Security Hub ACM.2): literal `KeyAlgorithm: RSA_1024`. `RSA_2048` and `EC_*` are not reported.
+  - CF-ACM-003 (Low): literal `CertificateTransparencyLoggingPreference: DISABLED` (Terraform `options` block).
+- **Global Accelerator** (`AWS::GlobalAccelerator::EndpointGroup`; Terraform `aws_globalaccelerator_endpoint_group`):
+  - CF-GA-001 (Low): none of `HealthCheckProtocol`, `HealthCheckPath` or `HealthCheckPort` set on a group with an EC2 instance or Elastic IP endpoint. AWS has defaults, so this is advice. A group with only load balancers, or endpoints the scan cannot read, is not judged: a load balancer's own health checks decide.
 - **App Runner** (`AWS::AppRunner::Service`; Terraform `aws_apprunner_service`):
   - CF-APPRUNNER-001 (Low): `ObservabilityConfiguration` unset, or `ObservabilityEnabled` literally false. A value from a parameter, a variable or a dynamic block is not judged.
 - **Elastic Beanstalk** (`AWS::ElasticBeanstalk::Environment`, `AWS::ElasticBeanstalk::ConfigurationTemplate`; Terraform `aws_elastic_beanstalk_environment`, `aws_elastic_beanstalk_configuration_template`). Reads `OptionSettings` (Terraform `setting` blocks) over those of a configuration template in this scan that `TemplateName` (`template_name`) points at. An environment is not judged at all when its settings come from a parameter or a dynamic block, when an entry's namespace or name cannot be read, or when its template is outside the scan, cannot be read, or copies a `SourceConfiguration` or `EnvironmentId`. One option's unknown value leaves only that option unjudged. A value set in `.ebextensions` in the source bundle is not read, so an environment that sets one there is still reported:
@@ -465,8 +475,8 @@ CloudFormation template rules run when the agent has access to template files. T
 | Pillar | CF rule IDs |
 |--------|-------------|
 | Operational Excellence | CF-S3-004, CF-RDS-007, CF-RDS-010, CF-RDS-011, CF-CT-001, CF-CT-002, CF-FL-001, CF-EKS-001, CF-TGW-002, CF-CB-004, CF-CP-003, CF-OS-006, CF-RS-004, CF-DOCDB-003, CF-NEP-002, CF-SFN-002, CF-SFN-003, CF-EB-001, CF-ECS-008, CF-ECS-010, CF-ASG-005, CF-GLUE-002, CF-GLUE-003, CF-S3-011, CF-CF-005, CF-FSX-002 |
-| Security | CF-S3-001, CF-S3-002, CF-S3-005, CF-RDS-001, CF-RDS-004, CF-APIGW-003, CF-APIGW-004, CF-APIGW-007, CF-APIGW-009, CF-APIGW-V2-003, CF-LAM-004, CF-LAM-005, CF-RDS-006, CF-RDS-008, CF-RDS-009, CF-RDS-012, CF-RDS-013, CF-CT-003, CF-KMS-001, CF-RP-001, CF-EC2-001, CF-EKS-002, CF-EKS-003, CF-IAM-001, CF-IAM-002, CF-IAM-003, CF-IAM-004, CF-IAM-005, CF-IAM-006, CF-IAM-007, CF-IAM-008, CF-ALB-002, CF-ALB-003, CF-ALB-004, CF-ALB-006, CF-CLB-001, CF-CLB-002, CF-SG-001, CF-SG-002, CF-SG-003, CF-NACL-001, CF-TGW-001, CF-CW-002, CF-SQS-001, CF-DDB-002, CF-LAM-003, CF-SNS-001, CF-EBS-001, CF-EFS-001, CF-KIN-001, CF-EC-001, CF-EC-002, CF-OS-001, CF-OS-002, CF-RS-001, CF-DOCDB-001, CF-NEP-001, CF-MSK-001, CF-CF-001, CF-CF-002, CF-CF-003, CF-CF-004, CF-WAF-001, CF-EC2-002, CF-EC2-003, CF-PAR-001, CF-PAR-002, CF-ECR-001, CF-ECR-002, CF-ECR-003, CF-ECS-001, CF-ECS-002, CF-ECS-003, CF-SM-001, CF-COG-001, CF-COG-002, CF-COG-003, CF-CB-001, CF-CB-002, CF-CB-003, CF-CB-005, CF-CP-001, CF-KMS-002, CF-SSM-001, CF-OS-003, CF-OS-004, CF-OS-005, CF-MSK-002, CF-MSK-003, CF-RS-002, CF-RS-005, CF-RS-006, CF-RS-007, CF-NEP-005, CF-BAK-001, CF-EC-005, CF-EC-006, CF-EC-007, CF-EFS-004, CF-EFS-005, CF-ECS-004, CF-ECS-005, CF-ECS-006, CF-ECS-007, CF-ECS-009, CF-EKS-004, CF-ASG-003, CF-ASG-004, CF-ATH-001, CF-ATH-002, CF-GLUE-001, CF-FH-001, CF-EMR-001, CF-EMR-002, CF-EMR-003, CF-DMS-001, CF-DMS-002, CF-DMS-003, CF-S3-008, CF-S3-009, CF-CF-008, CF-CF-010, CF-CF-011, CF-SAGE-001, CF-SAGE-002, CF-SAGE-003, CF-SAGE-004, CF-FSX-001, CF-APPSYNC-001, CF-APPSYNC-002, CF-APPSYNC-003, CF-TRANSFER-001, CF-TRANSFER-002, CF-TRANSFER-003, CF-BEANSTALK-002 |
-| Reliability | CF-S3-003, CF-RDS-002, CF-RDS-003, CF-RDS-005, CF-LAM-001, CF-LAM-006, CF-LAM-007, CF-LAM-008, CF-APIGW-005, CF-APIGW-006, CF-APIGW-V2-004, CF-DDB-001, CF-SQS-002, CF-DEL-001, CF-NAT-001, CF-ALB-005, CF-ALB-007, CF-CLB-004, CF-CLB-005, CF-CP-002, CF-KMS-003, CF-OS-007, CF-KIN-002, CF-RS-003, CF-DOCDB-002, CF-DOCDB-004, CF-NEP-003, CF-NEP-004, CF-SFN-001, CF-EB-002, CF-SQS-003, CF-BAK-002, CF-BAK-003, CF-BAK-004, CF-BAK-005, CF-DDB-004, CF-DDB-005, CF-EC-003, CF-EC-004, CF-EFS-002, CF-ASG-001, CF-ASG-002, CF-DMS-004, CF-S3-010, CF-CF-009, CF-SAGE-005, CF-FSX-003 |
+| Security | CF-S3-001, CF-S3-002, CF-S3-005, CF-RDS-001, CF-RDS-004, CF-APIGW-003, CF-APIGW-004, CF-APIGW-007, CF-APIGW-009, CF-APIGW-V2-003, CF-LAM-004, CF-LAM-005, CF-RDS-006, CF-RDS-008, CF-RDS-009, CF-RDS-012, CF-RDS-013, CF-CT-003, CF-KMS-001, CF-RP-001, CF-EC2-001, CF-EKS-002, CF-EKS-003, CF-IAM-001, CF-IAM-002, CF-IAM-003, CF-IAM-004, CF-IAM-005, CF-IAM-006, CF-IAM-007, CF-IAM-008, CF-ALB-002, CF-ALB-003, CF-ALB-004, CF-ALB-006, CF-CLB-001, CF-CLB-002, CF-SG-001, CF-SG-002, CF-SG-003, CF-NACL-001, CF-TGW-001, CF-CW-002, CF-SQS-001, CF-DDB-002, CF-LAM-003, CF-SNS-001, CF-EBS-001, CF-EFS-001, CF-KIN-001, CF-EC-001, CF-EC-002, CF-OS-001, CF-OS-002, CF-RS-001, CF-DOCDB-001, CF-NEP-001, CF-MSK-001, CF-CF-001, CF-CF-002, CF-CF-003, CF-CF-004, CF-WAF-001, CF-EC2-002, CF-EC2-003, CF-PAR-001, CF-PAR-002, CF-ECR-001, CF-ECR-002, CF-ECR-003, CF-ECS-001, CF-ECS-002, CF-ECS-003, CF-SM-001, CF-COG-001, CF-COG-002, CF-COG-003, CF-CB-001, CF-CB-002, CF-CB-003, CF-CB-005, CF-CP-001, CF-KMS-002, CF-SSM-001, CF-OS-003, CF-OS-004, CF-OS-005, CF-MSK-002, CF-MSK-003, CF-RS-002, CF-RS-005, CF-RS-006, CF-RS-007, CF-NEP-005, CF-BAK-001, CF-EC-005, CF-EC-006, CF-EC-007, CF-EFS-004, CF-EFS-005, CF-ECS-004, CF-ECS-005, CF-ECS-006, CF-ECS-007, CF-ECS-009, CF-EKS-004, CF-ASG-003, CF-ASG-004, CF-ATH-001, CF-ATH-002, CF-GLUE-001, CF-FH-001, CF-EMR-001, CF-EMR-002, CF-EMR-003, CF-DMS-001, CF-DMS-002, CF-DMS-003, CF-S3-008, CF-S3-009, CF-CF-008, CF-CF-010, CF-CF-011, CF-SAGE-001, CF-SAGE-002, CF-SAGE-003, CF-SAGE-004, CF-FSX-001, CF-APPSYNC-001, CF-APPSYNC-002, CF-APPSYNC-003, CF-TRANSFER-001, CF-TRANSFER-002, CF-TRANSFER-003, CF-BEANSTALK-002, CF-R53-001, CF-R53-002, CF-ACM-002, CF-ACM-003 |
+| Reliability | CF-S3-003, CF-RDS-002, CF-RDS-003, CF-RDS-005, CF-LAM-001, CF-LAM-006, CF-LAM-007, CF-LAM-008, CF-APIGW-005, CF-APIGW-006, CF-APIGW-V2-004, CF-DDB-001, CF-SQS-002, CF-DEL-001, CF-NAT-001, CF-ALB-005, CF-ALB-007, CF-CLB-004, CF-CLB-005, CF-CP-002, CF-KMS-003, CF-OS-007, CF-KIN-002, CF-RS-003, CF-DOCDB-002, CF-DOCDB-004, CF-NEP-003, CF-NEP-004, CF-SFN-001, CF-EB-002, CF-SQS-003, CF-BAK-002, CF-BAK-003, CF-BAK-004, CF-BAK-005, CF-DDB-004, CF-DDB-005, CF-EC-003, CF-EC-004, CF-EFS-002, CF-ASG-001, CF-ASG-002, CF-DMS-004, CF-S3-010, CF-CF-009, CF-SAGE-005, CF-FSX-003, CF-R53-003, CF-ACM-001, CF-GA-001 |
 | Performance Efficiency | CF-APIGW-008, CF-PERF-001, CF-PERF-002, CF-PERF-003, CF-PERF-004, CF-ECS-011, CF-CF-013, CF-APPSYNC-004 |
 | Cost Optimization | CF-CW-001, CF-RDS-014, CF-COST-002, CF-EBS-002, CF-EIP-001, CF-TAG-001, CF-ENV-001, CF-ENV-002, CF-ENV-003, CF-ENV-004, CF-ENV-005, CF-ENV-006, CF-GEN-001, CF-S3-006, CF-S3-007, CF-DDB-003, CF-VPC-002, CF-VPC-003, CF-SSM-002, CF-EFS-003, CF-ASG-006, CF-S3-012, CF-CF-006, CF-CF-012 |
 | Sustainability | CF-SUST-001, CF-SUST-002, CF-SUST-003, CF-CF-007 |
@@ -513,6 +523,9 @@ Every rule has one or more themes, which cut across pillars: `finops`, `security
 
 | Rule | Themes |
 |------|--------|
+| CF-ACM-001 | resilience |
+| CF-ACM-002 | data-protection |
+| CF-ACM-003 | security-baseline |
 | CF-ALB-001 | observability |
 | CF-ALB-002 | data-protection, network-exposure |
 | CF-ALB-003 | data-protection, network-exposure |
@@ -655,6 +668,7 @@ Every rule has one or more themes, which cut across pillars: `finops`, `security
 | CF-FSX-001 | data-protection |
 | CF-FSX-002 | finops |
 | CF-FSX-003 | resilience |
+| CF-GA-001 | resilience |
 | CF-GEN-001 | finops, sustainability |
 | CF-GLUE-001 | data-protection |
 | CF-GLUE-002 | observability |
@@ -703,6 +717,9 @@ Every rule has one or more themes, which cut across pillars: `finops`, `security
 | CF-PERF-002 | resilience |
 | CF-PERF-003 | finops |
 | CF-PERF-004 | finops |
+| CF-R53-001 | observability, security-baseline |
+| CF-R53-002 | security-baseline |
+| CF-R53-003 | resilience |
 | CF-RDS-001 | data-protection |
 | CF-RDS-002 | resilience, data-protection |
 | CF-RDS-003 | resilience |
