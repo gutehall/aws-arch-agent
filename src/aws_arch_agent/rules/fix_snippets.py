@@ -1428,6 +1428,67 @@ _CLOUDFORMATION["CF-S3-010"] = """$name:
               Time:
                 Minutes: 15"""
 
+_CLOUDFORMATION["CF-SAGE-001"] = """$name:
+  Type: AWS::SageMaker::NotebookInstance
+  Properties:
+    # keep the other settings as they are; this replaces the notebook
+    DirectInternetAccess: Disabled
+    SubnetId: subnet-0123456789abcdef0
+    SecurityGroupIds:
+      - sg-0123456789abcdef0"""
+
+_CLOUDFORMATION["CF-SAGE-002"] = """$name:
+  Type: AWS::SageMaker::NotebookInstance
+  Properties:
+    # keep the other settings as they are; this replaces the notebook
+    SubnetId: subnet-0123456789abcdef0
+    SecurityGroupIds:
+      - sg-0123456789abcdef0"""
+
+_CLOUDFORMATION["CF-SAGE-003"] = """$name:
+  Type: AWS::SageMaker::NotebookInstance
+  Properties:
+    # keep the other settings as they are
+    RootAccess: Disabled"""
+
+_CLOUDFORMATION["CF-SAGE-004"] = """$name:
+  Type: AWS::SageMaker::NotebookInstance  # or AWS::SageMaker::EndpointConfig
+  Properties:
+    # keep the other settings as they are; this replaces the resource
+    KmsKeyId: arn:aws:kms:us-east-1:111122223333:key/my-key"""
+
+_CLOUDFORMATION["CF-SAGE-005"] = """$name:
+  Type: AWS::SageMaker::EndpointConfig
+  Properties:
+    # keep the other settings as they are
+    ProductionVariants:
+      - VariantName: main
+        ModelName: my-model
+        InstanceType: ml.m5.large
+        InitialVariantWeight: 1
+        InitialInstanceCount: 2"""
+
+_CLOUDFORMATION["CF-FSX-001"] = """$name:
+  Type: AWS::FSx::FileSystem
+  Properties:
+    # keep the other settings as they are; this replaces the file system
+    KmsKeyId: arn:aws:kms:us-east-1:111122223333:key/my-key"""
+
+_CLOUDFORMATION["CF-FSX-002"] = """$name:
+  Type: AWS::FSx::FileSystem
+  Properties:
+    # keep the other settings as they are; use the block for your FileSystemType
+    OpenZFSConfiguration:
+      CopyTagsToBackups: true
+      CopyTagsToVolumes: true"""
+
+_CLOUDFORMATION["CF-FSX-003"] = """$name:
+  Type: AWS::FSx::FileSystem
+  Properties:
+    # keep the other settings as they are; use the block for your FileSystemType
+    LustreConfiguration:
+      AutomaticBackupRetentionDays: 7"""
+
 _CLOUDFORMATION["CF-CF-005"] = """$name:
   Type: AWS::CloudFront::Distribution
   Properties:
@@ -1880,6 +1941,56 @@ resource "aws_s3_bucket_replication_configuration" "$tf_name" {
       }
     }
   }
+}"""
+
+_TERRAFORM["CF-SAGE-001"] = """resource "aws_sagemaker_notebook_instance" "$tf_name" {
+  # keep the other arguments as they are; this replaces the notebook
+  direct_internet_access = "Disabled"
+  subnet_id              = aws_subnet.private.id
+  security_groups        = [aws_security_group.notebook.id]
+}"""
+
+_TERRAFORM["CF-SAGE-002"] = """resource "aws_sagemaker_notebook_instance" "$tf_name" {
+  # keep the other arguments as they are; this replaces the notebook
+  subnet_id       = aws_subnet.private.id
+  security_groups = [aws_security_group.notebook.id]
+}"""
+
+_TERRAFORM["CF-SAGE-003"] = """resource "aws_sagemaker_notebook_instance" "$tf_name" {
+  # keep the other arguments as they are
+  root_access = "Disabled"
+}"""
+
+_TERRAFORM["CF-SAGE-004"] = """resource "aws_sagemaker_notebook_instance" "$tf_name" {
+  # keep the other arguments as they are; this replaces the resource
+  # on aws_sagemaker_endpoint_configuration, the argument is kms_key_arn
+  kms_key_id = aws_kms_key.main.arn
+}"""
+
+_TERRAFORM["CF-SAGE-005"] = """resource "aws_sagemaker_endpoint_configuration" "$tf_name" {
+  # keep the other arguments as they are
+  production_variants {
+    variant_name           = "main"
+    model_name             = aws_sagemaker_model.main.name
+    instance_type          = "ml.m5.large"
+    initial_instance_count = 2
+  }
+}"""
+
+_TERRAFORM["CF-FSX-001"] = """resource "aws_fsx_openzfs_file_system" "$tf_name" {
+  # keep the other arguments as they are, and keep your aws_fsx_* type; this replaces the file system
+  kms_key_id = aws_kms_key.main.arn
+}"""
+
+_TERRAFORM["CF-FSX-002"] = """resource "aws_fsx_openzfs_file_system" "$tf_name" {
+  # keep the other arguments as they are, and keep your aws_fsx_* type
+  copy_tags_to_backups = true
+  copy_tags_to_volumes = true # OpenZFS only
+}"""
+
+_TERRAFORM["CF-FSX-003"] = """resource "aws_fsx_lustre_file_system" "$tf_name" {
+  # keep the other arguments as they are, and keep your aws_fsx_* type
+  automatic_backup_retention_days = 7
 }"""
 
 _TERRAFORM["CF-CF-005"] = """resource "aws_cloudfront_distribution" "$tf_name" {

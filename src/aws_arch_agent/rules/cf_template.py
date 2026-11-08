@@ -35,6 +35,9 @@ SENSITIVE_PORTS = {
 
 # Static rule dropped when the CF rule already reported that control.
 CF_COVERS_STATIC: dict[str, tuple[str, ...]] = {
+    "CF-SAGE-002": ("SEC-046",),
+    "CF-SAGE-004": ("SEC-047",),
+    "CF-FSX-001": ("SEC-050",),
     "CF-ATH-001": ("SEC-042",),
     "CF-GLUE-001": ("SEC-043",),
     "CF-GLUE-002": ("OPS-015",),
@@ -312,6 +315,8 @@ _PER_RESOURCE_TYPES = frozenset({
     "autoscaling_policy", "autoscaling_schedule", "autoscaling_attachment",
     "athena_workgroup", "glue_job", "glue_security_configuration", "firehose_delivery_stream",
     "cloudwatch_log_delivery_source",
+    "sagemaker_notebook_instance", "sagemaker_endpoint_config",
+    "fsx_file_system", "fsx_data_repository_association",
 })
 # Parameter groups only feed CF-RDS-006; they have no checks of their own.
 
@@ -460,6 +465,9 @@ CHECK_PROPERTIES: dict[str, frozenset[str]] = {
         # Template-level: _analytics_findings skips what it cannot read.
         **{c: set() for c in ("CF-ATH-001", "CF-ATH-002", "CF-GLUE-001", "CF-GLUE-002", "CF-GLUE-003",
                               "CF-FH-001")},
+        # Template-level: _sagemaker_fsx_findings skips what it cannot read.
+        **{c: set() for c in ("CF-SAGE-001", "CF-SAGE-002", "CF-SAGE-003", "CF-SAGE-004", "CF-SAGE-005",
+                              "CF-FSX-001", "CF-FSX-002", "CF-FSX-003")},
         # Template-level: _backup_findings skips what it cannot read.
         **{c: set() for c in ("CF-BAK-001", "CF-BAK-002", "CF-BAK-003", "CF-BAK-004", "CF-BAK-005")},
         # Template-level: _ci_cd_findings skips what it cannot read.
@@ -494,6 +502,8 @@ _F, _SB, _ID, _DP, _NET, _RES, _OBS, _SUS = (
     "network-exposure", "resilience", "observability", "sustainability",
 )
 CF_THEMES: dict[str, tuple[str, ...]] = {
+    "CF-SAGE-001": (_NET,), "CF-SAGE-002": (_NET,), "CF-SAGE-003": (_SB, _ID), "CF-SAGE-004": (_DP,),
+    "CF-SAGE-005": (_RES,), "CF-FSX-001": (_DP,), "CF-FSX-002": (_F,), "CF-FSX-003": (_RES,),
     "CF-S3-008": (_DP,), "CF-S3-009": (_NET, _DP), "CF-S3-010": (_RES, _DP), "CF-S3-011": (_OBS, _DP),
     "CF-S3-012": (_F,),
     "CF-EMR-001": (_NET,), "CF-EMR-002": (_DP,), "CF-EMR-003": (_DP,),
@@ -2607,6 +2617,165 @@ def _backup_findings(resources: List[Resource], template_path: Path) -> List[Fin
                 "No BackupSelection in this template selects the resource by ARN or tag, so the plan does "
                 "not back it up. Add it to a selection's Resources, or give it a tag in ListOfTags. In "
                 "CDK: addSelection on the BackupPlan.")
+    return out
+
+
+def _literal_count(value: Any) -> int | None:
+    """A whole number written in the template, or None for anything else."""
+    if type(value) is int:
+        return value
+    return int(value) if type(value) is str and value.isdigit() else None
+
+
+def _enabled_unless_set(res: Resource, key: str) -> bool:
+    """True when a setting that defaults to Enabled is unset or literally Enabled."""
+    if key in res.unresolved:
+        return False
+    value = res.properties.get(key)
+    return value is None or (type(value) is str and value.lower() == "enabled")
+
+
+def _instance_variants(config: Resource, *keys: str) -> list[dict]:
+    """The variants under these keys of an endpoint config that run on instances. A serverless
+    variant, or one the scan cannot read, is left out."""
+    variants: list[dict] = []
+    for key in keys:
+        listed = config.properties.get(key)
+        if key not in config.unresolved and isinstance(listed, list):
+            variants += [v for v in listed if _readable(v) and v.get("ServerlessConfig") is None
+                         and v.get("InstanceType") is not None]
+    return variants
+
+
+# The block that holds each FSx type's settings, in CloudFormation.
+_FSX_CONFIGURATION = {
+    "LUSTRE": "LustreConfiguration", "WINDOWS": "WindowsConfiguration",
+    "ONTAP": "OntapConfiguration", "OPENZFS": "OpenZFSConfiguration",
+}
+# Security Hub cites the setting for one FSx type each. ONTAP has no CopyTagsToBackups.
+_FSX_COPY_TAGS_CONTROL = {"LUSTRE": " (Security Hub FSx.2)", "WINDOWS": "", "OPENZFS": " (Security Hub FSx.1)"}
+
+
+def _fsx_settings(fs: Resource) -> tuple[str | None, dict | None]:
+    """The file system's type and its settings block. None for what the scan cannot read."""
+    kind = None if "FileSystemType" in fs.unresolved else fs.properties.get("FileSystemType")
+    kind = kind.upper() if type(kind) is str else None
+    key = _FSX_CONFIGURATION.get(kind or "")
+    if key is None:
+        return None, None
+    block = {} if fs.properties.get(key) is None else fs.properties.get(key)
+    return kind, block if key not in fs.unresolved and _readable(block) else None
+
+
+def _fsx_is_persistent_lustre(kind: str | None, block: dict | None) -> bool:
+    """True for a Lustre deployment type known to be persistent. Unset means SCRATCH_1."""
+    deployment = block.get("DeploymentType") if kind == "LUSTRE" and block is not None else None
+    return type(deployment) is str and deployment.upper().startswith("PERSISTENT")
+
+
+def _fsx_is_linked(fs: Resource, block: dict, associations: List[Resource], systems: List[Resource]) -> bool:
+    """True when a Lustre file system has, or may have, an S3 data repository. An association the
+    scan cannot tie to a file system counts for all of them."""
+    if block.get("ImportPath") is not None or block.get("ExportPath") is not None:
+        return True
+
+    def ties(association: Resource, target: Resource) -> bool:
+        return _value_mentions(association.properties.get("FileSystemId"), target.name)
+
+    return any(ties(a, fs) or not any(ties(a, s) for s in systems) for a in associations)
+
+
+def _sagemaker_fsx_findings(resources: List[Resource], template_path: Path) -> List[Finding]:
+    """SageMaker notebooks and endpoint configs (CF-SAGE-001..005) and FSx file systems
+    (CF-FSX-001..003). A value the scan cannot read is not judged."""
+    usable = [r for r in resources if not r.malformed]
+    systems = [r for r in usable if r.type == "fsx_file_system"]
+    associations = [r for r in usable if r.type == "fsx_data_repository_association"]
+    unlinkable = any(r.malformed and r.type == "fsx_data_repository_association" for r in resources)
+    out: List[Finding] = []
+
+    def add(res: Resource, check_id: str, title: str, severity: Severity, category: str,
+            recommendation: str) -> None:
+        out.append(Finding(
+            id=check_id, title=title, severity=severity, category=category,
+            file=res.file or str(template_path), line=res.line,
+            evidence=f"{res.name} ({res.source_type})", recommendation=recommendation,
+        ))
+
+    def no_key(res: Resource) -> bool:
+        return "KmsKeyId" not in res.unresolved and not res.properties.get("KmsKeyId")
+
+    for notebook in (r for r in usable if r.type == "sagemaker_notebook_instance"):
+        if _enabled_unless_set(notebook, "DirectInternetAccess"):
+            add(notebook, "CF-SAGE-001", "SageMaker notebook has direct internet access", "Medium", "Security",
+                "DirectInternetAccess defaults to Enabled, so the notebook can reach the internet and data "
+                "can leave through it. Set DirectInternetAccess: Disabled with a SubnetId, and reach the "
+                "internet through the VPC (Security Hub SageMaker.1). This replaces the notebook. In CDK: "
+                "directInternetAccess: 'Disabled' on the CfnNotebookInstance.")
+        if "SubnetId" not in notebook.unresolved and not notebook.properties.get("SubnetId"):
+            add(notebook, "CF-SAGE-002", "SageMaker notebook is not in a VPC", "Medium", "Security",
+                "With no SubnetId, the notebook runs outside your VPC, so your security groups and network "
+                "controls do not apply to it. Set SubnetId and SecurityGroupIds (Security Hub SageMaker.2). "
+                "This replaces the notebook. In CDK: subnetId and securityGroupIds on the CfnNotebookInstance.")
+        if _enabled_unless_set(notebook, "RootAccess"):
+            add(notebook, "CF-SAGE-003", "SageMaker notebook gives users root access", "Medium", "Security",
+                "RootAccess defaults to Enabled, so a notebook user can change anything on the instance. "
+                "Set RootAccess: Disabled (Security Hub SageMaker.3). A lifecycle configuration still runs "
+                "as root. In CDK: rootAccess: 'Disabled' on the CfnNotebookInstance.")
+        if no_key(notebook):
+            add(notebook, "CF-SAGE-004", "SageMaker notebook volume has no customer managed key", "Low", "Security",
+                "With no KmsKeyId, SageMaker encrypts the notebook's storage volume with an AWS managed key. "
+                "Set a customer managed key to control its policy and who can decrypt the data. In CDK: "
+                "kmsKeyId on the CfnNotebookInstance.")
+
+    for config in (r for r in usable if r.type == "sagemaker_endpoint_config"):
+        if _instance_variants(config, "ProductionVariants", "ShadowProductionVariants") and no_key(config):
+            add(config, "CF-SAGE-004", "SageMaker endpoint config volume has no customer managed key", "Low",
+                "Security",
+                "With no KmsKeyId, the storage volumes of this config's instance variants are not encrypted "
+                "with a key you control. Set a customer managed key, unless the instance type has local "
+                "storage: those types cannot take one and encrypt it in hardware. In CDK: kmsKeyId on the "
+                "CfnEndpointConfig.")
+        single = [v for v in _instance_variants(config, "ProductionVariants")
+                  if _literal_count(v.get("InitialInstanceCount")) == 1]
+        if single:
+            names = [v["VariantName"] if type(v.get("VariantName")) is str else "unnamed" for v in single]
+            add(config, "CF-SAGE-005", "SageMaker endpoint variant runs on one instance", "Low", "Reliability",
+                f"InitialInstanceCount is 1 on these production variants: {', '.join(names)}. One instance "
+                "means one Availability Zone and no redundancy. Set it to 2 or more so SageMaker spreads "
+                "them across zones (Security Hub SageMaker.4). In CDK: initialInstanceCount on the "
+                "production variant.")
+
+    for fs in systems:
+        kind, block = _fsx_settings(fs)
+        if kind is None:
+            continue
+        persistent = _fsx_is_persistent_lustre(kind, block)
+        restored = "BackupId" in fs.unresolved or fs.properties.get("BackupId") is not None
+        if no_key(fs) and not restored and (kind != "LUSTRE" or persistent):
+            add(fs, "CF-FSX-001", "FSx file system has no customer managed key", "Low", "Security",
+                "With no KmsKeyId, FSx encrypts the data with the FSx service key for the account. The data "
+                "is encrypted, but you do not control the key's policy. Set a customer managed key. This "
+                "replaces the file system. In CDK: kmsKey on the file system.")
+        if block is None:
+            continue
+        # Scratch Lustre and Lustre linked to S3 have no backups, so neither setting applies.
+        if kind == "LUSTRE" and (not persistent or unlinkable or _fsx_is_linked(fs, block, associations, systems)):
+            continue
+        copy_tags = block.get("CopyTagsToBackups")
+        if kind in _FSX_COPY_TAGS_CONTROL and _flag(copy_tags) is False and not (restored and copy_tags is None):
+            add(fs, "CF-FSX-002", "FSx file system does not copy tags to backups", "Low", "Operational Excellence",
+                "CopyTagsToBackups defaults to false, so backups lose the tags that identify their owner "
+                f"and purpose. Set it to true{_FSX_COPY_TAGS_CONTROL[kind]}."
+                f"{' FSx.1 also asks for CopyTagsToVolumes.' if kind == 'OPENZFS' else ''} In CDK: "
+                "copyTagsToBackups in the CfnFileSystem's configuration block.")
+        days = block.get("AutomaticBackupRetentionDays")
+        # Only Lustre is documented to default to 0: ONTAP, Windows and OpenZFS keep backups by default.
+        if _literal_count(days) == 0 or (days is None and kind == "LUSTRE" and not restored):
+            add(fs, "CF-FSX-003", "FSx file system has automatic backups off", "Low", "Reliability",
+                "AutomaticBackupRetentionDays is 0, so FSx takes no daily backups (on Lustre, unset means "
+                "0). Set the days to keep them, up to 90, unless AWS Backup covers the file system. In CDK: "
+                "automaticBackupRetentionDays in the CfnFileSystem's configuration block.")
     return out
 
 
@@ -6189,6 +6358,9 @@ def _run_resource_checks(
 
     # --- EMR clusters and security configurations, DMS replication instances and endpoints ---
     findings.extend(_emr_dms_findings(resources, template_path))
+
+    # --- SageMaker notebooks and endpoint configs, FSx file systems ---
+    findings.extend(_sagemaker_fsx_findings(resources, template_path))
 
     # --- AWS Backup vaults, plans and which resources they select ---
     findings.extend(_backup_findings(resources, template_path))

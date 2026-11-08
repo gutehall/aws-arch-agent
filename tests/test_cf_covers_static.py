@@ -254,6 +254,12 @@ PAIRS: list[tuple[str, str, dict, str]] = [
      {"Type": "AWS::S3::Bucket", "Properties": {"ReplicationConfiguration": {"Role": "r", "Rules": [
          {"Status": "Enabled", "Destination": {"Bucket": "arn:aws:s3:::dest"}}]}}},
      "new s3.Bucket(this, 'B', { replicationRule: {} });"),
+    ("CF-SAGE-002", "SEC-046", {"Type": "AWS::SageMaker::NotebookInstance", "Properties": {}},
+     "new sagemaker.CfnNotebookInstance(this, 'N', {});"),
+    ("CF-SAGE-004", "SEC-047", {"Type": "AWS::SageMaker::NotebookInstance", "Properties": {}},
+     "new sagemaker.CfnNotebookInstance(this, 'N', {});"),
+    ("CF-FSX-001", "SEC-050", {"Type": "AWS::FSx::FileSystem", "Properties": {"FileSystemType": "WINDOWS"}},
+     "new fsx.LustreFileSystem(this, 'F', {});"),
     ("CF-CF-005", "OPS-007", {"Type": "AWS::CloudFront::Distribution", "Properties": {"DistributionConfig": {
          "Origins": [{"Id": "a", "DomainName": "a.example.com", "CustomOriginConfig": {"OriginProtocolPolicy": "https-only"}}],
          "DefaultCacheBehavior": {"TargetOriginId": "a", "ViewerProtocolPolicy": "https-only"}}}}, "new cloudfront.Distribution(this, 'D', {});"),

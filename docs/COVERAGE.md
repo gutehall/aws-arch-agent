@@ -17,7 +17,6 @@ Which CDK rules have a template check, and which AWS Foundational Security Best 
 
 | Work | Adds template checks for |
 | -- | -- |
-| `sagemaker-fsx` | SageMaker and FSx |
 | `app-services` | AppSync, Transfer Family, App Runner and Elastic Beanstalk |
 | `dns-certs` | Route 53, ACM and Global Accelerator |
 | `alarms` | Alarms, dashboards and trail integration |
@@ -25,7 +24,7 @@ Which CDK rules have a template check, and which AWS Foundational Security Best 
 
 ## CDK rules
 
-172 rules: 110 covered, 7 partial, 15 planned, 10 account, 5 cdk-only, 25 advice.
+172 rules: 113 covered, 7 partial, 12 planned, 10 account, 5 cdk-only, 25 advice.
 
 | Rule | Title | Template check | Status | Note |
 | -- | -- | -- | -- | -- |
@@ -74,11 +73,11 @@ Which CDK rules have a template check, and which AWS Foundational Security Best 
 | SEC-043 | Glue job encryption not configured | `CF-GLUE-001` | `covered` |  |
 | SEC-044 | MSK cluster encryption not configured | `CF-MSK-001` | `covered` |  |
 | SEC-045 | MSK cluster client authentication not configured | `CF-MSK-002` | `covered` |  |
-| SEC-046 | SageMaker notebook instance not in VPC |  | `planned: sagemaker-fsx` |  |
-| SEC-047 | SageMaker encryption not enabled |  | `planned: sagemaker-fsx` |  |
+| SEC-046 | SageMaker notebook instance not in VPC | `CF-SAGE-002` | `covered` |  |
+| SEC-047 | SageMaker encryption not enabled | `CF-SAGE-004` | `covered` | Notebooks and endpoint configs: a training job is not a template resource. |
 | SEC-048 | AppSync API logging not enabled |  | `planned: app-services` |  |
 | SEC-049 | AppSync API not protected by WAF |  | `planned: app-services` |  |
-| SEC-050 | FSx file system encryption not enabled |  | `planned: sagemaker-fsx` |  |
+| SEC-050 | FSx file system encryption not enabled | `CF-FSX-001` | `covered` | FSx always encrypts: CF-FSX-001 asks for a customer managed key. |
 | SEC-051 | Transfer Family server logging not enabled |  | `planned: app-services` |  |
 | SEC-052 | CodePipeline artifact encryption not enabled | `CF-CP-001` | `covered` |  |
 | SEC-053 | CodeBuild project using privileged mode | `CF-CB-003` | `covered` |  |
@@ -307,7 +306,8 @@ Controls a template can show. Account-level controls (for example S3.1, EC2.7 an
 | EMR.1 | `CF-EMR-001` | `AWS::EMR::Cluster` |
 | EMR.3 | `CF-EMR-002` | `AWS::EMR::SecurityConfiguration` |
 | EMR.4 | `CF-EMR-003` | `AWS::EMR::SecurityConfiguration` |
-| FSx.1 | `planned: sagemaker-fsx` | `AWS::FSx::FileSystem` |
+| FSx.1 | `CF-FSX-002` | `AWS::FSx::FileSystem` |
+| FSx.2 | `CF-FSX-002` | `AWS::FSx::FileSystem` |
 | IAM.1 | `CF-IAM-008` | `AWS::IAM::Role`, `AWS::IAM::User`, `AWS::IAM::Group`, `AWS::IAM::ManagedPolicy` |
 | IAM.21 | `CF-IAM-002` | `AWS::IAM::ManagedPolicy`, `AWS::IAM::Policy` |
 | Kinesis.1 | `CF-KIN-001` | `AWS::Kinesis::Stream` |
@@ -362,10 +362,10 @@ Controls a template can show. Account-level controls (for example S3.1, EC2.7 an
 | S3.9 | `CF-S3-004` | `AWS::S3::Bucket` |
 | S3.12 | `CF-S3-008` | `AWS::S3::Bucket` |
 | S3.14 | `CF-S3-003` | `AWS::S3::Bucket` |
-| SageMaker.1 | `planned: sagemaker-fsx` | `AWS::SageMaker::NotebookInstance` |
-| SageMaker.2 | `planned: sagemaker-fsx` | `AWS::SageMaker::NotebookInstance` |
-| SageMaker.3 | `planned: sagemaker-fsx` | `AWS::SageMaker::NotebookInstance` |
-| SageMaker.4 | `planned: sagemaker-fsx` | `AWS::SageMaker::EndpointConfig` |
+| SageMaker.1 | `CF-SAGE-001` | `AWS::SageMaker::NotebookInstance` |
+| SageMaker.2 | `CF-SAGE-002` | `AWS::SageMaker::NotebookInstance` |
+| SageMaker.3 | `CF-SAGE-003` | `AWS::SageMaker::NotebookInstance` |
+| SageMaker.4 | `CF-SAGE-005` | `AWS::SageMaker::EndpointConfig` |
 | SecretsManager.1 | `CF-SM-001` | `AWS::SecretsManager::Secret` |
 | SNS.1 | `CF-SNS-001` | `AWS::SNS::Topic` |
 | SQS.1 | `CF-SQS-001` | `AWS::SQS::Queue` |

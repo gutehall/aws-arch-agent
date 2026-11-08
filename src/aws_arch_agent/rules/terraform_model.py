@@ -106,6 +106,9 @@ TF_TYPE_TO_CANONICAL: dict[str, str] = {
     "aws_fsx_windows_file_system": "fsx_file_system",
     "aws_fsx_ontap_file_system": "fsx_file_system",
     "aws_fsx_openzfs_file_system": "fsx_file_system",
+    "aws_fsx_data_repository_association": "fsx_data_repository_association",
+    "aws_sagemaker_notebook_instance": "sagemaker_notebook_instance",
+    "aws_sagemaker_endpoint_configuration": "sagemaker_endpoint_config",
     "aws_api_gateway_method": "api_gateway_method",
     "aws_api_gateway_domain_name": "api_gateway_domain_name",
     "aws_api_gateway_usage_plan": "api_gateway_usage_plan",
@@ -1356,6 +1359,64 @@ def _cloudfront_distribution(body: dict) -> dict:
     return {"DistributionConfig": config}
 
 
+def _sagemaker_notebook(body: dict) -> dict:
+    props: dict = {}
+    _set(props, "DirectInternetAccess", _v(body, "direct_internet_access"))
+    _set(props, "RootAccess", _v(body, "root_access"))
+    _set(props, "SubnetId", _ref(body, "subnet_id"))
+    _set(props, "KmsKeyId", _ref(body, "kms_key_id"))
+    return props
+
+
+def _sagemaker_variants(body: dict, key: str) -> Any:
+    """Variants of an endpoint config. An unknown value is kept as _OPAQUE, so one does not hide the others."""
+    if key in _dynamic_names(body):
+        return UNRESOLVED
+    variants = []
+    for block in _blocks(body, key):
+        item: dict = {}
+        _set(item, "VariantName", _known(_v(block, "variant_name")))
+        _set(item, "InstanceType", _known(_v(block, "instance_type")))
+        _set(item, "InitialInstanceCount", _known(_v(block, "initial_instance_count")))
+        if "serverless_config" in _dynamic_names(block) or _first_block(block, "serverless_config"):
+            item["ServerlessConfig"] = _OPAQUE
+        variants.append(item)
+    return variants or None
+
+
+def _sagemaker_endpoint_config(body: dict) -> dict:
+    """aws_sagemaker_endpoint_configuration. Its key argument is kms_key_arn."""
+    props: dict = {}
+    _set(props, "KmsKeyId", _ref(body, "kms_key_arn"))
+    _set(props, "ProductionVariants", _sagemaker_variants(body, "production_variants"))
+    _set(props, "ShadowProductionVariants", _sagemaker_variants(body, "shadow_production_variants"))
+    return props
+
+
+def _fsx_file_system(kind: str, block: str) -> Callable[[dict], dict]:
+    """aws_fsx_*_file_system: flat arguments, in the shape of AWS::FSx::FileSystem with its per-type block."""
+
+    def adapter(body: dict) -> dict:
+        config: dict = {}
+        _set(config, "AutomaticBackupRetentionDays", _known(_v(body, "automatic_backup_retention_days")))
+        if kind != "ONTAP":
+            _set(config, "CopyTagsToBackups", _known(_v(body, "copy_tags_to_backups")))
+        if kind == "LUSTRE":
+            _set(config, "DeploymentType", _known(_v(body, "deployment_type")))
+            _set(config, "ImportPath", _known(_ref(body, "import_path")))
+            _set(config, "ExportPath", _known(_ref(body, "export_path")))
+        props: dict = {"FileSystemType": kind, block: config}
+        _set(props, "KmsKeyId", _ref(body, "kms_key_id"))
+        _set(props, "BackupId", _ref(body, "backup_id"))
+        return props
+
+    return adapter
+
+
+def _fsx_data_repository_association(body: dict) -> dict:
+    return {"FileSystemId": _known(_ref(body, "file_system_id"))}
+
+
 def _log_delivery_source(body: dict) -> dict:
     return {"ResourceArn": _known(_ref(body, "resource_arn"))}
 
@@ -2347,6 +2408,13 @@ _ADAPTERS: dict[str, Callable[[dict], dict]] = {
     "aws_msk_cluster": _msk_cluster,
     "aws_cloudfront_distribution": _cloudfront_distribution,
     "aws_cloudwatch_log_delivery_source": _log_delivery_source,
+    "aws_sagemaker_notebook_instance": _sagemaker_notebook,
+    "aws_sagemaker_endpoint_configuration": _sagemaker_endpoint_config,
+    "aws_fsx_lustre_file_system": _fsx_file_system("LUSTRE", "LustreConfiguration"),
+    "aws_fsx_windows_file_system": _fsx_file_system("WINDOWS", "WindowsConfiguration"),
+    "aws_fsx_ontap_file_system": _fsx_file_system("ONTAP", "OntapConfiguration"),
+    "aws_fsx_openzfs_file_system": _fsx_file_system("OPENZFS", "OpenZFSConfiguration"),
+    "aws_fsx_data_repository_association": _fsx_data_repository_association,
     "aws_wafv2_web_acl_association": _waf_association,
     "aws_wafregional_web_acl_association": _waf_association,
     "aws_sqs_queue_policy": _resource_policy,
