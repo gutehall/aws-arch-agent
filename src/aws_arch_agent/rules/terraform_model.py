@@ -88,6 +88,14 @@ TF_TYPE_TO_CANONICAL: dict[str, str] = {
     "aws_cloudwatch_event_target": "events_target",
     "aws_cloudwatch_event_permission": "event_bus_policy",
     "aws_sfn_state_machine": "sfn_state_machine",
+    "aws_backup_vault": "backup_vault",
+    "aws_backup_vault_lock_configuration": "backup_vault_lock",
+    "aws_backup_plan": "backup_plan",
+    "aws_backup_selection": "backup_selection",
+    "aws_fsx_lustre_file_system": "fsx_file_system",
+    "aws_fsx_windows_file_system": "fsx_file_system",
+    "aws_fsx_ontap_file_system": "fsx_file_system",
+    "aws_fsx_openzfs_file_system": "fsx_file_system",
     "aws_api_gateway_method": "api_gateway_method",
     "aws_api_gateway_domain_name": "api_gateway_domain_name",
     "aws_api_gateway_usage_plan": "api_gateway_usage_plan",
@@ -1583,6 +1591,60 @@ def _event_target(body: dict) -> dict:
     return props
 
 
+def _backup_vault(body: dict) -> dict:
+    props: dict = {}
+    _set(props, "BackupVaultName", _ref(body, "name"))
+    _set(props, "EncryptionKeyArn", _ref(body, "kms_key_arn"))
+    return props
+
+
+def _backup_vault_lock(body: dict) -> dict:
+    """aws_backup_vault_lock_configuration: Terraform locks a vault from a resource of its own."""
+    props: dict = {}
+    _set(props, "BackupVaultName", _ref(body, "backup_vault_name"))
+    return props
+
+
+def _backup_plan(body: dict) -> dict:
+    """aws_backup_plan in the shape of AWS::Backup::BackupPlan. Values stay as written, so one
+    rule from a variable does not hide the others; _backup_findings skips what it cannot read."""
+    if "rule" in _dynamic_names(body):
+        return {"BackupPlan": UNRESOLVED}
+    rules = []
+    for rule in _blocks(body, "rule"):
+        names = _dynamic_names(rule)
+        item: dict = {"RuleName": _ref(rule, "rule_name")}
+        lifecycle = _first_block(rule, "lifecycle")
+        if "lifecycle" in names:
+            item["Lifecycle"] = _OPAQUE
+        elif lifecycle:
+            item["Lifecycle"] = {"DeleteAfterDays": _ref(lifecycle, "delete_after")}
+        item["CopyActions"] = _OPAQUE if "copy_action" in names else [
+            {"DestinationBackupVaultArn": _ref(c, "destination_vault_arn")}
+            for c in _blocks(rule, "copy_action")
+        ]
+        rules.append(item)
+    return {"BackupPlan": {"BackupPlanRule": rules}}
+
+
+def _backup_selection(body: dict) -> dict:
+    """aws_backup_selection in the shape of AWS::Backup::BackupSelection."""
+    names = _dynamic_names(body)
+    selection: dict = {}
+    _set(selection, "Resources", _ref(body, "resources"))
+    selection["ListOfTags"] = _OPAQUE if "selection_tag" in names else [
+        {"ConditionKey": _ref(t, "key"), "ConditionValue": _ref(t, "value")}
+        for t in _blocks(body, "selection_tag")
+    ]
+    equals: list[dict] = []
+    for condition in _blocks(body, "condition"):
+        equals += [{"ConditionKey": _ref(e, "key"), "ConditionValue": _ref(e, "value")}
+                   for e in _blocks(condition, "string_equals")]
+    if equals:
+        selection["Conditions"] = {"StringEquals": equals}
+    return {"BackupSelection": selection}
+
+
 def _event_permission(body: dict) -> dict:
     """aws_cloudwatch_event_permission: the older Principal and Condition form of a bus policy."""
     props: dict = {}
@@ -1815,6 +1877,10 @@ _ADAPTERS: dict[str, Callable[[dict], dict]] = {
     "aws_codestarnotifications_notification_rule": _notification_rule,
     "aws_cloudwatch_event_rule": _event_rule,
     "aws_cloudwatch_event_target": _event_target,
+    "aws_backup_vault": _backup_vault,
+    "aws_backup_vault_lock_configuration": _backup_vault_lock,
+    "aws_backup_plan": _backup_plan,
+    "aws_backup_selection": _backup_selection,
     "aws_cloudwatch_event_permission": _event_permission,
     "aws_sfn_state_machine": _state_machine,
     "aws_api_gateway_rest_api": _api_rest_api,

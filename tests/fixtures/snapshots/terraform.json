@@ -1,5 +1,12 @@
 [
   {
+    "id": "CF-BAK-005",
+    "severity": "Low",
+    "file": "main.tf",
+    "line": 24,
+    "evidence": "aws_db_instance.database (aws_db_instance)"
+  },
+  {
     "id": "CF-DEL-001",
     "severity": "Medium",
     "file": "main.tf",

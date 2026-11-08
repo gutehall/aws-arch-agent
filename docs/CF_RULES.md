@@ -375,6 +375,12 @@ CloudFormation template rules run when the agent has access to template files. T
   - CF-RS-007 (Low, Security Hub Redshift.8 for the admin user): admin user `awsuser` or database `dev`, which is also Terraform's default. A cluster restored from a snapshot is not reported
 - **DocumentDB beyond encryption** (`AWS::DocDB::DBCluster`, `aws_docdb_cluster`): CF-DOCDB-002 (Low, Security Hub DocumentDB.2): `BackupRetentionPeriod` under 7; the default is 1, and an unset value on a restored cluster is not reported. CF-DOCDB-003 (Low, Security Hub DocumentDB.4): `audit` not in `EnableCloudwatchLogsExports`. CF-DOCDB-004 (Low, Security Hub DocumentDB.5): `DeletionProtection` not true; not reported in dev stacks
 - **Neptune beyond encryption** (`AWS::Neptune::DBCluster`, `aws_neptune_cluster`): CF-NEP-002 (Low, Security Hub Neptune.2): `audit` not in `EnableCloudwatchLogsExports`. CF-NEP-003 (Low, Security Hub Neptune.4): `DeletionProtection` not true; not reported in dev stacks. CF-NEP-004 (Low, Security Hub Neptune.5): `BackupRetentionPeriod` under 7; the default is 1, and an unset value on a restored cluster is not reported. CF-NEP-005 (Low, Security Hub Neptune.7): `IamAuthEnabled` not true
+- **AWS Backup** (`AWS::Backup::BackupVault`, `BackupPlan`, `BackupSelection`; Terraform `aws_backup_vault`, `aws_backup_vault_lock_configuration`, `aws_backup_plan`, `aws_backup_selection`). A value from a parameter or variable is not judged. In V2, CF-BAK-001, CF-BAK-002 and CF-BAK-005 replace SEC-063, REL-014 and REL-013:
+  - CF-BAK-001 (Low): vault with no `EncryptionKeyArn`, so it uses the AWS managed key
+  - CF-BAK-002 (Low): plan rule with no `CopyActions` to another Region. A copy to a vault in the same template, or to an ARN in the stack's Region, stays in the Region. A literal ARN is compared only when the scan knows the stack's Region, and a Terraform reference is not judged, because its provider may be in another Region
+  - CF-BAK-003 (Low): plan rule with `Lifecycle.DeleteAfterDays` below 7. Unset keeps recovery points forever and is not reported
+  - CF-BAK-004 (Low): vault with no `LockConfiguration` or `aws_backup_vault_lock_configuration` in a stack marked prod. A stack whose environment is unknown is not reported
+  - CF-BAK-005 (Low): RDS, DynamoDB, EFS, EBS or FSx resource that no selection in the template selects, by ARN or tag. With no plan or selection in the template, one finding per stack. A selection is read for `Resources`, `ListOfTags` and `Conditions.StringEquals`. A wildcard or literal ARN of the resource's service, or a tag the scan cannot read, counts as selected. An Aurora member and a read replica are not reported
 - **Step Functions** (`AWS::StepFunctions::StateMachine`, `aws_sfn_state_machine`):
   - CF-SFN-001 (Low): a `Task` state with no `Retry`, including inside `Parallel` and `Map` states, or a top-level last task with no `Catch` (it ends the workflow, or goes to a `Succeed` state). Read from `Definition`, `DefinitionString` (literal, `Fn::Sub` or `Fn::Join`, as CDK synth writes it) and `DefinitionS3Location` when it is a local path under the template's folder. Terraform: `jsonencode(...)`, JSON strings and heredocs. A definition in S3, or from `file()` or `templatefile()`, is not judged
   - CF-SFN-002 (Low): `TracingConfiguration.Enabled` not true
@@ -392,8 +398,8 @@ CloudFormation template rules run when the agent has access to template files. T
 | Pillar | CF rule IDs |
 |--------|-------------|
 | Operational Excellence | CF-S3-004, CF-RDS-007, CF-RDS-010, CF-RDS-011, CF-CT-001, CF-CT-002, CF-FL-001, CF-EKS-001, CF-TGW-002, CF-CB-004, CF-CP-003, CF-OS-006, CF-RS-004, CF-DOCDB-003, CF-NEP-002, CF-SFN-002, CF-SFN-003, CF-EB-001 |
-| Security | CF-S3-001, CF-S3-002, CF-S3-005, CF-RDS-001, CF-RDS-004, CF-APIGW-003, CF-APIGW-004, CF-APIGW-007, CF-APIGW-009, CF-APIGW-V2-003, CF-LAM-004, CF-LAM-005, CF-RDS-006, CF-RDS-008, CF-RDS-009, CF-RDS-012, CF-RDS-013, CF-CT-003, CF-KMS-001, CF-RP-001, CF-EC2-001, CF-EKS-002, CF-EKS-003, CF-IAM-001, CF-IAM-002, CF-IAM-003, CF-IAM-004, CF-IAM-005, CF-IAM-006, CF-IAM-007, CF-IAM-008, CF-ALB-002, CF-ALB-003, CF-ALB-004, CF-ALB-006, CF-CLB-001, CF-CLB-002, CF-SG-001, CF-SG-002, CF-SG-003, CF-NACL-001, CF-TGW-001, CF-CW-002, CF-SQS-001, CF-DDB-002, CF-LAM-003, CF-SNS-001, CF-EBS-001, CF-EFS-001, CF-KIN-001, CF-EC-001, CF-EC-002, CF-OS-001, CF-OS-002, CF-RS-001, CF-DOCDB-001, CF-NEP-001, CF-MSK-001, CF-CF-001, CF-CF-002, CF-CF-003, CF-CF-004, CF-WAF-001, CF-EC2-002, CF-EC2-003, CF-PAR-001, CF-PAR-002, CF-ECR-001, CF-ECR-002, CF-ECR-003, CF-ECS-001, CF-ECS-002, CF-ECS-003, CF-SM-001, CF-COG-001, CF-COG-002, CF-COG-003, CF-CB-001, CF-CB-002, CF-CB-003, CF-CB-005, CF-CP-001, CF-KMS-002, CF-SSM-001, CF-OS-003, CF-OS-004, CF-OS-005, CF-MSK-002, CF-MSK-003, CF-RS-002, CF-RS-005, CF-RS-006, CF-RS-007, CF-NEP-005 |
-| Reliability | CF-S3-003, CF-RDS-002, CF-RDS-003, CF-RDS-005, CF-LAM-001, CF-LAM-006, CF-LAM-007, CF-LAM-008, CF-APIGW-005, CF-APIGW-006, CF-APIGW-V2-004, CF-DDB-001, CF-SQS-002, CF-DEL-001, CF-NAT-001, CF-ALB-005, CF-ALB-007, CF-CLB-004, CF-CLB-005, CF-CP-002, CF-KMS-003, CF-OS-007, CF-KIN-002, CF-RS-003, CF-DOCDB-002, CF-DOCDB-004, CF-NEP-003, CF-NEP-004, CF-SFN-001, CF-EB-002, CF-SQS-003 |
+| Security | CF-S3-001, CF-S3-002, CF-S3-005, CF-RDS-001, CF-RDS-004, CF-APIGW-003, CF-APIGW-004, CF-APIGW-007, CF-APIGW-009, CF-APIGW-V2-003, CF-LAM-004, CF-LAM-005, CF-RDS-006, CF-RDS-008, CF-RDS-009, CF-RDS-012, CF-RDS-013, CF-CT-003, CF-KMS-001, CF-RP-001, CF-EC2-001, CF-EKS-002, CF-EKS-003, CF-IAM-001, CF-IAM-002, CF-IAM-003, CF-IAM-004, CF-IAM-005, CF-IAM-006, CF-IAM-007, CF-IAM-008, CF-ALB-002, CF-ALB-003, CF-ALB-004, CF-ALB-006, CF-CLB-001, CF-CLB-002, CF-SG-001, CF-SG-002, CF-SG-003, CF-NACL-001, CF-TGW-001, CF-CW-002, CF-SQS-001, CF-DDB-002, CF-LAM-003, CF-SNS-001, CF-EBS-001, CF-EFS-001, CF-KIN-001, CF-EC-001, CF-EC-002, CF-OS-001, CF-OS-002, CF-RS-001, CF-DOCDB-001, CF-NEP-001, CF-MSK-001, CF-CF-001, CF-CF-002, CF-CF-003, CF-CF-004, CF-WAF-001, CF-EC2-002, CF-EC2-003, CF-PAR-001, CF-PAR-002, CF-ECR-001, CF-ECR-002, CF-ECR-003, CF-ECS-001, CF-ECS-002, CF-ECS-003, CF-SM-001, CF-COG-001, CF-COG-002, CF-COG-003, CF-CB-001, CF-CB-002, CF-CB-003, CF-CB-005, CF-CP-001, CF-KMS-002, CF-SSM-001, CF-OS-003, CF-OS-004, CF-OS-005, CF-MSK-002, CF-MSK-003, CF-RS-002, CF-RS-005, CF-RS-006, CF-RS-007, CF-NEP-005, CF-BAK-001 |
+| Reliability | CF-S3-003, CF-RDS-002, CF-RDS-003, CF-RDS-005, CF-LAM-001, CF-LAM-006, CF-LAM-007, CF-LAM-008, CF-APIGW-005, CF-APIGW-006, CF-APIGW-V2-004, CF-DDB-001, CF-SQS-002, CF-DEL-001, CF-NAT-001, CF-ALB-005, CF-ALB-007, CF-CLB-004, CF-CLB-005, CF-CP-002, CF-KMS-003, CF-OS-007, CF-KIN-002, CF-RS-003, CF-DOCDB-002, CF-DOCDB-004, CF-NEP-003, CF-NEP-004, CF-SFN-001, CF-EB-002, CF-SQS-003, CF-BAK-002, CF-BAK-003, CF-BAK-004, CF-BAK-005 |
 | Performance Efficiency | CF-APIGW-008, CF-PERF-001, CF-PERF-002, CF-PERF-003, CF-PERF-004 |
 | Cost Optimization | CF-CW-001, CF-RDS-014, CF-COST-002, CF-EBS-002, CF-EIP-001, CF-TAG-001, CF-ENV-001, CF-ENV-002, CF-ENV-003, CF-ENV-004, CF-ENV-005, CF-ENV-006, CF-GEN-001, CF-S3-006, CF-S3-007, CF-DDB-003, CF-VPC-002, CF-VPC-003, CF-SSM-002 |
 | Sustainability | CF-SUST-001, CF-SUST-002, CF-SUST-003 |
@@ -437,7 +443,6 @@ Like Infracost's view, it is an approximation: on-demand prices, 730 hours a mon
 Every rule has one or more themes, which cut across pillars: `finops`, `security-baseline`, `identity`, `data-protection`, `network-exposure`, `resilience`, `observability`, `sustainability`. `--theme finops` (repeatable, or comma-separated; config `themes`) limits a scan to those themes. JSON findings carry `themes`. SARIF carries them as result `properties.themes` and rule `properties.tags`. `--group-by theme` (config `group_by`) groups Markdown findings by theme; a finding in two themes is listed under both. The HTML report has a theme filter next to the severity tabs, and the Markdown and JSON summary add one line per theme. CDK source rules declare their themes in their class; template checks declare them in `CF_THEMES` in `rules/cf_template.py`.
 
 <!-- themes:start -->
-
 | Rule | Themes |
 |------|--------|
 | CF-ALB-001 | observability |
@@ -460,6 +465,11 @@ Every rule has one or more themes, which cut across pillars: `finops`, `security
 | CF-APIGW-V2-002 | observability |
 | CF-APIGW-V2-003 | identity, network-exposure |
 | CF-APIGW-V2-004 | resilience |
+| CF-BAK-001 | data-protection |
+| CF-BAK-002 | resilience, data-protection |
+| CF-BAK-003 | resilience, data-protection |
+| CF-BAK-004 | data-protection, resilience |
+| CF-BAK-005 | resilience, data-protection |
 | CF-CB-001 | data-protection, identity |
 | CF-CB-002 | data-protection, identity |
 | CF-CB-003 | security-baseline |
@@ -790,5 +800,4 @@ Every rule has one or more themes, which cut across pillars: `finops`, `security
 | SUST-005 | sustainability |
 | SUST-006 | sustainability, finops |
 | SUST-007 | sustainability, finops |
-
 <!-- themes:end -->

@@ -55,6 +55,7 @@ _CF_TAGGABLE: dict[str, str] = {
         "AWS::CloudFront::Distribution", "AWS::ApiGateway::RestApi", "AWS::ApiGateway::Stage",
         "AWS::ApiGatewayV2::Api", "AWS::StepFunctions::StateMachine",
         "AWS::SecretsManager::Secret", "AWS::CloudTrail::Trail", "AWS::IAM::Role",
+        "AWS::FSx::FileSystem",
     )},
     "AWS::EFS::FileSystem": "FileSystemTags",
     "AWS::Cognito::UserPool": "UserPoolTags",
@@ -72,7 +73,8 @@ TF_TAGGABLE: frozenset[str] = frozenset({
     "aws_kinesis_stream", "aws_cloudfront_distribution", "aws_api_gateway_rest_api",
     "aws_api_gateway_stage", "aws_apigatewayv2_api", "aws_sfn_state_machine",
     "aws_secretsmanager_secret", "aws_cloudtrail", "aws_iam_role", "aws_efs_file_system",
-    "aws_cognito_user_pool",
+    "aws_cognito_user_pool", "aws_fsx_lustre_file_system", "aws_fsx_windows_file_system",
+    "aws_fsx_ontap_file_system", "aws_fsx_openzfs_file_system",
 })
 
 _active: TagPolicy | None = None
@@ -139,7 +141,7 @@ def _tag_map(raw: Any) -> dict[str, Any] | None:
     return out
 
 
-def _effective_tags(res: Resource) -> dict[str, Any] | None:
+def effective_tags(res: Resource) -> dict[str, Any] | None:
     """The resource's tags with inherited stack tags under them; None when unknown."""
     if res.source_type in _CF_TAGGABLE:
         own = _tag_map(res.properties.get(_CF_TAGGABLE[res.source_type]))
@@ -172,7 +174,7 @@ def findings(resources: List[Resource], template_path: Path) -> List[Finding]:
     for res in resources:
         if res.malformed or not is_taggable(res):
             continue
-        tags = _effective_tags(res)
+        tags = effective_tags(res)
         if tags is None:
             continue  # tags from a variable or intrinsic: not judged
         missing = [k for k in policy.required if k not in tags]

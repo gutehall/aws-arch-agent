@@ -18,7 +18,6 @@ Which CDK rules have a template check, and which AWS Foundational Security Best 
 | Work | Adds template checks for |
 | -- | -- |
 | `data-resilience` | DynamoDB, ElastiCache and EFS resilience |
-| `backup` | AWS Backup plans, vaults and coverage |
 | `containers` | More ECS and EKS settings |
 | `auto-scaling` | Auto Scaling groups and launch configurations |
 | `analytics` | Athena, Glue and Firehose |
@@ -33,7 +32,7 @@ Which CDK rules have a template check, and which AWS Foundational Security Best 
 
 ## CDK rules
 
-172 rules: 91 covered, 6 partial, 35 planned, 10 account, 5 cdk-only, 25 advice.
+172 rules: 94 covered, 6 partial, 32 planned, 10 account, 5 cdk-only, 25 advice.
 
 | Rule | Title | Template check | Status | Note |
 | -- | -- | -- | -- | -- |
@@ -99,7 +98,7 @@ Which CDK rules have a template check, and which AWS Foundational Security Best 
 | SEC-060 | DocumentDB cluster encryption not enabled | `CF-DOCDB-001` | `covered` |  |
 | SEC-061 | Neptune database encryption not enabled | `CF-NEP-001` | `covered` |  |
 | SEC-062 | CloudWatch Logs not encrypted with KMS | `CF-CW-002` | `covered` |  |
-| SEC-063 | Backup vault encryption not configured |  | `planned: backup` |  |
+| SEC-063 | Backup vault encryption not configured | `CF-BAK-001` | `covered` |  |
 | SEC-064 | RDS instance may be publicly accessible | `CF-RDS-004` | `covered` |  |
 | SEC-065 | Amazon Macie not enabled for sensitive data discovery |  | `account` | Macie is an account service. account-baseline checks a session the repo defines. |
 | SEC-066 | EC2 instance may not require IMDSv2 | `CF-EC2-001` | `covered` |  |
@@ -117,8 +116,8 @@ Which CDK rules have a template check, and which AWS Foundational Security Best 
 | REL-010 | Lambda not in VPC when accessing RDS/ElastiCache |  | `advice` | Whether a function needs the VPC depends on what it calls. |
 | REL-011 | RDS read replicas missing for read-heavy workloads |  | `advice` | Read replicas depend on read load. |
 | REL-012 | NAT Gateway single point of failure (need multi-AZ) | `CF-NAT-001` | `covered` |  |
-| REL-013 | AWS Backup vault not configured |  | `planned: backup` |  |
-| REL-014 | Cross-region backup replication missing |  | `planned: backup` |  |
+| REL-013 | AWS Backup vault not configured | `CF-BAK-005` | `covered` |  |
+| REL-014 | Cross-region backup replication missing | `CF-BAK-002` | `covered` |  |
 | REL-015 | Step Functions retry/catch not configured | `CF-SFN-001` | `covered` |  |
 | REL-016 | ElastiCache not using multi-AZ |  | `planned: data-resilience` |  |
 | REL-017 | EFS backup policy not configured |  | `planned: data-resilience` |  |
