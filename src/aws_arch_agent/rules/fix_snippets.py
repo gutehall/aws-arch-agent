@@ -1141,6 +1141,138 @@ _CLOUDFORMATION["CF-EBS-002"] = """$name:
     VolumeType: gp3
     # over 1,000 GiB: Iops: <3 x size in GiB> to keep the gp2 baseline"""
 # Unused Elastic IPs: delete the resource to release it, or attach it.
+_CLOUDFORMATION["CF-CB-001"] = """$name:
+  Type: AWS::CodeBuild::Project
+  Properties:
+    Environment:
+      EnvironmentVariables:
+        - Name: DB_PASSWORD
+          Type: SECRETS_MANAGER
+          Value: my-secret:password  # the secret's name and JSON key, not the value"""
+_CLOUDFORMATION["CF-CB-002"] = """$name:
+  Type: AWS::CodeBuild::Project
+  Properties:
+    Source:
+      Type: BITBUCKET
+      Location: https://bitbucket.org/my-workspace/my-repo.git  # path only: connect with OAuth"""
+_CLOUDFORMATION["CF-CB-003"] = """$name:
+  Type: AWS::CodeBuild::Project
+  Properties:
+    Environment:
+      PrivilegedMode: false"""
+_CLOUDFORMATION["CF-CB-004"] = """$name:
+  Type: AWS::CodeBuild::Project
+  Properties:
+    LogsConfig:
+      CloudWatchLogs:
+        Status: ENABLED"""
+_CLOUDFORMATION["CF-CB-005"] = """$name:
+  Type: AWS::CodeBuild::Project
+  Properties:
+    LogsConfig:
+      S3Logs:
+        Status: ENABLED
+        Location: my-log-bucket/builds
+        EncryptionDisabled: false"""
+_CLOUDFORMATION["CF-CP-001"] = """$name:
+  Type: AWS::CodePipeline::Pipeline
+  Properties:
+    ArtifactStore:
+      Type: S3
+      Location: !Ref ArtifactBucket
+      EncryptionKey:
+        Type: KMS
+        Id: !GetAtt ArtifactKey.Arn"""
+_CLOUDFORMATION["CF-CP-002"] = """$name:
+  Type: AWS::CodePipeline::Pipeline
+  Properties:
+    Stages:
+      - Name: Approve  # before the production deploy stage
+        Actions:
+          - Name: Approve
+            ActionTypeId:
+              Category: Approval
+              Owner: AWS
+              Provider: Manual
+              Version: '1'"""
+_CLOUDFORMATION["CF-CP-003"] = """${name}Notifications:
+  Type: AWS::CodeStarNotifications::NotificationRule
+  Properties:
+    Name: pipeline-failures
+    DetailType: FULL
+    Resource: !Sub arn:$${AWS::Partition}:codepipeline:$${AWS::Region}:$${AWS::AccountId}:$${$name}
+    EventTypeIds:
+      - codepipeline-pipeline-pipeline-execution-failed
+    Targets:
+      - TargetType: SNS
+        TargetAddress: !Ref AlertsTopic"""
+_TERRAFORM["CF-CB-001"] = """resource "aws_codebuild_project" "$tf_name" {
+  environment {
+    environment_variable {
+      name  = "DB_PASSWORD"
+      type  = "SECRETS_MANAGER"
+      value = "my-secret:password" # the secret's name and JSON key, not the value
+    }
+  }
+}"""
+_TERRAFORM["CF-CB-002"] = """resource "aws_codebuild_project" "$tf_name" {
+  source {
+    type     = "BITBUCKET"
+    location = "https://bitbucket.org/my-workspace/my-repo.git" # path only: connect with OAuth
+  }
+}"""
+_TERRAFORM["CF-CB-003"] = """resource "aws_codebuild_project" "$tf_name" {
+  environment {
+    privileged_mode = false
+  }
+}"""
+_TERRAFORM["CF-CB-004"] = """resource "aws_codebuild_project" "$tf_name" {
+  logs_config {
+    cloudwatch_logs {
+      status = "ENABLED"
+    }
+  }
+}"""
+_TERRAFORM["CF-CB-005"] = """resource "aws_codebuild_project" "$tf_name" {
+  logs_config {
+    s3_logs {
+      status              = "ENABLED"
+      location            = "my-log-bucket/builds"
+      encryption_disabled = false
+    }
+  }
+}"""
+_TERRAFORM["CF-CP-001"] = """resource "aws_codepipeline" "$tf_name" {
+  artifact_store {
+    type     = "S3"
+    location = aws_s3_bucket.artifacts.bucket
+    encryption_key {
+      type = "KMS"
+      id   = aws_kms_key.artifacts.arn
+    }
+  }
+}"""
+_TERRAFORM["CF-CP-002"] = """resource "aws_codepipeline" "$tf_name" {
+  stage { # before the production deploy stage
+    name = "Approve"
+    action {
+      name     = "Approve"
+      category = "Approval"
+      owner    = "AWS"
+      provider = "Manual"
+      version  = "1"
+    }
+  }
+}"""
+_TERRAFORM["CF-CP-003"] = """resource "aws_codestarnotifications_notification_rule" "$tf_name" {
+  name           = "pipeline-failures"
+  detail_type    = "FULL"
+  resource       = aws_codepipeline.$tf_name.arn
+  event_type_ids = ["codepipeline-pipeline-pipeline-execution-failed"]
+  target {
+    address = aws_sns_topic.alerts.arn
+  }
+}"""
 _CLOUDFORMATION["CF-APIGW-003"] = """$name:
   Type: AWS::ApiGateway::Method
   Properties:

@@ -77,6 +77,10 @@ TF_TYPE_TO_CANONICAL: dict[str, str] = {
     "aws_api_gateway_stage": "api_gateway_stage",
     "aws_apigatewayv2_api": "apigatewayv2_api",
     "aws_apigatewayv2_stage": "apigatewayv2_stage",
+    "aws_codebuild_project": "codebuild_project",
+    "aws_codepipeline": "codepipeline",
+    "aws_codestarnotifications_notification_rule": "codestar_notification_rule",
+    "aws_cloudwatch_event_rule": "events_rule",
     "aws_api_gateway_method": "api_gateway_method",
     "aws_api_gateway_domain_name": "api_gateway_domain_name",
     "aws_api_gateway_usage_plan": "api_gateway_usage_plan",
@@ -1367,6 +1371,100 @@ def _apiv2_stage(body: dict) -> dict:
     return props
 
 
+def _codebuild_project(body: dict) -> dict:
+    """aws_codebuild_project in the AWS::CodeBuild::Project shape (CF-CB-001..005). A
+    dynamic environment_variable or source block is not read; the static ones still are."""
+    props: dict = {}
+    if "environment" in _dynamic_names(body):
+        props["Environment"] = UNRESOLVED
+    else:
+        env = _first_block(body, "environment")
+        environment: dict = {}
+        _set(environment, "PrivilegedMode", _known(_v(env, "privileged_mode")))
+        environment["EnvironmentVariables"] = [
+            {
+                "Name": _known(_v(item, "name")),
+                "Type": _known(_v(item, "type", "PLAINTEXT")),
+                "Value": _known(_v(item, "value")),
+            }
+            for item in _blocks(env, "environment_variable")
+        ]
+        props["Environment"] = environment
+    props["Source"] = {"Location": _known(_v(_first_block(body, "source"), "location"))}
+    props["SecondarySources"] = [
+        {"Location": _known(_v(item, "location"))} for item in _blocks(body, "secondary_sources")
+    ]
+    if "logs_config" in _dynamic_names(body):
+        props["LogsConfig"] = UNRESOLVED
+    else:
+        logs = _first_block(body, "logs_config")
+        config: dict = {}
+        if {"cloudwatch_logs", "s3_logs"} & _dynamic_names(logs):
+            config["CloudWatchLogs"] = UNRESOLVED
+        cloudwatch = _first_block(logs, "cloudwatch_logs")
+        if cloudwatch:
+            config.setdefault("CloudWatchLogs", {"Status": _v(cloudwatch, "status", "ENABLED")})
+        s3_logs = _first_block(logs, "s3_logs")
+        if s3_logs:
+            s3: dict = {"Status": _v(s3_logs, "status", "DISABLED")}
+            _set(s3, "EncryptionDisabled", _v(s3_logs, "encryption_disabled"))
+            config["S3Logs"] = s3
+        props["LogsConfig"] = config
+    return props
+
+
+def _codepipeline(body: dict) -> dict:
+    """aws_codepipeline in the AWS::CodePipeline::Pipeline shape (CF-CP-001..003)."""
+    props: dict = {}
+    _set(props, "Name", _v(body, "name"))
+    if "artifact_store" in _dynamic_names(body):
+        props["ArtifactStores"] = UNRESOLVED
+    else:
+        stores = []
+        for item in _blocks(body, "artifact_store"):
+            store: dict = {}
+            if "encryption_key" in _dynamic_names(item):
+                store["EncryptionKey"] = _OPAQUE
+            elif _first_block(item, "encryption_key"):
+                store["EncryptionKey"] = {"Id": _ref(_first_block(item, "encryption_key"), "id")}
+            stores.append({"ArtifactStore": store})
+        props["ArtifactStores"] = stores
+    if "stage" in _dynamic_names(body) or any(
+        "action" in _dynamic_names(stage) for stage in _blocks(body, "stage")
+    ):
+        props["Stages"] = UNRESOLVED
+    else:
+        props["Stages"] = [
+            {
+                "Name": _known(_v(stage, "name")),
+                "Actions": [
+                    {
+                        "ActionTypeId": {"Category": _v(action, "category")},
+                        "RunOrder": _v(action, "run_order", 1),
+                    }
+                    for action in _blocks(stage, "action")
+                ],
+            }
+            for stage in _blocks(body, "stage")
+        ]
+    return props
+
+
+def _notification_rule(body: dict) -> dict:
+    props: dict = {}
+    _set(props, "Resource", _ref(body, "resource"))
+    return props
+
+
+def _event_rule(body: dict) -> dict:
+    """An expression that names no event source (file(), data.*, a source from var.*) may
+    match any, so it is not read."""
+    value = _ref(body, "event_pattern")
+    props: dict = {}
+    _set(props, "EventPattern", _OPAQUE if isinstance(value, _Expr) and "aws." not in value else value)
+    return props
+
+
 def _api_method(body: dict) -> dict:
     """aws_api_gateway_method in the AWS::ApiGateway::Method shape (CF-APIGW-003/006/008)."""
     props: dict = {}
@@ -1548,6 +1646,10 @@ _ADAPTERS: dict[str, Callable[[dict], dict]] = {
     "aws_sqs_queue": _sqs,
     "aws_api_gateway_stage": _api_stage,
     "aws_apigatewayv2_stage": _apiv2_stage,
+    "aws_codebuild_project": _codebuild_project,
+    "aws_codepipeline": _codepipeline,
+    "aws_codestarnotifications_notification_rule": _notification_rule,
+    "aws_cloudwatch_event_rule": _event_rule,
     "aws_api_gateway_rest_api": _api_rest_api,
     "aws_api_gateway_method": _api_method,
     "aws_api_gateway_domain_name": _api_domain_name,

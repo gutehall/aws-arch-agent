@@ -184,6 +184,21 @@ PAIRS: list[tuple[str, str, dict, str]] = [
             "HttpMethod": "GET", "RestApiId": {"Ref": "Api"}, "ResourceId": "r"}},
         "Stage": {"Type": "AWS::ApiGateway::Stage", "Properties": {"RestApiId": {"Ref": "Api"}}},
     }, "new apigateway.RestApi(this, 'Api');"),
+    ("CF-CB-003", "SEC-053", {"Type": "AWS::CodeBuild::Project", "Properties": {
+        "Environment": {"PrivilegedMode": True}}},
+     "new codebuild.Project(this, 'B', { environment: { privileged: true } });"),
+    ("CF-CB-004", "OPS-020", {"Type": "AWS::CodeBuild::Project", "Properties": {
+        "LogsConfig": {"CloudWatchLogs": {"Status": "DISABLED"}}}},
+     "new codebuild.Project(this, 'B');"),
+    ("CF-CP-001", "SEC-052", {"Type": "AWS::CodePipeline::Pipeline", "Properties": {
+        "ArtifactStore": {"Type": "S3", "Location": "b"}}},
+     "new codepipeline.Pipeline(this, 'P');"),
+    ("CF-CP-002", "REL-021", {"Type": "AWS::CodePipeline::Pipeline", "Properties": {
+        "Name": "prod-release", "Stages": [{"Name": "Deploy", "Actions": [
+            {"Name": "d", "ActionTypeId": {"Category": "Deploy"}}]}]}},
+     "new codepipeline.Pipeline(this, 'P', { pipelineName: 'prod-release' });"),
+    ("CF-CP-003", "OPS-017", {"Type": "AWS::CodePipeline::Pipeline", "Properties": {}},
+     "new codepipeline.Pipeline(this, 'P');"),
     ("CF-COST-002", "COST-006",
      {"Type": "AWS::EC2::NatGateway", "Properties": {"SubnetId": {"Ref": "Public"}}},
      "new ec2.Vpc(this, 'Vpc', { natGateways: 1 });"),
