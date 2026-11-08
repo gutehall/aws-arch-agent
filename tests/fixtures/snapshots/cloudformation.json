@@ -1,5 +1,12 @@
 [
   {
+    "id": "CF-BAK-005",
+    "severity": "Low",
+    "file": "stack.yaml",
+    "line": null,
+    "evidence": "Database (AWS::RDS::DBInstance)"
+  },
+  {
     "id": "CF-DEL-001",
     "severity": "Medium",
     "file": "stack.yaml",
