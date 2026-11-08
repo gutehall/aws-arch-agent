@@ -601,7 +601,7 @@ class ResourceTaggingStrategy(Rule):
 
 class SsmParameterAdvancedTier(Rule):
     id = "OPS-023"
-    title = "SSM Parameter Store not using advanced tier for high throughput"
+    title = "SSM Parameter Store throughput setting may need review"
     category = "Operational Excellence"
     severity = "Low"
     themes = ("resilience",)
@@ -609,9 +609,10 @@ class SsmParameterAdvancedTier(Rule):
     def run(self, repo_path: Path, language: str = "typescript") -> List[Finding]:
         param_pat = r'new\s+ssm\.(StringParameter|CfnParameter)\(' if language == "typescript" else r'ssm\.(StringParameter|CfnParameter)\('
         params = rg(repo_path, param_pat, glob=code_glob(language))
-        advanced = rg(repo_path, r'parameterTier.*ADVANCED|advanced|tier.*Advanced', glob=code_glob(language))
+        # Throughput is an account and Region setting, separate from the parameter tier.
+        throughput = rg(repo_path, r'high-throughput-enabled', glob=code_glob(language))
         out: List[Finding] = []
-        if params and not advanced:
+        if params and not throughput:
             return [Finding(
                 id=self.id,
                 title=self.title,
@@ -620,7 +621,7 @@ class SsmParameterAdvancedTier(Rule):
                 file=None,
                 line=None,
                 evidence=None,
-                recommendation="For high-throughput (>10 TPS) parameter access, consider Parameter Store advanced tier.",
+                recommendation="Parameter reads are limited to 40 TPS per account and Region by default, whichever tier a parameter uses. If reads are throttled at scale, cache values or turn on the higher throughput setting. The advanced tier does not raise this limit.",
             )]
         return out
 

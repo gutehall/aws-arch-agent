@@ -17,7 +17,6 @@ Which CDK rules have a template check, and which AWS Foundational Security Best 
 
 | Work | Adds template checks for |
 | -- | -- |
-| `kms-ssm` | KMS key rotation and SSM parameters |
 | `search-streaming` | OpenSearch, MSK and Kinesis access and resilience |
 | `data-resilience` | DynamoDB, ElastiCache and EFS resilience |
 | `warehouses` | Redshift, DocumentDB and Neptune beyond encryption |
@@ -37,7 +36,7 @@ Which CDK rules have a template check, and which AWS Foundational Security Best 
 
 ## CDK rules
 
-172 rules: 80 covered, 6 partial, 47 planned, 10 account, 5 cdk-only, 24 advice.
+172 rules: 82 covered, 6 partial, 44 planned, 10 account, 5 cdk-only, 25 advice.
 
 | Rule | Title | Template check | Status | Note |
 | -- | -- | -- | -- | -- |
@@ -63,7 +62,7 @@ Which CDK rules have a template check, and which AWS Foundational Security Best 
 | SEC-020 | ECS task definition not using read-only root filesystem | `CF-ECS-002` | `covered` |  |
 | SEC-021 | RDS not enforcing SSL/TLS connections | `CF-RDS-006` | `covered` |  |
 | SEC-022 | VPC endpoints missing (security & cost improvement) | `CF-VPC-001` | `covered` |  |
-| SEC-023 | KMS key rotation not enabled |  | `planned: kms-ssm` |  |
+| SEC-023 | KMS key rotation not enabled | `CF-KMS-002` | `covered` |  |
 | SEC-024 | WAF not enabled on ALB/API Gateway/CloudFront | `CF-CF-003`, `CF-WAF-001` | `covered` |  |
 | SEC-025 | ElastiCache not using encryption in-transit/at-rest | `CF-EC-001`, `CF-EC-002` | `covered` |  |
 | SEC-026 | Security Hub not enabled |  | `account` | Security Hub is an account service. account-baseline checks a hub the repo defines. |
@@ -73,7 +72,7 @@ Which CDK rules have a template check, and which AWS Foundational Security Best 
 | SEC-030 | ECR repository lifecycle policy missing | `CF-ECR-003` | `covered` |  |
 | SEC-031 | Route 53 health checks not configured |  | `planned: dns-certs` |  |
 | SEC-032 | Route 53 DNSSEC not enabled |  | `planned: dns-certs` |  |
-| SEC-033 | SSM Parameter Store not using SecureString |  | `planned: kms-ssm` |  |
+| SEC-033 | SSM Parameter Store not using SecureString | `CF-SSM-001` | `covered` |  |
 | SEC-034 | Cognito User Pool MFA not required | `CF-COG-001` | `covered` |  |
 | SEC-035 | Cognito User Pool password policy may be weak | `CF-COG-002` | `covered` |  |
 | SEC-036 | Cognito advanced security features not enabled | `CF-COG-003` | `covered` |  |
@@ -185,7 +184,7 @@ Which CDK rules have a template check, and which AWS Foundational Security Best 
 | OPS-020 | CodeBuild project logging not configured | `CF-CB-004` | `covered` |  |
 | OPS-021 | CloudWatch dashboards not configured |  | `planned: alarms` |  |
 | OPS-022 | Resource tagging strategy may be incomplete |  | `advice` | Tag choice. CF-TAG-001 checks a configured tag policy. |
-| OPS-023 | SSM Parameter Store not using advanced tier for high throughput |  | `planned: kms-ssm` |  |
+| OPS-023 | SSM Parameter Store throughput setting may need review |  | `advice` | Restated: it used to recommend the advanced tier for throughput, but AWS sets throughput per account and Region, whatever the tier. Throughput needs traffic data. `CF-SSM-002` reports the separate cost of an advanced parameter that does not need that tier. |
 | OPS-025 | S3 replication metrics not enabled |  | `planned: s3` |  |
 | PERF-001 | Compute may not use Graviton/ARM (cost and performance) | `CF-PERF-001` | `partial` | Checks Lambda only; PERF-001 also flags EC2 and ECS. |
 | PERF-002 | No caching layer detected (performance) | `CF-PERF-002` | `partial` | API Gateway and Lambda only; PERF-002 also counts load balancers, API caches and DAX. |
@@ -321,7 +320,7 @@ Controls a template can show. Account-level controls (for example S3.1, EC2.7 an
 | IAM.1 | `CF-IAM-008` | `AWS::IAM::Role`, `AWS::IAM::User`, `AWS::IAM::Group`, `AWS::IAM::ManagedPolicy` |
 | IAM.21 | `CF-IAM-002` | `AWS::IAM::ManagedPolicy`, `AWS::IAM::Policy` |
 | Kinesis.1 | `CF-KIN-001` | `AWS::Kinesis::Stream` |
-| KMS.4 | `planned: kms-ssm` | `AWS::KMS::Key` |
+| KMS.4 | `CF-KMS-002` | `AWS::KMS::Key` |
 | Lambda.1 | `CF-RP-001` | `AWS::Lambda::Permission` |
 | Lambda.2 | `CF-LAM-003` | `AWS::Lambda::Function` |
 | Lambda.5 | `CF-LAM-008` | `AWS::Lambda::Function` |

@@ -1141,6 +1141,36 @@ _CLOUDFORMATION["CF-EBS-002"] = """$name:
     VolumeType: gp3
     # over 1,000 GiB: Iops: <3 x size in GiB> to keep the gp2 baseline"""
 # Unused Elastic IPs: delete the resource to release it, or attach it.
+_CLOUDFORMATION["CF-KMS-002"] = """$name:
+  Type: AWS::KMS::Key
+  Properties:
+    EnableKeyRotation: true"""
+_CLOUDFORMATION["CF-KMS-003"] = """$name:
+  Type: AWS::KMS::Key
+  Properties:
+    PendingWindowInDays: 30"""
+_CLOUDFORMATION["CF-SSM-001"] = """$name:
+  Type: AWS::SecretsManager::Secret  # CloudFormation cannot create a SecureString parameter
+  Properties:
+    GenerateSecretString:
+      PasswordLength: 32"""
+_CLOUDFORMATION["CF-SSM-002"] = """$name:
+  Type: AWS::SSM::Parameter
+  Properties:
+    Tier: Standard  # an advanced parameter cannot be downgraded: delete it and create it again"""
+_TERRAFORM["CF-KMS-002"] = """resource "aws_kms_key" "$tf_name" {
+  enable_key_rotation = true
+}"""
+_TERRAFORM["CF-KMS-003"] = """resource "aws_kms_key" "$tf_name" {
+  deletion_window_in_days = 30
+}"""
+_TERRAFORM["CF-SSM-001"] = """resource "aws_ssm_parameter" "$tf_name" {
+  type   = "SecureString"
+  key_id = aws_kms_key.example.arn
+}"""
+_TERRAFORM["CF-SSM-002"] = """resource "aws_ssm_parameter" "$tf_name" {
+  tier = "Standard" # an advanced parameter cannot be downgraded: delete it and create it again
+}"""
 _CLOUDFORMATION["CF-CB-001"] = """$name:
   Type: AWS::CodeBuild::Project
   Properties:
