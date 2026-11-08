@@ -99,6 +99,7 @@ _SERVICES: list[tuple[str, str, str]] = [
     (r"\bECR\b", "Amazon ECR", "/AmazonECR/latest/userguide/"),
     (r"\bECS\b|\bcontainer\b", "Amazon ECS", "/AmazonECS/latest/developerguide/"),
     (r"\bApp Runner\b", "AWS App Runner", "/apprunner/latest/dg/"),
+    (r"\bElastic Beanstalk\b", "AWS Elastic Beanstalk", "/elasticbeanstalk/latest/dg/"),
     (r"\bSageMaker\b", "Amazon SageMaker AI", "/sagemaker/latest/dg/"),
     (r"\bEFS\b", "Amazon EFS", "/efs/latest/ug/"),
     (r"\bFSx\b", "Amazon FSx", "/fsx/"),

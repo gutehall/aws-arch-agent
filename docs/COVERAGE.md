@@ -17,14 +17,13 @@ Which CDK rules have a template check, and which AWS Foundational Security Best 
 
 | Work | Adds template checks for |
 | -- | -- |
-| `app-services` | AppSync, Transfer Family, App Runner and Elastic Beanstalk |
 | `dns-certs` | Route 53, ACM and Global Accelerator |
 | `alarms` | Alarms, dashboards and trail integration |
 | `account-baseline` | Account baseline resources a repo defines |
 
 ## CDK rules
 
-172 rules: 113 covered, 7 partial, 12 planned, 10 account, 5 cdk-only, 25 advice.
+172 rules: 118 covered, 7 partial, 7 planned, 10 account, 5 cdk-only, 25 advice.
 
 | Rule | Title | Template check | Status | Note |
 | -- | -- | -- | -- | -- |
@@ -75,10 +74,10 @@ Which CDK rules have a template check, and which AWS Foundational Security Best 
 | SEC-045 | MSK cluster client authentication not configured | `CF-MSK-002` | `covered` |  |
 | SEC-046 | SageMaker notebook instance not in VPC | `CF-SAGE-002` | `covered` |  |
 | SEC-047 | SageMaker encryption not enabled | `CF-SAGE-004` | `covered` | Notebooks and endpoint configs: a training job is not a template resource. |
-| SEC-048 | AppSync API logging not enabled |  | `planned: app-services` |  |
-| SEC-049 | AppSync API not protected by WAF |  | `planned: app-services` |  |
+| SEC-048 | AppSync API logging not enabled | `CF-APPSYNC-001` | `covered` |  |
+| SEC-049 | AppSync API not protected by WAF | `CF-APPSYNC-003` | `covered` | Public standard APIs. A private or merged API is not judged. |
 | SEC-050 | FSx file system encryption not enabled | `CF-FSX-001` | `covered` | FSx always encrypts: CF-FSX-001 asks for a customer managed key. |
-| SEC-051 | Transfer Family server logging not enabled |  | `planned: app-services` |  |
+| SEC-051 | Transfer Family server logging not enabled | `CF-TRANSFER-002` | `covered` |  |
 | SEC-052 | CodePipeline artifact encryption not enabled | `CF-CP-001` | `covered` |  |
 | SEC-053 | CodeBuild project using privileged mode | `CF-CB-003` | `covered` |  |
 | SEC-054 | Security Group egress too permissive (0.0.0.0/0) | `CF-SG-003` | `covered` |  |
@@ -167,7 +166,7 @@ Which CDK rules have a template check, and which AWS Foundational Security Best 
 | OPS-015 | Glue job CloudWatch metrics not enabled | `CF-GLUE-002` | `covered` |  |
 | OPS-016 | Transit Gateway flow logs not enabled | `CF-TGW-002` | `covered` |  |
 | OPS-017 | CodePipeline notifications not configured | `CF-CP-003` | `covered` |  |
-| OPS-018 | App Runner observability not configured |  | `planned: app-services` |  |
+| OPS-018 | App Runner observability not configured | `CF-APPRUNNER-001` | `covered` |  |
 | OPS-019 | Glue job bookmarks not enabled | `CF-GLUE-003` | `covered` | CF-GLUE-003 reports a literal job-bookmark-disable; a job with the option unset keeps OPS-019. |
 | OPS-020 | CodeBuild project logging not configured | `CF-CB-004` | `covered` |  |
 | OPS-021 | CloudWatch dashboards not configured |  | `planned: alarms` |  |
@@ -186,7 +185,7 @@ Which CDK rules have a template check, and which AWS Foundational Security Best 
 | PERF-010 | OpenSearch instance types not optimized |  | `advice` | Instance choice depends on the workload. |
 | PERF-011 | Global Accelerator not used for global traffic |  | `advice` | Global Accelerator depends on where users are. |
 | PERF-012 | EFS performance mode not configured |  | `advice` | Performance mode depends on the workload. |
-| PERF-013 | AppSync API caching not enabled |  | `planned: app-services` |  |
+| PERF-013 | AppSync API caching not enabled | `CF-APPSYNC-004` | `covered` | Advice: a cache suits repeated reads. A merged API is not judged. |
 | PERF-014 | S3 Transfer Acceleration not enabled for global uploads |  | `advice` | Transfer Acceleration depends on where uploads come from. |
 | PERF-015 | Lambda SnapStart not enabled for Java functions |  | `advice` | SnapStart depends on cold-start needs. |
 | PERF-016 | Aurora not using I/O-Optimized for high I/O workloads |  | `advice` | I/O-Optimized depends on I/O spend. |
@@ -213,8 +212,8 @@ Controls a template can show. Account-level controls (for example S3.1, EC2.7 an
 | APIGateway.5 | `CF-APIGW-007` | `AWS::ApiGateway::Stage` |
 | APIGateway.8 | `CF-APIGW-V2-003` | `AWS::ApiGatewayV2::Route` |
 | APIGateway.9 | `CF-APIGW-V2-001` | `AWS::ApiGatewayV2::Stage` |
-| AppSync.2 | `planned: app-services` | `AWS::AppSync::GraphQLApi` |
-| AppSync.5 | `planned: app-services` | `AWS::AppSync::GraphQLApi` |
+| AppSync.2 | `CF-APPSYNC-001` | `AWS::AppSync::GraphQLApi` |
+| AppSync.5 | `CF-APPSYNC-002` | `AWS::AppSync::GraphQLApi` |
 | AutoScaling.1 | `CF-ASG-001` | `AWS::AutoScaling::AutoScalingGroup` |
 | AutoScaling.2 | `CF-ASG-002` | `AWS::AutoScaling::AutoScalingGroup` |
 | AutoScaling.3 | `CF-ASG-003` | `AWS::AutoScaling::LaunchConfiguration` |
@@ -291,9 +290,9 @@ Controls a template can show. Account-level controls (for example S3.1, EC2.7 an
 | ElastiCache.5 | `CF-EC-002` | `AWS::ElastiCache::ReplicationGroup` |
 | ElastiCache.6 | `CF-EC-006` | `AWS::ElastiCache::ReplicationGroup` |
 | ElastiCache.7 | `CF-EC-007` | `AWS::ElastiCache::ReplicationGroup` |
-| ElasticBeanstalk.1 | `planned: app-services` | `AWS::ElasticBeanstalk::Environment` |
-| ElasticBeanstalk.2 | `planned: app-services` | `AWS::ElasticBeanstalk::Environment` |
-| ElasticBeanstalk.3 | `planned: app-services` | `AWS::ElasticBeanstalk::Environment` |
+| ElasticBeanstalk.1 | `CF-BEANSTALK-001` | `AWS::ElasticBeanstalk::Environment` |
+| ElasticBeanstalk.2 | `CF-BEANSTALK-002` | `AWS::ElasticBeanstalk::Environment` |
+| ElasticBeanstalk.3 | `CF-BEANSTALK-003` | `AWS::ElasticBeanstalk::Environment` |
 | ELB.1 | `CF-ALB-002` | `AWS::ElasticLoadBalancingV2::Listener` |
 | ELB.2 | `CF-CLB-002` | `AWS::ElasticLoadBalancing::LoadBalancer` |
 | ELB.3 | `CF-CLB-001` | `AWS::ElasticLoadBalancing::LoadBalancer` |
@@ -370,4 +369,4 @@ Controls a template can show. Account-level controls (for example S3.1, EC2.7 an
 | SNS.1 | `CF-SNS-001` | `AWS::SNS::Topic` |
 | SQS.1 | `CF-SQS-001` | `AWS::SQS::Queue` |
 | StepFunctions.1 | `CF-SFN-003` | `AWS::StepFunctions::StateMachine` |
-| Transfer.2 | `planned: app-services` | `AWS::Transfer::Server` |
+| Transfer.2 | `CF-TRANSFER-001` | `AWS::Transfer::Server` |

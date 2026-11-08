@@ -35,6 +35,11 @@ SENSITIVE_PORTS = {
 
 # Static rule dropped when the CF rule already reported that control.
 CF_COVERS_STATIC: dict[str, tuple[str, ...]] = {
+    "CF-APPSYNC-001": ("SEC-048",),
+    "CF-APPSYNC-003": ("SEC-049",),
+    "CF-APPSYNC-004": ("PERF-013",),
+    "CF-TRANSFER-002": ("SEC-051",),
+    "CF-APPRUNNER-001": ("OPS-018",),
     "CF-SAGE-002": ("SEC-046",),
     "CF-SAGE-004": ("SEC-047",),
     "CF-FSX-001": ("SEC-050",),
@@ -317,6 +322,8 @@ _PER_RESOURCE_TYPES = frozenset({
     "cloudwatch_log_delivery_source",
     "sagemaker_notebook_instance", "sagemaker_endpoint_config",
     "fsx_file_system", "fsx_data_repository_association",
+    "appsync_graphql_api", "appsync_api_cache", "transfer_server", "apprunner_service",
+    "elastic_beanstalk_environment", "elastic_beanstalk_configuration_template",
 })
 # Parameter groups only feed CF-RDS-006; they have no checks of their own.
 
@@ -468,6 +475,10 @@ CHECK_PROPERTIES: dict[str, frozenset[str]] = {
         # Template-level: _sagemaker_fsx_findings skips what it cannot read.
         **{c: set() for c in ("CF-SAGE-001", "CF-SAGE-002", "CF-SAGE-003", "CF-SAGE-004", "CF-SAGE-005",
                               "CF-FSX-001", "CF-FSX-002", "CF-FSX-003")},
+        # Template-level: _app_services_findings skips what it cannot read.
+        **{c: set() for c in ("CF-APPSYNC-001", "CF-APPSYNC-002", "CF-APPSYNC-003", "CF-APPSYNC-004",
+                              "CF-TRANSFER-001", "CF-TRANSFER-002", "CF-TRANSFER-003", "CF-APPRUNNER-001",
+                              "CF-BEANSTALK-001", "CF-BEANSTALK-002", "CF-BEANSTALK-003")},
         # Template-level: _backup_findings skips what it cannot read.
         **{c: set() for c in ("CF-BAK-001", "CF-BAK-002", "CF-BAK-003", "CF-BAK-004", "CF-BAK-005")},
         # Template-level: _ci_cd_findings skips what it cannot read.
@@ -502,6 +513,10 @@ _F, _SB, _ID, _DP, _NET, _RES, _OBS, _SUS = (
     "network-exposure", "resilience", "observability", "sustainability",
 )
 CF_THEMES: dict[str, tuple[str, ...]] = {
+    "CF-APPSYNC-001": (_OBS, _SB), "CF-APPSYNC-002": (_ID,), "CF-APPSYNC-003": (_NET,), "CF-APPSYNC-004": (_RES,),
+    "CF-TRANSFER-001": (_DP,), "CF-TRANSFER-002": (_OBS, _SB), "CF-TRANSFER-003": (_NET,),
+    "CF-APPRUNNER-001": (_OBS,),
+    "CF-BEANSTALK-001": (_OBS,), "CF-BEANSTALK-002": (_SB,), "CF-BEANSTALK-003": (_OBS,),
     "CF-SAGE-001": (_NET,), "CF-SAGE-002": (_NET,), "CF-SAGE-003": (_SB, _ID), "CF-SAGE-004": (_DP,),
     "CF-SAGE-005": (_RES,), "CF-FSX-001": (_DP,), "CF-FSX-002": (_F,), "CF-FSX-003": (_RES,),
     "CF-S3-008": (_DP,), "CF-S3-009": (_NET, _DP), "CF-S3-010": (_RES, _DP), "CF-S3-011": (_OBS, _DP),
@@ -1058,13 +1073,14 @@ def _references(text: str, name: str) -> bool:
     return f'"{name}"' in text or f"${{{name}}}" in text or f"${{{name}." in text
 
 
-def _waf_coverage(resources: List[Resource]) -> tuple[set[str], bool]:
-    """Names of ALBs and API stages a WAF association in this template points at.
+def _waf_coverage(resources: List[Resource], *extra_types: str) -> tuple[set[str], bool]:
+    """Names of ALBs and API stages, and of any extra types, a WAF association in this template
+    points at.
 
     The second value is True when an association points at something the scan cannot
     tie to a resource: it may then cover any of them.
     """
-    targets = [r.name for r in resources if r.type in ("lb", "api_gateway_stage")]
+    targets = [r.name for r in resources if r.type in ("lb", "api_gateway_stage", *extra_types)]
     covered: set[str] = set()
     unlinked = False
     for r in resources:
@@ -2776,6 +2792,211 @@ def _sagemaker_fsx_findings(resources: List[Resource], template_path: Path) -> L
                 "AutomaticBackupRetentionDays is 0, so FSx takes no daily backups (on Lustre, unset means "
                 "0). Set the days to keep them, up to 90, unless AWS Backup covers the file system. In CDK: "
                 "automaticBackupRetentionDays in the CfnFileSystem's configuration block.")
+    return out
+
+
+def _unset_or_is(res: Resource, key: str, expected: str) -> bool:
+    """True when a setting is unset, or literally this value in any case. Unknown is not judged."""
+    if key in res.unresolved:
+        return False
+    value = res.properties.get(key)
+    return value is None or (type(value) is str and value.upper() == expected.upper())
+
+
+def _appsync_only_api_key(api: Resource) -> bool:
+    """True when an API key is the only way to call the API. An unknown provider is not judged."""
+    if "AdditionalAuthenticationProviders" in api.unresolved or _literal_upper(api, "AuthenticationType") != "API_KEY":
+        return False
+    others = api.properties.get("AdditionalAuthenticationProviders")
+    if others is None:
+        return True
+    return isinstance(others, list) and all(
+        _readable(p) and type(p.get("AuthenticationType")) is str and p["AuthenticationType"].upper() == "API_KEY"
+        for p in others
+    )
+
+
+def _literal_upper(res: Resource, key: str) -> str | None:
+    """A literal string setting in upper case, or None when it is unset or unknown."""
+    value = None if key in res.unresolved else res.properties.get(key)
+    return value.upper() if type(value) is str else None
+
+
+def _appsync_has_cache(api: Resource, apis: List[Resource], caches: List[Resource]) -> bool:
+    """True when a cache points at this API. A cache the scan cannot tie to an API counts for all."""
+
+    def ties(cache: Resource, target: Resource) -> bool:
+        return _value_mentions(cache.properties.get("ApiId"), target.name)
+
+    return any(ties(c, api) or not any(ties(c, a) for a in apis) for c in caches)
+
+
+_BEANSTALK_HEALTH = ("aws:elasticbeanstalk:healthreporting:system", "systemtype")
+_BEANSTALK_UPDATES = ("aws:elasticbeanstalk:managedactions", "managedactionsenabled")
+_BEANSTALK_LOGS = ("aws:elasticbeanstalk:cloudwatch:logs", "streamlogs")
+
+
+def _beanstalk_options(res: Resource) -> dict[tuple[str, str], Any] | None:
+    """Option values by lower-case namespace and name. None when the scan cannot read the settings:
+    an unreadable entry may set anything."""
+    if "OptionSettings" in res.unresolved:
+        return None
+    listed = res.properties.get("OptionSettings")
+    if listed is None:
+        return {}
+    if not isinstance(listed, list):
+        return None
+    options: dict[tuple[str, str], Any] = {}
+    for item in listed:
+        if not _readable(item):
+            return None
+        namespace, name = item.get("Namespace"), item.get("OptionName")
+        if type(namespace) is not str or type(name) is not str:
+            return None
+        if item.get("Value") is not None:
+            options[(namespace.lower(), name.lower())] = item["Value"]
+    return options
+
+
+def _beanstalk_template_is(template: Resource, name: Any) -> bool:
+    """True when an environment's TemplateName is this template. A literal matches only the template's
+    literal name: a CloudFormation template's generated name is never its logical id."""
+    if type(name) is str:
+        return name == template.properties.get("Name")
+    return _value_mentions(name, template.name)
+
+
+def _beanstalk_settings(env: Resource, templates: List[Resource]) -> dict[tuple[str, str], Any] | None:
+    """An environment's options, over those of a configuration template in this scan. None when the
+    scan cannot read them all, which includes a template outside this scan."""
+    own = _beanstalk_options(env)
+    if own is None or "TemplateName" in env.unresolved:
+        return None
+    name = env.properties.get("TemplateName")
+    if name is None:
+        return own
+    template = next((t for t in templates if _beanstalk_template_is(t, name)), None)
+    if template is None or template.malformed:
+        return None
+    # A template that copies another template or an environment holds settings the scan cannot read.
+    if any(k in template.unresolved or template.properties.get(k) is not None
+           for k in ("SourceConfiguration", "EnvironmentId")):
+        return None
+    inherited = _beanstalk_options(template)
+    return None if inherited is None else {**inherited, **own}
+
+
+def _app_services_findings(resources: List[Resource], template_path: Path) -> List[Finding]:
+    """AppSync (CF-APPSYNC-001..004), Transfer Family (CF-TRANSFER-001..003), App Runner
+    (CF-APPRUNNER-001) and Elastic Beanstalk (CF-BEANSTALK-001..003). A value the scan cannot read is
+    not judged."""
+    usable = [r for r in resources if not r.malformed]
+    apis = [r for r in usable if r.type == "appsync_graphql_api"]
+    caches = [r for r in usable if r.type == "appsync_api_cache"]
+    cache_malformed = any(r.malformed and r.type == "appsync_api_cache" for r in resources)
+    waf_covered, waf_unlinked = _waf_coverage(resources, "appsync_graphql_api")
+    templates = [r for r in resources if r.type == "elastic_beanstalk_configuration_template"]
+    out: List[Finding] = []
+
+    def add(res: Resource, check_id: str, title: str, severity: Severity, category: str,
+            recommendation: str) -> None:
+        out.append(Finding(
+            id=check_id, title=title, severity=severity, category=category,
+            file=res.file or str(template_path), line=res.line,
+            evidence=f"{res.name} ({res.source_type})", recommendation=recommendation,
+        ))
+
+    for api in apis:
+        log = None if "LogConfig" in api.unresolved else api.properties.get("LogConfig")
+        level = log.get("FieldLogLevel") if _readable(log) else None
+        if ("LogConfig" not in api.unresolved and log is None) or (type(level) is str and level.upper() == "NONE"):
+            add(api, "CF-APPSYNC-001", "AppSync API has no field-level logging", "Low", "Security",
+                "With no LogConfig, or FieldLogLevel: NONE, AppSync writes no resolver logs, so errors and "
+                "abuse leave no trace. Set LogConfig with FieldLogLevel: ERROR or ALL and a "
+                "CloudWatchLogsRoleArn (Security Hub AppSync.2). In CDK: logConfig: { fieldLogLevel: "
+                "appsync.FieldLogLevel.ERROR }.")
+        if _appsync_only_api_key(api):
+            add(api, "CF-APPSYNC-002", "AppSync API is authenticated only with an API key", "Medium", "Security",
+                "An API key is a shared value that sits in the client and identifies no caller, so anyone "
+                "who finds it can call the API until it expires. Use AWS_IAM, AMAZON_COGNITO_USER_POOLS, "
+                "OPENID_CONNECT or AWS_LAMBDA, unless the API is meant to be public (Security Hub "
+                "AppSync.5). In CDK: authorizationConfig with a defaultAuthorization other than "
+                "appsync.AuthorizationType.API_KEY.")
+        standard = _unset_or_is(api, "ApiType", "GRAPHQL")
+        if (standard and _unset_or_is(api, "Visibility", "GLOBAL") and not waf_unlinked
+                and api.name not in waf_covered):
+            add(api, "CF-APPSYNC-003", "AppSync API has no WAF web ACL in this template", "Medium", "Security",
+                "No AWS::WAFv2::WebACLAssociation (Terraform aws_wafv2_web_acl_association) in this template "
+                "points at this public API, so AWS WAF rules do not filter abuse or injection attempts. "
+                "Associate a web ACL with the API's ARN, or exclude this check if the association is in "
+                "another stack. In CDK: new wafv2.CfnWebACLAssociation(this, 'Waf', { resourceArn: "
+                "api.arn, webAclArn }).")
+        if standard and not cache_malformed and not _appsync_has_cache(api, apis, caches):
+            add(api, "CF-APPSYNC-004", "AppSync API has no cache in this template", "Low", "Performance Efficiency",
+                "No AWS::AppSync::ApiCache (Terraform aws_appsync_api_cache) in this template points at this "
+                "API. If the API serves repeated reads, a cache lowers latency and load on its data "
+                "sources. It adds an hourly cost and suits data that can be slightly stale, so exclude "
+                "this check when neither applies. In CDK: new appsync.CfnApiCache(this, 'Cache', { apiId: "
+                "api.apiId, apiCachingBehavior: 'PER_RESOLVER_CACHING', ttl: 300, type: 'SMALL' }).")
+
+    for server in (r for r in usable if r.type == "transfer_server"):
+        protocols = None if "Protocols" in server.unresolved else server.properties.get("Protocols")
+        if isinstance(protocols, list) and any(type(p) is str and p.upper() == "FTP" for p in protocols):
+            add(server, "CF-TRANSFER-001", "Transfer Family server allows FTP", "Medium", "Security",
+                "FTP sends credentials and data unencrypted, so anyone on the path can read or change them. "
+                "Remove FTP from Protocols and use SFTP, FTPS or AS2 (Security Hub Transfer.2). In CDK: "
+                "protocols: ['SFTP'] on the CfnServer.")
+        if not any(k in server.unresolved or server.properties.get(k)
+                   for k in ("LoggingRole", "StructuredLogDestinations")):
+            add(server, "CF-TRANSFER-002", "Transfer Family server has no logging", "Low", "Security",
+                "With neither LoggingRole nor StructuredLogDestinations, the server keeps no record of "
+                "who transferred which files. Set StructuredLogDestinations to a CloudWatch log group, or "
+                "LoggingRole to a role that can write logs. In CDK: structuredLogDestinations or "
+                "loggingRole on the CfnServer.")
+        if _literal_upper(server, "EndpointType") == "PUBLIC":
+            add(server, "CF-TRANSFER-003", "Transfer Family server has a public endpoint", "Low", "Security",
+                "A PUBLIC endpoint takes connections from anywhere, and security groups cannot limit it. "
+                "AWS recommends EndpointType: VPC with EndpointDetails: keep it internal, or attach Elastic "
+                "IP addresses and limit clients with security groups. Changing the type interrupts the "
+                "server. In CDK: endpointType: 'VPC' and endpointDetails on the CfnServer.")
+
+    for service in (r for r in usable if r.type == "apprunner_service"):
+        if "ObservabilityConfiguration" in service.unresolved:
+            continue
+        block = service.properties.get("ObservabilityConfiguration")
+        if block is None or (_readable(block) and _flag(block.get("ObservabilityEnabled")) is False):
+            add(service, "CF-APPRUNNER-001", "App Runner service has observability off", "Low",
+                "Operational Excellence",
+                "With ObservabilityConfiguration.ObservabilityEnabled not true, the App Runner service sends "
+                "no X-Ray traces, so slow or failing requests are harder to follow. Set it to true with an "
+                "ObservabilityConfigurationArn. In CDK: observabilityConfiguration on the CfnService.")
+
+    for env in (r for r in usable if r.type == "elastic_beanstalk_environment"):
+        settings = _beanstalk_settings(env, templates)
+        if settings is None:
+            continue
+        health = settings.get(_BEANSTALK_HEALTH)
+        if health is None or (type(health) is str and health.lower() != "enhanced"):
+            add(env, "CF-BEANSTALK-001", "Elastic Beanstalk environment does not use enhanced health", "Low",
+                "Operational Excellence",
+                "SystemType in aws:elasticbeanstalk:healthreporting:system defaults to basic, which sees "
+                "far less of what is wrong with an instance. Set it to enhanced, with a service role and a "
+                "version 2 or newer platform (Security Hub ElasticBeanstalk.1). A value set in .ebextensions "
+                "is not read. In CDK: optionSettings on the CfnEnvironment.")
+        if _flag(settings.get(_BEANSTALK_UPDATES)) is False:
+            add(env, "CF-BEANSTALK-002", "Elastic Beanstalk environment has managed updates off", "Low", "Security",
+                "ManagedActionsEnabled in aws:elasticbeanstalk:managedactions defaults to false, so the "
+                "platform gets no fixes until someone applies them. Set it to true, with PreferredStartTime, "
+                "and UpdateLevel in aws:elasticbeanstalk:managedactions:platformupdate (Security Hub "
+                "ElasticBeanstalk.2). A value set in .ebextensions is not read. In CDK: optionSettings on "
+                "the CfnEnvironment.")
+        if _flag(settings.get(_BEANSTALK_LOGS)) is False:
+            add(env, "CF-BEANSTALK-003", "Elastic Beanstalk environment does not stream logs to CloudWatch", "Low",
+                "Operational Excellence",
+                "StreamLogs in aws:elasticbeanstalk:cloudwatch:logs defaults to false, so logs stay on "
+                "instances and are lost when one is replaced. Set it to true, and set RetentionInDays "
+                "(Security Hub ElasticBeanstalk.3). A value set in .ebextensions is not read. In CDK: "
+                "optionSettings on the CfnEnvironment.")
     return out
 
 
@@ -6361,6 +6582,9 @@ def _run_resource_checks(
 
     # --- SageMaker notebooks and endpoint configs, FSx file systems ---
     findings.extend(_sagemaker_fsx_findings(resources, template_path))
+
+    # --- AppSync, Transfer Family, App Runner and Elastic Beanstalk ---
+    findings.extend(_app_services_findings(resources, template_path))
 
     # --- AWS Backup vaults, plans and which resources they select ---
     findings.extend(_backup_findings(resources, template_path))

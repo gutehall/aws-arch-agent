@@ -1489,6 +1489,104 @@ _CLOUDFORMATION["CF-FSX-003"] = """$name:
     LustreConfiguration:
       AutomaticBackupRetentionDays: 7"""
 
+_CLOUDFORMATION["CF-APPSYNC-001"] = """$name:
+  Type: AWS::AppSync::GraphQLApi
+  Properties:
+    # keep the other settings as they are
+    LogConfig:
+      FieldLogLevel: ERROR
+      CloudWatchLogsRoleArn: arn:aws:iam::111122223333:role/appsync-logs"""
+
+_CLOUDFORMATION["CF-APPSYNC-002"] = """$name:
+  Type: AWS::AppSync::GraphQLApi
+  Properties:
+    # keep the other settings as they are
+    AuthenticationType: AWS_IAM"""
+
+_CLOUDFORMATION["CF-APPSYNC-003"] = """${name}WebAcl:
+  Type: AWS::WAFv2::WebACLAssociation
+  Properties:
+    ResourceArn: !GetAtt $name.Arn
+    WebACLArn: arn:aws:wafv2:us-east-1:111122223333:regional/webacl/my-acl/0123"""
+
+_CLOUDFORMATION["CF-APPSYNC-004"] = """${name}Cache:
+  Type: AWS::AppSync::ApiCache
+  Properties:
+    ApiId: !GetAtt $name.ApiId
+    ApiCachingBehavior: PER_RESOLVER_CACHING
+    Ttl: 300
+    Type: SMALL"""
+
+_CLOUDFORMATION["CF-TRANSFER-001"] = """$name:
+  Type: AWS::Transfer::Server
+  Properties:
+    # keep the other settings as they are
+    Protocols:
+      - SFTP"""
+
+_CLOUDFORMATION["CF-TRANSFER-002"] = """$name:
+  Type: AWS::Transfer::Server
+  Properties:
+    # keep the other settings as they are
+    StructuredLogDestinations:
+      - arn:aws:logs:us-east-1:111122223333:log-group:/aws/transfer/server:*"""
+
+_CLOUDFORMATION["CF-TRANSFER-003"] = """$name:
+  Type: AWS::Transfer::Server
+  Properties:
+    # keep the other settings as they are; this interrupts the server
+    EndpointType: VPC
+    EndpointDetails:
+      VpcId: vpc-0123456789abcdef0
+      SubnetIds:
+        - subnet-0123456789abcdef0
+      SecurityGroupIds:
+        - sg-0123456789abcdef0"""
+
+_CLOUDFORMATION["CF-APPRUNNER-001"] = """$name:
+  Type: AWS::AppRunner::Service
+  Properties:
+    # keep the other settings as they are
+    ObservabilityConfiguration:
+      ObservabilityEnabled: true
+      ObservabilityConfigurationArn: arn:aws:apprunner:us-east-1:111122223333:observabilityconfiguration/xray/1/0123"""
+
+_CLOUDFORMATION["CF-BEANSTALK-001"] = """$name:
+  Type: AWS::ElasticBeanstalk::Environment
+  Properties:
+    # keep the other settings as they are; enhanced health needs a service role
+    OptionSettings:
+      - Namespace: aws:elasticbeanstalk:healthreporting:system
+        OptionName: SystemType
+        Value: enhanced"""
+
+_CLOUDFORMATION["CF-BEANSTALK-002"] = """$name:
+  Type: AWS::ElasticBeanstalk::Environment
+  Properties:
+    # keep the other settings as they are
+    OptionSettings:
+      - Namespace: aws:elasticbeanstalk:managedactions
+        OptionName: ManagedActionsEnabled
+        Value: 'true'
+      - Namespace: aws:elasticbeanstalk:managedactions
+        OptionName: PreferredStartTime
+        Value: 'Sun:02:00'
+      - Namespace: aws:elasticbeanstalk:managedactions:platformupdate
+        OptionName: UpdateLevel
+        Value: minor"""
+
+_CLOUDFORMATION["CF-BEANSTALK-003"] = """$name:
+  Type: AWS::ElasticBeanstalk::Environment
+  Properties:
+    # keep the other settings as they are
+    OptionSettings:
+      - Namespace: aws:elasticbeanstalk:cloudwatch:logs
+        OptionName: StreamLogs
+        Value: 'true'
+      - Namespace: aws:elasticbeanstalk:cloudwatch:logs
+        OptionName: RetentionInDays
+        Value: '30'"""
+
 _CLOUDFORMATION["CF-CF-005"] = """$name:
   Type: AWS::CloudFront::Distribution
   Properties:
@@ -1940,6 +2038,101 @@ resource "aws_s3_bucket_replication_configuration" "$tf_name" {
         }
       }
     }
+  }
+}"""
+
+_TERRAFORM["CF-APPSYNC-001"] = """resource "aws_appsync_graphql_api" "$tf_name" {
+  # keep the other arguments as they are
+  log_config {
+    field_log_level          = "ERROR"
+    cloudwatch_logs_role_arn = aws_iam_role.appsync_logs.arn
+  }
+}"""
+
+_TERRAFORM["CF-APPSYNC-002"] = """resource "aws_appsync_graphql_api" "$tf_name" {
+  # keep the other arguments as they are
+  authentication_type = "AWS_IAM"
+}"""
+
+_TERRAFORM["CF-APPSYNC-003"] = """resource "aws_wafv2_web_acl_association" "${tf_name}_web_acl" {
+  resource_arn = aws_appsync_graphql_api.$tf_name.arn
+  web_acl_arn  = aws_wafv2_web_acl.main.arn
+}"""
+
+_TERRAFORM["CF-APPSYNC-004"] = """resource "aws_appsync_api_cache" "${tf_name}_cache" {
+  api_id               = aws_appsync_graphql_api.$tf_name.id
+  api_caching_behavior = "PER_RESOLVER_CACHING"
+  ttl                  = 300
+  type                 = "SMALL"
+}"""
+
+_TERRAFORM["CF-TRANSFER-001"] = """resource "aws_transfer_server" "$tf_name" {
+  # keep the other arguments as they are
+  protocols = ["SFTP"]
+}"""
+
+_TERRAFORM["CF-TRANSFER-002"] = """resource "aws_transfer_server" "$tf_name" {
+  # keep the other arguments as they are
+  structured_log_destinations = ["$${aws_cloudwatch_log_group.transfer.arn}:*"]
+}"""
+
+_TERRAFORM["CF-TRANSFER-003"] = """resource "aws_transfer_server" "$tf_name" {
+  # keep the other arguments as they are; this interrupts the server
+  endpoint_type = "VPC"
+  endpoint_details {
+    vpc_id             = aws_vpc.main.id
+    subnet_ids         = [aws_subnet.private.id]
+    security_group_ids = [aws_security_group.transfer.id]
+  }
+}"""
+
+_TERRAFORM["CF-APPRUNNER-001"] = """resource "aws_apprunner_service" "$tf_name" {
+  # keep the other arguments as they are
+  observability_configuration {
+    observability_enabled           = true
+    observability_configuration_arn = aws_apprunner_observability_configuration.xray.arn
+  }
+}"""
+
+_TERRAFORM["CF-BEANSTALK-001"] = """resource "aws_elastic_beanstalk_environment" "$tf_name" {
+  # keep the other arguments as they are; enhanced health needs a service role
+  setting {
+    namespace = "aws:elasticbeanstalk:healthreporting:system"
+    name      = "SystemType"
+    value     = "enhanced"
+  }
+}"""
+
+_TERRAFORM["CF-BEANSTALK-002"] = """resource "aws_elastic_beanstalk_environment" "$tf_name" {
+  # keep the other arguments as they are
+  setting {
+    namespace = "aws:elasticbeanstalk:managedactions"
+    name      = "ManagedActionsEnabled"
+    value     = "true"
+  }
+  setting {
+    namespace = "aws:elasticbeanstalk:managedactions"
+    name      = "PreferredStartTime"
+    value     = "Sun:02:00"
+  }
+  setting {
+    namespace = "aws:elasticbeanstalk:managedactions:platformupdate"
+    name      = "UpdateLevel"
+    value     = "minor"
+  }
+}"""
+
+_TERRAFORM["CF-BEANSTALK-003"] = """resource "aws_elastic_beanstalk_environment" "$tf_name" {
+  # keep the other arguments as they are
+  setting {
+    namespace = "aws:elasticbeanstalk:cloudwatch:logs"
+    name      = "StreamLogs"
+    value     = "true"
+  }
+  setting {
+    namespace = "aws:elasticbeanstalk:cloudwatch:logs"
+    name      = "RetentionInDays"
+    value     = "30"
   }
 }"""
 

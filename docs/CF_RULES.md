@@ -352,6 +352,21 @@ CloudFormation template rules run when the agent has access to template files. T
   - CF-FSX-001 (Low): no `KmsKeyId`. FSx still encrypts with its service key, so this asks for a customer managed key, not for encryption.
   - CF-FSX-002 (Low, Security Hub FSx.2 on Lustre, FSx.1 on OpenZFS, none on Windows): `CopyTagsToBackups` unset or false. ONTAP has no such setting. FSx.1 also asks for `CopyTagsToVolumes`, which is not read.
   - CF-FSX-003 (Low): literal `AutomaticBackupRetentionDays: 0` on any type, or unset on persistent Lustre, where the default is 0. Unset on ONTAP, Windows and OpenZFS is not judged: CloudFormation documents a default of 30, and the Terraform provider's defaults differ.
+- **AppSync** (`AWS::AppSync::GraphQLApi`, `AWS::AppSync::ApiCache`; Terraform `aws_appsync_graphql_api`, `aws_appsync_api_cache`). A value from a parameter, a Terraform variable or a dynamic block is not judged:
+  - CF-APPSYNC-001 (Low, Security Hub AppSync.2): no `LogConfig`, or literal `FieldLogLevel: NONE`. `INFO` and `DEBUG` are not judged: the control's text fails only `NONE`, though it passes only `ERROR` and `ALL` by default.
+  - CF-APPSYNC-002 (Medium, Security Hub AppSync.5): literal `AuthenticationType: API_KEY` with no other kind in `AdditionalAuthenticationProviders`. An API that also takes another kind is not reported, which is narrower than the control.
+  - CF-APPSYNC-003 (Medium): no `AWS::WAFv2::WebACLAssociation` or `AWS::WAFRegional::WebACLAssociation` (Terraform `aws_wafv2_web_acl_association`, `aws_wafregional_web_acl_association`) in this scan points at the API. An association the scan cannot tie to an API, ALB or stage counts for all APIs. A `PRIVATE` or `MERGED` API is not judged. An association in another stack is not visible to the scan.
+  - CF-APPSYNC-004 (Low, advice): no `ApiCache` in this scan has an `ApiId` that points at the API. A cache the scan cannot tie to an API counts for all APIs. A `MERGED` API is not judged.
+- **Transfer Family** (`AWS::Transfer::Server`; Terraform `aws_transfer_server`):
+  - CF-TRANSFER-001 (Medium, Security Hub Transfer.2): literal `FTP` in `Protocols`. Unset means `SFTP` and is not reported, and `FTPS` is not `FTP`.
+  - CF-TRANSFER-002 (Low): no `LoggingRole` and no `StructuredLogDestinations`, or both empty. A value from a parameter or a variable counts as set. Security Hub Transfer.3 is about connectors, so it is not cited.
+  - CF-TRANSFER-003 (Low): literal `EndpointType: PUBLIC`, or Terraform `endpoint_type` unset with no `endpoint_details`, which the provider documents as `PUBLIC`. Unset in CloudFormation is not judged: no default is documented.
+- **App Runner** (`AWS::AppRunner::Service`; Terraform `aws_apprunner_service`):
+  - CF-APPRUNNER-001 (Low): `ObservabilityConfiguration` unset, or `ObservabilityEnabled` literally false. A value from a parameter, a variable or a dynamic block is not judged.
+- **Elastic Beanstalk** (`AWS::ElasticBeanstalk::Environment`, `AWS::ElasticBeanstalk::ConfigurationTemplate`; Terraform `aws_elastic_beanstalk_environment`, `aws_elastic_beanstalk_configuration_template`). Reads `OptionSettings` (Terraform `setting` blocks) over those of a configuration template in this scan that `TemplateName` (`template_name`) points at. An environment is not judged at all when its settings come from a parameter or a dynamic block, when an entry's namespace or name cannot be read, or when its template is outside the scan, cannot be read, or copies a `SourceConfiguration` or `EnvironmentId`. One option's unknown value leaves only that option unjudged. A value set in `.ebextensions` in the source bundle is not read, so an environment that sets one there is still reported:
+  - CF-BEANSTALK-001 (Low, Security Hub ElasticBeanstalk.1): `SystemType` in `aws:elasticbeanstalk:healthreporting:system` not `enhanced`. Unset is reported: the documented default is `basic`.
+  - CF-BEANSTALK-002 (Low, Security Hub ElasticBeanstalk.2): `ManagedActionsEnabled` in `aws:elasticbeanstalk:managedactions` unset, which means false, or false.
+  - CF-BEANSTALK-003 (Low, Security Hub ElasticBeanstalk.3): `StreamLogs` in `aws:elasticbeanstalk:cloudwatch:logs` unset, which means false, or false.
 - **Kinesis**: CF-KIN-001 (no `StreamEncryption`, Medium; Terraform `encryption_type` defaults to `NONE`)
 - **ElastiCache** (`AWS::ElastiCache::ReplicationGroup`): CF-EC-001 (not encrypted at rest, Medium; Redis OSS defaults to off, Valkey to on, so an unset value on Valkey is not reported), CF-EC-002 (`TransitEncryptionEnabled` not true, Medium), CF-EC-003 (Medium, Security Hub ElastiCache.3: `AutomaticFailoverEnabled` or `MultiAZEnabled` not true; not reported in dev or staging stacks; in V2 it replaces REL-016), CF-EC-006 (Medium, ElastiCache.6: Redis OSS below 6 with no `AuthToken`; an unset `EngineVersion` is not judged). On replication groups and `AWS::ElastiCache::CacheCluster` (`aws_elasticache_cluster`): CF-EC-004 (Low, ElastiCache.1: Redis OSS or Valkey with `SnapshotRetentionLimit` 0 or unset), CF-EC-005 (Low, ElastiCache.2: Redis OSS or Valkey with `AutoMinorVersionUpgrade: false`), CF-EC-007 (Low, ElastiCache.7: `CacheSubnetGroupName` unset or `default`). A Terraform cluster in a replication group takes these from the group, and the template does not show what an existing `PrimaryClusterId` already has, so neither is judged for them or for CF-EC-006
 - **OpenSearch** (`AWS::OpenSearchService::Domain`): CF-OS-001 (`EncryptionAtRestOptions.Enabled` not true, Medium), CF-OS-002 (`NodeToNodeEncryptionOptions.Enabled` not true, Medium); both are off by default
@@ -450,12 +465,12 @@ CloudFormation template rules run when the agent has access to template files. T
 | Pillar | CF rule IDs |
 |--------|-------------|
 | Operational Excellence | CF-S3-004, CF-RDS-007, CF-RDS-010, CF-RDS-011, CF-CT-001, CF-CT-002, CF-FL-001, CF-EKS-001, CF-TGW-002, CF-CB-004, CF-CP-003, CF-OS-006, CF-RS-004, CF-DOCDB-003, CF-NEP-002, CF-SFN-002, CF-SFN-003, CF-EB-001, CF-ECS-008, CF-ECS-010, CF-ASG-005, CF-GLUE-002, CF-GLUE-003, CF-S3-011, CF-CF-005, CF-FSX-002 |
-| Security | CF-S3-001, CF-S3-002, CF-S3-005, CF-RDS-001, CF-RDS-004, CF-APIGW-003, CF-APIGW-004, CF-APIGW-007, CF-APIGW-009, CF-APIGW-V2-003, CF-LAM-004, CF-LAM-005, CF-RDS-006, CF-RDS-008, CF-RDS-009, CF-RDS-012, CF-RDS-013, CF-CT-003, CF-KMS-001, CF-RP-001, CF-EC2-001, CF-EKS-002, CF-EKS-003, CF-IAM-001, CF-IAM-002, CF-IAM-003, CF-IAM-004, CF-IAM-005, CF-IAM-006, CF-IAM-007, CF-IAM-008, CF-ALB-002, CF-ALB-003, CF-ALB-004, CF-ALB-006, CF-CLB-001, CF-CLB-002, CF-SG-001, CF-SG-002, CF-SG-003, CF-NACL-001, CF-TGW-001, CF-CW-002, CF-SQS-001, CF-DDB-002, CF-LAM-003, CF-SNS-001, CF-EBS-001, CF-EFS-001, CF-KIN-001, CF-EC-001, CF-EC-002, CF-OS-001, CF-OS-002, CF-RS-001, CF-DOCDB-001, CF-NEP-001, CF-MSK-001, CF-CF-001, CF-CF-002, CF-CF-003, CF-CF-004, CF-WAF-001, CF-EC2-002, CF-EC2-003, CF-PAR-001, CF-PAR-002, CF-ECR-001, CF-ECR-002, CF-ECR-003, CF-ECS-001, CF-ECS-002, CF-ECS-003, CF-SM-001, CF-COG-001, CF-COG-002, CF-COG-003, CF-CB-001, CF-CB-002, CF-CB-003, CF-CB-005, CF-CP-001, CF-KMS-002, CF-SSM-001, CF-OS-003, CF-OS-004, CF-OS-005, CF-MSK-002, CF-MSK-003, CF-RS-002, CF-RS-005, CF-RS-006, CF-RS-007, CF-NEP-005, CF-BAK-001, CF-EC-005, CF-EC-006, CF-EC-007, CF-EFS-004, CF-EFS-005, CF-ECS-004, CF-ECS-005, CF-ECS-006, CF-ECS-007, CF-ECS-009, CF-EKS-004, CF-ASG-003, CF-ASG-004, CF-ATH-001, CF-ATH-002, CF-GLUE-001, CF-FH-001, CF-EMR-001, CF-EMR-002, CF-EMR-003, CF-DMS-001, CF-DMS-002, CF-DMS-003, CF-S3-008, CF-S3-009, CF-CF-008, CF-CF-010, CF-CF-011, CF-SAGE-001, CF-SAGE-002, CF-SAGE-003, CF-SAGE-004, CF-FSX-001 |
+| Security | CF-S3-001, CF-S3-002, CF-S3-005, CF-RDS-001, CF-RDS-004, CF-APIGW-003, CF-APIGW-004, CF-APIGW-007, CF-APIGW-009, CF-APIGW-V2-003, CF-LAM-004, CF-LAM-005, CF-RDS-006, CF-RDS-008, CF-RDS-009, CF-RDS-012, CF-RDS-013, CF-CT-003, CF-KMS-001, CF-RP-001, CF-EC2-001, CF-EKS-002, CF-EKS-003, CF-IAM-001, CF-IAM-002, CF-IAM-003, CF-IAM-004, CF-IAM-005, CF-IAM-006, CF-IAM-007, CF-IAM-008, CF-ALB-002, CF-ALB-003, CF-ALB-004, CF-ALB-006, CF-CLB-001, CF-CLB-002, CF-SG-001, CF-SG-002, CF-SG-003, CF-NACL-001, CF-TGW-001, CF-CW-002, CF-SQS-001, CF-DDB-002, CF-LAM-003, CF-SNS-001, CF-EBS-001, CF-EFS-001, CF-KIN-001, CF-EC-001, CF-EC-002, CF-OS-001, CF-OS-002, CF-RS-001, CF-DOCDB-001, CF-NEP-001, CF-MSK-001, CF-CF-001, CF-CF-002, CF-CF-003, CF-CF-004, CF-WAF-001, CF-EC2-002, CF-EC2-003, CF-PAR-001, CF-PAR-002, CF-ECR-001, CF-ECR-002, CF-ECR-003, CF-ECS-001, CF-ECS-002, CF-ECS-003, CF-SM-001, CF-COG-001, CF-COG-002, CF-COG-003, CF-CB-001, CF-CB-002, CF-CB-003, CF-CB-005, CF-CP-001, CF-KMS-002, CF-SSM-001, CF-OS-003, CF-OS-004, CF-OS-005, CF-MSK-002, CF-MSK-003, CF-RS-002, CF-RS-005, CF-RS-006, CF-RS-007, CF-NEP-005, CF-BAK-001, CF-EC-005, CF-EC-006, CF-EC-007, CF-EFS-004, CF-EFS-005, CF-ECS-004, CF-ECS-005, CF-ECS-006, CF-ECS-007, CF-ECS-009, CF-EKS-004, CF-ASG-003, CF-ASG-004, CF-ATH-001, CF-ATH-002, CF-GLUE-001, CF-FH-001, CF-EMR-001, CF-EMR-002, CF-EMR-003, CF-DMS-001, CF-DMS-002, CF-DMS-003, CF-S3-008, CF-S3-009, CF-CF-008, CF-CF-010, CF-CF-011, CF-SAGE-001, CF-SAGE-002, CF-SAGE-003, CF-SAGE-004, CF-FSX-001, CF-APPSYNC-001, CF-APPSYNC-002, CF-APPSYNC-003, CF-TRANSFER-001, CF-TRANSFER-002, CF-TRANSFER-003, CF-BEANSTALK-002 |
 | Reliability | CF-S3-003, CF-RDS-002, CF-RDS-003, CF-RDS-005, CF-LAM-001, CF-LAM-006, CF-LAM-007, CF-LAM-008, CF-APIGW-005, CF-APIGW-006, CF-APIGW-V2-004, CF-DDB-001, CF-SQS-002, CF-DEL-001, CF-NAT-001, CF-ALB-005, CF-ALB-007, CF-CLB-004, CF-CLB-005, CF-CP-002, CF-KMS-003, CF-OS-007, CF-KIN-002, CF-RS-003, CF-DOCDB-002, CF-DOCDB-004, CF-NEP-003, CF-NEP-004, CF-SFN-001, CF-EB-002, CF-SQS-003, CF-BAK-002, CF-BAK-003, CF-BAK-004, CF-BAK-005, CF-DDB-004, CF-DDB-005, CF-EC-003, CF-EC-004, CF-EFS-002, CF-ASG-001, CF-ASG-002, CF-DMS-004, CF-S3-010, CF-CF-009, CF-SAGE-005, CF-FSX-003 |
-| Performance Efficiency | CF-APIGW-008, CF-PERF-001, CF-PERF-002, CF-PERF-003, CF-PERF-004, CF-ECS-011, CF-CF-013 |
+| Performance Efficiency | CF-APIGW-008, CF-PERF-001, CF-PERF-002, CF-PERF-003, CF-PERF-004, CF-ECS-011, CF-CF-013, CF-APPSYNC-004 |
 | Cost Optimization | CF-CW-001, CF-RDS-014, CF-COST-002, CF-EBS-002, CF-EIP-001, CF-TAG-001, CF-ENV-001, CF-ENV-002, CF-ENV-003, CF-ENV-004, CF-ENV-005, CF-ENV-006, CF-GEN-001, CF-S3-006, CF-S3-007, CF-DDB-003, CF-VPC-002, CF-VPC-003, CF-SSM-002, CF-EFS-003, CF-ASG-006, CF-S3-012, CF-CF-006, CF-CF-012 |
 | Sustainability | CF-SUST-001, CF-SUST-002, CF-SUST-003, CF-CF-007 |
-| Observability (reported under Operational Excellence) | CF-ALB-001, CF-CLB-003, CF-LAM-002, CF-APIGW-001, CF-APIGW-002, CF-APIGW-V2-001, CF-APIGW-V2-002 |
+| Observability (reported under Operational Excellence) | CF-ALB-001, CF-CLB-003, CF-LAM-002, CF-APIGW-001, CF-APIGW-002, CF-APIGW-V2-001, CF-APIGW-V2-002, CF-APPRUNNER-001, CF-BEANSTALK-001, CF-BEANSTALK-003 |
 | Best Practices | CF-VPC-001 |
 
 ## See also
@@ -518,6 +533,11 @@ Every rule has one or more themes, which cut across pillars: `finops`, `security
 | CF-APIGW-V2-002 | observability |
 | CF-APIGW-V2-003 | identity, network-exposure |
 | CF-APIGW-V2-004 | resilience |
+| CF-APPRUNNER-001 | observability |
+| CF-APPSYNC-001 | observability, security-baseline |
+| CF-APPSYNC-002 | identity |
+| CF-APPSYNC-003 | network-exposure |
+| CF-APPSYNC-004 | resilience |
 | CF-ASG-001 | resilience |
 | CF-ASG-002 | resilience |
 | CF-ASG-003 | security-baseline, identity |
@@ -531,6 +551,9 @@ Every rule has one or more themes, which cut across pillars: `finops`, `security
 | CF-BAK-003 | resilience, data-protection |
 | CF-BAK-004 | data-protection, resilience |
 | CF-BAK-005 | resilience, data-protection |
+| CF-BEANSTALK-001 | observability |
+| CF-BEANSTALK-002 | security-baseline |
+| CF-BEANSTALK-003 | observability |
 | CF-CB-001 | data-protection, identity |
 | CF-CB-002 | data-protection, identity |
 | CF-CB-003 | security-baseline |
@@ -738,6 +761,9 @@ Every rule has one or more themes, which cut across pillars: `finops`, `security
 | CF-TAG-001 | finops |
 | CF-TGW-001 | network-exposure, identity |
 | CF-TGW-002 | observability, network-exposure |
+| CF-TRANSFER-001 | data-protection |
+| CF-TRANSFER-002 | observability, security-baseline |
+| CF-TRANSFER-003 | network-exposure |
 | CF-VPC-001 | network-exposure, finops |
 | CF-VPC-002 | finops |
 | CF-VPC-003 | finops |

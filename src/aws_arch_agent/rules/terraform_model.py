@@ -109,6 +109,12 @@ TF_TYPE_TO_CANONICAL: dict[str, str] = {
     "aws_fsx_data_repository_association": "fsx_data_repository_association",
     "aws_sagemaker_notebook_instance": "sagemaker_notebook_instance",
     "aws_sagemaker_endpoint_configuration": "sagemaker_endpoint_config",
+    "aws_appsync_graphql_api": "appsync_graphql_api",
+    "aws_appsync_api_cache": "appsync_api_cache",
+    "aws_transfer_server": "transfer_server",
+    "aws_apprunner_service": "apprunner_service",
+    "aws_elastic_beanstalk_environment": "elastic_beanstalk_environment",
+    "aws_elastic_beanstalk_configuration_template": "elastic_beanstalk_configuration_template",
     "aws_api_gateway_method": "api_gateway_method",
     "aws_api_gateway_domain_name": "api_gateway_domain_name",
     "aws_api_gateway_usage_plan": "api_gateway_usage_plan",
@@ -1417,6 +1423,88 @@ def _fsx_data_repository_association(body: dict) -> dict:
     return {"FileSystemId": _known(_ref(body, "file_system_id"))}
 
 
+def _block_is_unknown(body: dict, key: str) -> bool:
+    """True when a block comes from a dynamic block or an expression, so the scan cannot read it."""
+    return key in _dynamic_names(body) or isinstance(body.get(key), _Expr)
+
+
+def _appsync_graphql_api(body: dict) -> dict:
+    """aws_appsync_graphql_api. A WAF web ACL is attached by aws_wafv2_web_acl_association: there is
+    no inline argument."""
+    props: dict = {}
+    _set(props, "AuthenticationType", _v(body, "authentication_type"))
+    _set(props, "ApiType", _v(body, "api_type"))
+    _set(props, "Visibility", _v(body, "visibility"))
+    if _block_is_unknown(body, "log_config"):
+        props["LogConfig"] = UNRESOLVED
+    elif log := _first_block(body, "log_config"):
+        props["LogConfig"] = {"FieldLogLevel": _known(_v(log, "field_log_level"))}
+    if _block_is_unknown(body, "additional_authentication_provider"):
+        props["AdditionalAuthenticationProviders"] = UNRESOLVED
+    else:
+        providers = [{"AuthenticationType": _known(_v(block, "authentication_type"))}
+                     for block in _blocks(body, "additional_authentication_provider")]
+        _set(props, "AdditionalAuthenticationProviders", providers or None)
+    return props
+
+
+def _appsync_api_cache(body: dict) -> dict:
+    return {"ApiId": _known(_ref(body, "api_id"))}
+
+
+def _transfer_server(body: dict) -> dict:
+    """aws_transfer_server. The provider documents endpoint_type as defaulting to PUBLIC. Logging
+    arguments are only checked for presence."""
+    props: dict = {}
+    _set(props, "Protocols", _v(body, "protocols"))
+    default = None if body.get("endpoint_details") or "endpoint_details" in _dynamic_names(body) else "PUBLIC"
+    _set(props, "EndpointType", _v(body, "endpoint_type", default))
+    _set(props, "LoggingRole", _ref(body, "logging_role"))
+    _set(props, "StructuredLogDestinations", _ref(body, "structured_log_destinations"))
+    return props
+
+
+def _apprunner_service(body: dict) -> dict:
+    if _block_is_unknown(body, "observability_configuration"):
+        return {"ObservabilityConfiguration": UNRESOLVED}
+    block = _first_block(body, "observability_configuration")
+    if not block:
+        return {}
+    return {"ObservabilityConfiguration": {"ObservabilityEnabled": _known(_v(block, "observability_enabled"))}}
+
+
+def _beanstalk_option_settings(body: dict) -> Any:
+    """Repeated setting blocks, in the shape of OptionSettings. One unknown value stays _OPAQUE, so
+    it does not hide the other settings."""
+    if _block_is_unknown(body, "setting"):
+        return UNRESOLVED
+    settings = []
+    for block in _blocks(body, "setting"):
+        item: dict = {}
+        _set(item, "Namespace", _known(_v(block, "namespace")))
+        _set(item, "OptionName", _known(_v(block, "name")))
+        _set(item, "Value", _known(_v(block, "value")))
+        settings.append(item)
+    return settings or None
+
+
+def _beanstalk_environment(body: dict) -> dict:
+    props: dict = {}
+    _set(props, "OptionSettings", _beanstalk_option_settings(body))
+    _set(props, "TemplateName", _ref(body, "template_name"))
+    return props
+
+
+def _beanstalk_configuration_template(body: dict) -> dict:
+    """aws_elastic_beanstalk_configuration_template. Name is Terraform only: an environment can use
+    the template by this literal name."""
+    props: dict = {}
+    _set(props, "Name", _v(body, "name"))
+    _set(props, "OptionSettings", _beanstalk_option_settings(body))
+    _set(props, "EnvironmentId", _ref(body, "environment_id"))
+    return props
+
+
 def _log_delivery_source(body: dict) -> dict:
     return {"ResourceArn": _known(_ref(body, "resource_arn"))}
 
@@ -2415,6 +2503,12 @@ _ADAPTERS: dict[str, Callable[[dict], dict]] = {
     "aws_fsx_ontap_file_system": _fsx_file_system("ONTAP", "OntapConfiguration"),
     "aws_fsx_openzfs_file_system": _fsx_file_system("OPENZFS", "OpenZFSConfiguration"),
     "aws_fsx_data_repository_association": _fsx_data_repository_association,
+    "aws_appsync_graphql_api": _appsync_graphql_api,
+    "aws_appsync_api_cache": _appsync_api_cache,
+    "aws_transfer_server": _transfer_server,
+    "aws_apprunner_service": _apprunner_service,
+    "aws_elastic_beanstalk_environment": _beanstalk_environment,
+    "aws_elastic_beanstalk_configuration_template": _beanstalk_configuration_template,
     "aws_wafv2_web_acl_association": _waf_association,
     "aws_wafregional_web_acl_association": _waf_association,
     "aws_sqs_queue_policy": _resource_policy,
