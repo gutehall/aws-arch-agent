@@ -13,6 +13,7 @@ class CloudTrailMissing(Rule):
     category = "Operational Excellence"
     severity = "Medium"
     themes = ("observability",)
+    recommendation = "Consider enabling CloudTrail for API audit and security analysis."
 
     def run(self, repo_path: Path, language: str = "typescript") -> List[Finding]:
         trail_pat = r"cloudtrail\.(Trail|CfnTrail)|CloudTrail|aws_cloudtrail" if language == "typescript" else r"cloudtrail|CloudTrail|aws_cloudtrail"
@@ -26,7 +27,7 @@ class CloudTrailMissing(Rule):
                 file=None,
                 line=None,
                 evidence=None,
-                recommendation="Consider enabling CloudTrail for API audit and security analysis.",
+                recommendation=self.recommendation,
             )]
         return []
 
@@ -37,6 +38,7 @@ class VpcFlowLogsMissing(Rule):
     category = "Operational Excellence"
     severity = "Low"
     themes = ("observability", "network-exposure",)
+    recommendation = "Consider VPC Flow Logs for network troubleshooting and security analysis."
 
     def run(self, repo_path: Path, language: str = "typescript") -> List[Finding]:
         vpc_pat = r"new\s+ec2\.Vpc\(" if language == "typescript" else r"ec2\.Vpc\("
@@ -53,7 +55,7 @@ class VpcFlowLogsMissing(Rule):
                 file=f,
                 line=ln,
                 evidence=txt,
-                recommendation="Consider VPC Flow Logs for network troubleshooting and security analysis.",
+                recommendation=self.recommendation,
             )]
         return []
 
@@ -64,6 +66,10 @@ class XRayTracingMissing(Rule):
     category = "Operational Excellence"
     severity = "Low"
     themes = ("observability",)
+    recommendation = (
+        "Enable X-Ray or distributed tracing (Lambda TracingConfig, API Gateway TracingEnabled) "
+        "for observability."
+    )
 
     def run(self, repo_path: Path, language: str = "typescript") -> List[Finding]:
         if language == "typescript":
@@ -91,7 +97,7 @@ class XRayTracingMissing(Rule):
                 file=None,
                 line=None,
                 evidence=evidence,
-                recommendation="Enable X-Ray or distributed tracing (Lambda TracingConfig, API Gateway TracingEnabled) for observability.",
+                recommendation=self.recommendation,
             )]
         return []
 
@@ -102,6 +108,10 @@ class DynamoDbStreamsMissing(Rule):
     category = "Operational Excellence"
     severity = "Low"
     themes = ("resilience",)
+    recommendation = (
+        "Consider enabling DynamoDB Streams for event-driven patterns, change data capture, or "
+        "cross-region replication. In CDK: stream: dynamodb.StreamViewType.NEW_AND_OLD_IMAGES"
+    )
 
     def run(self, repo_path: Path, language: str = "typescript") -> List[Finding]:
         ddb_pat = r'new\s+(dynamodb\.Table|Table)\(' if language == "typescript" else r'(dynamodb.Table|aws_dynamodb.Table)\('
@@ -118,7 +128,7 @@ class DynamoDbStreamsMissing(Rule):
                 file=f,
                 line=ln,
                 evidence=txt,
-                recommendation="Consider enabling DynamoDB Streams for event-driven patterns, change data capture, or cross-region replication. In CDK: stream: dynamodb.StreamViewType.NEW_AND_OLD_IMAGES",
+                recommendation=self.recommendation,
             ))
         return out
 
@@ -129,6 +139,10 @@ class ApiGatewayAccessLogs(Rule):
     category = "Operational Excellence"
     severity = "Low"
     themes = ("observability",)
+    recommendation = (
+        "Enable access logging for API Gateway for audit and troubleshooting. In CDK: "
+        "accessLogDestination and accessLogFormat"
+    )
 
     def run(self, repo_path: Path, language: str = "typescript") -> List[Finding]:
         api_pat = r'new\s+(apigateway\.(RestApi|HttpApi|Stage)|RestApi|HttpApi)\(' if language == "typescript" else r'(apigateway\.(RestApi|HttpApi|Stage)|RestApi|HttpApi)\('
@@ -145,7 +159,7 @@ class ApiGatewayAccessLogs(Rule):
                 file=f,
                 line=ln,
                 evidence=txt,
-                recommendation="Enable access logging for API Gateway for audit and troubleshooting. In CDK: accessLogDestination and accessLogFormat",
+                recommendation=self.recommendation,
             ))
         return out
 
@@ -156,6 +170,10 @@ class AlbAccessLogs(Rule):
     category = "Operational Excellence"
     severity = "Low"
     themes = ("observability",)
+    recommendation = (
+        "Enable access logs for ALB/NLB to S3 for audit and troubleshooting. In CDK: "
+        "logAccessLogs(bucket)"
+    )
 
     def run(self, repo_path: Path, language: str = "typescript") -> List[Finding]:
         alb_pat = r'new\s+elbv2\.(ApplicationLoadBalancer|NetworkLoadBalancer)\(' if language == "typescript" else r'elbv2\.(ApplicationLoadBalancer|NetworkLoadBalancer)\('
@@ -172,7 +190,7 @@ class AlbAccessLogs(Rule):
                 file=f,
                 line=ln,
                 evidence=txt,
-                recommendation="Enable access logs for ALB/NLB to S3 for audit and troubleshooting. In CDK: logAccessLogs(bucket)",
+                recommendation=self.recommendation,
             ))
         return out
 
@@ -183,6 +201,9 @@ class CloudFrontAccessLogs(Rule):
     category = "Operational Excellence"
     severity = "Low"
     themes = ("observability",)
+    recommendation = (
+        "Enable access logging for CloudFront to S3. In CDK: enableLogging with logBucket"
+    )
 
     def run(self, repo_path: Path, language: str = "typescript") -> List[Finding]:
         cf_pat = r'new\s+cloudfront\.(Distribution|CloudFrontWebDistribution)\(' if language == "typescript" else r'cloudfront\.(Distribution|CloudFrontWebDistribution)\('
@@ -199,7 +220,7 @@ class CloudFrontAccessLogs(Rule):
                 file=f,
                 line=ln,
                 evidence=txt,
-                recommendation="Enable access logging for CloudFront to S3. In CDK: enableLogging with logBucket",
+                recommendation=self.recommendation,
             ))
         return out
 
@@ -210,6 +231,10 @@ class EcsContainerInsights(Rule):
     category = "Operational Excellence"
     severity = "Low"
     themes = ("observability",)
+    recommendation = (
+        "Enable Container Insights for ECS clusters for better observability. In CDK: "
+        "containerInsights: true"
+    )
 
     def run(self, repo_path: Path, language: str = "typescript") -> List[Finding]:
         cluster_pat = r'new\s+ecs\.Cluster\(' if language == "typescript" else r'ecs\.Cluster\('
@@ -226,7 +251,7 @@ class EcsContainerInsights(Rule):
                 file=f,
                 line=ln,
                 evidence=txt,
-                recommendation="Enable Container Insights for ECS clusters for better observability. In CDK: containerInsights: true",
+                recommendation=self.recommendation,
             ))
         return out
 
@@ -237,6 +262,10 @@ class RdsEnhancedMonitoring(Rule):
     category = "Operational Excellence"
     severity = "Low"
     themes = ("observability",)
+    recommendation = (
+        "Enable enhanced monitoring for RDS for detailed OS-level metrics. In CDK: "
+        "monitoringInterval: Duration.seconds(60)"
+    )
 
     def run(self, repo_path: Path, language: str = "typescript") -> List[Finding]:
         rds_pat = r'new\s+rds\.(DatabaseInstance|DatabaseCluster)\(' if language == "typescript" else r'rds\.(DatabaseInstance|DatabaseCluster)\('
@@ -253,7 +282,7 @@ class RdsEnhancedMonitoring(Rule):
                 file=f,
                 line=ln,
                 evidence=txt,
-                recommendation="Enable enhanced monitoring for RDS for detailed OS-level metrics. In CDK: monitoringInterval: Duration.seconds(60)",
+                recommendation=self.recommendation,
             ))
         return out
 
@@ -264,6 +293,10 @@ class CloudWatchAlarmsMissing(Rule):
     category = "Operational Excellence"
     severity = "Low"
     themes = ("observability",)
+    recommendation = (
+        "Configure CloudWatch alarms for critical resources (CPU, memory, errors, latency) to "
+        "detect issues early"
+    )
 
     def run(self, repo_path: Path, language: str = "typescript") -> List[Finding]:
         resources = rg(repo_path, r'DatabaseInstance|ApplicationLoadBalancer|lambda\.Function|DynamoDB', glob=code_glob(language))
@@ -278,7 +311,7 @@ class CloudWatchAlarmsMissing(Rule):
                 file=None,
                 line=None,
                 evidence=None,
-                recommendation="Configure CloudWatch alarms for critical resources (CPU, memory, errors, latency) to detect issues early",
+                recommendation=self.recommendation,
             )]
         return out
 
@@ -289,6 +322,10 @@ class SnsAlarmNotifications(Rule):
     category = "Operational Excellence"
     severity = "Low"
     themes = ("observability",)
+    recommendation = (
+        "Configure SNS topics for CloudWatch alarm notifications to alert teams. In CDK: "
+        "alarm.addAlarmAction(new SnsAction(topic))"
+    )
 
     def run(self, repo_path: Path, language: str = "typescript") -> List[Finding]:
         alarms = rg(repo_path, r'new\s+cloudwatch\.Alarm\(', glob=code_glob(language))
@@ -304,7 +341,7 @@ class SnsAlarmNotifications(Rule):
                 file=f,
                 line=ln,
                 evidence=txt,
-                recommendation="Configure SNS topics for CloudWatch alarm notifications to alert teams. In CDK: alarm.addAlarmAction(new SnsAction(topic))",
+                recommendation=self.recommendation,
             ))
         return out
 
@@ -315,6 +352,10 @@ class StepFunctionsXRay(Rule):
     category = "Operational Excellence"
     severity = "Low"
     themes = ("observability",)
+    recommendation = (
+        "Enable X-Ray tracing for Step Functions for better observability. In CDK: "
+        "tracingEnabled: true"
+    )
 
     def run(self, repo_path: Path, language: str = "typescript") -> List[Finding]:
         sfn_pat = r'new\s+sfn\.StateMachine\(' if language == "typescript" else r'sfn\.StateMachine\('
@@ -331,7 +372,7 @@ class StepFunctionsXRay(Rule):
                 file=f,
                 line=ln,
                 evidence=txt,
-                recommendation="Enable X-Ray tracing for Step Functions for better observability. In CDK: tracingEnabled: true",
+                recommendation=self.recommendation,
             ))
         return out
 
@@ -342,6 +383,10 @@ class EventBridgeDlq(Rule):
     category = "Operational Excellence"
     severity = "Low"
     themes = ("observability", "resilience",)
+    recommendation = (
+        "Configure dead-letter queue for EventBridge rules to capture failed events. In CDK: "
+        "deadLetterQueue property"
+    )
 
     def run(self, repo_path: Path, language: str = "typescript") -> List[Finding]:
         rule_pat = r'new\s+events\.Rule\(' if language == "typescript" else r'events\.Rule\('
@@ -358,7 +403,7 @@ class EventBridgeDlq(Rule):
                 file=f,
                 line=ln,
                 evidence=txt,
-                recommendation="Configure dead-letter queue for EventBridge rules to capture failed events. In CDK: deadLetterQueue property",
+                recommendation=self.recommendation,
             ))
         return out
 
@@ -369,6 +414,9 @@ class ConfigNotEnabled(Rule):
     category = "Operational Excellence"
     severity = "Low"
     themes = ("observability",)
+    recommendation = (
+        "Consider enabling AWS Config for resource configuration tracking and compliance"
+    )
 
     def run(self, repo_path: Path, language: str = "typescript") -> List[Finding]:
         config = rg(repo_path, r'config\.CfnConfigurationRecorder|aws_config', glob=code_glob(language))
@@ -381,7 +429,7 @@ class ConfigNotEnabled(Rule):
                 file=None,
                 line=None,
                 evidence=None,
-                recommendation="Consider enabling AWS Config for resource configuration tracking and compliance",
+                recommendation=self.recommendation,
             )]
         return []
 
@@ -392,6 +440,10 @@ class GlueJobMetrics(Rule):
     category = "Operational Excellence"
     severity = "Low"
     themes = ("observability",)
+    recommendation = (
+        "Enable CloudWatch metrics for Glue jobs for better monitoring. Add --enable-metrics to "
+        "job parameters"
+    )
 
     def run(self, repo_path: Path, language: str = "typescript") -> List[Finding]:
         glue_pat = r'new\s+glue\.(Job|CfnJob)\(' if language == "typescript" else r'glue\.(Job|CfnJob)\('
@@ -408,7 +460,7 @@ class GlueJobMetrics(Rule):
                 file=f,
                 line=ln,
                 evidence=txt,
-                recommendation="Enable CloudWatch metrics for Glue jobs for better monitoring. Add --enable-metrics to job parameters",
+                recommendation=self.recommendation,
             ))
         return out
 
@@ -419,6 +471,9 @@ class TransitGatewayFlowLogs(Rule):
     category = "Operational Excellence"
     severity = "Low"
     themes = ("observability",)
+    recommendation = (
+        "Enable flow logs for Transit Gateway for network monitoring and troubleshooting"
+    )
 
     def run(self, repo_path: Path, language: str = "typescript") -> List[Finding]:
         tgw_pat = r'new\s+ec2\.(CfnTransitGateway|TransitGateway)\(' if language == "typescript" else r'ec2\.(CfnTransitGateway|TransitGateway)\('
@@ -435,7 +490,7 @@ class TransitGatewayFlowLogs(Rule):
                 file=f,
                 line=ln,
                 evidence=txt,
-                recommendation="Enable flow logs for Transit Gateway for network monitoring and troubleshooting",
+                recommendation=self.recommendation,
             ))
         return out
 
@@ -446,6 +501,10 @@ class CodePipelineNotifications(Rule):
     category = "Operational Excellence"
     severity = "Low"
     themes = ("observability",)
+    recommendation = (
+        "Configure notifications for CodePipeline state changes (success, failure). In CDK: "
+        "onStateChange() or notifyOn()"
+    )
 
     def run(self, repo_path: Path, language: str = "typescript") -> List[Finding]:
         pipeline_pat = r'new\s+codepipeline\.(Pipeline|CfnPipeline)\(' if language == "typescript" else r'codepipeline\.(Pipeline|CfnPipeline)\('
@@ -462,7 +521,7 @@ class CodePipelineNotifications(Rule):
                 file=f,
                 line=ln,
                 evidence=txt,
-                recommendation="Configure notifications for CodePipeline state changes (success, failure). In CDK: onStateChange() or notifyOn()",
+                recommendation=self.recommendation,
             ))
         return out
 
@@ -473,6 +532,10 @@ class AppRunnerObservability(Rule):
     category = "Operational Excellence"
     severity = "Low"
     themes = ("observability",)
+    recommendation = (
+        "Enable observability for App Runner services (X-Ray tracing). Configure "
+        "observabilityConfiguration"
+    )
 
     def run(self, repo_path: Path, language: str = "typescript") -> List[Finding]:
         apprunner_pat = r'new\s+apprunner\.(Service|CfnService)\(' if language == "typescript" else r'apprunner\.(Service|CfnService)\('
@@ -489,7 +552,7 @@ class AppRunnerObservability(Rule):
                 file=f,
                 line=ln,
                 evidence=txt,
-                recommendation="Enable observability for App Runner services (X-Ray tracing). Configure observabilityConfiguration",
+                recommendation=self.recommendation,
             ))
         return out
 
@@ -500,6 +563,10 @@ class GlueJobBookmarks(Rule):
     category = "Operational Excellence"
     severity = "Low"
     themes = ("resilience",)
+    recommendation = (
+        "Enable job bookmarks for Glue to track processed data and prevent reprocessing. Add "
+        "--job-bookmark-option enabled"
+    )
 
     def run(self, repo_path: Path, language: str = "typescript") -> List[Finding]:
         glue_pat = r'new\s+glue\.(Job|CfnJob)\(' if language == "typescript" else r'glue\.(Job|CfnJob)\('
@@ -516,7 +583,7 @@ class GlueJobBookmarks(Rule):
                 file=f,
                 line=ln,
                 evidence=txt,
-                recommendation="Enable job bookmarks for Glue to track processed data and prevent reprocessing. Add --job-bookmark-option enabled",
+                recommendation=self.recommendation,
             ))
         return out
 
@@ -527,6 +594,10 @@ class CodeBuildLogging(Rule):
     category = "Operational Excellence"
     severity = "Low"
     themes = ("observability",)
+    recommendation = (
+        "Configure logging for CodeBuild projects (CloudWatch Logs or S3). In CDK: logging "
+        "property"
+    )
 
     def run(self, repo_path: Path, language: str = "typescript") -> List[Finding]:
         codebuild_pat = r'new\s+codebuild\.(Project|PipelineProject)\(' if language == "typescript" else r'codebuild\.(Project|PipelineProject)\('
@@ -543,7 +614,7 @@ class CodeBuildLogging(Rule):
                 file=f,
                 line=ln,
                 evidence=txt,
-                recommendation="Configure logging for CodeBuild projects (CloudWatch Logs or S3). In CDK: logging property",
+                recommendation=self.recommendation,
             ))
         return out
 
@@ -554,6 +625,9 @@ class CloudWatchDashboardMissing(Rule):
     category = "Operational Excellence"
     severity = "Low"
     themes = ("observability",)
+    recommendation = (
+        "Create CloudWatch dashboards for key metrics to improve operational visibility."
+    )
 
     def run(self, repo_path: Path, language: str = "typescript") -> List[Finding]:
         resources = rg(repo_path, r'DatabaseInstance|ApplicationLoadBalancer|lambda\.Function|FargateService', glob=code_glob(language))
@@ -568,7 +642,7 @@ class CloudWatchDashboardMissing(Rule):
                 file=None,
                 line=None,
                 evidence=None,
-                recommendation="Create CloudWatch dashboards for key metrics to improve operational visibility.",
+                recommendation=self.recommendation,
             )]
         return out
 
@@ -579,6 +653,9 @@ class ResourceTaggingStrategy(Rule):
     category = "Operational Excellence"
     severity = "Low"
     themes = ("finops", "observability",)
+    recommendation = (
+        "Consider adding CostCenter and Project tags for cost allocation and resource management."
+    )
 
     def run(self, repo_path: Path, language: str = "typescript") -> List[Finding]:
         tags = rg(repo_path, r'tags\s*:\s*\{|tags\s*=\s*\{', glob=code_glob(language))
@@ -594,7 +671,7 @@ class ResourceTaggingStrategy(Rule):
                 file=None,
                 line=None,
                 evidence=None,
-                recommendation="Consider adding CostCenter and Project tags for cost allocation and resource management.",
+                recommendation=self.recommendation,
             )]
         return out
 
@@ -605,6 +682,11 @@ class SsmParameterAdvancedTier(Rule):
     category = "Operational Excellence"
     severity = "Low"
     themes = ("resilience",)
+    recommendation = (
+        "Parameter reads are limited to 40 TPS per account and Region by default, whichever tier "
+        "a parameter uses. If reads are throttled at scale, cache values or turn on the higher "
+        "throughput setting. The advanced tier does not raise this limit."
+    )
 
     def run(self, repo_path: Path, language: str = "typescript") -> List[Finding]:
         param_pat = r'new\s+ssm\.(StringParameter|CfnParameter)\(' if language == "typescript" else r'ssm\.(StringParameter|CfnParameter)\('
@@ -621,7 +703,7 @@ class SsmParameterAdvancedTier(Rule):
                 file=None,
                 line=None,
                 evidence=None,
-                recommendation="Parameter reads are limited to 40 TPS per account and Region by default, whichever tier a parameter uses. If reads are throttled at scale, cache values or turn on the higher throughput setting. The advanced tier does not raise this limit.",
+                recommendation=self.recommendation,
             )]
         return out
 
@@ -644,6 +726,7 @@ class S3ReplicationMetrics(Rule):
     category = "Operational Excellence"
     severity = "Low"
     themes = ("observability", "data-protection",)
+    recommendation = "Enable S3 replication metrics for monitoring replication status."
 
     def run(self, repo_path: Path, language: str = "typescript") -> List[Finding]:
         replication = rg(repo_path, r'replicationRule|replicationConfiguration|ReplicationRule', glob=code_glob(language))
@@ -658,6 +741,6 @@ class S3ReplicationMetrics(Rule):
                 file=None,
                 line=None,
                 evidence=None,
-                recommendation="Enable S3 replication metrics for monitoring replication status.",
+                recommendation=self.recommendation,
             )]
         return out

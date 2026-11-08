@@ -28,6 +28,10 @@ class GravitonNotUsed(Rule):
     category = "Performance Efficiency"
     severity = "Low"
     themes = ("finops",)
+    recommendation = (
+        "Consider Graviton/ARM (e.g. Lambda ARM64, ECS arm64) for better price-performance. In "
+        "CDK Lambda: architecture: lambda.Architecture.ARM_64"
+    )
 
     def run(self, repo_path: Path, language: str = "typescript") -> List[Finding]:
         # Lambda: ARCH_ARM64; EC2/ECS: arm64, graviton
@@ -44,7 +48,7 @@ class GravitonNotUsed(Rule):
                 file=f,
                 line=ln,
                 evidence=txt,
-                recommendation="Consider Graviton/ARM (e.g. Lambda ARM64, ECS arm64) for better price-performance. In CDK Lambda: architecture: lambda.Architecture.ARM_64",
+                recommendation=self.recommendation,
             )]
         return []
 
@@ -55,6 +59,7 @@ class CachingHint(Rule):
     category = "Performance Efficiency"
     severity = "Low"
     themes = ("resilience",)
+    recommendation = "This API or load balancer has no CloudFront, ElastiCache, API cache, or DAX."
 
     def run(self, repo_path: Path, language: str = "typescript") -> List[Finding]:
         glob = code_glob(language)
@@ -64,7 +69,7 @@ class CachingHint(Rule):
             self,
             workloads,
             caches,
-            "This API or load balancer has no CloudFront, ElastiCache, API cache, or DAX.",
+            self.recommendation,
         )
 
 
@@ -74,6 +79,11 @@ class DynamoDbProvisionedCapacity(Rule):
     category = "Performance Efficiency"
     severity = "Low"
     themes = ("finops",)
+    recommendation = (
+        "Consider PAY_PER_REQUEST (on-demand) billing for unpredictable workloads to optimize "
+        "cost and eliminate capacity planning. In CDK: billingMode: "
+        "dynamodb.BillingMode.PAY_PER_REQUEST"
+    )
 
     def run(self, repo_path: Path, language: str = "typescript") -> List[Finding]:
         ddb_pat = r'new\s+(dynamodb\.Table|Table)\(' if language == "typescript" else r'(dynamodb.Table|aws_dynamodb.Table)\('
@@ -93,7 +103,7 @@ class DynamoDbProvisionedCapacity(Rule):
                 file=f,
                 line=ln,
                 evidence=txt,
-                recommendation="Consider PAY_PER_REQUEST (on-demand) billing for unpredictable workloads to optimize cost and eliminate capacity planning. In CDK: billingMode: dynamodb.BillingMode.PAY_PER_REQUEST",
+                recommendation=self.recommendation,
             ))
         return out
 
@@ -104,6 +114,10 @@ class ApiGatewayCaching(Rule):
     category = "Performance Efficiency"
     severity = "Low"
     themes = ("resilience",)
+    recommendation = (
+        "Enable API Gateway caching to reduce latency and backend load. In CDK: cachingEnabled: "
+        "true with cacheClusterSize"
+    )
 
     def run(self, repo_path: Path, language: str = "typescript") -> List[Finding]:
         api_pat = r'new\s+(apigateway\.(RestApi|Stage)|RestApi)\(' if language == "typescript" else r'(apigateway\.(RestApi|Stage)|RestApi)\('
@@ -120,7 +134,7 @@ class ApiGatewayCaching(Rule):
                 file=f,
                 line=ln,
                 evidence=txt,
-                recommendation="Enable API Gateway caching to reduce latency and backend load. In CDK: cachingEnabled: true with cacheClusterSize",
+                recommendation=self.recommendation,
             ))
         return out
 
@@ -131,6 +145,10 @@ class LambdaMemoryOptimization(Rule):
     category = "Performance Efficiency"
     severity = "Low"
     themes = ("finops",)
+    recommendation = (
+        "Set appropriate Lambda memory size (128-10240 MB). Use Lambda Power Tuning to find "
+        "optimal value. In CDK: memorySize: 1024"
+    )
 
     def run(self, repo_path: Path, language: str = "typescript") -> List[Finding]:
         lambda_pat = r'new\s+(lambda\.Function|NodejsFunction|PythonFunction|DockerImageFunction)\(' if language == "typescript" else r'(lambda_.Function|aws_lambda_python_alpha.PythonFunction|aws_lambda.Function)\('
@@ -147,7 +165,7 @@ class LambdaMemoryOptimization(Rule):
                 file=f,
                 line=ln,
                 evidence=txt,
-                recommendation="Set appropriate Lambda memory size (128-10240 MB). Use Lambda Power Tuning to find optimal value. In CDK: memorySize: 1024",
+                recommendation=self.recommendation,
             ))
         return out
 
@@ -158,6 +176,10 @@ class CloudFrontCaching(Rule):
     category = "Performance Efficiency"
     severity = "Low"
     themes = ("resilience",)
+    recommendation = (
+        "Configure CloudFront caching with appropriate TTLs and cache policies. In CDK: "
+        "defaultBehavior.cachePolicy"
+    )
 
     def run(self, repo_path: Path, language: str = "typescript") -> List[Finding]:
         cf_pat = r'new\s+cloudfront\.(Distribution|CloudFrontWebDistribution)\(' if language == "typescript" else r'cloudfront\.(Distribution|CloudFrontWebDistribution)\('
@@ -174,7 +196,7 @@ class CloudFrontCaching(Rule):
                 file=f,
                 line=ln,
                 evidence=txt,
-                recommendation="Configure CloudFront caching with appropriate TTLs and cache policies. In CDK: defaultBehavior.cachePolicy",
+                recommendation=self.recommendation,
             ))
         return out
 
@@ -185,6 +207,10 @@ class EcsTaskSizing(Rule):
     category = "Performance Efficiency"
     severity = "Low"
     themes = ("finops",)
+    recommendation = (
+        "Set appropriate CPU and memory for ECS tasks based on workload requirements. In CDK: cpu"
+        " and memoryLimitMiB"
+    )
 
     def run(self, repo_path: Path, language: str = "typescript") -> List[Finding]:
         task_pat = r'new\s+ecs\.(FargateTaskDefinition|Ec2TaskDefinition)\(' if language == "typescript" else r'ecs\.(FargateTaskDefinition|Ec2TaskDefinition)\('
@@ -201,7 +227,7 @@ class EcsTaskSizing(Rule):
                 file=f,
                 line=ln,
                 evidence=txt,
-                recommendation="Set appropriate CPU and memory for ECS tasks based on workload requirements. In CDK: cpu and memoryLimitMiB",
+                recommendation=self.recommendation,
             ))
         return out
 
@@ -212,6 +238,10 @@ class RdsInstanceSizing(Rule):
     category = "Performance Efficiency"
     severity = "Low"
     themes = ("finops",)
+    recommendation = (
+        "Review RDS instance class against actual workload metrics (CPU, memory, IOPS). Consider "
+        "right-sizing to reduce costs."
+    )
 
     def run(self, repo_path: Path, language: str = "typescript") -> List[Finding]:
         # Look for large instance classes
@@ -226,7 +256,7 @@ class RdsInstanceSizing(Rule):
                 file=f,
                 line=ln,
                 evidence=txt,
-                recommendation="Review RDS instance class against actual workload metrics (CPU, memory, IOPS). Consider right-sizing to reduce costs.",
+                recommendation=self.recommendation,
             ))
         return out
 
@@ -237,6 +267,10 @@ class KinesisEnhancedFanout(Rule):
     category = "Performance Efficiency"
     severity = "Low"
     themes = ("resilience",)
+    recommendation = (
+        "Consider enhanced fan-out for Kinesis consumers with high throughput requirements "
+        "(dedicated throughput per consumer)"
+    )
 
     def run(self, repo_path: Path, language: str = "typescript") -> List[Finding]:
         kinesis_consumer = rg(repo_path, r'StreamConsumer|registerStreamConsumer', glob=code_glob(language))
@@ -251,7 +285,7 @@ class KinesisEnhancedFanout(Rule):
                 file=None,
                 line=None,
                 evidence=None,
-                recommendation="Consider enhanced fan-out for Kinesis consumers with high throughput requirements (dedicated throughput per consumer)",
+                recommendation=self.recommendation,
             )]
         return out
 
@@ -262,6 +296,10 @@ class OpenSearchInstanceTypes(Rule):
     category = "Performance Efficiency"
     severity = "Low"
     themes = ("finops",)
+    recommendation = (
+        "Consider current-gen instance types for OpenSearch (r6g/c6g for Graviton, i3 for "
+        "storage, r5 for memory)"
+    )
 
     def run(self, repo_path: Path, language: str = "typescript") -> List[Finding]:
         os_pat = r'new\s+opensearch\.(Domain|CfnDomain)\(' if language == "typescript" else r'opensearch\.(Domain|CfnDomain)\('
@@ -278,7 +316,7 @@ class OpenSearchInstanceTypes(Rule):
                 file=f,
                 line=ln,
                 evidence=txt,
-                recommendation="Consider current-gen instance types for OpenSearch (r6g/c6g for Graviton, i3 for storage, r5 for memory)",
+                recommendation=self.recommendation,
             ))
         return out
 
@@ -289,6 +327,10 @@ class GlobalAcceleratorOptimization(Rule):
     category = "Performance Efficiency"
     severity = "Low"
     themes = ("resilience",)
+    recommendation = (
+        "Consider AWS Global Accelerator for global applications to reduce latency (up to 60% "
+        "improvement)"
+    )
 
     def run(self, repo_path: Path, language: str = "typescript") -> List[Finding]:
         alb_pat = r'new\s+elbv2\.(ApplicationLoadBalancer|NetworkLoadBalancer)\(' if language == "typescript" else r'elbv2\.(ApplicationLoadBalancer|NetworkLoadBalancer)\('
@@ -304,7 +346,7 @@ class GlobalAcceleratorOptimization(Rule):
                 file=None,
                 line=None,
                 evidence=None,
-                recommendation="Consider AWS Global Accelerator for global applications to reduce latency (up to 60% improvement)",
+                recommendation=self.recommendation,
             )]
         return out
 
@@ -315,6 +357,10 @@ class EfsPerformanceMode(Rule):
     category = "Performance Efficiency"
     severity = "Low"
     themes = ("resilience",)
+    recommendation = (
+        "Configure EFS performance mode (generalPurpose vs maxIO) and throughput mode based on "
+        "workload. Consider PROVISIONED for consistent high throughput"
+    )
 
     def run(self, repo_path: Path, language: str = "typescript") -> List[Finding]:
         efs_pat = r'new\s+efs\.FileSystem\(' if language == "typescript" else r'efs\.FileSystem\('
@@ -331,7 +377,7 @@ class EfsPerformanceMode(Rule):
                 file=f,
                 line=ln,
                 evidence=txt,
-                recommendation="Configure EFS performance mode (generalPurpose vs maxIO) and throughput mode based on workload. Consider PROVISIONED for consistent high throughput",
+                recommendation=self.recommendation,
             ))
         return out
 
@@ -342,6 +388,10 @@ class AppSyncCaching(Rule):
     category = "Performance Efficiency"
     severity = "Low"
     themes = ("resilience",)
+    recommendation = (
+        "Enable caching for AppSync APIs to reduce latency and backend load. Configure "
+        "cachingConfig"
+    )
 
     def run(self, repo_path: Path, language: str = "typescript") -> List[Finding]:
         appsync_pat = r'new\s+appsync\.(GraphqlApi|CfnGraphQLApi)\(' if language == "typescript" else r'appsync\.(GraphqlApi|CfnGraphQLApi)\('
@@ -358,7 +408,7 @@ class AppSyncCaching(Rule):
                 file=f,
                 line=ln,
                 evidence=txt,
-                recommendation="Enable caching for AppSync APIs to reduce latency and backend load. Configure cachingConfig",
+                recommendation=self.recommendation,
             ))
         return out
 
@@ -369,6 +419,10 @@ class S3TransferAcceleration(Rule):
     category = "Performance Efficiency"
     severity = "Low"
     themes = ("resilience",)
+    recommendation = (
+        "Consider S3 Transfer Acceleration for faster uploads from geographically dispersed users"
+        " (50-500% faster)"
+    )
 
     def run(self, repo_path: Path, language: str = "typescript") -> List[Finding]:
         s3_pat = r'new\s+s3\.(Bucket|CfnBucket)\(' if language == "typescript" else r's3\.(Bucket|CfnBucket)\('
@@ -384,7 +438,7 @@ class S3TransferAcceleration(Rule):
                 file=None,
                 line=None,
                 evidence=None,
-                recommendation="Consider S3 Transfer Acceleration for faster uploads from geographically dispersed users (50-500% faster)",
+                recommendation=self.recommendation,
             )]
         return out
 
@@ -395,6 +449,9 @@ class LambdaSnapStart(Rule):
     category = "Performance Efficiency"
     severity = "Low"
     themes = ("resilience",)
+    recommendation = (
+        "Enable Lambda SnapStart for Java functions to reduce cold start latency by up to 10x."
+    )
 
     def run(self, repo_path: Path, language: str = "typescript") -> List[Finding]:
         java_lambda = rg(repo_path, r'Runtime\.JAVA|runtime.*java|JAVA_\d+', glob=code_glob(language))
@@ -409,7 +466,7 @@ class LambdaSnapStart(Rule):
                 file=None,
                 line=None,
                 evidence=None,
-                recommendation="Enable Lambda SnapStart for Java functions to reduce cold start latency by up to 10x.",
+                recommendation=self.recommendation,
             )]
         return out
 
@@ -420,6 +477,7 @@ class AuroraIoOptimized(Rule):
     category = "Performance Efficiency"
     severity = "Low"
     themes = ("finops",)
+    recommendation = "Consider Aurora I/O-Optimized for workloads with high I/O requirements."
 
     def run(self, repo_path: Path, language: str = "typescript") -> List[Finding]:
         aurora = rg(repo_path, r'DatabaseInstance|DatabaseCluster|rds\.', glob=code_glob(language))
@@ -434,7 +492,7 @@ class AuroraIoOptimized(Rule):
                 file=None,
                 line=None,
                 evidence=None,
-                recommendation="Consider Aurora I/O-Optimized for workloads with high I/O requirements.",
+                recommendation=self.recommendation,
             )]
         return out
 
@@ -445,6 +503,7 @@ class EbsIo2BlockExpress(Rule):
     category = "Performance Efficiency"
     severity = "Low"
     themes = ("resilience",)
+    recommendation = "For workloads requiring >64K IOPS, consider io2 Block Express volumes."
 
     def run(self, repo_path: Path, language: str = "typescript") -> List[Finding]:
         ebs = rg(repo_path, r'EbsDeviceVolumeType|volume_type|gp3|io1', glob=code_glob(language))
@@ -459,7 +518,7 @@ class EbsIo2BlockExpress(Rule):
                 file=None,
                 line=None,
                 evidence=None,
-                recommendation="For workloads requiring >64K IOPS, consider io2 Block Express volumes.",
+                recommendation=self.recommendation,
             )]
         return out
 
@@ -470,6 +529,10 @@ class CloudWatchContributorInsights(Rule):
     category = "Performance Efficiency"
     severity = "Low"
     themes = ("observability",)
+    recommendation = (
+        "Enable Contributor Insights for DynamoDB to identify top contributors to consumed "
+        "capacity."
+    )
 
     def run(self, repo_path: Path, language: str = "typescript") -> List[Finding]:
         dynamodb = rg(repo_path, r'dynamodb\.Table|DynamoDB', glob=code_glob(language))
@@ -484,7 +547,7 @@ class CloudWatchContributorInsights(Rule):
                 file=None,
                 line=None,
                 evidence=None,
-                recommendation="Enable Contributor Insights for DynamoDB to identify top contributors to consumed capacity.",
+                recommendation=self.recommendation,
             )]
         return out
 
@@ -495,6 +558,9 @@ class RdsProxyMissing(Rule):
     category = "Performance Efficiency"
     severity = "Low"
     themes = ("resilience",)
+    recommendation = (
+        "Consider RDS Proxy for database connection pooling when using serverless (Lambda)."
+    )
 
     def run(self, repo_path: Path, language: str = "typescript") -> List[Finding]:
         rds = rg(repo_path, r'rds\.(DatabaseInstance|DatabaseCluster)\(' if language == "typescript" else r'rds\.(DatabaseInstance|DatabaseCluster)\(', glob=code_glob(language))
@@ -509,6 +575,6 @@ class RdsProxyMissing(Rule):
                 file=None,
                 line=None,
                 evidence=None,
-                recommendation="Consider RDS Proxy for database connection pooling when using serverless (Lambda).",
+                recommendation=self.recommendation,
             )]
         return out

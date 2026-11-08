@@ -31,6 +31,10 @@ class MissingStandardTags(Rule):
     category = "Best Practices"
     severity = "Low"
     themes = ("finops",)
+    recommendation = (
+        "Introduce standard tags (owner, env, cost-center, system) on all resources or at stack "
+        "level."
+    )
 
     def run(self, repo_path: Path, language: str = "typescript") -> List[Finding]:
         tags = rg(repo_path, r'tags\s*:|tags\s*=', glob=code_glob(language))
@@ -45,7 +49,7 @@ class MissingStandardTags(Rule):
                 file=None,
                 line=None,
                 evidence=None,
-                recommendation="Introduce standard tags (owner, env, cost-center, system) on all resources or at stack level.",
+                recommendation=self.recommendation,
             ))
         return out
 
@@ -56,6 +60,10 @@ class SecretsInEnvVars(Rule):
     category = "Best Practices"
     severity = "Low"
     themes = ("data-protection", "identity",)
+    recommendation = (
+        "For sensitive configuration, use AWS Secrets Manager or Systems Manager Parameter Store "
+        "instead of environment variables"
+    )
 
     def run(self, repo_path: Path, language: str = "typescript") -> List[Finding]:
         glob = code_glob(language)
@@ -73,7 +81,7 @@ class SecretsInEnvVars(Rule):
             self,
             secret_keys,
             secrets_mgr,
-            "For sensitive configuration, use AWS Secrets Manager or Systems Manager Parameter Store instead of environment variables",
+            self.recommendation,
         )
 
 
@@ -83,6 +91,10 @@ class ResourceNamingConvention(Rule):
     category = "Best Practices"
     severity = "Low"
     themes = ("observability",)
+    recommendation = (
+        "Use a descriptive physical name (bucketName, functionName, tableName). "
+        "A short CDK construct id is not a naming-convention finding."
+    )
 
     def run(self, repo_path: Path, language: str = "typescript") -> List[Finding]:
         short_names = rg(repo_path, _SHORT_PHYSICAL_NAME, glob=code_glob(language))
@@ -95,10 +107,7 @@ class ResourceNamingConvention(Rule):
                 file=path,
                 line=line,
                 evidence=text,
-                recommendation=(
-                    "Use a descriptive physical name (bucketName, functionName, tableName). "
-                    "A short CDK construct id is not a naming-convention finding."
-                ),
+                recommendation=self.recommendation,
             )
             for path, line, text in short_names
         ]
@@ -110,6 +119,7 @@ class CdkAspectsMissing(Rule):
     category = "Best Practices"
     severity = "Low"
     themes = ("security-baseline",)
+    recommendation = "Consider CDK Aspects for cross-cutting concerns like tagging and validation."
 
     def run(self, repo_path: Path, language: str = "typescript") -> List[Finding]:
         aspects = rg(repo_path, r'Aspects\.of|aspects\.', glob=code_glob(language))
@@ -124,7 +134,7 @@ class CdkAspectsMissing(Rule):
                 file=None,
                 line=None,
                 evidence=None,
-                recommendation="Consider CDK Aspects for cross-cutting concerns like tagging and validation.",
+                recommendation=self.recommendation,
             )]
         return out
 
@@ -135,6 +145,9 @@ class CdkContextMissing(Rule):
     category = "Best Practices"
     severity = "Low"
     themes = ("resilience",)
+    recommendation = (
+        "Use cdk.json context for environment-specific configuration (e.g., account, region)."
+    )
 
     def run(self, repo_path: Path, language: str = "typescript") -> List[Finding]:
         context = rg(repo_path, r'node\.tryGetContext|try_get_context', glob=code_glob(language))
@@ -149,6 +162,6 @@ class CdkContextMissing(Rule):
                 file=None,
                 line=None,
                 evidence=None,
-                recommendation="Use cdk.json context for environment-specific configuration (e.g., account, region).",
+                recommendation=self.recommendation,
             )]
         return out

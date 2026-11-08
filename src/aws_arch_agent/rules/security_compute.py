@@ -14,6 +14,10 @@ class EcsReadonlyRootFs(Rule):
     category = "Security"
     severity = "Low"
     themes = ("security-baseline",)
+    recommendation = (
+        "Use read-only root filesystem for ECS containers when possible. In CDK: "
+        "readonlyRootFilesystem: true"
+    )
 
     def run(self, repo_path: Path, language: str = "typescript") -> List[Finding]:
         task_pat = (
@@ -31,7 +35,7 @@ class EcsReadonlyRootFs(Rule):
             self,
             tasks,
             readonly,
-            "Use read-only root filesystem for ECS containers when possible. In CDK: readonlyRootFilesystem: true",
+            self.recommendation,
         )
 
 
@@ -42,6 +46,10 @@ class RdsSslConnection(Rule):
     category = "Security"
     severity = "Medium"
     themes = ("data-protection",)
+    recommendation = (
+        "Enforce SSL/TLS connections to RDS. Create a parameter group with rds.force_ssl=1 "
+        "(PostgreSQL) or require_secure_transport=ON (MySQL)"
+    )
 
     def run(self, repo_path: Path, language: str = "typescript") -> List[Finding]:
         rds_pat = r'new\s+rds\.(DatabaseInstance|DatabaseCluster)\(' if language == "typescript" else r'rds\.(DatabaseInstance|DatabaseCluster)\('
@@ -58,7 +66,7 @@ class RdsSslConnection(Rule):
                 file=f,
                 line=ln,
                 evidence=txt,
-                recommendation="Enforce SSL/TLS connections to RDS. Create a parameter group with rds.force_ssl=1 (PostgreSQL) or require_secure_transport=ON (MySQL)",
+                recommendation=self.recommendation,
             ))
         return out
 
@@ -70,6 +78,10 @@ class ElastiCacheEncryption(Rule):
     category = "Security"
     severity = "Medium"
     themes = ("data-protection",)
+    recommendation = (
+        "Enable encryption at-rest and in-transit for ElastiCache. Set atRestEncryptionEnabled "
+        "and transitEncryptionEnabled to true"
+    )
 
     def run(self, repo_path: Path, language: str = "typescript") -> List[Finding]:
         cache_pat = r'new\s+elasticache\.(CfnCacheCluster|CfnReplicationGroup)\(' if language == "typescript" else r'elasticache\.(CfnCacheCluster|CfnReplicationGroup)\('
@@ -86,7 +98,7 @@ class ElastiCacheEncryption(Rule):
                 file=f,
                 line=ln,
                 evidence=txt,
-                recommendation="Enable encryption at-rest and in-transit for ElastiCache. Set atRestEncryptionEnabled and transitEncryptionEnabled to true",
+                recommendation=self.recommendation,
             ))
         return out
 
@@ -98,6 +110,10 @@ class EcrImageScanning(Rule):
     category = "Security"
     severity = "Medium"
     themes = ("security-baseline",)
+    recommendation = (
+        "Enable image scanning on push for ECR repositories to detect vulnerabilities. In CDK: "
+        "imageScanOnPush: true"
+    )
 
     def run(self, repo_path: Path, language: str = "typescript") -> List[Finding]:
         ecr_pat = r'new\s+ecr\.Repository\(' if language == "typescript" else r'ecr\.Repository\('
@@ -114,7 +130,7 @@ class EcrImageScanning(Rule):
                 file=f,
                 line=ln,
                 evidence=txt,
-                recommendation="Enable image scanning on push for ECR repositories to detect vulnerabilities. In CDK: imageScanOnPush: true",
+                recommendation=self.recommendation,
             ))
         return out
 
@@ -126,6 +142,10 @@ class EcrImageImmutability(Rule):
     category = "Security"
     severity = "Low"
     themes = ("security-baseline",)
+    recommendation = (
+        "Set image tag immutability for ECR repositories to prevent tag overwrites. In CDK: "
+        "imageTagMutability: ecr.TagMutability.IMMUTABLE"
+    )
 
     def run(self, repo_path: Path, language: str = "typescript") -> List[Finding]:
         ecr_pat = r'new\s+ecr\.Repository\(' if language == "typescript" else r'ecr\.Repository\('
@@ -142,7 +162,7 @@ class EcrImageImmutability(Rule):
                 file=f,
                 line=ln,
                 evidence=txt,
-                recommendation="Set image tag immutability for ECR repositories to prevent tag overwrites. In CDK: imageTagMutability: ecr.TagMutability.IMMUTABLE",
+                recommendation=self.recommendation,
             ))
         return out
 
@@ -154,6 +174,10 @@ class EcrLifecyclePolicy(Rule):
     category = "Security"
     severity = "Low"
     themes = ("security-baseline", "finops",)
+    recommendation = (
+        "Add lifecycle policy to ECR to automatically clean up old images and reduce storage "
+        "costs. In CDK: repository.addLifecycleRule()"
+    )
 
     def run(self, repo_path: Path, language: str = "typescript") -> List[Finding]:
         ecr_pat = r'new\s+ecr\.Repository\(' if language == "typescript" else r'ecr\.Repository\('
@@ -170,7 +194,7 @@ class EcrLifecyclePolicy(Rule):
                 file=f,
                 line=ln,
                 evidence=txt,
-                recommendation="Add lifecycle policy to ECR to automatically clean up old images and reduce storage costs. In CDK: repository.addLifecycleRule()",
+                recommendation=self.recommendation,
             ))
         return out
 
@@ -182,6 +206,10 @@ class SagemakerNotebookVpc(Rule):
     category = "Security"
     severity = "Medium"
     themes = ("network-exposure",)
+    recommendation = (
+        "Deploy SageMaker notebook instances in VPC for secure access. Configure subnetId and "
+        "securityGroupIds"
+    )
 
     def run(self, repo_path: Path, language: str = "typescript") -> List[Finding]:
         sm_pat = r'new\s+sagemaker\.(CfnNotebookInstance|NotebookInstance)\(' if language == "typescript" else r'sagemaker\.(CfnNotebookInstance|NotebookInstance)\('
@@ -198,7 +226,7 @@ class SagemakerNotebookVpc(Rule):
                 file=f,
                 line=ln,
                 evidence=txt,
-                recommendation="Deploy SageMaker notebook instances in VPC for secure access. Configure subnetId and securityGroupIds",
+                recommendation=self.recommendation,
             ))
         return out
 
@@ -210,6 +238,10 @@ class SagemakerEncryption(Rule):
     category = "Security"
     severity = "Medium"
     themes = ("data-protection",)
+    recommendation = (
+        "Enable KMS encryption for SageMaker resources (notebooks, training jobs, endpoints). "
+        "Configure kmsKeyId"
+    )
 
     def run(self, repo_path: Path, language: str = "typescript") -> List[Finding]:
         sm_pat = r'new\s+sagemaker\.' if language == "typescript" else r'sagemaker\.'
@@ -226,7 +258,7 @@ class SagemakerEncryption(Rule):
                 file=f,
                 line=ln,
                 evidence=txt,
-                recommendation="Enable KMS encryption for SageMaker resources (notebooks, training jobs, endpoints). Configure kmsKeyId",
+                recommendation=self.recommendation,
             ))
         return out
 
@@ -238,6 +270,7 @@ class FsxEncryption(Rule):
     category = "Security"
     severity = "High"
     themes = ("data-protection",)
+    recommendation = "Enable encryption for FSx file systems with KMS. In CDK: kmsKey property"
 
     def run(self, repo_path: Path, language: str = "typescript") -> List[Finding]:
         fsx_pat = r'new\s+fsx\.(LustreFileSystem|WindowsFileSystem|OntapFileSystem)\(' if language == "typescript" else r'fsx\.(LustreFileSystem|WindowsFileSystem|OntapFileSystem)\('
@@ -254,7 +287,7 @@ class FsxEncryption(Rule):
                 file=f,
                 line=ln,
                 evidence=txt,
-                recommendation="Enable encryption for FSx file systems with KMS. In CDK: kmsKey property",
+                recommendation=self.recommendation,
             ))
         return out
 
@@ -266,6 +299,9 @@ class TransferFamilyLogging(Rule):
     category = "Security"
     severity = "Low"
     themes = ("observability", "security-baseline",)
+    recommendation = (
+        "Enable logging for Transfer Family servers for audit trail. Configure loggingRole"
+    )
 
     def run(self, repo_path: Path, language: str = "typescript") -> List[Finding]:
         transfer_pat = r'new\s+transfer\.(CfnServer|Server)\(' if language == "typescript" else r'transfer\.(CfnServer|Server)\('
@@ -282,7 +318,7 @@ class TransferFamilyLogging(Rule):
                 file=f,
                 line=ln,
                 evidence=txt,
-                recommendation="Enable logging for Transfer Family servers for audit trail. Configure loggingRole",
+                recommendation=self.recommendation,
             ))
         return out
 
@@ -294,6 +330,10 @@ class CodePipelineEncryption(Rule):
     category = "Security"
     severity = "Medium"
     themes = ("data-protection",)
+    recommendation = (
+        "Enable KMS encryption for CodePipeline artifact bucket. In CDK: artifactBucket with "
+        "encryption"
+    )
 
     def run(self, repo_path: Path, language: str = "typescript") -> List[Finding]:
         pipeline_pat = r'new\s+codepipeline\.(Pipeline|CfnPipeline)\(' if language == "typescript" else r'codepipeline\.(Pipeline|CfnPipeline)\('
@@ -310,7 +350,7 @@ class CodePipelineEncryption(Rule):
                 file=f,
                 line=ln,
                 evidence=txt,
-                recommendation="Enable KMS encryption for CodePipeline artifact bucket. In CDK: artifactBucket with encryption",
+                recommendation=self.recommendation,
             ))
         return out
 
@@ -322,6 +362,10 @@ class CodeBuildPrivilegedMode(Rule):
     category = "Security"
     severity = "Medium"
     themes = ("security-baseline",)
+    recommendation = (
+        "Avoid privileged mode in CodeBuild unless required for Docker-in-Docker. It increases "
+        "security risk."
+    )
 
     def run(self, repo_path: Path, language: str = "typescript") -> List[Finding]:
         privileged = rg(repo_path, r'privileged\s*:\s*true', glob=code_glob(language))
@@ -335,7 +379,7 @@ class CodeBuildPrivilegedMode(Rule):
                 file=f,
                 line=ln,
                 evidence=txt,
-                recommendation="Avoid privileged mode in CodeBuild unless required for Docker-in-Docker. It increases security risk.",
+                recommendation=self.recommendation,
             ))
         return out
 
@@ -347,6 +391,10 @@ class EcsTaskRunAsRoot(Rule):
     category = "Security"
     severity = "Medium"
     themes = ("security-baseline",)
+    recommendation = (
+        "Run ECS containers as non-root user. Set runAsNonRoot: true and specify user in "
+        "container definition."
+    )
 
     def run(self, repo_path: Path, language: str = "typescript") -> List[Finding]:
         task_pat = r'new\s+ecs\.(TaskDefinition|FargateTaskDefinition|Ec2TaskDefinition)\(' if language == "typescript" else r'ecs\.(TaskDefinition|FargateTaskDefinition|Ec2TaskDefinition)\('
@@ -363,7 +411,7 @@ class EcsTaskRunAsRoot(Rule):
                 file=f,
                 line=ln,
                 evidence=txt,
-                recommendation="Run ECS containers as non-root user. Set runAsNonRoot: true and specify user in container definition.",
+                recommendation=self.recommendation,
             ))
         return out
 
@@ -374,6 +422,11 @@ class LambdaDeprecatedRuntime(Rule):
     category = "Security"
     severity = "High"
     themes = ("security-baseline",)
+    # General guidance. run() writes the runtime, its date and its replacement instead.
+    recommendation = (
+        "Move to a supported Lambda runtime. Deprecated runtimes get no security patches, "
+        "and AWS then blocks creating and updating functions on them (Security Hub Lambda.2)."
+    )
 
     def run(self, repo_path: Path, language: str = "typescript") -> List[Finding]:
         out: List[Finding] = []
@@ -412,6 +465,11 @@ class Ec2Imdsv2NotRequired(Rule):
     category = "Security"
     severity = "Medium"
     themes = ("security-baseline",)
+    recommendation = (
+        "Set requireImdsv2: true on ec2.Instance and ec2.LaunchTemplate, or apply "
+        "InstanceRequireImdsv2Aspect to the app. With IMDSv1, an SSRF bug in the workload "
+        "can read the instance role's credentials."
+    )
 
     def run(self, repo_path: Path, language: str = "typescript") -> List[Finding]:
         glob = code_glob(language)
@@ -439,8 +497,6 @@ class Ec2Imdsv2NotRequired(Rule):
             self,
             resources,
             required,
-            "Set requireImdsv2: true on ec2.Instance and ec2.LaunchTemplate, or apply "
-            "InstanceRequireImdsv2Aspect to the app. With IMDSv1, an SSRF bug in the workload "
-            "can read the instance role's credentials.",
+            self.recommendation,
             suggested_code=suggested,
         )

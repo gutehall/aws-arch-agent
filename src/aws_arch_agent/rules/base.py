@@ -51,6 +51,8 @@ class Rule(ABC):
     severity: str
     # One or more of rules.themes.THEMES. Set on every rule; a test enforces it.
     themes: ClassVar[tuple[str, ...]] = ()
+    # What a finding tells the reader to do. run() writes it. Set on every rule; a test enforces it.
+    recommendation: ClassVar[str] = ""
     exclude_globs: ClassVar[tuple[str, ...]] = DEFAULT_EXCLUDE_GLOBS
 
     @abstractmethod

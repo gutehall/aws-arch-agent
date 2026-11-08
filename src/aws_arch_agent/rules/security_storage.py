@@ -12,6 +12,10 @@ class S3PublicAccessNotBlocked(Rule):
     category = "Security"
     severity = "High"
     themes = ("network-exposure",)
+    recommendation = (
+        "Set 'blockPublicAccess: s3.BlockPublicAccess.BLOCK_ALL' for buckets that should not be "
+        "public."
+    )
 
     def run(self, repo_path: Path, language: str = "typescript") -> List[Finding]:
         # Heuristic: bucket declared but no blockPublicAccess config in same repo
@@ -27,7 +31,7 @@ class S3PublicAccessNotBlocked(Rule):
             self,
             buckets,
             bpa,
-            "Set 'blockPublicAccess: s3.BlockPublicAccess.BLOCK_ALL' for buckets that should not be public.",
+            self.recommendation,
             suggested_code=suggested,
         )
 
@@ -39,6 +43,10 @@ class S3EncryptionMissing(Rule):
     category = "Security"
     severity = "Medium"
     themes = ("data-protection",)
+    recommendation = (
+        "S3 encrypts new objects with SSE-S3 when encryption is omitted. "
+        "Remove the explicit UNENCRYPTED setting."
+    )
 
     def run(self, repo_path: Path, language: str = "typescript") -> List[Finding]:
         # SSE-S3 is the AWS default. Omitted encryption is not a finding.
@@ -59,10 +67,7 @@ class S3EncryptionMissing(Rule):
                 file=f,
                 line=ln,
                 evidence=txt,
-                recommendation=(
-                    "S3 encrypts new objects with SSE-S3 when encryption is omitted. "
-                    "Remove the explicit UNENCRYPTED setting."
-                ),
+                recommendation=self.recommendation,
                 suggested_code=suggested,
             ))
         return out
@@ -75,6 +80,10 @@ class DynamoDbEncryptionMissing(Rule):
     category = "Security"
     severity = "Medium"
     themes = ("data-protection",)
+    recommendation = (
+        "Enable encryption for DynamoDB tables. Use AWS_MANAGED (default) or CUSTOMER_MANAGED "
+        "(KMS) per requirements. In CDK: encryption: dynamodb.TableEncryption.AWS_MANAGED"
+    )
 
     def run(self, repo_path: Path, language: str = "typescript") -> List[Finding]:
         ddb_pat = r'new\s+(dynamodb\.Table|Table)\(' if language == "typescript" else r'(dynamodb.Table|aws_dynamodb.Table)\('
@@ -84,7 +93,7 @@ class DynamoDbEncryptionMissing(Rule):
             self,
             tables,
             enc,
-            "Enable encryption for DynamoDB tables. Use AWS_MANAGED (default) or CUSTOMER_MANAGED (KMS) per requirements. In CDK: encryption: dynamodb.TableEncryption.AWS_MANAGED",
+            self.recommendation,
         )
 
 
@@ -95,6 +104,10 @@ class SqsEncryptionMissing(Rule):
     category = "Security"
     severity = "Medium"
     themes = ("data-protection",)
+    recommendation = (
+        "Enable SQS encryption (KMS or SQS managed). In CDK: encryption: "
+        "sqs.QueueEncryption.KMS_MANAGED"
+    )
 
     def run(self, repo_path: Path, language: str = "typescript") -> List[Finding]:
         sqs_pat = r'new\s+sqs\.Queue\(' if language == "typescript" else r'sqs\.Queue\('
@@ -108,7 +121,7 @@ class SqsEncryptionMissing(Rule):
             self,
             queues,
             enc,
-            "Enable SQS encryption (KMS or SQS managed). In CDK: encryption: sqs.QueueEncryption.KMS_MANAGED",
+            self.recommendation,
         )
 
 
@@ -119,6 +132,7 @@ class SnsEncryptionMissing(Rule):
     category = "Security"
     severity = "Medium"
     themes = ("data-protection",)
+    recommendation = "Enable SNS topic encryption with KMS. In CDK: masterKey: kms.Key"
 
     def run(self, repo_path: Path, language: str = "typescript") -> List[Finding]:
         sns_pat = r'new\s+sns\.Topic\(' if language == "typescript" else r'sns\.Topic\('
@@ -132,7 +146,7 @@ class SnsEncryptionMissing(Rule):
             self,
             topics,
             enc,
-            "Enable SNS topic encryption with KMS. In CDK: masterKey: kms.Key",
+            self.recommendation,
         )
 
 
@@ -143,6 +157,7 @@ class EfsEncryptionMissing(Rule):
     category = "Security"
     severity = "High"
     themes = ("data-protection",)
+    recommendation = "Enable encryption at rest for EFS file systems. In CDK: encrypted: true"
 
     def run(self, repo_path: Path, language: str = "typescript") -> List[Finding]:
         efs_pat = r'new\s+efs\.FileSystem\(' if language == "typescript" else r'efs\.FileSystem\('
@@ -159,7 +174,7 @@ class EfsEncryptionMissing(Rule):
                 file=f,
                 line=ln,
                 evidence=txt,
-                recommendation="Enable encryption at rest for EFS file systems. In CDK: encrypted: true",
+                recommendation=self.recommendation,
             ))
         return out
 
@@ -171,6 +186,10 @@ class KinesisEncryption(Rule):
     category = "Security"
     severity = "Medium"
     themes = ("data-protection",)
+    recommendation = (
+        "Enable server-side encryption for Kinesis streams. In CDK: encryption: "
+        "kinesis.StreamEncryption.KMS"
+    )
 
     def run(self, repo_path: Path, language: str = "typescript") -> List[Finding]:
         kinesis_pat = r'new\s+kinesis\.(Stream|CfnStream)\(' if language == "typescript" else r'kinesis\.(Stream|CfnStream)\('
@@ -187,7 +206,7 @@ class KinesisEncryption(Rule):
                 file=f,
                 line=ln,
                 evidence=txt,
-                recommendation="Enable server-side encryption for Kinesis streams. In CDK: encryption: kinesis.StreamEncryption.KMS",
+                recommendation=self.recommendation,
             ))
         return out
 
@@ -199,6 +218,10 @@ class OpenSearchEncryption(Rule):
     category = "Security"
     severity = "High"
     themes = ("data-protection", "network-exposure",)
+    recommendation = (
+        "Enable encryption at rest and node-to-node encryption for OpenSearch. In CDK: "
+        "encryptionAtRest.enabled: true, nodeToNodeEncryption: true"
+    )
 
     def run(self, repo_path: Path, language: str = "typescript") -> List[Finding]:
         os_pat = r'new\s+opensearch\.(Domain|CfnDomain)\(' if language == "typescript" else r'opensearch\.(Domain|CfnDomain)\('
@@ -215,7 +238,7 @@ class OpenSearchEncryption(Rule):
                 file=f,
                 line=ln,
                 evidence=txt,
-                recommendation="Enable encryption at rest and node-to-node encryption for OpenSearch. In CDK: encryptionAtRest.enabled: true, nodeToNodeEncryption: true",
+                recommendation=self.recommendation,
             ))
         return out
 
@@ -227,6 +250,10 @@ class OpenSearchFineGrainedAccess(Rule):
     category = "Security"
     severity = "Medium"
     themes = ("identity",)
+    recommendation = (
+        "Enable fine-grained access control for OpenSearch for better security. In CDK: "
+        "fineGrainedAccessControl.enabled: true"
+    )
 
     def run(self, repo_path: Path, language: str = "typescript") -> List[Finding]:
         os_pat = r'new\s+opensearch\.(Domain|CfnDomain)\(' if language == "typescript" else r'opensearch\.(Domain|CfnDomain)\('
@@ -243,7 +270,7 @@ class OpenSearchFineGrainedAccess(Rule):
                 file=f,
                 line=ln,
                 evidence=txt,
-                recommendation="Enable fine-grained access control for OpenSearch for better security. In CDK: fineGrainedAccessControl.enabled: true",
+                recommendation=self.recommendation,
             ))
         return out
 
@@ -255,6 +282,10 @@ class OpenSearchVpcOnly(Rule):
     category = "Security"
     severity = "High"
     themes = ("network-exposure",)
+    recommendation = (
+        "Deploy OpenSearch domains within VPC for secure access. In CDK: vpc and vpcSubnets "
+        "properties"
+    )
 
     def run(self, repo_path: Path, language: str = "typescript") -> List[Finding]:
         os_pat = r'new\s+opensearch\.(Domain|CfnDomain)\(' if language == "typescript" else r'opensearch\.(Domain|CfnDomain)\('
@@ -271,7 +302,7 @@ class OpenSearchVpcOnly(Rule):
                 file=f,
                 line=ln,
                 evidence=txt,
-                recommendation="Deploy OpenSearch domains within VPC for secure access. In CDK: vpc and vpcSubnets properties",
+                recommendation=self.recommendation,
             ))
         return out
 
@@ -283,6 +314,10 @@ class AthenaEncryption(Rule):
     category = "Security"
     severity = "Medium"
     themes = ("data-protection",)
+    recommendation = (
+        "Enable encryption for Athena query results. Configure encryptionConfiguration in "
+        "workgroup settings"
+    )
 
     def run(self, repo_path: Path, language: str = "typescript") -> List[Finding]:
         athena_pat = r'new\s+athena\.(CfnWorkGroup|Workgroup)\(' if language == "typescript" else r'athena\.(CfnWorkGroup|Workgroup)\('
@@ -299,7 +334,7 @@ class AthenaEncryption(Rule):
                 file=f,
                 line=ln,
                 evidence=txt,
-                recommendation="Enable encryption for Athena query results. Configure encryptionConfiguration in workgroup settings",
+                recommendation=self.recommendation,
             ))
         return out
 
@@ -311,6 +346,10 @@ class GlueEncryption(Rule):
     category = "Security"
     severity = "Medium"
     themes = ("data-protection",)
+    recommendation = (
+        "Configure encryption for Glue jobs (CloudWatch logs, job bookmarks, S3). Create a "
+        "security configuration and reference it"
+    )
 
     def run(self, repo_path: Path, language: str = "typescript") -> List[Finding]:
         glue_pat = r'new\s+glue\.(Job|CfnJob)\(' if language == "typescript" else r'glue\.(Job|CfnJob)\('
@@ -327,7 +366,7 @@ class GlueEncryption(Rule):
                 file=f,
                 line=ln,
                 evidence=txt,
-                recommendation="Configure encryption for Glue jobs (CloudWatch logs, job bookmarks, S3). Create a security configuration and reference it",
+                recommendation=self.recommendation,
             ))
         return out
 
@@ -339,6 +378,10 @@ class MskEncryption(Rule):
     category = "Security"
     severity = "High"
     themes = ("data-protection",)
+    recommendation = (
+        "Enable encryption in transit for MSK cluster. Configure encryptionInTransit with "
+        "clientBroker: TLS"
+    )
 
     def run(self, repo_path: Path, language: str = "typescript") -> List[Finding]:
         msk_pat = r'new\s+msk\.(Cluster|CfnCluster)\(' if language == "typescript" else r'msk\.(Cluster|CfnCluster)\('
@@ -355,7 +398,7 @@ class MskEncryption(Rule):
                 file=f,
                 line=ln,
                 evidence=txt,
-                recommendation="Enable encryption in transit for MSK cluster. Configure encryptionInTransit with clientBroker: TLS",
+                recommendation=self.recommendation,
             ))
         return out
 
@@ -367,6 +410,10 @@ class MskAuthentication(Rule):
     category = "Security"
     severity = "High"
     themes = ("identity",)
+    recommendation = (
+        "Configure client authentication for MSK (SASL/SCRAM or mTLS). In CDK: "
+        "clientAuthentication property"
+    )
 
     def run(self, repo_path: Path, language: str = "typescript") -> List[Finding]:
         msk_pat = r'new\s+msk\.(Cluster|CfnCluster)\(' if language == "typescript" else r'msk\.(Cluster|CfnCluster)\('
@@ -383,7 +430,7 @@ class MskAuthentication(Rule):
                 file=f,
                 line=ln,
                 evidence=txt,
-                recommendation="Configure client authentication for MSK (SASL/SCRAM or mTLS). In CDK: clientAuthentication property",
+                recommendation=self.recommendation,
             ))
         return out
 
@@ -395,6 +442,10 @@ class RedshiftEncryptionMissing(Rule):
     category = "Security"
     severity = "High"
     themes = ("data-protection",)
+    recommendation = (
+        "Enable encryption at rest for Redshift clusters. In CDK: encrypted: true with kmsKeyId "
+        "for customer-managed keys."
+    )
 
     def run(self, repo_path: Path, language: str = "typescript") -> List[Finding]:
         rs_pat = r'new\s+redshift\.(Cluster|CfnCluster)\(' if language == "typescript" else r'redshift\.(Cluster|CfnCluster)\('
@@ -411,7 +462,7 @@ class RedshiftEncryptionMissing(Rule):
                 file=f,
                 line=ln,
                 evidence=txt,
-                recommendation="Enable encryption at rest for Redshift clusters. In CDK: encrypted: true with kmsKeyId for customer-managed keys.",
+                recommendation=self.recommendation,
             ))
         return out
 
@@ -423,6 +474,9 @@ class DocumentDbEncryptionMissing(Rule):
     category = "Security"
     severity = "High"
     themes = ("data-protection",)
+    recommendation = (
+        "Enable encryption at rest for DocumentDB clusters. In CDK: storageEncrypted: true"
+    )
 
     def run(self, repo_path: Path, language: str = "typescript") -> List[Finding]:
         docdb_pat = r'new\s+docdb\.(DatabaseCluster|CfnDBCluster)\(' if language == "typescript" else r'docdb\.(DatabaseCluster|CfnDBCluster)\('
@@ -439,7 +493,7 @@ class DocumentDbEncryptionMissing(Rule):
                 file=f,
                 line=ln,
                 evidence=txt,
-                recommendation="Enable encryption at rest for DocumentDB clusters. In CDK: storageEncrypted: true",
+                recommendation=self.recommendation,
             ))
         return out
 
@@ -451,6 +505,9 @@ class NeptuneEncryptionMissing(Rule):
     category = "Security"
     severity = "High"
     themes = ("data-protection",)
+    recommendation = (
+        "Enable encryption at rest for Neptune databases. In CDK: storageEncrypted: true"
+    )
 
     def run(self, repo_path: Path, language: str = "typescript") -> List[Finding]:
         neptune_pat = r'new\s+neptune\.(DatabaseCluster|CfnDBCluster)\(' if language == "typescript" else r'neptune\.(DatabaseCluster|CfnDBCluster)\('
@@ -467,7 +524,7 @@ class NeptuneEncryptionMissing(Rule):
                 file=f,
                 line=ln,
                 evidence=txt,
-                recommendation="Enable encryption at rest for Neptune databases. In CDK: storageEncrypted: true",
+                recommendation=self.recommendation,
             ))
         return out
 
@@ -479,6 +536,9 @@ class CloudWatchLogsKmsEncryption(Rule):
     category = "Security"
     severity = "Medium"
     themes = ("data-protection", "observability",)
+    recommendation = (
+        "Encrypt CloudWatch Logs with KMS for sensitive data. In CDK: encryptionKey: kms.Key"
+    )
 
     def run(self, repo_path: Path, language: str = "typescript") -> List[Finding]:
         log_pat = r'new\s+logs\.(LogGroup|LogGroupBase)\(' if language == "typescript" else r'logs\.(LogGroup|LogGroupBase)\('
@@ -495,7 +555,7 @@ class CloudWatchLogsKmsEncryption(Rule):
                 file=f,
                 line=ln,
                 evidence=txt,
-                recommendation="Encrypt CloudWatch Logs with KMS for sensitive data. In CDK: encryptionKey: kms.Key",
+                recommendation=self.recommendation,
             ))
         return out
 
@@ -507,6 +567,7 @@ class BackupVaultEncryption(Rule):
     category = "Security"
     severity = "Medium"
     themes = ("data-protection", "resilience",)
+    recommendation = "Configure KMS encryption for Backup vaults. In CDK: encryptionKeyArn property"
 
     def run(self, repo_path: Path, language: str = "typescript") -> List[Finding]:
         vault_pat = r'new\s+backup\.(BackupVault|CfnBackupVault)\(' if language == "typescript" else r'backup\.(BackupVault|CfnBackupVault)\('
@@ -523,7 +584,7 @@ class BackupVaultEncryption(Rule):
                 file=f,
                 line=ln,
                 evidence=txt,
-                recommendation="Configure KMS encryption for Backup vaults. In CDK: encryptionKeyArn property",
+                recommendation=self.recommendation,
             ))
         return out
 
@@ -535,6 +596,10 @@ class RdsPubliclyAccessible(Rule):
     category = "Security"
     severity = "High"
     themes = ("network-exposure",)
+    recommendation = (
+        "Set publiclyAccessible to false. Omitted uses the CloudFormation default, which is not "
+        "public."
+    )
 
     def run(self, repo_path: Path, language: str = "typescript") -> List[Finding]:
         rds_pat = r'new\s+rds\.(DatabaseInstance|DatabaseCluster)\(' if language == "typescript" else r'rds\.(DatabaseInstance|DatabaseCluster)\('
@@ -549,7 +614,7 @@ class RdsPubliclyAccessible(Rule):
             self,
             dbs,
             public_true,
-            "Set publiclyAccessible to false. Omitted uses the CloudFormation default, which is not public.",
+            self.recommendation,
         )
 
 

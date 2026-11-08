@@ -17,6 +17,7 @@ class OpenSshToWorld(Rule):
     category = "Security"
     severity = "High"
     themes = ("network-exposure",)
+    recommendation = "Restrict SSH to bastion/VPN or specific IP ranges. Avoid 0.0.0.0/0."
 
     def run(self, repo_path: Path, language: str = "typescript") -> List[Finding]:
         glob = code_glob(language)
@@ -24,7 +25,7 @@ class OpenSshToWorld(Rule):
             self,
             rg(repo_path, _WORLD_OPEN, glob=glob),
             rg(repo_path, _SSH_PORT, glob=glob),
-            "Restrict SSH to bastion/VPN or specific IP ranges. Avoid 0.0.0.0/0.",
+            self.recommendation,
         )
 
 
@@ -35,6 +36,10 @@ class OpenDbPortsToWorld(Rule):
     category = "Security"
     severity = "High"
     themes = ("network-exposure",)
+    recommendation = (
+        "Databases should not be exposed publicly. Restrict ingress to app-tier security groups "
+        "or private subnets."
+    )
 
     def run(self, repo_path: Path, language: str = "typescript") -> List[Finding]:
         glob = code_glob(language)
@@ -42,7 +47,7 @@ class OpenDbPortsToWorld(Rule):
             self,
             rg(repo_path, _WORLD_OPEN, glob=glob),
             rg(repo_path, _DB_PORT, glob=glob),
-            "Databases should not be exposed publicly. Restrict ingress to app-tier security groups or private subnets.",
+            self.recommendation,
         )
 
 
@@ -53,6 +58,10 @@ class VpcEndpointsMissing(Rule):
     category = "Security"
     severity = "Low"
     themes = ("network-exposure", "finops",)
+    recommendation = (
+        "Add VPC endpoints for AWS services (S3, DynamoDB gateway; EC2, SQS, etc. interface) to "
+        "reduce NAT costs and improve security"
+    )
 
     def run(self, repo_path: Path, language: str = "typescript") -> List[Finding]:
         vpc_pat = r'new\s+ec2\.Vpc\(' if language == "typescript" else r'ec2\.Vpc\('
@@ -69,7 +78,7 @@ class VpcEndpointsMissing(Rule):
                 file=f,
                 line=ln,
                 evidence=txt,
-                recommendation="Add VPC endpoints for AWS services (S3, DynamoDB gateway; EC2, SQS, etc. interface) to reduce NAT costs and improve security",
+                recommendation=self.recommendation,
             ))
         return out
 
@@ -81,6 +90,10 @@ class WafMissing(Rule):
     category = "Security"
     severity = "Low"
     themes = ("network-exposure",)
+    recommendation = (
+        "Consider AWS WAF for protection against common web exploits (OWASP Top 10, bot control, "
+        "rate limiting)"
+    )
 
     def run(self, repo_path: Path, language: str = "typescript") -> List[Finding]:
         resources = rg(repo_path, r'ApplicationLoadBalancer|RestApi|CloudFrontWebDistribution', glob=code_glob(language))
@@ -96,7 +109,7 @@ class WafMissing(Rule):
                 file=f,
                 line=ln,
                 evidence=txt,
-                recommendation="Consider AWS WAF for protection against common web exploits (OWASP Top 10, bot control, rate limiting)",
+                recommendation=self.recommendation,
             ))
         return out
 
@@ -108,6 +121,10 @@ class Route53HealthChecks(Rule):
     category = "Security"
     severity = "Low"
     themes = ("resilience",)
+    recommendation = (
+        "Configure Route 53 health checks for failover and monitoring. In CDK: healthCheck "
+        "property on records"
+    )
 
     def run(self, repo_path: Path, language: str = "typescript") -> List[Finding]:
         route53_pat = r'new\s+route53\.(HostedZone|RecordSet)\(' if language == "typescript" else r'route53\.(HostedZone|RecordSet)\('
@@ -124,7 +141,7 @@ class Route53HealthChecks(Rule):
                 file=f,
                 line=ln,
                 evidence=txt,
-                recommendation="Configure Route 53 health checks for failover and monitoring. In CDK: healthCheck property on records",
+                recommendation=self.recommendation,
             ))
         return out
 
@@ -136,6 +153,10 @@ class Route53Dnssec(Rule):
     category = "Security"
     severity = "Low"
     themes = ("security-baseline",)
+    recommendation = (
+        "Consider enabling DNSSEC for Route 53 public hosted zones to protect against DNS "
+        "spoofing"
+    )
 
     def run(self, repo_path: Path, language: str = "typescript") -> List[Finding]:
         route53_pat = r'new\s+route53\.(PublicHostedZone|HostedZone)\(' if language == "typescript" else r'route53\.(PublicHostedZone|HostedZone)\('
@@ -152,7 +173,7 @@ class Route53Dnssec(Rule):
                 file=f,
                 line=ln,
                 evidence=txt,
-                recommendation="Consider enabling DNSSEC for Route 53 public hosted zones to protect against DNS spoofing",
+                recommendation=self.recommendation,
             ))
         return out
 
@@ -164,6 +185,10 @@ class SecurityGroupEgressOpen(Rule):
     category = "Security"
     severity = "Low"
     themes = ("network-exposure",)
+    recommendation = (
+        "Consider restricting egress rules to specific destinations for defense-in-depth. In CDK:"
+        " allowAllOutbound: false"
+    )
 
     def run(self, repo_path: Path, language: str = "typescript") -> List[Finding]:
         sg_pat = r'new\s+ec2\.SecurityGroup\(' if language == "typescript" else r'ec2\.SecurityGroup\('
@@ -177,7 +202,7 @@ class SecurityGroupEgressOpen(Rule):
             self,
             sgs,
             egress_all,
-            "Consider restricting egress rules to specific destinations for defense-in-depth. In CDK: allowAllOutbound: false",
+            self.recommendation,
         )
 
 
@@ -188,6 +213,9 @@ class NaclMissing(Rule):
     category = "Security"
     severity = "Low"
     themes = ("network-exposure",)
+    recommendation = (
+        "Consider Network ACLs as an additional layer of network security beyond Security Groups"
+    )
 
     def run(self, repo_path: Path, language: str = "typescript") -> List[Finding]:
         vpc_pat = r'new\s+ec2\.Vpc\(' if language == "typescript" else r'ec2\.Vpc\('
@@ -204,7 +232,7 @@ class NaclMissing(Rule):
                 file=f,
                 line=ln,
                 evidence=txt,
-                recommendation="Consider Network ACLs as an additional layer of network security beyond Security Groups",
+                recommendation=self.recommendation,
             ))
         return out
 
@@ -216,6 +244,10 @@ class LambdaFunctionUrlAuth(Rule):
     category = "Security"
     severity = "High"
     themes = ("identity", "network-exposure",)
+    recommendation = (
+        "Configure authentication for Lambda function URLs. Use authType: "
+        "lambda.FunctionUrlAuthType.AWS_IAM or integrate with API Gateway for more control."
+    )
 
     def run(self, repo_path: Path, language: str = "typescript") -> List[Finding]:
         func_url_pat = (
@@ -235,7 +267,7 @@ class LambdaFunctionUrlAuth(Rule):
                 file=f,
                 line=ln,
                 evidence=txt,
-                recommendation="Configure authentication for Lambda function URLs. Use authType: lambda.FunctionUrlAuthType.AWS_IAM or integrate with API Gateway for more control.",
+                recommendation=self.recommendation,
             ))
         return out
 
