@@ -330,6 +330,19 @@ def test_v2_reports_only_the_template_finding(
     assert rule_id not in kept
 
 
+def test_v2_on_the_minimal_cdk_fixture_reports_each_problem_once() -> None:
+    """CDK rules and template checks on one real CDK app, as V2 merges them."""
+    repo = Path(__file__).parent / "fixtures" / "minimal-cdk"
+    template = repo / "cdk.out" / "MinimalStack.template.json"
+    static = [f for rule in RULE_BY_ID.values() for f in rule.run(repo, "typescript")]
+    kept = drop_static_covered_by_cf(static + run_cf_rules_from_paths([template], repo_path=repo))
+    reported = {f.id for f in kept}
+    for cf_id in reported:
+        assert not set(CF_COVERS_STATIC.get(cf_id, ())) & reported, f"{cf_id} and its CDK rule both report"
+    keys = [(f.id, f.file, f.line, f.evidence) for f in kept]
+    assert len(keys) == len(set(keys)), "one finding reported twice"
+
+
 def test_every_pair_is_in_the_map() -> None:
     for cf_id, rule_id, _resource, _source in PAIRS:
         assert rule_id in CF_COVERS_STATIC[cf_id]

@@ -8,15 +8,9 @@ Which CDK rules have a template check, and which AWS Foundational Security Best 
 | -- | -- |
 | `covered` | A template check covers the whole CDK rule. In V2 the CDK finding is dropped when the template check reports (`CF_COVERS_STATIC`, or the tag policy for BP-001 and COST-015). |
 | `partial` | A template check covers part of the CDK rule, so V2 keeps both (`CF_PARTLY_COVERS_STATIC`). |
-| `planned: <work>` | Planned work, listed below, will add the template check. |
 | `account` | Needs a live account. A scan of templates cannot see it. |
 | `cdk-only` | Reads the CDK code itself, not a resource property. |
 | `advice` | No property to read. The answer depends on traffic, usage or design. |
-
-## Planned work
-
-| Work | Adds template checks for |
-| -- | -- |
 
 ## CDK rules
 
