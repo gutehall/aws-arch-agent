@@ -17,7 +17,6 @@ Which CDK rules have a template check, and which AWS Foundational Security Best 
 
 | Work | Adds template checks for |
 | -- | -- |
-| `emr-dms` | EMR and DMS |
 | `s3` | S3 replication, ownership and notifications |
 | `cloudfront` | More CloudFront settings |
 | `sagemaker-fsx` | SageMaker and FSx |
@@ -245,9 +244,10 @@ Controls a template can show. Account-level controls (for example S3.1, EC2.7 an
 | Cognito.1 | `CF-COG-003` | `AWS::Cognito::UserPool` |
 | Config.1 | `planned: account-baseline` | `AWS::Config::ConfigurationRecorder` |
 | DataFirehose.1 | `CF-FH-001` | `AWS::KinesisFirehose::DeliveryStream` |
-| DMS.1 | `planned: emr-dms` | `AWS::DMS::ReplicationInstance` |
-| DMS.6 | `planned: emr-dms` | `AWS::DMS::ReplicationInstance` |
-| DMS.9 | `planned: emr-dms` | `AWS::DMS::Endpoint` |
+| DMS.1 | `CF-DMS-001` | `AWS::DMS::ReplicationInstance` |
+| DMS.6 | `CF-DMS-002` | `AWS::DMS::ReplicationInstance` |
+| DMS.9 | `CF-DMS-003` | `AWS::DMS::Endpoint` |
+| DMS.13 | `CF-DMS-004` | `AWS::DMS::ReplicationInstance` |
 | DocumentDB.1 | `CF-DOCDB-001` | `AWS::DocDB::DBCluster` |
 | DocumentDB.2 | `CF-DOCDB-002` | `AWS::DocDB::DBCluster` |
 | DocumentDB.4 | `CF-DOCDB-003` | `AWS::DocDB::DBCluster` |
@@ -306,9 +306,9 @@ Controls a template can show. Account-level controls (for example S3.1, EC2.7 an
 | ELB.7 | `CF-CLB-005` | `AWS::ElasticLoadBalancing::LoadBalancer` |
 | ELB.9 | `CF-CLB-004` | `AWS::ElasticLoadBalancing::LoadBalancer` |
 | ELB.12 | `CF-ALB-006` | `AWS::ElasticLoadBalancingV2::LoadBalancer` |
-| EMR.1 | `planned: emr-dms` | `AWS::EMR::Cluster` |
-| EMR.3 | `planned: emr-dms` | `AWS::EMR::SecurityConfiguration` |
-| EMR.4 | `planned: emr-dms` | `AWS::EMR::SecurityConfiguration` |
+| EMR.1 | `CF-EMR-001` | `AWS::EMR::Cluster` |
+| EMR.3 | `CF-EMR-002` | `AWS::EMR::SecurityConfiguration` |
+| EMR.4 | `CF-EMR-003` | `AWS::EMR::SecurityConfiguration` |
 | FSx.1 | `planned: sagemaker-fsx` | `AWS::FSx::FileSystem` |
 | IAM.1 | `CF-IAM-008` | `AWS::IAM::Role`, `AWS::IAM::User`, `AWS::IAM::Group`, `AWS::IAM::ManagedPolicy` |
 | IAM.21 | `CF-IAM-002` | `AWS::IAM::ManagedPolicy`, `AWS::IAM::Policy` |

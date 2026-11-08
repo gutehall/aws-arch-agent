@@ -1380,6 +1380,54 @@ _CLOUDFORMATION["CF-FH-001"] = """$name:
   Properties:
     DeliveryStreamEncryptionConfigurationInput:
       KeyType: AWS_OWNED_CMK"""
+_CLOUDFORMATION["CF-EMR-001"] = """$name:
+  Type: AWS::EMR::Cluster
+  Properties:
+    Instances:
+      Ec2SubnetId: !Ref PrivateSubnet"""
+_CLOUDFORMATION["CF-EMR-002"] = """# Create an AWS::EMR::SecurityConfiguration that enables encryption at rest and in transit, and name it here.
+$name:
+  Type: AWS::EMR::Cluster
+  Properties:
+    SecurityConfiguration: !Ref AppSecurityConfiguration"""
+_CLOUDFORMATION["CF-EMR-002:AWS::EMR::SecurityConfiguration"] = """$name:
+  Type: AWS::EMR::SecurityConfiguration
+  Properties:
+    SecurityConfiguration:
+      EncryptionConfiguration:
+        EnableAtRestEncryption: true
+        EnableInTransitEncryption: true
+        AtRestEncryptionConfiguration:
+          S3EncryptionConfiguration:
+            EncryptionMode: SSE-S3"""
+_CLOUDFORMATION["CF-EMR-003"] = """$name:
+  Type: AWS::EMR::SecurityConfiguration
+  Properties:
+    SecurityConfiguration:
+      EncryptionConfiguration:
+        EnableAtRestEncryption: true
+        EnableInTransitEncryption: true
+        InTransitEncryptionConfiguration:
+          TLSCertificateConfiguration:
+            CertificateProviderType: PEM
+            S3Object: s3://my-bucket/certs.zip"""
+_CLOUDFORMATION["CF-DMS-001"] = """$name:
+  Type: AWS::DMS::ReplicationInstance
+  Properties:
+    PubliclyAccessible: false"""
+_CLOUDFORMATION["CF-DMS-002"] = """$name:
+  Type: AWS::DMS::ReplicationInstance
+  Properties:
+    AutoMinorVersionUpgrade: true"""
+_CLOUDFORMATION["CF-DMS-003"] = """$name:
+  Type: AWS::DMS::Endpoint
+  Properties:
+    SslMode: verify-full
+    CertificateArn: !Ref DatabaseCertificate"""
+_CLOUDFORMATION["CF-DMS-004"] = """$name:
+  Type: AWS::DMS::ReplicationInstance
+  Properties:
+    MultiAZ: true"""
 _CLOUDFORMATION["CF-BAK-001"] = """$name:
   Type: AWS::Backup::BackupVault
   Properties:
@@ -1592,6 +1640,61 @@ _TERRAFORM["CF-FH-001"] = """resource "aws_kinesis_firehose_delivery_stream" "$t
     enabled  = true
     key_type = "AWS_OWNED_CMK"
   }
+}"""
+_TERRAFORM["CF-EMR-001"] = """resource "aws_emr_cluster" "$tf_name" {
+  # keep the other arguments as they are
+  ec2_attributes {
+    subnet_id = aws_subnet.private.id
+  }
+}"""
+_TERRAFORM["CF-EMR-002"] = """# Create an aws_emr_security_configuration that enables encryption at rest and in transit, and name it here.
+resource "aws_emr_cluster" "$tf_name" {
+  # keep the other arguments as they are
+  security_configuration = aws_emr_security_configuration.app.name
+}"""
+_TERRAFORM["CF-EMR-002:aws_emr_security_configuration"] = """resource "aws_emr_security_configuration" "$tf_name" {
+  configuration = jsonencode({
+    EncryptionConfiguration = {
+      EnableAtRestEncryption    = true
+      EnableInTransitEncryption = true
+      AtRestEncryptionConfiguration = {
+        S3EncryptionConfiguration = {
+          EncryptionMode = "SSE-S3"
+        }
+      }
+    }
+  })
+}"""
+_TERRAFORM["CF-EMR-003"] = """resource "aws_emr_security_configuration" "$tf_name" {
+  configuration = jsonencode({
+    EncryptionConfiguration = {
+      EnableAtRestEncryption    = true
+      EnableInTransitEncryption = true
+      InTransitEncryptionConfiguration = {
+        TLSCertificateConfiguration = {
+          CertificateProviderType = "PEM"
+          S3Object                = "s3://my-bucket/certs.zip"
+        }
+      }
+    }
+  })
+}"""
+_TERRAFORM["CF-DMS-001"] = """resource "aws_dms_replication_instance" "$tf_name" {
+  # keep the other arguments as they are
+  publicly_accessible = false
+}"""
+_TERRAFORM["CF-DMS-002"] = """resource "aws_dms_replication_instance" "$tf_name" {
+  # keep the other arguments as they are
+  auto_minor_version_upgrade = true
+}"""
+_TERRAFORM["CF-DMS-003"] = """resource "aws_dms_endpoint" "$tf_name" {
+  # keep the other arguments as they are
+  ssl_mode        = "verify-full"
+  certificate_arn = aws_dms_certificate.database.certificate_arn
+}"""
+_TERRAFORM["CF-DMS-004"] = """resource "aws_dms_replication_instance" "$tf_name" {
+  # keep the other arguments as they are
+  multi_az = true
 }"""
 _TERRAFORM["CF-BAK-001"] = """resource "aws_backup_vault" "$tf_name" {
   name        = "my-vault"

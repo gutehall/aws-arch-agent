@@ -284,6 +284,7 @@ def _read_template(path: Path) -> tuple[dict, str | None]:
 
 # Canonical types with per-resource checks (the rest only feed template-level counts).
 _PER_RESOURCE_TYPES = frozenset({
+    "emr_cluster", "emr_security_configuration", "dms_replication_instance", "dms_endpoint",
     "s3_bucket", "db_instance", "rds_cluster", "instance", "lb", "cloudtrail", "kms_key",
     "lambda_function", "dynamodb_table", "security_group", "security_group_ingress_rule",
     "cloudwatch_log_group", "sqs_queue", "api_gateway_stage", "apigatewayv2_stage",
@@ -440,6 +441,9 @@ CHECK_PROPERTIES: dict[str, frozenset[str]] = {
         # Template-level: _autoscaling_findings skips what it cannot read.
         **{c: set() for c in ("CF-ASG-001", "CF-ASG-002", "CF-ASG-003", "CF-ASG-004", "CF-ASG-005",
                               "CF-ASG-006")},
+        # Template-level: _emr_dms_findings skips what it cannot read.
+        **{c: set() for c in ("CF-EMR-001", "CF-EMR-002", "CF-EMR-003", "CF-DMS-001", "CF-DMS-002",
+                              "CF-DMS-003", "CF-DMS-004")},
         # Template-level: _analytics_findings skips what it cannot read.
         **{c: set() for c in ("CF-ATH-001", "CF-ATH-002", "CF-GLUE-001", "CF-GLUE-002", "CF-GLUE-003",
                               "CF-FH-001")},
@@ -477,6 +481,8 @@ _F, _SB, _ID, _DP, _NET, _RES, _OBS, _SUS = (
     "network-exposure", "resilience", "observability", "sustainability",
 )
 CF_THEMES: dict[str, tuple[str, ...]] = {
+    "CF-EMR-001": (_NET,), "CF-EMR-002": (_DP,), "CF-EMR-003": (_DP,),
+    "CF-DMS-001": (_NET,), "CF-DMS-002": (_SB,), "CF-DMS-003": (_DP,), "CF-DMS-004": (_RES,),
     "CF-ATH-001": (_DP,), "CF-ATH-002": (_DP,), "CF-GLUE-001": (_DP,), "CF-GLUE-002": (_OBS,),
     "CF-GLUE-003": (_RES,), "CF-FH-001": (_DP,),
     "CF-ASG-001": (_RES,), "CF-ASG-002": (_RES,), "CF-ASG-003": (_SB, _ID), "CF-ASG-004": (_NET,),
@@ -3839,6 +3845,152 @@ def _analytics_findings(resources: List[Resource], template_path: Path) -> List[
     return out
 
 
+def _emr_in_public_subnet(cluster: Resource, subnets: List[Resource]) -> bool:
+    """True when Ec2SubnetId names one subnet in this template that literally maps public IPs. A
+    template shows the subnet, not the node's address. A parameter, a variable, a choice between
+    subnets or a subnet outside the template is not judged."""
+    instances = cluster.properties.get("Instances")
+    value = instances.get("Ec2SubnetId") if isinstance(instances, dict) else None
+    if isinstance(value, dict):
+        attribute = value.get("Fn::GetAtt")
+        name = attribute[0] if isinstance(attribute, list) and attribute[1:] == ["SubnetId"] else value.get("Ref")
+        if len(value) != 1:
+            return False
+        chosen = [s for s in subnets if s.name == name]
+    elif isinstance(value, str) and type(value) is not str:
+        text = value.strip()
+        text = text[2:-1] if text.startswith("${") and text.endswith("}") else text
+        chosen = [s for s in subnets if re.fullmatch(rf"{re.escape(s.name)}(?:\[[^\]]*\])?\.id", text)]
+    else:
+        return False
+    return any("MapPublicIpOnLaunch" not in s.unresolved and _flag(s.properties.get("MapPublicIpOnLaunch")) is True
+               for s in chosen)
+
+
+def _emr_encryption(security: Resource) -> dict | None:
+    """A security configuration's EncryptionConfiguration, {} when the document has none, or None
+    when the document or that part of it cannot be read."""
+    if "SecurityConfiguration" in security.unresolved:
+        return None
+    document = security.properties.get("SecurityConfiguration")
+    if type(document) is str:
+        try:
+            document = json.loads(document)
+        except ValueError:
+            return None
+    if not isinstance(document, dict) or _is_intrinsic(document):
+        return None
+    encryption = document.get("EncryptionConfiguration", {})
+    return encryption if isinstance(encryption, dict) and not _is_intrinsic(encryption) else None
+
+
+# Engines the DMS guide says can use SSL through SslMode. Not Redshift, where DMS does not support
+# it, nor engines with no SslMode, such as S3, DynamoDB and Kinesis.
+_DMS_SSL_ENGINES = frozenset({
+    "aurora", "aurora-postgresql", "db2", "docdb", "mariadb", "mysql", "oracle", "postgres", "sqlserver",
+})
+
+
+def _dms_ssl_off(endpoint: Resource) -> bool:
+    """True when an endpoint on a known SSL engine has SslMode none, or unset, which means none. An
+    unset mode is not judged when a secret, a certificate or extra attributes configure the
+    connection in a way the template does not show."""
+    props = endpoint.properties
+    engine = None if "EngineName" in endpoint.unresolved else props.get("EngineName")
+    if type(engine) is not str or engine.lower() not in _DMS_SSL_ENGINES or "SslMode" in endpoint.unresolved:
+        return False
+    mode = props.get("SslMode")
+    if mode is not None:
+        return type(mode) is str and mode.lower() == "none"
+    if any(key in endpoint.unresolved or props.get(key)
+           for key in ("SecretsManagerSecretId", "CertificateArn", "ExtraConnectionAttributes")):
+        return False
+    return not any(
+        key.endswith("Settings") and (
+            not isinstance(value, dict) or _is_intrinsic(value) or "SecretsManagerSecretId" in value)
+        for key, value in props.items())
+
+
+def _emr_dms_findings(resources: List[Resource], template_path: Path) -> List[Finding]:
+    """EMR (CF-EMR-001..003) and DMS (CF-DMS-001..004). A value the scan cannot read is not judged."""
+    usable = [r for r in resources if not r.malformed]
+    subnets = [r for r in usable if r.type == "subnet"]
+    instances = [r for r in usable if r.type == "dms_replication_instance"]
+    out: List[Finding] = []
+
+    def add(res: Resource, check_id: str, title: str, severity: Severity, category: str,
+            recommendation: str) -> None:
+        out.append(Finding(
+            id=check_id, title=title, severity=severity, category=category,
+            file=res.file or str(template_path), line=res.line,
+            evidence=f"{res.name} ({res.source_type})", recommendation=recommendation,
+        ))
+
+    for cluster in (r for r in usable if r.type == "emr_cluster"):
+        if _emr_in_public_subnet(cluster, subnets):
+            add(cluster, "CF-EMR-001", "EMR cluster runs in a subnet that assigns public IPs", "High", "Security",
+                "Ec2SubnetId is a subnet with MapPublicIpOnLaunch true, so the primary node gets a public "
+                "address. A cluster cannot drop it after launch, so launch a new one in a private subnet "
+                "(Security Hub EMR.1). In CDK: instances.ec2SubnetId on emr.CfnCluster.")
+        secured = cluster.properties.get("SecurityConfiguration")
+        if "SecurityConfiguration" not in cluster.unresolved and (secured is None or secured == ""):
+            add(cluster, "CF-EMR-002", "EMR cluster or security configuration does not encrypt data at rest",
+                "Medium", "Security",
+                "The cluster has no SecurityConfiguration, so encryption at rest is off, and encryption in "
+                "transit is off too. Create an AWS::EMR::SecurityConfiguration that enables both, and name it "
+                "on the cluster. In CDK: securityConfiguration on emr.CfnCluster.")
+
+    for security in (r for r in usable if r.type == "emr_security_configuration"):
+        encryption = _emr_encryption(security)
+        if encryption is None:
+            continue
+        if _flag(encryption.get("EnableAtRestEncryption")) is False:
+            add(security, "CF-EMR-002", "EMR cluster or security configuration does not encrypt data at rest",
+                "Medium", "Security",
+                "EncryptionConfiguration.EnableAtRestEncryption is false or unset. Set it to true, with "
+                "AtRestEncryptionConfiguration for S3 and local disks (Security Hub EMR.3). "
+                "In CDK: emr.CfnSecurityConfiguration.")
+        if _flag(encryption.get("EnableInTransitEncryption")) is False:
+            add(security, "CF-EMR-003", "EMR security configuration does not encrypt data in transit", "Medium",
+                "Security",
+                "EncryptionConfiguration.EnableInTransitEncryption is false or unset. Set it to true, with "
+                "InTransitEncryptionConfiguration and a TLS certificate provider (Security Hub EMR.4). "
+                "In CDK: emr.CfnSecurityConfiguration.")
+
+    prod = bool(instances) and environments.resolve(template_path, resources) == "prod"
+    for instance in instances:
+        # CloudFormation defaults PubliclyAccessible to true. The Terraform adapter writes the provider's false.
+        if "PubliclyAccessible" not in instance.unresolved \
+                and _flag(instance.properties.get("PubliclyAccessible", True)) is True:
+            add(instance, "CF-DMS-001", "DMS replication instance is publicly accessible", "High", "Security",
+                "PubliclyAccessible is true, or unset in CloudFormation, where it defaults to true, so the "
+                "instance has a public address. The setting cannot change after creation: create it again "
+                "with PubliclyAccessible: false (Security Hub DMS.1). "
+                "In CDK: publiclyAccessible on dms.CfnReplicationInstance.")
+        # CloudFormation defaults AutoMinorVersionUpgrade to true. The Terraform adapter writes the provider's false.
+        if "AutoMinorVersionUpgrade" not in instance.unresolved \
+                and _flag(instance.properties.get("AutoMinorVersionUpgrade", True)) is False:
+            add(instance, "CF-DMS-002", "DMS replication instance does not apply minor version upgrades", "Low",
+                "Security",
+                "AutoMinorVersionUpgrade is off, so the instance misses fixes in minor engine versions. Set it "
+                "to true (Security Hub DMS.6). In CDK: autoMinorVersionUpgrade on dms.CfnReplicationInstance.")
+        if prod and _is_off(instance, "MultiAZ"):
+            add(instance, "CF-DMS-004", "DMS replication instance in a prod stack is not Multi-AZ", "Low",
+                "Reliability",
+                "MultiAZ is false or unset, so a failure in one Availability Zone stops running migration "
+                "tasks until the instance is back. Set MultiAZ: true (Security Hub DMS.13). "
+                "In CDK: multiAz on dms.CfnReplicationInstance.")
+
+    for endpoint in (r for r in usable if r.type == "dms_endpoint"):
+        if _dms_ssl_off(endpoint):
+            add(endpoint, "CF-DMS-003", "DMS endpoint does not use SSL", "Medium", "Security",
+                "SslMode is none, or unset, which means none, on an engine that supports SSL, so data moves "
+                "between the database and the replication instance unencrypted. Set SslMode to verify-full "
+                "or verify-ca with a certificate; some engines support only some modes (Security Hub DMS.9). "
+                "In CDK: sslMode on dms.CfnEndpoint.")
+    return out
+
+
 def _autoscaling_findings(resources: List[Resource], template_path: Path) -> List[Finding]:
     """Auto Scaling groups and launch configurations (CF-ASG-001..006). A value the scan cannot read
     is not judged."""
@@ -5487,6 +5639,9 @@ def _run_resource_checks(
 
     # --- Athena workgroups, Glue jobs and security configurations, Firehose delivery streams ---
     findings.extend(_analytics_findings(resources, template_path))
+
+    # --- EMR clusters and security configurations, DMS replication instances and endpoints ---
+    findings.extend(_emr_dms_findings(resources, template_path))
 
     # --- AWS Backup vaults, plans and which resources they select ---
     findings.extend(_backup_findings(resources, template_path))

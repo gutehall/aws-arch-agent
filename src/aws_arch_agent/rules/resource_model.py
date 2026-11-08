@@ -121,6 +121,10 @@ CF_TYPE_TO_CANONICAL: dict[str, str] = {
     "AWS::Athena::WorkGroup": "athena_workgroup",
     "AWS::Glue::Job": "glue_job",
     "AWS::Glue::SecurityConfiguration": "glue_security_configuration",
+    "AWS::EMR::Cluster": "emr_cluster",
+    "AWS::EMR::SecurityConfiguration": "emr_security_configuration",
+    "AWS::DMS::ReplicationInstance": "dms_replication_instance",
+    "AWS::DMS::Endpoint": "dms_endpoint",
 }
 
 # Terraform only: CloudFormation sets these on the rule, the vault and the file system.

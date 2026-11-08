@@ -62,6 +62,8 @@ _SERVICES: list[tuple[str, str, str]] = [
     (r"\bCloudTrail\b|\baudit trail\b", "AWS CloudTrail", "/awscloudtrail/latest/userguide/"),
     (r"\bX-Ray\b|\btracing\b", "AWS X-Ray", "/xray/latest/devguide/"),
     (r"\bIMDSv2\b", "Instance Metadata Service", "/AWSEC2/latest/UserGuide/configuring-instance-metadata-service.html"),
+    (r"\bDMS\b", "AWS Database Migration Service", "/dms/latest/userguide/"),
+    (r"\bEMR\b", "Amazon EMR", "/emr/latest/ManagementGuide/"),
     (r"\bAurora\b", "Amazon Aurora", "/AmazonRDS/latest/AuroraUserGuide/"),
     (r"\bRDS Proxy\b", "Amazon RDS Proxy", "/AmazonRDS/latest/UserGuide/rds-proxy.html"),
     (r"\bLambda\b", "AWS Lambda", "/lambda/latest/dg/"),

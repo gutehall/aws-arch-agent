@@ -75,6 +75,10 @@ TF_TYPE_TO_CANONICAL: dict[str, str] = {
     "aws_athena_workgroup": "athena_workgroup",
     "aws_glue_job": "glue_job",
     "aws_glue_security_configuration": "glue_security_configuration",
+    "aws_emr_cluster": "emr_cluster",
+    "aws_emr_security_configuration": "emr_security_configuration",
+    "aws_dms_replication_instance": "dms_replication_instance",
+    "aws_dms_endpoint": "dms_endpoint",
     "aws_opensearch_domain": "opensearch_domain",
     "aws_redshift_cluster": "redshift_cluster",
     "aws_docdb_cluster": "docdb_cluster",
@@ -1968,6 +1972,48 @@ def _glue_security_configuration(body: dict) -> dict:
     return {"EncryptionConfiguration": props}
 
 
+def _emr_cluster(body: dict) -> dict:
+    props: dict = {}
+    _set(props, "SecurityConfiguration", _ref(body, "security_configuration"))
+    if "ec2_attributes" in _dynamic_names(body):
+        props["Instances"] = UNRESOLVED
+    else:
+        subnet = _ref(_first_block(body, "ec2_attributes"), "subnet_id")
+        if subnet is not None:
+            props["Instances"] = {"Ec2SubnetId": subnet}
+    return props
+
+
+def _emr_security_configuration(body: dict) -> dict:
+    """aws_emr_security_configuration. configuration is a JSON string, often jsonencode; a document
+    from file() or a variable is UNRESOLVED."""
+    value = body.get("configuration")
+    return {} if value is None else {"SecurityConfiguration": _state_machine_definition(value)}
+
+
+def _dms_replication_instance(body: dict) -> dict:
+    """aws_dms_replication_instance. The provider sends false when these are unset, unlike
+    CloudFormation, where public access and minor upgrades default to true."""
+    props: dict = {
+        "PubliclyAccessible": _v(body, "publicly_accessible", False),
+        "AutoMinorVersionUpgrade": _v(body, "auto_minor_version_upgrade", False),
+    }
+    _set(props, "MultiAZ", _v(body, "multi_az"))
+    return props
+
+
+def _dms_endpoint(body: dict) -> dict:
+    """aws_dms_endpoint. Extra attributes may hold a secret, so only their presence is kept."""
+    props: dict = {}
+    _set(props, "EngineName", _v(body, "engine_name"))
+    _set(props, "SslMode", _v(body, "ssl_mode"))
+    _set(props, "SecretsManagerSecretId", _ref(body, "secrets_manager_arn"))
+    _set(props, "CertificateArn", _ref(body, "certificate_arn"))
+    if body.get("extra_connection_attributes") is not None:
+        props["ExtraConnectionAttributes"] = _OPAQUE
+    return props
+
+
 _FIREHOSE_SOURCE = "_source_configuration"
 
 
@@ -2088,6 +2134,10 @@ _ADAPTERS: dict[str, Callable[[dict], dict]] = {
     "aws_athena_workgroup": _athena_workgroup,
     "aws_glue_job": _glue_job,
     "aws_glue_security_configuration": _glue_security_configuration,
+    "aws_emr_cluster": _emr_cluster,
+    "aws_emr_security_configuration": _emr_security_configuration,
+    "aws_dms_replication_instance": _dms_replication_instance,
+    "aws_dms_endpoint": _dms_endpoint,
     "aws_kinesis_firehose_delivery_stream": _firehose_delivery_stream,
     "aws_s3_bucket": _s3_bucket,
     "aws_db_instance": _db,
