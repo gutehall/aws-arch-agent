@@ -363,7 +363,7 @@ CloudFormation template rules run when the agent has access to template files. T
   - CF-OS-006 (Low, Security Hub Opensearch.4 and Opensearch.5): `ES_APPLICATION_LOGS` or `AUDIT_LOGS` not in `LogPublishingOptions`, or turned off
   - CF-OS-007 (Low, Security Hub Opensearch.6): fewer than three data nodes, or `ZoneAwarenessEnabled` not true. Not reported in dev or staging stacks
 - **MSK access** (`AWS::MSK::Cluster`, `aws_msk_cluster`):
-  - CF-MSK-002 (Medium, Security Hub MSK.6): `Unauthenticated` on, which is the default with no `ClientAuthentication`, even alongside another method, or no method on. In V2 it replaces SEC-045
+  - CF-MSK-002 (Medium, Security Hub MSK.6): `Unauthenticated` on, even alongside another method, or no method that identifies a client on, including no `ClientAuthentication` at all. In V2 it replaces SEC-045
   - CF-MSK-003 (High, Security Hub MSK.4): `PublicAccess.Type` is `SERVICE_PROVIDED_EIPS`
 - **Kinesis retention** (`AWS::Kinesis::Stream`, `aws_kinesis_stream`): CF-KIN-002 (Low): 24-hour retention, the default, on a stream that a Lambda event source mapping, stream consumer, Firehose delivery stream or Managed Flink application in the same template refers to. In V2 it replaces REL-019
 - **Auto Scaling**: CF-SUST-001 (no Spot / mixed instances)

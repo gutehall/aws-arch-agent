@@ -325,6 +325,12 @@ resource "aws_msk_cluster" "tls" {
     }
   }
 }
+resource "aws_msk_cluster" "empty_tls" {
+  cluster_name = "empty"
+  client_authentication {
+    tls {}
+  }
+}
 resource "aws_msk_cluster" "from_var" {
   cluster_name = "var"
   client_authentication {

@@ -859,7 +859,7 @@ def _msk_cluster(body: dict) -> dict:
         props["ClientAuthentication"] = {
             "Unauthenticated": {"Enabled": _known(_v(authentication, "unauthenticated"))},
             "Sasl": {"Iam": {"Enabled": _known(_v(sasl, "iam"))}, "Scram": {"Enabled": _known(_v(sasl, "scram"))}},
-            "Tls": {"Enabled": bool(_first_block(authentication, "tls"))},
+            "Tls": {"Enabled": "tls" in authentication},
         }
     connectivity = _first_block(_first_block(body, "broker_node_group_info"), "connectivity_info")
     public = _v(_first_block(connectivity, "public_access"), "type")

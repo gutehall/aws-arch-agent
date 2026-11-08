@@ -1920,8 +1920,8 @@ def _msk_auth_on(block: Any) -> bool | None:
 
 
 def _msk_allows_anonymous(authentication: Any) -> bool:
-    """True when anyone with network access can connect: unauthenticated is on, which is the
-    default with no ClientAuthentication, or no other method is. A value not read is not judged."""
+    """True when anyone with network access can connect: unauthenticated is on, or no method
+    that identifies a client is. A value the scan cannot read is not judged."""
     authentication = authentication if isinstance(authentication, dict) else {}
     if _unread(authentication):
         return False
