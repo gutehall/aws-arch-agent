@@ -2355,7 +2355,7 @@ def _data_store_findings(resources: List[Resource], template_path: Path) -> List
                     "the primary fails (Security Hub ElastiCache.3). In CDK: automaticFailoverEnabled and "
                     "multiAzEnabled on the CfnReplicationGroup.")
         if is_group and (props.get("PrimaryClusterId") or "PrimaryClusterId" in cache.unresolved):
-            continue  # the group takes the rest from that cluster
+            continue  # built on an existing cluster: the template does not show what it already has
         if engine in ("redis", "valkey"):
             if _days(cache, "SnapshotRetentionLimit", 0) == 0:
                 add(cache, "CF-EC-004", "ElastiCache has no automatic backups", "Low", "Reliability",

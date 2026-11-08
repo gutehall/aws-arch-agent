@@ -176,7 +176,7 @@ def test_old_redis_auth(tmp_path: Path, props: dict, fires: bool) -> None:
     assert found == ({"CF-EC-006": {"G"}} if fires else {})
 
 
-def test_a_group_from_a_primary_cluster_takes_settings_from_it(tmp_path: Path) -> None:
+def test_a_group_from_a_primary_cluster_is_not_judged_for_what_it_may_have(tmp_path: Path) -> None:
     group = {"Type": _GROUP, "Properties": {
         "AutomaticFailoverEnabled": True, "MultiAZEnabled": True, "PrimaryClusterId": "c",
         "EngineVersion": "5.0.6", "AutoMinorVersionUpgrade": False,

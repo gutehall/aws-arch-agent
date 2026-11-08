@@ -118,7 +118,7 @@ Which CDK rules have a template check, and which AWS Foundational Security Best 
 | REL-013 | AWS Backup vault not configured | `CF-BAK-005` | `covered` |  |
 | REL-014 | Cross-region backup replication missing | `CF-BAK-002` | `covered` |  |
 | REL-015 | Step Functions retry/catch not configured | `CF-SFN-001` | `covered` |  |
-| REL-016 | ElastiCache not using multi-AZ | `CF-EC-003` | `covered` | Reads replication groups. A cache cluster has no failover setting, so V2 keeps the CDK finding for one. |
+| REL-016 | ElastiCache not using multi-AZ | `CF-EC-003` | `covered` | Reads replication groups. A cache cluster has no failover setting, so a scan where CF-EC-003 does not report keeps the CDK finding. |
 | REL-017 | EFS backup policy not configured | `CF-EFS-002` | `covered` |  |
 | REL-018 | EFS lifecycle policy not configured | `CF-EFS-003` | `covered` |  |
 | REL-019 | Kinesis stream retention period too short | `CF-KIN-002` | `covered` |  |
