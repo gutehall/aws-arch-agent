@@ -93,6 +93,11 @@ CF_COVERS_STATIC: dict[str, tuple[str, ...]] = {
     "CF-APIGW-V2-001": ("OPS-005",),
     # OPS-003 looks at API Gateway and Lambda only, which these three checks cover.
     "CF-APIGW-002": ("OPS-003",),
+    "CF-CB-003": ("SEC-053",),
+    "CF-CB-004": ("OPS-020",),
+    "CF-CP-001": ("SEC-052",),
+    "CF-CP-002": ("REL-021",),
+    "CF-CP-003": ("OPS-017",),
     "CF-APIGW-003": ("SEC-009",),
     "CF-APIGW-V2-003": ("SEC-009",),
     "CF-APIGW-004": ("SEC-010",),
@@ -381,6 +386,9 @@ CHECK_PROPERTIES: dict[str, frozenset[str]] = {
         "CF-APIGW-002": {"TracingEnabled"},
         "CF-APIGW-V2-001": {"AccessLogSettings"},
         "CF-APIGW-V2-002": {"TracingEnabled"},
+        # Template-level: _ci_cd_findings skips what it cannot read.
+        **{c: set() for c in ("CF-CB-001", "CF-CB-002", "CF-CB-003", "CF-CB-004", "CF-CB-005",
+                              "CF-CP-001", "CF-CP-002", "CF-CP-003")},
         # Template-level: _api_gateway_findings skips what it cannot read.
         **{c: set() for c in ("CF-APIGW-003", "CF-APIGW-004", "CF-APIGW-005", "CF-APIGW-006",
                               "CF-APIGW-007", "CF-APIGW-008", "CF-APIGW-009", "CF-APIGW-V2-003",
@@ -418,6 +426,8 @@ CF_THEMES: dict[str, tuple[str, ...]] = {
     "CF-APIGW-003": (_ID, _NET), "CF-APIGW-004": (_DP, _NET), "CF-APIGW-005": (_RES,),
     "CF-APIGW-006": (_RES,), "CF-APIGW-007": (_DP,), "CF-APIGW-008": (_F,), "CF-APIGW-009": (_ID,),
     "CF-APIGW-V2-003": (_ID, _NET), "CF-APIGW-V2-004": (_RES,),
+    "CF-CB-001": (_DP, _ID), "CF-CB-002": (_DP, _ID), "CF-CB-003": (_SB,), "CF-CB-004": (_OBS,),
+    "CF-CB-005": (_OBS, _DP), "CF-CP-001": (_DP,), "CF-CP-002": (_RES,), "CF-CP-003": (_OBS,),
     "CF-CF-001": (_DP, _NET), "CF-CF-002": (_DP, _NET), "CF-CF-003": (_NET,), "CF-CF-004": (_NET, _ID),
     "CF-COG-001": (_ID,), "CF-COG-002": (_ID,), "CF-COG-003": (_ID,),
     "CF-COST-002": (_F,), "CF-CT-001": (_OBS, _SB), "CF-CT-002": (_OBS,), "CF-CT-003": (_OBS, _DP),
@@ -1534,6 +1544,183 @@ def _api_gateway_findings(resources: List[Resource], template_path: Path) -> Lis
                 "Reliability",
                 "Set DefaultRouteSettings with ThrottlingRateLimit and ThrottlingBurstLimit, so one client "
                 "cannot use up the account's limit. In CDK: throttle on the HttpStage.")
+    return out
+
+
+# user:secret@ or a bare token@ in a URL. A bare short name (git@, user@) is not a credential.
+_URL_CREDENTIALS = re.compile(r"^[A-Za-z][A-Za-z0-9+.-]*://(?:[^/@\s:]+:[^/@\s]+|[A-Za-z0-9_-]{20,})@")
+_AWS_KEY_VALUE = re.compile(r"(?:AKIA|ASIA)[A-Z0-9]{16}")
+# Security Hub CodeBuild.2 fails on these names whatever the value, when stored as plain text.
+_AWS_KEY_NAMES = frozenset({"AWS_ACCESS_KEY_ID", "AWS_SECRET_ACCESS_KEY"})
+
+
+def _has_url_credentials(location: Any) -> bool:
+    if type(location) is not str or "{{" in location or "${" in location:
+        return False
+    return _URL_CREDENTIALS.match(location) is not None
+
+
+def _plaintext_secret_names(environment: Any) -> list[str]:
+    """Names of PLAINTEXT build variables that hold a secret. Never the values: they go in reports."""
+    variables = environment.get("EnvironmentVariables") if isinstance(environment, dict) else None
+    names: set[str] = set()
+    for item in variables if isinstance(variables, list) else []:
+        if not isinstance(item, dict) or item.get("Type", "PLAINTEXT") != "PLAINTEXT":
+            continue
+        name, value = item.get("Name"), item.get("Value")
+        named = isinstance(name, str) and (
+            name in _AWS_KEY_NAMES or (is_secret_name(name) and is_literal_secret(value)))
+        if named or (type(value) is str and _AWS_KEY_VALUE.fullmatch(value.strip())):
+            names.add(name if isinstance(name, str) else "(unnamed)")
+    return sorted(names)
+
+
+def _log_statuses(logs: Any) -> tuple[str, str, dict] | None:
+    """(CloudWatch status, S3 status, S3 settings) with the service defaults, ENABLED and
+    DISABLED, or None when a status cannot be read."""
+    logs = logs if isinstance(logs, dict) else {}
+    if _unread(logs):
+        return None
+    cloudwatch, s3 = logs.get("CloudWatchLogs") or {}, logs.get("S3Logs") or {}
+    if not isinstance(cloudwatch, dict) or not isinstance(s3, dict) or _unread(cloudwatch) or _unread(s3):
+        return None
+    cloudwatch_status, s3_status = cloudwatch.get("Status", "ENABLED"), s3.get("Status", "DISABLED")
+    if not isinstance(cloudwatch_status, str) or not isinstance(s3_status, str):
+        return None
+    return cloudwatch_status, s3_status, s3
+
+
+def _prod_without_approval(pipeline: Resource) -> bool:
+    """True when a deploy in a prod-named stage has no manual approval before it. In a
+    prod-named pipeline with no prod-named stage, the last deploy is the one that counts.
+    Actions with one RunOrder run together, so an approval only gates a later RunOrder."""
+    stages = pipeline.properties.get("Stages")
+    if "Stages" in pipeline.unresolved or not isinstance(stages, list):
+        return False
+    name = pipeline.properties.get("Name")
+    pipeline_prod = environments.from_words(name if isinstance(name, str) else pipeline.name) == "prod"
+    approved, saw_prod_stage = False, False
+    last_deploy_approved: bool | None = None
+    for stage in stages:
+        actions = stage.get("Actions") if isinstance(stage, dict) else None
+        if not isinstance(actions, list):
+            return False
+        groups: dict[int, set[str]] = {}
+        for action in actions:
+            type_id = action.get("ActionTypeId") if isinstance(action, dict) else None
+            category = type_id.get("Category") if isinstance(type_id, dict) else None
+            if not isinstance(category, str):
+                return False
+            try:
+                groups.setdefault(int(action.get("RunOrder", 1)), set()).add(category)
+            except (TypeError, ValueError):
+                return False
+        stage_name = stage.get("Name")
+        stage_prod = isinstance(stage_name, str) and environments.from_words(stage_name) == "prod"
+        for order in sorted(groups):
+            if "Deploy" in groups[order]:
+                if stage_prod and not approved:
+                    return True
+                saw_prod_stage = saw_prod_stage or stage_prod
+                last_deploy_approved = approved
+            if "Approval" in groups[order]:
+                approved = True
+    return pipeline_prod and not saw_prod_stage and last_deploy_approved is False
+
+
+def _notifies(rule: Resource, pipeline: Resource, pipelines: List[Resource], projects: List[Resource]) -> bool:
+    """True when a notification or EventBridge rule may report on this pipeline. A rule the
+    scan cannot tie to a resource counts for all pipelines, unless it is for CodeBuild."""
+    key = "EventPattern" if rule.type == "events_rule" else "Resource"
+    if key in rule.unresolved:
+        return True
+    value = rule.properties.get(key)
+    text = value if type(value) is str else json.dumps(value, default=str)
+    if _points_at(rule, key, pipeline):
+        return True
+    if any(_points_at(rule, key, p) for p in pipelines):
+        return False
+    if rule.type == "events_rule":
+        return "aws.codepipeline" in text or _unread(value)
+    return ":codebuild:" not in text and not any(_points_at(rule, key, p) for p in projects)
+
+
+def _ci_cd_findings(resources: List[Resource], template_path: Path) -> List[Finding]:
+    """CodeBuild (CF-CB-001..005) and CodePipeline (CF-CP-001..003). A value the scan cannot
+    read is not judged. Findings name secret variables and never quote a value or a URL."""
+    usable = [r for r in resources if not r.malformed]
+    projects = [r for r in usable if r.type == "codebuild_project"]
+    pipelines = [r for r in usable if r.type == "codepipeline"]
+    rules = [r for r in usable if r.type in ("codestar_notification_rule", "events_rule")]
+    out: List[Finding] = []
+
+    def add(res: Resource, check_id: str, title: str, severity: Severity, category: str,
+            recommendation: str) -> None:
+        out.append(Finding(
+            id=check_id, title=title, severity=severity, category=category,
+            file=res.file or str(template_path), line=res.line,
+            evidence=f"{res.name} ({res.source_type})", recommendation=recommendation,
+        ))
+
+    for project in projects:
+        props = project.properties
+        environment = props.get("Environment")
+        names = _plaintext_secret_names(environment) if "Environment" not in project.unresolved else []
+        if names:
+            add(project, "CF-CB-001", "CodeBuild environment variable holds a secret in plain text", "High",
+                "Security",
+                f"Stored as PLAINTEXT: {', '.join(names)}. Anyone who can read the project configuration "
+                "or the console sees the values (Security Hub CodeBuild.2). Store them in Secrets Manager or SSM "
+                "Parameter Store and set Type to SECRETS_MANAGER or PARAMETER_STORE, or use the build "
+                "role instead of AWS keys. In CDK: type: BuildEnvironmentVariableType.SECRETS_MANAGER.")
+        secondary = props.get("SecondarySources")
+        sources = [props.get("Source")] + (secondary if isinstance(secondary, list) else [])
+        if any(isinstance(s, dict) and _has_url_credentials(s.get("Location")) for s in sources):
+            add(project, "CF-CB-002", "CodeBuild source URL contains credentials", "High", "Security",
+                "A source location has sign-in details or a token in its URL, so they are in the template "
+                "and the project configuration (Security Hub CodeBuild.1). Keep only the repository path "
+                "in the URL and connect to the provider with OAuth or an AWS CodeConnections connection. "
+                "Rotate the exposed credential.")
+        if isinstance(environment, dict) and _is_true(environment.get("PrivilegedMode")):
+            add(project, "CF-CB-003", "CodeBuild project uses privileged mode", "Medium", "Security",
+                "PrivilegedMode gives the build container elevated access to the build host. Turn it off "
+                "unless the build must run the Docker daemon, for example to build images. In CDK: "
+                "privileged: false.")
+        statuses = None if "LogsConfig" in project.unresolved else _log_statuses(props.get("LogsConfig"))
+        if statuses is not None:
+            cloudwatch_status, s3_status, s3 = statuses
+            if cloudwatch_status == "DISABLED" and s3_status == "DISABLED":
+                add(project, "CF-CB-004", "CodeBuild project logs are turned off", "Low",
+                    "Operational Excellence",
+                    "Both CloudWatch Logs and S3 logs are off, so build output is lost (Security Hub "
+                    "CodeBuild.4). Set LogsConfig.CloudWatchLogs.Status to ENABLED, or send logs to S3. "
+                    "In CDK: logging.")
+            if s3_status == "ENABLED" and _is_true(s3.get("EncryptionDisabled")):
+                add(project, "CF-CB-005", "CodeBuild S3 logs are not encrypted", "Low", "Security",
+                    "EncryptionDisabled is true on S3Logs, and build logs can hold sensitive output "
+                    "(Security Hub CodeBuild.3). Remove it or set it to false. In CDK: encrypted: true.")
+
+    for pipeline in pipelines:
+        props = pipeline.properties
+        stores = [props.get("ArtifactStore")] if "ArtifactStore" not in pipeline.unresolved else []
+        if "ArtifactStores" not in pipeline.unresolved and isinstance(props.get("ArtifactStores"), list):
+            stores += [s.get("ArtifactStore") for s in props["ArtifactStores"] if isinstance(s, dict)]
+        if any(isinstance(s, dict) and not _unread(s) and not s.get("EncryptionKey") for s in stores):
+            add(pipeline, "CF-CP-001", "CodePipeline artifact store has no customer KMS key", "Low", "Security",
+                "With no EncryptionKey, artifacts use the AWS managed key for S3, which other accounts "
+                "cannot be granted and you cannot control with a key policy. Set EncryptionKey to a "
+                "customer KMS key. In CDK: an artifactBucket with encryptionKey, or crossAccountKeys: true.")
+        if _prod_without_approval(pipeline):
+            add(pipeline, "CF-CP-002", "CodePipeline deploys to production with no manual approval", "Low",
+                "Reliability",
+                "A production deploy runs with no manual approval action before it, so a bad change "
+                "reaches production unreviewed. Add an action with Category Approval and Provider Manual "
+                "in an earlier stage or RunOrder. In CDK: new ManualApprovalAction().")
+        if not any(_notifies(r, pipeline, pipelines, projects) for r in rules):
+            add(pipeline, "CF-CP-003", "CodePipeline has no notifications", "Low", "Operational Excellence",
+                "No AWS::CodeStarNotifications::NotificationRule or EventBridge rule reports on this "
+                "pipeline, so failed runs go unnoticed. Add a notification rule for failed executions. "
+                "In CDK: pipeline.notifyOn() or pipeline.onStateChange().")
     return out
 
 
@@ -3672,6 +3859,9 @@ def _run_resource_checks(
 
     # --- Gateway endpoints: S3 and DynamoDB through a NAT gateway (CF-VPC-002/003) ---
     findings.extend(_gateway_endpoint_findings(resources, template_path, _at))
+
+    # --- CodeBuild and CodePipeline ---
+    findings.extend(_ci_cd_findings(resources, template_path))
 
     # --- API Gateway auth, TLS, throttling, validation and caching ---
     findings.extend(_api_gateway_findings(resources, template_path))
