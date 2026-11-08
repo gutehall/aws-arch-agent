@@ -121,6 +121,8 @@ CF_COVERS_STATIC: dict[str, tuple[str, ...]] = {
     "CF-RDS-014": ("COST-010",),
     "CF-S3-003": ("REL-031",),
     "CF-KMS-001": ("SEC-007",),
+    "CF-KMS-002": ("SEC-023",),
+    "CF-SSM-001": ("SEC-033",),
     # Checks every ELBv2 load balancer, so NLBs too.
     "CF-ALB-001": ("OPS-006",),
     "CF-ALB-002": ("SEC-011",),
@@ -386,6 +388,8 @@ CHECK_PROPERTIES: dict[str, frozenset[str]] = {
         "CF-APIGW-002": {"TracingEnabled"},
         "CF-APIGW-V2-001": {"AccessLogSettings"},
         "CF-APIGW-V2-002": {"TracingEnabled"},
+        # Template-level: _kms_ssm_findings skips what it cannot read.
+        **{c: set() for c in ("CF-KMS-002", "CF-KMS-003", "CF-SSM-001", "CF-SSM-002")},
         # Template-level: _ci_cd_findings skips what it cannot read.
         **{c: set() for c in ("CF-CB-001", "CF-CB-002", "CF-CB-003", "CF-CB-004", "CF-CB-005",
                               "CF-CP-001", "CF-CP-002", "CF-CP-003")},
@@ -443,6 +447,7 @@ CF_THEMES: dict[str, tuple[str, ...]] = {
     "CF-GEN-001": (_F, _SUS), "CF-IAM-001": (_ID,), "CF-IAM-002": (_ID,), "CF-IAM-003": (_ID,),
     "CF-IAM-004": (_ID,), "CF-IAM-005": (_ID,), "CF-IAM-006": (_ID,), "CF-IAM-007": (_ID,),
     "CF-IAM-008": (_ID,), "CF-KIN-001": (_DP,), "CF-KMS-001": (_ID, _DP),
+    "CF-KMS-002": (_DP,), "CF-KMS-003": (_RES,), "CF-SSM-001": (_DP,), "CF-SSM-002": (_F,),
     "CF-LAM-001": (_RES,), "CF-LAM-002": (_OBS,), "CF-LAM-003": (_SB,),
     "CF-LAM-004": (_ID, _NET), "CF-LAM-005": (_DP, _ID), "CF-LAM-006": (_RES,),
     "CF-LAM-007": (_RES,), "CF-LAM-008": (_RES,),
@@ -1721,6 +1726,116 @@ def _ci_cd_findings(resources: List[Resource], template_path: Path) -> List[Find
                 "No AWS::CodeStarNotifications::NotificationRule or EventBridge rule reports on this "
                 "pipeline, so failed runs go unnoticed. Add a notification rule for failed executions. "
                 "In CDK: pipeline.notifyOn() or pipeline.onStateChange().")
+    return out
+
+
+# Resources that hold data for as long as the key that encrypts it exists.
+_KEY_DATA_TYPES = frozenset({
+    "db_instance", "rds_cluster", "dynamodb_table", "s3_bucket", "efs_file_system",
+    "cloudwatch_log_group", "ebs_volume", "kinesis_stream", "opensearch_domain", "redshift_cluster", "docdb_cluster",
+    "neptune_cluster", "msk_cluster", "elasticache_replication_group", "secretsmanager_secret",
+})
+_STANDARD_TIER_BYTES = 4096
+# Data types that only the advanced tier supports.
+_ADVANCED_DATA_TYPES = ("url", "json", "jsonc")
+
+
+def _uses_key(res: Resource, key: Resource) -> bool:
+    """True when res refers to the KMS key anywhere in its properties (CloudFormation, and
+    merged Terraform blocks such as a bucket's encryption) or in its block (Terraform)."""
+    if key.name in res.references:
+        return True
+    return _references(json.dumps(res.properties, default=str), key.name)
+
+
+def _parameter_name(parameter: Resource) -> str:
+    """The last part of the parameter's name, which says what it holds (/app/db/password ->
+    password), or the logical id or Terraform label when the name cannot be read."""
+    name = parameter.properties.get("Name")
+    if isinstance(name, dict) and isinstance(name.get("Fn::Sub"), str):
+        name = name["Fn::Sub"]
+    last = name.rstrip("/").rsplit("/", 1)[-1] if isinstance(name, str) else ""
+    if not last or "${" in last:
+        last = parameter.name.rsplit(".", 1)[-1]
+    return last.replace("-", "_")  # is_secret_name reads api_key, not api-key
+
+
+def _holds_setting(value: Any) -> bool:
+    """True for a literal value that cannot be the secret itself: an ARN, a flag or a number.
+    A dynamic reference is resolved into the parameter, so it still holds the secret."""
+    return type(value) is str and "{{resolve:" not in value and not is_literal_secret(value)
+
+
+def _kms_ssm_findings(resources: List[Resource], template_path: Path) -> List[Finding]:
+    """KMS keys (CF-KMS-002/003) and SSM parameters (CF-SSM-001/002). A value the scan cannot
+    read is not judged. Findings never quote a parameter's value."""
+    usable = [r for r in resources if not r.malformed]
+    holders = [r for r in usable if r.type in _KEY_DATA_TYPES]
+    out: List[Finding] = []
+
+    def add(res: Resource, check_id: str, title: str, severity: Severity, category: str,
+            recommendation: str) -> None:
+        out.append(Finding(
+            id=check_id, title=title, severity=severity, category=category,
+            file=res.file or str(template_path), line=res.line,
+            evidence=f"{res.name} ({res.source_type})", recommendation=recommendation,
+        ))
+
+    for key in (r for r in usable if r.type == "kms_key"):
+        props = key.properties
+        rotation = props.get("EnableKeyRotation")
+        # Automatic rotation exists only for symmetric keys with AWS KMS key material.
+        rotatable = props.get("KeySpec", "SYMMETRIC_DEFAULT") == "SYMMETRIC_DEFAULT" \
+            and props.get("Origin", "AWS_KMS") == "AWS_KMS" and not props.get("CustomKeyStoreId")
+        if rotatable and not {"EnableKeyRotation", "KeySpec"} & key.unresolved \
+                and not _is_true(rotation) and not _unread(rotation):
+            add(key, "CF-KMS-002", "KMS key rotation is not enabled", "Medium", "Security",
+                "Set EnableKeyRotation: true (Security Hub KMS.4). KMS then makes new key material "
+                "every year and keeps the old material, so existing data still decrypts. In CDK: "
+                "enableKeyRotation: true.")
+        try:
+            window = None if "PendingWindowInDays" in key.unresolved else int(props.get("PendingWindowInDays", 30))
+        except (TypeError, ValueError):
+            window = None
+        users: list[str] = []
+        if window is not None and window < 30:
+            found = {r.name for r in holders if _uses_key(r, key)}
+            # A split Terraform block, such as a bucket's encryption, refers to both.
+            for side in (r for r in usable if r.type is None and key.name in r.references):
+                found |= {r.name for r in holders if r.name in side.references}
+            users = sorted(found)
+        if users:
+            add(key, "CF-KMS-003", "KMS key for stored data has a short deletion window", "Low", "Reliability",
+                f"The waiting period is {window} days and this key encrypts {', '.join(users)}. Data is "
+                "lost for good when the key is deleted, so keep the full time to cancel. Set "
+                "PendingWindowInDays (Terraform deletion_window_in_days) to 30. In CDK: "
+                "pendingWindow: Duration.days(30).")
+
+    for parameter in (r for r in usable if r.type == "ssm_parameter"):
+        props = parameter.properties
+        value = props.get("Value")
+        if props.get("Type") == "String" and is_secret_name(_parameter_name(parameter)) \
+                and not _holds_setting(value):
+            add(parameter, "CF-SSM-001", "SSM parameter that looks like a secret is not encrypted", "Medium",
+                "Security",
+                ("Its name looks like a secret and its type is String, so anyone who can read the parameter "
+                 "sees the value in plain text. Use type = \"SecureString\" with a KMS key."
+                 if not parameter.source_type.startswith("AWS::") else
+                 "Its name looks like a secret and its type is String, so anyone who can read the parameter "
+                 "sees the value in plain text. CloudFormation cannot create a SecureString: use "
+                 "AWS::SecretsManager::Secret, or create the SecureString outside the stack and read it "
+                 "with an ssm-secure dynamic reference.")
+                + " In CDK: secretsmanager.Secret.")
+        if "Tier" in parameter.unresolved or props.get("Tier") != "Advanced" or props.get("Policies") \
+                or props.get("DataType") in _ADVANCED_DATA_TYPES or type(value) is not str:
+            continue
+        if len(value.encode("utf-8")) < _STANDARD_TIER_BYTES:
+            add(parameter, "CF-SSM-002", "SSM parameter pays for the advanced tier it does not need", "Low",
+                "Cost Optimization",
+                "The value fits the free standard tier (4 KB) and no parameter policy is set. Unless the "
+                "parameter is shared across accounts, use Tier: Standard. An advanced parameter cannot be "
+                "downgraded: delete it and create it again. The tier does not change throughput, which is "
+                "a separate account setting.")
     return out
 
 
@@ -3859,6 +3974,9 @@ def _run_resource_checks(
 
     # --- Gateway endpoints: S3 and DynamoDB through a NAT gateway (CF-VPC-002/003) ---
     findings.extend(_gateway_endpoint_findings(resources, template_path, _at))
+
+    # --- KMS key rotation and deletion window, SSM parameters ---
+    findings.extend(_kms_ssm_findings(resources, template_path))
 
     # --- CodeBuild and CodePipeline ---
     findings.extend(_ci_cd_findings(resources, template_path))

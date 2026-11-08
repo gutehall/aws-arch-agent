@@ -178,7 +178,7 @@ These rules run on your CDK TypeScript/Python code and execute in both V1 and V2
 **Additional OpsEx (OPS-021 to OPS-025):**
 - OPS-021: CloudWatch dashboards not configured
 - OPS-022: Resource tagging strategy may be incomplete
-- OPS-023: SSM Parameter Store not using advanced tier
+- OPS-023: SSM Parameter Store throughput setting may need review
 - OPS-024: folded into REL-027; reserved concurrency is not reported twice
 - OPS-025: S3 replication metrics not enabled
 
@@ -350,6 +350,12 @@ CloudFormation template rules run when the agent has access to template files. T
   - CF-CP-001 (Low): an artifact store (`ArtifactStore` or an `ArtifactStores` entry) with no `EncryptionKey`. In V2 it replaces SEC-052
   - CF-CP-002 (Low): a `Deploy` action in a stage named for production with no `Approval` action in an earlier stage or `RunOrder`; in a pipeline named for production with no such stage, the last `Deploy` action. Production words are whole words (prod, production, prd, live), so `product-api` does not count. In V2 it replaces REL-021
   - CF-CP-003 (Low): no `AWS::CodeStarNotifications::NotificationRule` or EventBridge rule (`source: aws.codepipeline`) for the pipeline; a rule the scan cannot tie to a resource counts, unless it is for CodeBuild. In V2 it replaces OPS-017
+- **KMS rotation and deletion window** (`AWS::KMS::Key`, `aws_kms_key`):
+  - CF-KMS-002 (Medium, Security Hub KMS.4): `EnableKeyRotation` not true on a symmetric key with AWS KMS key material. Rotation does not exist for asymmetric, HMAC, `EXTERNAL` or custom key store keys, so they are not reported. In V2 it replaces SEC-023
+  - CF-KMS-003 (Low): `PendingWindowInDays` (Terraform `deletion_window_in_days`) below 30 on a key that a data store in the same template refers to. A key used through an alias is not tied to its data store
+- **SSM parameters** (`AWS::SSM::Parameter`, `aws_ssm_parameter`):
+  - CF-SSM-001 (Medium): type `String` and a name that looks like a secret, read from the last part of `Name`, or the logical id or Terraform label when `Name` cannot be read. A literal ARN, flag or number as the value is not reported. Findings never quote the value. In V2 it replaces SEC-033
+  - CF-SSM-002 (Low): `Tier: Advanced` with a literal value under 4 KB, no parameter policy, and a data type the standard tier supports. A parameter shared across accounts needs this tier, and the scan cannot see that, so the finding says so
 - **Auto Scaling**: CF-SUST-001 (no Spot / mixed instances)
 - **ECS**: CF-SUST-002 (Fargate without FARGATE_SPOT)
 - **EC2**: CF-EC2-001 (IMDSv2 not required on an instance or launch template: High when `HttpTokens: optional`, Medium when unset because the default then depends on the AMI), CF-PERF-004 (large instance right-sizing)
@@ -362,10 +368,10 @@ CloudFormation template rules run when the agent has access to template files. T
 | Pillar | CF rule IDs |
 |--------|-------------|
 | Operational Excellence | CF-S3-004, CF-RDS-007, CF-RDS-010, CF-RDS-011, CF-CT-001, CF-CT-002, CF-FL-001, CF-EKS-001, CF-TGW-002, CF-CB-004, CF-CP-003 |
-| Security | CF-S3-001, CF-S3-002, CF-S3-005, CF-RDS-001, CF-RDS-004, CF-APIGW-003, CF-APIGW-004, CF-APIGW-007, CF-APIGW-009, CF-APIGW-V2-003, CF-LAM-004, CF-LAM-005, CF-RDS-006, CF-RDS-008, CF-RDS-009, CF-RDS-012, CF-RDS-013, CF-CT-003, CF-KMS-001, CF-RP-001, CF-EC2-001, CF-EKS-002, CF-EKS-003, CF-IAM-001, CF-IAM-002, CF-IAM-003, CF-IAM-004, CF-IAM-005, CF-IAM-006, CF-IAM-007, CF-IAM-008, CF-ALB-002, CF-ALB-003, CF-ALB-004, CF-ALB-006, CF-CLB-001, CF-CLB-002, CF-SG-001, CF-SG-002, CF-SG-003, CF-NACL-001, CF-TGW-001, CF-CW-002, CF-SQS-001, CF-DDB-002, CF-LAM-003, CF-SNS-001, CF-EBS-001, CF-EFS-001, CF-KIN-001, CF-EC-001, CF-EC-002, CF-OS-001, CF-OS-002, CF-RS-001, CF-DOCDB-001, CF-NEP-001, CF-MSK-001, CF-CF-001, CF-CF-002, CF-CF-003, CF-CF-004, CF-WAF-001, CF-EC2-002, CF-EC2-003, CF-PAR-001, CF-PAR-002, CF-ECR-001, CF-ECR-002, CF-ECR-003, CF-ECS-001, CF-ECS-002, CF-ECS-003, CF-SM-001, CF-COG-001, CF-COG-002, CF-COG-003, CF-CB-001, CF-CB-002, CF-CB-003, CF-CB-005, CF-CP-001 |
-| Reliability | CF-S3-003, CF-RDS-002, CF-RDS-003, CF-RDS-005, CF-LAM-001, CF-LAM-006, CF-LAM-007, CF-LAM-008, CF-APIGW-005, CF-APIGW-006, CF-APIGW-V2-004, CF-DDB-001, CF-SQS-002, CF-DEL-001, CF-NAT-001, CF-ALB-005, CF-ALB-007, CF-CLB-004, CF-CLB-005, CF-CP-002 |
+| Security | CF-S3-001, CF-S3-002, CF-S3-005, CF-RDS-001, CF-RDS-004, CF-APIGW-003, CF-APIGW-004, CF-APIGW-007, CF-APIGW-009, CF-APIGW-V2-003, CF-LAM-004, CF-LAM-005, CF-RDS-006, CF-RDS-008, CF-RDS-009, CF-RDS-012, CF-RDS-013, CF-CT-003, CF-KMS-001, CF-RP-001, CF-EC2-001, CF-EKS-002, CF-EKS-003, CF-IAM-001, CF-IAM-002, CF-IAM-003, CF-IAM-004, CF-IAM-005, CF-IAM-006, CF-IAM-007, CF-IAM-008, CF-ALB-002, CF-ALB-003, CF-ALB-004, CF-ALB-006, CF-CLB-001, CF-CLB-002, CF-SG-001, CF-SG-002, CF-SG-003, CF-NACL-001, CF-TGW-001, CF-CW-002, CF-SQS-001, CF-DDB-002, CF-LAM-003, CF-SNS-001, CF-EBS-001, CF-EFS-001, CF-KIN-001, CF-EC-001, CF-EC-002, CF-OS-001, CF-OS-002, CF-RS-001, CF-DOCDB-001, CF-NEP-001, CF-MSK-001, CF-CF-001, CF-CF-002, CF-CF-003, CF-CF-004, CF-WAF-001, CF-EC2-002, CF-EC2-003, CF-PAR-001, CF-PAR-002, CF-ECR-001, CF-ECR-002, CF-ECR-003, CF-ECS-001, CF-ECS-002, CF-ECS-003, CF-SM-001, CF-COG-001, CF-COG-002, CF-COG-003, CF-CB-001, CF-CB-002, CF-CB-003, CF-CB-005, CF-CP-001, CF-KMS-002, CF-SSM-001 |
+| Reliability | CF-S3-003, CF-RDS-002, CF-RDS-003, CF-RDS-005, CF-LAM-001, CF-LAM-006, CF-LAM-007, CF-LAM-008, CF-APIGW-005, CF-APIGW-006, CF-APIGW-V2-004, CF-DDB-001, CF-SQS-002, CF-DEL-001, CF-NAT-001, CF-ALB-005, CF-ALB-007, CF-CLB-004, CF-CLB-005, CF-CP-002, CF-KMS-003 |
 | Performance Efficiency | CF-APIGW-008, CF-PERF-001, CF-PERF-002, CF-PERF-003, CF-PERF-004 |
-| Cost Optimization | CF-CW-001, CF-RDS-014, CF-COST-002, CF-EBS-002, CF-EIP-001, CF-TAG-001, CF-ENV-001, CF-ENV-002, CF-ENV-003, CF-ENV-004, CF-ENV-005, CF-ENV-006, CF-GEN-001, CF-S3-006, CF-S3-007, CF-DDB-003, CF-VPC-002, CF-VPC-003 |
+| Cost Optimization | CF-CW-001, CF-RDS-014, CF-COST-002, CF-EBS-002, CF-EIP-001, CF-TAG-001, CF-ENV-001, CF-ENV-002, CF-ENV-003, CF-ENV-004, CF-ENV-005, CF-ENV-006, CF-GEN-001, CF-S3-006, CF-S3-007, CF-DDB-003, CF-VPC-002, CF-VPC-003, CF-SSM-002 |
 | Sustainability | CF-SUST-001, CF-SUST-002, CF-SUST-003 |
 | Observability (reported under Operational Excellence) | CF-ALB-001, CF-CLB-003, CF-LAM-002, CF-APIGW-001, CF-APIGW-002, CF-APIGW-V2-001, CF-APIGW-V2-002 |
 | Best Practices | CF-VPC-001 |
@@ -497,6 +503,8 @@ Every rule has one or more themes, which cut across pillars: `finops`, `security
 | CF-IAM-008 | identity |
 | CF-KIN-001 | data-protection |
 | CF-KMS-001 | identity, data-protection |
+| CF-KMS-002 | data-protection |
+| CF-KMS-003 | resilience |
 | CF-LAM-001 | resilience |
 | CF-LAM-002 | observability |
 | CF-LAM-003 | security-baseline |
@@ -547,6 +555,8 @@ Every rule has one or more themes, which cut across pillars: `finops`, `security
 | CF-SNS-001 | data-protection |
 | CF-SQS-001 | data-protection |
 | CF-SQS-002 | resilience |
+| CF-SSM-001 | data-protection |
+| CF-SSM-002 | finops |
 | CF-SUST-001 | sustainability, finops |
 | CF-SUST-002 | sustainability, finops |
 | CF-SUST-003 | sustainability, finops |

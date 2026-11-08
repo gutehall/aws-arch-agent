@@ -184,6 +184,11 @@ PAIRS: list[tuple[str, str, dict, str]] = [
             "HttpMethod": "GET", "RestApiId": {"Ref": "Api"}, "ResourceId": "r"}},
         "Stage": {"Type": "AWS::ApiGateway::Stage", "Properties": {"RestApiId": {"Ref": "Api"}}},
     }, "new apigateway.RestApi(this, 'Api');"),
+    ("CF-KMS-002", "SEC-023", {"Type": "AWS::KMS::Key", "Properties": {}},
+     "new kms.Key(this, 'K');"),
+    ("CF-SSM-001", "SEC-033", {"Type": "AWS::SSM::Parameter", "Properties": {
+        "Name": "/app/db/password", "Type": "String", "Value": "x"}},
+     "new ssm.StringParameter(this, 'P', { parameterName: '/app/db/password', stringValue: 'x' });"),
     ("CF-CB-003", "SEC-053", {"Type": "AWS::CodeBuild::Project", "Properties": {
         "Environment": {"PrivilegedMode": True}}},
      "new codebuild.Project(this, 'B', { environment: { privileged: true } });"),
