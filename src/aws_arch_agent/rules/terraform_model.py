@@ -837,6 +837,18 @@ def _redshift_cluster(body: dict) -> dict:
     props: dict = {}
     _set(props, "Encrypted", _v(body, "encrypted"))
     _set(props, "SnapshotIdentifier", _ref(body, "snapshot_identifier"))
+    _set(props, "PubliclyAccessible", _v(body, "publicly_accessible"))
+    _set(props, "AutomatedSnapshotRetentionPeriod", _v(body, "automated_snapshot_retention_period"))
+    _set(props, "AllowVersionUpgrade", _v(body, "allow_version_upgrade"))
+    _set(props, "EnhancedVpcRouting", _v(body, "enhanced_vpc_routing"))
+    _set(props, "MasterUsername", _v(body, "master_username"))
+    _set(props, "DBName", _v(body, "database_name", "dev"))  # Redshift's default database
+    # Older providers log from this block; aws_redshift_logging is read by _warehouse_findings.
+    logging = _first_block(body, "logging")
+    if "logging" in _dynamic_names(body) or _v(logging, "enable") is UNRESOLVED:
+        props["LoggingProperties"] = UNRESOLVED
+    elif _v(logging, "enable") is True:
+        props["LoggingProperties"] = {"Enabled": True}
     return props
 
 
@@ -846,6 +858,13 @@ def _storage_encrypted_cluster(body: dict) -> dict:
     _set(props, "StorageEncrypted", _v(body, "storage_encrypted"))
     _set(props, "SnapshotIdentifier", _ref(body, "snapshot_identifier"))
     _set(props, "SourceDBClusterIdentifier", _ref(body, "replication_source_identifier"))
+    _set(props, "BackupRetentionPeriod", _v(body, "backup_retention_period"))
+    _set(props, "DeletionProtection", _v(body, "deletion_protection"))
+    _set(props, "IamAuthEnabled", _v(body, "iam_database_authentication_enabled"))
+    # DocumentDB spells it enabled_..., Neptune enable_...
+    exports = "enabled_cloudwatch_logs_exports" if "enabled_cloudwatch_logs_exports" in body \
+        else "enable_cloudwatch_logs_exports"
+    _set(props, "EnableCloudwatchLogsExports", _v(body, exports))
     return props
 
 
