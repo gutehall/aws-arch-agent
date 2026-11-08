@@ -8,30 +8,13 @@ Which CDK rules have a template check, and which AWS Foundational Security Best 
 | -- | -- |
 | `covered` | A template check covers the whole CDK rule. In V2 the CDK finding is dropped when the template check reports (`CF_COVERS_STATIC`, or the tag policy for BP-001 and COST-015). |
 | `partial` | A template check covers part of the CDK rule, so V2 keeps both (`CF_PARTLY_COVERS_STATIC`). |
-| `planned: <work>` | Planned work, listed below, will add the template check. |
 | `account` | Needs a live account. A scan of templates cannot see it. |
 | `cdk-only` | Reads the CDK code itself, not a resource property. |
 | `advice` | No property to read. The answer depends on traffic, usage or design. |
 
-## Planned work
-
-| Work | Adds template checks for |
-| -- | -- |
-| `containers` | More ECS and EKS settings |
-| `auto-scaling` | Auto Scaling groups and launch configurations |
-| `analytics` | Athena, Glue and Firehose |
-| `emr-dms` | EMR and DMS |
-| `s3` | S3 replication, ownership and notifications |
-| `cloudfront` | More CloudFront settings |
-| `sagemaker-fsx` | SageMaker and FSx |
-| `app-services` | AppSync, Transfer Family, App Runner and Elastic Beanstalk |
-| `dns-certs` | Route 53, ACM and Global Accelerator |
-| `alarms` | Alarms, dashboards and trail integration |
-| `account-baseline` | Account baseline resources a repo defines |
-
 ## CDK rules
 
-172 rules: 98 covered, 6 partial, 28 planned, 10 account, 5 cdk-only, 25 advice.
+172 rules: 125 covered, 7 partial, 10 account, 5 cdk-only, 25 advice.
 
 | Rule | Title | Template check | Status | Note |
 | -- | -- | -- | -- | -- |
@@ -60,13 +43,13 @@ Which CDK rules have a template check, and which AWS Foundational Security Best 
 | SEC-023 | KMS key rotation not enabled | `CF-KMS-002` | `covered` |  |
 | SEC-024 | WAF not enabled on ALB/API Gateway/CloudFront | `CF-CF-003`, `CF-WAF-001` | `covered` |  |
 | SEC-025 | ElastiCache not using encryption in-transit/at-rest | `CF-EC-001`, `CF-EC-002` | `covered` |  |
-| SEC-026 | Security Hub not enabled |  | `account` | Security Hub is an account service. account-baseline checks a hub the repo defines. |
-| SEC-027 | GuardDuty not enabled |  | `account` | GuardDuty is an account service. account-baseline checks a detector the repo defines. |
+| SEC-026 | Security Hub not enabled |  | `account` | Security Hub is an account service. `CF-SH-001` checks a hub the repo defines. |
+| SEC-027 | GuardDuty not enabled |  | `account` | GuardDuty is an account service. `CF-GD-001` checks a detector the repo defines. |
 | SEC-028 | ECR repository image scanning not enabled | `CF-ECR-001` | `covered` |  |
 | SEC-029 | ECR image tag immutability not configured | `CF-ECR-002` | `covered` |  |
 | SEC-030 | ECR repository lifecycle policy missing | `CF-ECR-003` | `covered` |  |
-| SEC-031 | Route 53 health checks not configured |  | `planned: dns-certs` |  |
-| SEC-032 | Route 53 DNSSEC not enabled |  | `planned: dns-certs` |  |
+| SEC-031 | Route 53 health checks not configured | `CF-R53-003` | `covered` | Primary failover and weighted records. A secondary record is not judged. |
+| SEC-032 | Route 53 DNSSEC not enabled | `CF-R53-002` | `covered` | Public zones. A private zone is not judged. |
 | SEC-033 | SSM Parameter Store not using SecureString | `CF-SSM-001` | `covered` |  |
 | SEC-034 | Cognito User Pool MFA not required | `CF-COG-001` | `covered` |  |
 | SEC-035 | Cognito User Pool password policy may be weak | `CF-COG-002` | `covered` |  |
@@ -76,16 +59,16 @@ Which CDK rules have a template check, and which AWS Foundational Security Best 
 | SEC-039 | OpenSearch domain encryption not enabled | `CF-OS-001`, `CF-OS-002` | `covered` |  |
 | SEC-040 | OpenSearch fine-grained access control not enabled | `CF-OS-004` | `covered` |  |
 | SEC-041 | OpenSearch domain not in VPC | `CF-OS-003` | `covered` |  |
-| SEC-042 | Athena query result encryption not enabled |  | `planned: analytics` |  |
-| SEC-043 | Glue job encryption not configured |  | `planned: analytics` |  |
+| SEC-042 | Athena query result encryption not enabled | `CF-ATH-001` | `covered` |  |
+| SEC-043 | Glue job encryption not configured | `CF-GLUE-001` | `covered` |  |
 | SEC-044 | MSK cluster encryption not configured | `CF-MSK-001` | `covered` |  |
 | SEC-045 | MSK cluster client authentication not configured | `CF-MSK-002` | `covered` |  |
-| SEC-046 | SageMaker notebook instance not in VPC |  | `planned: sagemaker-fsx` |  |
-| SEC-047 | SageMaker encryption not enabled |  | `planned: sagemaker-fsx` |  |
-| SEC-048 | AppSync API logging not enabled |  | `planned: app-services` |  |
-| SEC-049 | AppSync API not protected by WAF |  | `planned: app-services` |  |
-| SEC-050 | FSx file system encryption not enabled |  | `planned: sagemaker-fsx` |  |
-| SEC-051 | Transfer Family server logging not enabled |  | `planned: app-services` |  |
+| SEC-046 | SageMaker notebook instance not in VPC | `CF-SAGE-002` | `covered` |  |
+| SEC-047 | SageMaker encryption not enabled | `CF-SAGE-004` | `covered` | Notebooks and endpoint configs: a training job is not a template resource. |
+| SEC-048 | AppSync API logging not enabled | `CF-APPSYNC-001` | `covered` |  |
+| SEC-049 | AppSync API not protected by WAF | `CF-APPSYNC-003` | `covered` | Public standard APIs. A private or merged API is not judged. |
+| SEC-050 | FSx file system encryption not enabled | `CF-FSX-001` | `covered` | FSx always encrypts: CF-FSX-001 asks for a customer managed key. |
+| SEC-051 | Transfer Family server logging not enabled | `CF-TRANSFER-002` | `covered` |  |
 | SEC-052 | CodePipeline artifact encryption not enabled | `CF-CP-001` | `covered` |  |
 | SEC-053 | CodeBuild project using privileged mode | `CF-CB-003` | `covered` |  |
 | SEC-054 | Security Group egress too permissive (0.0.0.0/0) | `CF-SG-003` | `covered` |  |
@@ -99,7 +82,7 @@ Which CDK rules have a template check, and which AWS Foundational Security Best 
 | SEC-062 | CloudWatch Logs not encrypted with KMS | `CF-CW-002` | `covered` |  |
 | SEC-063 | Backup vault encryption not configured | `CF-BAK-001` | `covered` |  |
 | SEC-064 | RDS instance may be publicly accessible | `CF-RDS-004` | `covered` |  |
-| SEC-065 | Amazon Macie not enabled for sensitive data discovery |  | `account` | Macie is an account service. account-baseline checks a session the repo defines. |
+| SEC-065 | Amazon Macie not enabled for sensitive data discovery |  | `account` | Macie is an account service. `CF-MACIE-001` checks a session the repo defines. |
 | SEC-066 | EC2 instance may not require IMDSv2 | `CF-EC2-001` | `covered` |  |
 | SEC-067 | IAM principal has full admin access | `CF-IAM-008` | `covered` |  |
 | SEC-068 | Lambda function uses a deprecated runtime | `CF-LAM-003` | `covered` |  |
@@ -122,20 +105,20 @@ Which CDK rules have a template check, and which AWS Foundational Security Best 
 | REL-017 | EFS backup policy not configured | `CF-EFS-002` | `covered` |  |
 | REL-018 | EFS lifecycle policy not configured | `CF-EFS-003` | `covered` |  |
 | REL-019 | Kinesis stream retention period too short | `CF-KIN-002` | `covered` |  |
-| REL-020 | Global Accelerator health checks not configured |  | `planned: dns-certs` |  |
+| REL-020 | Global Accelerator health checks not configured | `CF-GA-001` | `covered` | Advice: EC2 and Elastic IP endpoints. A load balancer's own health checks decide. |
 | REL-021 | CodePipeline missing manual approval for production | `CF-CP-002` | `covered` |  |
-| REL-022 | ACM certificate validation method not specified |  | `planned: dns-certs` |  |
+| REL-022 | ACM certificate validation method not specified | `CF-ACM-001` | `covered` | An imported or private CA certificate is not judged. |
 | REL-023 | Blue-green deployment not configured for critical services |  | `advice` | Deployment strategy, not a resource property. |
 | REL-024 | SQS visibility timeout may need review | `CF-SQS-003` | `covered` |  |
 | REL-025 | DynamoDB global tables not configured for multi-region |  | `advice` | Global tables depend on multi-Region needs. |
-| REL-026 | S3 replication not configured for critical buckets |  | `planned: s3` |  |
+| REL-026 | S3 replication not configured for critical buckets | `CF-S3-010` | `covered` |  |
 | REL-027 | Lambda reserved concurrency not configured for critical functions | `CF-LAM-006` | `covered` |  |
 | REL-028 | API Gateway request validation not configured | `CF-APIGW-006` | `covered` |  |
 | REL-029 | EventBridge rule retry policy not configured | `CF-EB-002` | `covered` |  |
 | REL-030 | RDS deletion protection not enabled | `CF-RDS-005` | `covered` |  |
 | REL-031 | S3 bucket versioning not enabled | `CF-S3-003` | `covered` |  |
 | COST-001 | Log retention may be infinite (cost risk) | `CF-CW-001` | `covered` |  |
-| COST-002 | Compute resources may miss autoscaling |  | `planned: auto-scaling` |  |
+| COST-002 | Compute resources may miss autoscaling | `CF-ASG-006` | `partial` | CF-ASG-006 checks Auto Scaling groups of fixed size; COST-002 reports ECS services in code with no Auto Scaling at all. |
 | COST-003 | DynamoDB provisioned capacity may miss autoscaling | `CF-DDB-003` | `covered` |  |
 | COST-004 | Lambda provisioned concurrency may be overprovisioned |  | `advice` | Provisioned concurrency sizing needs traffic data. |
 | COST-005 | RDS not using Reserved Instances (savings opportunity) |  | `account` | Reserved Instances are bought for the account. |
@@ -144,10 +127,10 @@ Which CDK rules have a template check, and which AWS Foundational Security Best 
 | COST-008 | EBS volumes using gp2 instead of gp3 | `CF-EBS-002` | `covered` |  |
 | COST-009 | ElastiCache may benefit from reserved nodes |  | `account` | Reserved nodes are bought for the account. |
 | COST-010 | RDS not using Graviton instances | `CF-RDS-014` | `covered` |  |
-| COST-011 | CloudFront using all edge locations (Price Class All) |  | `planned: cloudfront` |  |
+| COST-011 | CloudFront using all edge locations (Price Class All) | `CF-CF-006` | `covered` |  |
 | COST-012 | Elastic IP allocated but may not be used | `CF-EIP-001` | `covered` |  |
 | COST-013 | S3 lifecycle policy not configured for cost optimization | `CF-S3-006` | `covered` |  |
-| COST-014 | AWS Budgets not configured |  | `account` | Budgets are account-level. account-baseline checks a budget the repo defines. |
+| COST-014 | AWS Budgets not configured |  | `account` | Budgets are account-level. `CF-BUDGET-001` checks a budget the repo defines. |
 | COST-015 | Cost allocation tags may not be configured | `CF-TAG-001` | `covered` |  |
 | COST-016 | Savings Plans opportunity for compute workloads |  | `account` | Savings Plans are bought for the account. |
 | COST-017 | Lambda memory/CPU may not be optimized |  | `advice` | Memory tuning needs invocation data. |
@@ -157,43 +140,43 @@ Which CDK rules have a template check, and which AWS Foundational Security Best 
 | BP-003 | Resource naming convention may not be followed |  | `cdk-only` | Reads construct and resource names in code. |
 | BP-004 | CDK Aspects not used for policy enforcement |  | `cdk-only` | Reads CDK Aspects. |
 | BP-005 | CDK context not used for environment-specific config |  | `cdk-only` | Reads CDK context. |
-| OPS-001 | CloudTrail / audit trail may be missing |  | `account` | A trail is usually an organization or account trail outside the app. CF-CT-001/002/003 check a trail the template defines. |
+| OPS-001 | CloudTrail / audit trail may be missing |  | `account` | A trail is usually an organization or account trail outside the app. CF-CT-001 to CF-CT-005 check a trail the template defines. |
 | OPS-002 | VPC Flow Logs may be missing | `CF-FL-001` | `covered` |  |
 | OPS-003 | X-Ray / distributed tracing may be missing | `CF-APIGW-002`, `CF-APIGW-V2-002`, `CF-LAM-002` | `covered` |  |
 | OPS-004 | DynamoDB table may benefit from streams for event-driven patterns |  | `advice` | Streams depend on the event design. |
 | OPS-005 | API Gateway access logging not enabled | `CF-APIGW-001`, `CF-APIGW-V2-001` | `covered` |  |
 | OPS-006 | ALB/NLB access logs not enabled | `CF-ALB-001` | `covered` |  |
-| OPS-007 | CloudFront access logging not enabled |  | `planned: cloudfront` |  |
-| OPS-008 | ECS container insights not enabled |  | `planned: containers` |  |
+| OPS-007 | CloudFront access logging not enabled | `CF-CF-005` | `covered` |  |
+| OPS-008 | ECS container insights not enabled | `CF-ECS-010` | `covered` |  |
 | OPS-009 | RDS enhanced monitoring not enabled | `CF-RDS-007` | `covered` |  |
-| OPS-010 | CloudWatch alarms not configured for critical resources |  | `planned: alarms` |  |
-| OPS-011 | No SNS topics for alarm notifications |  | `planned: alarms` |  |
+| OPS-010 | CloudWatch alarms not configured for critical resources | `CF-ALARM-001` | `covered` | Not reported in dev. A child stack or module that may hold alarms is not judged. |
+| OPS-011 | No SNS topics for alarm notifications | `CF-ALARM-002` | `covered` | Like the CDK rule, any alarm action passes, not only SNS. An alarm something else reads is not reported. |
 | OPS-012 | Step Functions not using X-Ray tracing | `CF-SFN-002` | `covered` |  |
 | OPS-013 | EventBridge rules not using DLQ | `CF-EB-001` | `covered` |  |
-| OPS-014 | AWS Config not enabled |  | `account` | AWS Config is an account service. account-baseline checks a recorder the repo defines. |
-| OPS-015 | Glue job CloudWatch metrics not enabled |  | `planned: analytics` |  |
+| OPS-014 | AWS Config not enabled |  | `account` | AWS Config is an account service. `CF-CFG-001` checks a recorder the repo defines. |
+| OPS-015 | Glue job CloudWatch metrics not enabled | `CF-GLUE-002` | `covered` |  |
 | OPS-016 | Transit Gateway flow logs not enabled | `CF-TGW-002` | `covered` |  |
 | OPS-017 | CodePipeline notifications not configured | `CF-CP-003` | `covered` |  |
-| OPS-018 | App Runner observability not configured |  | `planned: app-services` |  |
-| OPS-019 | Glue job bookmarks not enabled |  | `planned: analytics` |  |
+| OPS-018 | App Runner observability not configured | `CF-APPRUNNER-001` | `covered` |  |
+| OPS-019 | Glue job bookmarks not enabled | `CF-GLUE-003` | `covered` | CF-GLUE-003 reports a literal job-bookmark-disable; a job with the option unset keeps OPS-019. |
 | OPS-020 | CodeBuild project logging not configured | `CF-CB-004` | `covered` |  |
-| OPS-021 | CloudWatch dashboards not configured |  | `planned: alarms` |  |
+| OPS-021 | CloudWatch dashboards not configured | `CF-DASH-001` | `covered` | Stacks with more than `dashboards.min_resources` resources (default 20). Not reported in dev. |
 | OPS-022 | Resource tagging strategy may be incomplete |  | `advice` | Tag choice. CF-TAG-001 checks a configured tag policy. |
 | OPS-023 | SSM Parameter Store throughput setting may need review |  | `advice` | Restated: it used to recommend the advanced tier for throughput, but AWS sets throughput per account and Region, whatever the tier. Throughput needs traffic data. `CF-SSM-002` reports the separate cost of an advanced parameter that does not need that tier. |
-| OPS-025 | S3 replication metrics not enabled |  | `planned: s3` |  |
+| OPS-025 | S3 replication metrics not enabled | `CF-S3-011` | `covered` |  |
 | PERF-001 | Compute may not use Graviton/ARM (cost and performance) | `CF-PERF-001` | `partial` | Checks Lambda only; PERF-001 also flags EC2 and ECS. |
 | PERF-002 | No caching layer detected (performance) | `CF-PERF-002` | `partial` | API Gateway and Lambda only; PERF-002 also counts load balancers, API caches and DAX. |
 | PERF-003 | DynamoDB table may use provisioned capacity (consider on-demand) |  | `advice` | On-demand versus provisioned depends on traffic. |
 | PERF-004 | API Gateway caching not enabled | `CF-APIGW-008` | `covered` |  |
 | PERF-005 | Lambda memory not optimized (too low/high) |  | `advice` | Memory tuning needs invocation data. |
-| PERF-006 | CloudFront caching strategy not optimized |  | `planned: cloudfront` |  |
-| PERF-007 | ECS task sizing (CPU/memory) may need review |  | `planned: containers` |  |
+| PERF-006 | CloudFront caching strategy not optimized | `CF-CF-013` | `covered` | Narrowed: CF-CF-013 reports only the managed CachingDisabled policy on a static-looking path, because a template does not show other caching gaps. |
+| PERF-007 | ECS task sizing (CPU/memory) may need review | `CF-ECS-011` | `covered` |  |
 | PERF-008 | RDS instance class may be oversized | `CF-PERF-003`, `CF-PERF-004` | `partial` | CF-PERF-003 checks RDS and CF-PERF-004 checks EC2; PERF-008 matches any large instanceType. |
 | PERF-009 | Kinesis enhanced fan-out not used |  | `advice` | Enhanced fan-out depends on consumer count. |
 | PERF-010 | OpenSearch instance types not optimized |  | `advice` | Instance choice depends on the workload. |
 | PERF-011 | Global Accelerator not used for global traffic |  | `advice` | Global Accelerator depends on where users are. |
 | PERF-012 | EFS performance mode not configured |  | `advice` | Performance mode depends on the workload. |
-| PERF-013 | AppSync API caching not enabled |  | `planned: app-services` |  |
+| PERF-013 | AppSync API caching not enabled | `CF-APPSYNC-004` | `covered` | Advice: a cache suits repeated reads. A merged API is not judged. |
 | PERF-014 | S3 Transfer Acceleration not enabled for global uploads |  | `advice` | Transfer Acceleration depends on where uploads come from. |
 | PERF-015 | Lambda SnapStart not enabled for Java functions |  | `advice` | SnapStart depends on cold-start needs. |
 | PERF-016 | Aurora not using I/O-Optimized for high I/O workloads |  | `advice` | I/O-Optimized depends on I/O spend. |
@@ -205,7 +188,7 @@ Which CDK rules have a template check, and which AWS Foundational Security Best 
 | SUST-003 | Scheduled scaling not configured for predictable patterns |  | `advice` | Scheduled scaling depends on traffic patterns. |
 | SUST-004 | Consider async processing for batch workloads |  | `advice` | Architecture advice. |
 | SUST-005 | Consider managed services over self-managed |  | `advice` | Architecture advice. |
-| SUST-006 | CloudFront compression not enabled |  | `planned: cloudfront` |  |
+| SUST-006 | CloudFront compression not enabled | `CF-CF-007` | `covered` |  |
 | SUST-007 | Latest generation instance types not used | `CF-GEN-001` | `covered` |  |
 
 ## FSBP controls
@@ -214,43 +197,44 @@ Controls a template can show. Account-level controls (for example S3.1, EC2.7 an
 
 | Control | Check | Resource type |
 | -- | -- | -- |
-| ACM.2 | `planned: dns-certs` | `AWS::CertificateManager::Certificate` |
+| ACM.2 | `CF-ACM-002` | `AWS::CertificateManager::Certificate` |
 | APIGateway.2 | `CF-APIGW-009` | `AWS::ApiGateway::Stage` |
 | APIGateway.3 | `CF-APIGW-002` | `AWS::ApiGateway::Stage` |
 | APIGateway.5 | `CF-APIGW-007` | `AWS::ApiGateway::Stage` |
 | APIGateway.8 | `CF-APIGW-V2-003` | `AWS::ApiGatewayV2::Route` |
 | APIGateway.9 | `CF-APIGW-V2-001` | `AWS::ApiGatewayV2::Stage` |
-| AppSync.2 | `planned: app-services` | `AWS::AppSync::GraphQLApi` |
-| AppSync.5 | `planned: app-services` | `AWS::AppSync::GraphQLApi` |
-| AutoScaling.1 | `planned: auto-scaling` | `AWS::AutoScaling::AutoScalingGroup` |
-| AutoScaling.2 | `planned: auto-scaling` | `AWS::AutoScaling::AutoScalingGroup` |
-| AutoScaling.3 | `planned: auto-scaling` | `AWS::AutoScaling::LaunchConfiguration` |
-| AutoScaling.5 | `planned: auto-scaling` | `AWS::AutoScaling::LaunchConfiguration` |
-| AutoScaling.9 | `planned: auto-scaling` | `AWS::AutoScaling::AutoScalingGroup` |
-| CloudFront.1 | `planned: cloudfront` | `AWS::CloudFront::Distribution` |
+| AppSync.2 | `CF-APPSYNC-001` | `AWS::AppSync::GraphQLApi` |
+| AppSync.5 | `CF-APPSYNC-002` | `AWS::AppSync::GraphQLApi` |
+| AutoScaling.1 | `CF-ASG-001` | `AWS::AutoScaling::AutoScalingGroup` |
+| AutoScaling.2 | `CF-ASG-002` | `AWS::AutoScaling::AutoScalingGroup` |
+| AutoScaling.3 | `CF-ASG-003` | `AWS::AutoScaling::LaunchConfiguration` |
+| AutoScaling.5 | `CF-ASG-004` | `AWS::AutoScaling::LaunchConfiguration` |
+| AutoScaling.9 | `CF-ASG-005` | `AWS::AutoScaling::AutoScalingGroup` |
+| CloudFront.1 | `CF-CF-008` | `AWS::CloudFront::Distribution` |
 | CloudFront.3 | `CF-CF-001` | `AWS::CloudFront::Distribution` |
-| CloudFront.4 | `planned: cloudfront` | `AWS::CloudFront::Distribution` |
-| CloudFront.5 | `planned: cloudfront` | `AWS::CloudFront::Distribution` |
+| CloudFront.4 | `CF-CF-009` | `AWS::CloudFront::Distribution` |
+| CloudFront.5 | `CF-CF-005` | `AWS::CloudFront::Distribution` |
 | CloudFront.6 | `CF-CF-003` | `AWS::CloudFront::Distribution` |
-| CloudFront.8 | `planned: cloudfront` | `AWS::CloudFront::Distribution` |
-| CloudFront.9 | `planned: cloudfront` | `AWS::CloudFront::Distribution` |
-| CloudFront.10 | `planned: cloudfront` | `AWS::CloudFront::Distribution` |
+| CloudFront.8 | `CF-CF-012` | `AWS::CloudFront::Distribution` |
+| CloudFront.9 | `CF-CF-010` | `AWS::CloudFront::Distribution` |
+| CloudFront.10 | `CF-CF-011` | `AWS::CloudFront::Distribution` |
 | CloudFront.13 | `CF-CF-004` | `AWS::CloudFront::Distribution` |
 | CloudFront.15 | `CF-CF-002` | `AWS::CloudFront::Distribution` |
 | CloudTrail.1 | `CF-CT-002` | `AWS::CloudTrail::Trail` |
 | CloudTrail.2 | `CF-CT-003` | `AWS::CloudTrail::Trail` |
 | CloudTrail.4 | `CF-CT-001` | `AWS::CloudTrail::Trail` |
-| CloudTrail.5 | `planned: alarms` | `AWS::CloudTrail::Trail` |
+| CloudTrail.5 | `CF-CT-004` | `AWS::CloudTrail::Trail` |
 | CodeBuild.1 | `CF-CB-002` | `AWS::CodeBuild::Project` |
 | CodeBuild.2 | `CF-CB-001` | `AWS::CodeBuild::Project` |
 | CodeBuild.3 | `CF-CB-005` | `AWS::CodeBuild::Project` |
 | CodeBuild.4 | `CF-CB-004` | `AWS::CodeBuild::Project` |
 | Cognito.1 | `CF-COG-003` | `AWS::Cognito::UserPool` |
-| Config.1 | `planned: account-baseline` | `AWS::Config::ConfigurationRecorder` |
-| DataFirehose.1 | `planned: analytics` | `AWS::KinesisFirehose::DeliveryStream` |
-| DMS.1 | `planned: emr-dms` | `AWS::DMS::ReplicationInstance` |
-| DMS.6 | `planned: emr-dms` | `AWS::DMS::ReplicationInstance` |
-| DMS.9 | `planned: emr-dms` | `AWS::DMS::Endpoint` |
+| Config.1 | `CF-CFG-001` | `AWS::Config::ConfigurationRecorder` |
+| DataFirehose.1 | `CF-FH-001` | `AWS::KinesisFirehose::DeliveryStream` |
+| DMS.1 | `CF-DMS-001` | `AWS::DMS::ReplicationInstance` |
+| DMS.6 | `CF-DMS-002` | `AWS::DMS::ReplicationInstance` |
+| DMS.9 | `CF-DMS-003` | `AWS::DMS::Endpoint` |
+| DMS.13 | `CF-DMS-004` | `AWS::DMS::ReplicationInstance` |
 | DocumentDB.1 | `CF-DOCDB-001` | `AWS::DocDB::DBCluster` |
 | DocumentDB.2 | `CF-DOCDB-002` | `AWS::DocDB::DBCluster` |
 | DocumentDB.4 | `CF-DOCDB-003` | `AWS::DocDB::DBCluster` |
@@ -272,22 +256,22 @@ Controls a template can show. Account-level controls (for example S3.1, EC2.7 an
 | ECR.1 | `CF-ECR-001` | `AWS::ECR::Repository` |
 | ECR.2 | `CF-ECR-002` | `AWS::ECR::Repository` |
 | ECR.3 | `CF-ECR-003` | `AWS::ECR::Repository` |
-| ECS.1 | `planned: containers` | `AWS::ECS::TaskDefinition` |
-| ECS.2 | `planned: containers` | `AWS::ECS::Service` |
-| ECS.3 | `planned: containers` | `AWS::ECS::TaskDefinition` |
+| ECS.1 | `CF-ECS-004` | `AWS::ECS::TaskDefinition` |
+| ECS.2 | `CF-ECS-005` | `AWS::ECS::Service` |
+| ECS.3 | `CF-ECS-006` | `AWS::ECS::TaskDefinition` |
 | ECS.4 | `CF-ECS-001` | `AWS::ECS::TaskDefinition` |
 | ECS.5 | `CF-ECS-002` | `AWS::ECS::TaskDefinition` |
-| ECS.8 | `planned: containers` | `AWS::ECS::TaskDefinition` |
-| ECS.9 | `planned: containers` | `AWS::ECS::TaskDefinition` |
-| ECS.10 | `planned: containers` | `AWS::ECS::Service` |
-| ECS.12 | `planned: containers` | `AWS::ECS::Cluster` |
+| ECS.8 | `CF-ECS-007` | `AWS::ECS::TaskDefinition` |
+| ECS.9 | `CF-ECS-008` | `AWS::ECS::TaskDefinition` |
+| ECS.10 | `CF-ECS-009` | `AWS::ECS::Service` |
+| ECS.12 | `CF-ECS-010` | `AWS::ECS::Cluster` |
 | EFS.1 | `CF-EFS-001` | `AWS::EFS::FileSystem` |
 | EFS.2 | `CF-BAK-005` | `AWS::EFS::FileSystem` |
 | EFS.3 | `CF-EFS-004` | `AWS::EFS::AccessPoint` |
 | EFS.4 | `CF-EFS-005` | `AWS::EFS::AccessPoint` |
 | EFS.7 | `CF-EFS-002` | `AWS::EFS::FileSystem` |
 | EKS.1 | `CF-EKS-002` | `AWS::EKS::Cluster` |
-| EKS.2 | `planned: containers` | `AWS::EKS::Cluster` |
+| EKS.2 | `CF-EKS-004` | `AWS::EKS::Cluster` |
 | EKS.3 | `CF-EKS-003` | `AWS::EKS::Cluster` |
 | EKS.8 | `CF-EKS-001` | `AWS::EKS::Cluster` |
 | ElastiCache.1 | `CF-EC-004` | `AWS::ElastiCache::ReplicationGroup` |
@@ -297,9 +281,9 @@ Controls a template can show. Account-level controls (for example S3.1, EC2.7 an
 | ElastiCache.5 | `CF-EC-002` | `AWS::ElastiCache::ReplicationGroup` |
 | ElastiCache.6 | `CF-EC-006` | `AWS::ElastiCache::ReplicationGroup` |
 | ElastiCache.7 | `CF-EC-007` | `AWS::ElastiCache::ReplicationGroup` |
-| ElasticBeanstalk.1 | `planned: app-services` | `AWS::ElasticBeanstalk::Environment` |
-| ElasticBeanstalk.2 | `planned: app-services` | `AWS::ElasticBeanstalk::Environment` |
-| ElasticBeanstalk.3 | `planned: app-services` | `AWS::ElasticBeanstalk::Environment` |
+| ElasticBeanstalk.1 | `CF-BEANSTALK-001` | `AWS::ElasticBeanstalk::Environment` |
+| ElasticBeanstalk.2 | `CF-BEANSTALK-002` | `AWS::ElasticBeanstalk::Environment` |
+| ElasticBeanstalk.3 | `CF-BEANSTALK-003` | `AWS::ElasticBeanstalk::Environment` |
 | ELB.1 | `CF-ALB-002` | `AWS::ElasticLoadBalancingV2::Listener` |
 | ELB.2 | `CF-CLB-002` | `AWS::ElasticLoadBalancing::LoadBalancer` |
 | ELB.3 | `CF-CLB-001` | `AWS::ElasticLoadBalancing::LoadBalancer` |
@@ -309,10 +293,11 @@ Controls a template can show. Account-level controls (for example S3.1, EC2.7 an
 | ELB.7 | `CF-CLB-005` | `AWS::ElasticLoadBalancing::LoadBalancer` |
 | ELB.9 | `CF-CLB-004` | `AWS::ElasticLoadBalancing::LoadBalancer` |
 | ELB.12 | `CF-ALB-006` | `AWS::ElasticLoadBalancingV2::LoadBalancer` |
-| EMR.1 | `planned: emr-dms` | `AWS::EMR::Cluster` |
-| EMR.3 | `planned: emr-dms` | `AWS::EMR::SecurityConfiguration` |
-| EMR.4 | `planned: emr-dms` | `AWS::EMR::SecurityConfiguration` |
-| FSx.1 | `planned: sagemaker-fsx` | `AWS::FSx::FileSystem` |
+| EMR.1 | `CF-EMR-001` | `AWS::EMR::Cluster` |
+| EMR.3 | `CF-EMR-002` | `AWS::EMR::SecurityConfiguration` |
+| EMR.4 | `CF-EMR-003` | `AWS::EMR::SecurityConfiguration` |
+| FSx.1 | `CF-FSX-002` | `AWS::FSx::FileSystem` |
+| FSx.2 | `CF-FSX-002` | `AWS::FSx::FileSystem` |
 | IAM.1 | `CF-IAM-008` | `AWS::IAM::Role`, `AWS::IAM::User`, `AWS::IAM::Group`, `AWS::IAM::ManagedPolicy` |
 | IAM.21 | `CF-IAM-002` | `AWS::IAM::ManagedPolicy`, `AWS::IAM::Policy` |
 | Kinesis.1 | `CF-KIN-001` | `AWS::Kinesis::Stream` |
@@ -360,20 +345,19 @@ Controls a template can show. Account-level controls (for example S3.1, EC2.7 an
 | Redshift.7 | `CF-RS-006` | `AWS::Redshift::Cluster` |
 | Redshift.8 | `CF-RS-007` | `AWS::Redshift::Cluster` |
 | Redshift.10 | `CF-RS-001` | `AWS::Redshift::Cluster` |
-| Route53.2 | `planned: dns-certs` | `AWS::Route53::HostedZone` |
+| Route53.2 | `CF-R53-001` | `AWS::Route53::HostedZone` |
 | S3.5 | `CF-S3-005` | `AWS::S3::BucketPolicy` |
-| S3.7 | planned: s3 | `AWS::S3::Bucket` |
+| S3.7 | `CF-S3-010` | `AWS::S3::Bucket` |
 | S3.8 | `CF-S3-001` | `AWS::S3::Bucket` |
 | S3.9 | `CF-S3-004` | `AWS::S3::Bucket` |
-| S3.11 | planned: s3 | `AWS::S3::Bucket` |
-| S3.12 | planned: s3 | `AWS::S3::Bucket` |
+| S3.12 | `CF-S3-008` | `AWS::S3::Bucket` |
 | S3.14 | `CF-S3-003` | `AWS::S3::Bucket` |
-| SageMaker.1 | `planned: sagemaker-fsx` | `AWS::SageMaker::NotebookInstance` |
-| SageMaker.2 | `planned: sagemaker-fsx` | `AWS::SageMaker::NotebookInstance` |
-| SageMaker.3 | `planned: sagemaker-fsx` | `AWS::SageMaker::NotebookInstance` |
-| SageMaker.4 | `planned: sagemaker-fsx` | `AWS::SageMaker::EndpointConfig` |
+| SageMaker.1 | `CF-SAGE-001` | `AWS::SageMaker::NotebookInstance` |
+| SageMaker.2 | `CF-SAGE-002` | `AWS::SageMaker::NotebookInstance` |
+| SageMaker.3 | `CF-SAGE-003` | `AWS::SageMaker::NotebookInstance` |
+| SageMaker.4 | `CF-SAGE-005` | `AWS::SageMaker::EndpointConfig` |
 | SecretsManager.1 | `CF-SM-001` | `AWS::SecretsManager::Secret` |
 | SNS.1 | `CF-SNS-001` | `AWS::SNS::Topic` |
 | SQS.1 | `CF-SQS-001` | `AWS::SQS::Queue` |
 | StepFunctions.1 | `CF-SFN-003` | `AWS::StepFunctions::StateMachine` |
-| Transfer.2 | `planned: app-services` | `AWS::Transfer::Server` |
+| Transfer.2 | `CF-TRANSFER-001` | `AWS::Transfer::Server` |

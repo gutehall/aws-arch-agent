@@ -85,6 +85,12 @@ rules:
   nonprod:
     max_instance_size: xlarge
   ```
+- **dashboards.min_resources**: a stack with more resources than this and no CloudWatch dashboard is reported (CF-DASH-001). Default `20`. A positive integer. Only resources the scan models count, so unmapped types and Terraform `module` calls do not, and neither does wiring that costs nothing, such as a security group rule or a permission:
+
+  ```yaml
+  dashboards:
+    min_resources: 40
+  ```
 - **region**: AWS region whose on-demand prices cost estimates use, for every stack (`--region` overrides it). Leave it out to price each stack in its own region: see [Price region](REFERENCE.md#price-region). Prices come from the snapshot shipped with the package; see [Prices](REFERENCE.md#prices)
 - **severity_threshold**: only report findings at or above this severity
 - **templates**: path to CloudFormation templates (dir or file); V2 only. When set, cdk synth is skipped and CF rules run on these templates (JSON or YAML).

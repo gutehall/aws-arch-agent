@@ -2,12 +2,14 @@
 from __future__ import annotations
 import json
 import re
+from contextlib import contextmanager
 from pathlib import Path
-from typing import Any, Callable, List
+from typing import Any, Callable, Iterator, List, TypeGuard
 
 from aws_arch_agent.models import Finding, Severity
 from aws_arch_agent.rules.secret_names import is_literal_secret, is_secret_name
 from aws_arch_agent.rules import (
+    eks_versions,
     environments,
     estimates,
     generations,
@@ -18,7 +20,7 @@ from aws_arch_agent.rules import (
     stack_cost,
     tag_policy,
 )
-from aws_arch_agent.rules.resource_model import Resource, resources_from_cf_template
+from aws_arch_agent.rules.resource_model import TF_MODULE_CALL, Resource, resources_from_cf_template
 from aws_arch_agent.rules.terraform_model import TfVariable
 from aws_arch_agent.tools.cdk_synth import list_cf_templates
 from aws_arch_agent.tools.cfn_yaml import parse_template_text
@@ -34,6 +36,26 @@ SENSITIVE_PORTS = {
 
 # Static rule dropped when the CF rule already reported that control.
 CF_COVERS_STATIC: dict[str, tuple[str, ...]] = {
+    "CF-ALARM-001": ("OPS-010",),
+    "CF-ALARM-002": ("OPS-011",),
+    "CF-DASH-001": ("OPS-021",),
+    "CF-R53-002": ("SEC-032",),
+    "CF-R53-003": ("SEC-031",),
+    "CF-ACM-001": ("REL-022",),
+    "CF-GA-001": ("REL-020",),
+    "CF-APPSYNC-001": ("SEC-048",),
+    "CF-APPSYNC-003": ("SEC-049",),
+    "CF-APPSYNC-004": ("PERF-013",),
+    "CF-TRANSFER-002": ("SEC-051",),
+    "CF-APPRUNNER-001": ("OPS-018",),
+    "CF-SAGE-002": ("SEC-046",),
+    "CF-SAGE-004": ("SEC-047",),
+    "CF-FSX-001": ("SEC-050",),
+    "CF-ATH-001": ("SEC-042",),
+    "CF-GLUE-001": ("SEC-043",),
+    "CF-GLUE-002": ("OPS-015",),
+    # Reports only a literal job-bookmark-disable. A scan with none of those keeps OPS-019.
+    "CF-GLUE-003": ("OPS-019",),
     "CF-S3-001": ("SEC-005",),
     "CF-S3-002": ("SEC-006",),
     "CF-VPC-001": ("SEC-022",),
@@ -44,6 +66,11 @@ CF_COVERS_STATIC: dict[str, tuple[str, ...]] = {
     "CF-CF-001": ("SEC-018",),
     "CF-CF-002": ("SEC-019",),
     "CF-CF-003": ("SEC-024",),
+    "CF-CF-005": ("OPS-007",),
+    "CF-CF-006": ("COST-011",),
+    "CF-CF-007": ("SUST-006",),
+    # Reports only the managed CachingDisabled policy on a static path, as the rule's narrow form.
+    "CF-CF-013": ("PERF-006",),
     "CF-WAF-001": ("SEC-024",),
     "CF-EFS-001": ("SEC-037",),
     "CF-KIN-001": ("SEC-038",),
@@ -61,6 +88,8 @@ CF_COVERS_STATIC: dict[str, tuple[str, ...]] = {
     "CF-MSK-002": ("SEC-045",),
     "CF-EBS-002": ("COST-008",),
     "CF-GEN-001": ("SUST-007",),
+    "CF-S3-010": ("REL-026",),
+    "CF-S3-011": ("OPS-025",),
     "CF-S3-006": ("COST-013",),
     "CF-S3-007": ("COST-007",),
     "CF-DDB-003": ("COST-003",),
@@ -74,6 +103,8 @@ CF_COVERS_STATIC: dict[str, tuple[str, ...]] = {
     "CF-ECR-003": ("SEC-030",),
     "CF-ECS-002": ("SEC-020",),
     "CF-ECS-003": ("SEC-058",),
+    "CF-ECS-010": ("OPS-008",),
+    "CF-ECS-011": ("PERF-007",),
     "CF-IAM-001": ("SEC-001",),
     "CF-IAM-002": ("SEC-001",),
     "CF-IAM-003": ("SEC-002",),
@@ -164,6 +195,8 @@ CF_PARTLY_COVERS_STATIC: dict[str, tuple[tuple[str, ...], str]] = {
                     "instances and ECS services"),
     "CF-SUST-002": (("SUST-001",), "Fargate only; SUST-001 also flags EC2 instances"),
     "CF-SUST-003": (("SUST-001",), "launch templates only; SUST-001 also flags ECS services"),
+    "CF-ASG-006": (("COST-002",), "Auto Scaling groups of fixed size only; COST-002 reports ECS "
+                   "services in code with no Auto Scaling at all"),
     "CF-CT-001": (("OPS-001",), "checks an existing trail; OPS-001 reports no trail at all"),
     "CF-CT-002": (("OPS-001",), "checks an existing trail; OPS-001 reports no trail at all"),
     "CF-CT-003": (("OPS-001",), "checks an existing trail; OPS-001 reports no trail at all"),
@@ -274,6 +307,7 @@ def _read_template(path: Path) -> tuple[dict, str | None]:
 
 # Canonical types with per-resource checks (the rest only feed template-level counts).
 _PER_RESOURCE_TYPES = frozenset({
+    "emr_cluster", "emr_security_configuration", "dms_replication_instance", "dms_endpoint",
     "s3_bucket", "db_instance", "rds_cluster", "instance", "lb", "cloudtrail", "kms_key",
     "lambda_function", "dynamodb_table", "security_group", "security_group_ingress_rule",
     "cloudwatch_log_group", "sqs_queue", "api_gateway_stage", "apigatewayv2_stage",
@@ -290,7 +324,21 @@ _PER_RESOURCE_TYPES = frozenset({
     "lb_listener", "lb_target_group", "elb", "lambda_url",
     "sfn_state_machine", "events_rule", "events_target", "event_bus", "event_bus_policy",
     "backup_vault", "backup_vault_lock", "backup_plan", "backup_selection",
-    "efs_access_point", "efs_backup_policy",
+    "efs_access_point", "efs_backup_policy", "ecs_cluster",
+    "autoscaling_policy", "autoscaling_schedule", "autoscaling_attachment",
+    "athena_workgroup", "glue_job", "glue_security_configuration", "firehose_delivery_stream",
+    "cloudwatch_log_delivery_source",
+    "sagemaker_notebook_instance", "sagemaker_endpoint_config",
+    "fsx_file_system", "fsx_data_repository_association",
+    "appsync_graphql_api", "appsync_api_cache", "transfer_server", "apprunner_service",
+    "elastic_beanstalk_environment", "elastic_beanstalk_configuration_template",
+    "route53_hosted_zone", "route53_record_set", "route53_record_set_group", "route53_dnssec",
+    "route53_key_signing_key", "route53_query_log", "acm_certificate",
+    "globalaccelerator_endpoint_group",
+    "cloudwatch_alarm", "cloudwatch_composite_alarm", "cloudwatch_dashboard",
+    "guardduty_detector", "guardduty_detector_feature", "securityhub_hub", "securityhub_standard",
+    "securityhub_configuration_policy", "config_configuration_recorder", "macie_session",
+    "budgets_budget", "budgets_action",
 })
 # Parameter groups only feed CF-RDS-006; they have no checks of their own.
 
@@ -335,6 +383,7 @@ CHECK_PROPERTIES: dict[str, frozenset[str]] = {
         "CF-CT-001": {"EnableLogFileValidation"},
         "CF-CT-002": {"IsMultiRegionTrail"},
         "CF-CT-003": {"KmsKeyId"},
+        "CF-CT-004": {"CloudWatchLogsLogGroupArn"},
         "CF-KMS-001": {"KeyPolicy"},
         "CF-SNS-001": {"KmsMasterKeyId"},
         "CF-EBS-001": {"Encrypted", "SnapshotId", "BlockDeviceMappings"},
@@ -422,6 +471,37 @@ CHECK_PROPERTIES: dict[str, frozenset[str]] = {
         # Template-level: _data_store_findings skips what it cannot read.
         **{c: set() for c in ("CF-DDB-004", "CF-DDB-005", "CF-EC-003", "CF-EC-004", "CF-EC-005", "CF-EC-006",
                               "CF-EC-007", "CF-EFS-002", "CF-EFS-003", "CF-EFS-004", "CF-EFS-005")},
+        # Template-level: _container_findings skips what it cannot read.
+        **{c: set() for c in ("CF-ECS-004", "CF-ECS-005", "CF-ECS-006", "CF-ECS-007", "CF-ECS-008",
+                              "CF-ECS-009", "CF-ECS-010", "CF-ECS-011", "CF-EKS-004")},
+        # Template-level: _autoscaling_findings skips what it cannot read.
+        **{c: set() for c in ("CF-ASG-001", "CF-ASG-002", "CF-ASG-003", "CF-ASG-004", "CF-ASG-005",
+                              "CF-ASG-006")},
+        # Template-level: _emr_dms_findings skips what it cannot read.
+        **{c: set() for c in ("CF-EMR-001", "CF-EMR-002", "CF-EMR-003", "CF-DMS-001", "CF-DMS-002",
+                              "CF-DMS-003", "CF-DMS-004")},
+        # Template-level: _cloudfront_settings_findings skips what it cannot read.
+        **{c: set() for c in ("CF-CF-005", "CF-CF-006", "CF-CF-007", "CF-CF-008", "CF-CF-009", "CF-CF-010",
+                              "CF-CF-011", "CF-CF-012", "CF-CF-013")},
+        # Template-level: _s3_settings_findings skips what it cannot read.
+        **{c: set() for c in ("CF-S3-008", "CF-S3-009", "CF-S3-010", "CF-S3-011", "CF-S3-012")},
+        # Template-level: _analytics_findings skips what it cannot read.
+        **{c: set() for c in ("CF-ATH-001", "CF-ATH-002", "CF-GLUE-001", "CF-GLUE-002", "CF-GLUE-003",
+                              "CF-FH-001")},
+        # Template-level: _sagemaker_fsx_findings skips what it cannot read.
+        **{c: set() for c in ("CF-SAGE-001", "CF-SAGE-002", "CF-SAGE-003", "CF-SAGE-004", "CF-SAGE-005",
+                              "CF-FSX-001", "CF-FSX-002", "CF-FSX-003")},
+        # Template-level: _app_services_findings skips what it cannot read.
+        **{c: set() for c in ("CF-APPSYNC-001", "CF-APPSYNC-002", "CF-APPSYNC-003", "CF-APPSYNC-004",
+                              "CF-TRANSFER-001", "CF-TRANSFER-002", "CF-TRANSFER-003", "CF-APPRUNNER-001",
+                              "CF-BEANSTALK-001", "CF-BEANSTALK-002", "CF-BEANSTALK-003")},
+        # Template-level: _dns_certificate_findings skips what it cannot read.
+        **{c: set() for c in ("CF-R53-001", "CF-R53-002", "CF-R53-003", "CF-ACM-001", "CF-ACM-002",
+                              "CF-ACM-003", "CF-GA-001")},
+        # Template-level: _monitoring_findings skips what it cannot read.
+        **{c: set() for c in ("CF-ALARM-001", "CF-ALARM-002", "CF-DASH-001", "CF-CT-005")},
+        # Template-level: _account_baseline_findings skips what it cannot read.
+        **{c: set() for c in ("CF-GD-001", "CF-SH-001", "CF-CFG-001", "CF-MACIE-001", "CF-BUDGET-001")},
         # Template-level: _backup_findings skips what it cannot read.
         **{c: set() for c in ("CF-BAK-001", "CF-BAK-002", "CF-BAK-003", "CF-BAK-004", "CF-BAK-005")},
         # Template-level: _ci_cd_findings skips what it cannot read.
@@ -456,6 +536,26 @@ _F, _SB, _ID, _DP, _NET, _RES, _OBS, _SUS = (
     "network-exposure", "resilience", "observability", "sustainability",
 )
 CF_THEMES: dict[str, tuple[str, ...]] = {
+    "CF-GD-001": (_SB,), "CF-SH-001": (_SB,), "CF-CFG-001": (_OBS, _SB), "CF-MACIE-001": (_DP, _SB),
+    "CF-BUDGET-001": (_F,),
+    "CF-ALARM-001": (_OBS,), "CF-ALARM-002": (_OBS,), "CF-DASH-001": (_OBS,),
+    "CF-CT-004": (_OBS, _SB), "CF-CT-005": (_OBS, _DP),
+    "CF-R53-001": (_OBS, _SB), "CF-R53-002": (_SB,), "CF-R53-003": (_RES,),
+    "CF-ACM-001": (_RES,), "CF-ACM-002": (_DP,), "CF-ACM-003": (_SB,), "CF-GA-001": (_RES,),
+    "CF-APPSYNC-001": (_OBS, _SB), "CF-APPSYNC-002": (_ID,), "CF-APPSYNC-003": (_NET,), "CF-APPSYNC-004": (_RES,),
+    "CF-TRANSFER-001": (_DP,), "CF-TRANSFER-002": (_OBS, _SB), "CF-TRANSFER-003": (_NET,),
+    "CF-APPRUNNER-001": (_OBS,),
+    "CF-BEANSTALK-001": (_OBS,), "CF-BEANSTALK-002": (_SB,), "CF-BEANSTALK-003": (_OBS,),
+    "CF-SAGE-001": (_NET,), "CF-SAGE-002": (_NET,), "CF-SAGE-003": (_SB, _ID), "CF-SAGE-004": (_DP,),
+    "CF-SAGE-005": (_RES,), "CF-FSX-001": (_DP,), "CF-FSX-002": (_F,), "CF-FSX-003": (_RES,),
+    "CF-S3-008": (_DP,), "CF-S3-009": (_NET, _DP), "CF-S3-010": (_RES, _DP), "CF-S3-011": (_OBS, _DP),
+    "CF-S3-012": (_F,),
+    "CF-EMR-001": (_NET,), "CF-EMR-002": (_DP,), "CF-EMR-003": (_DP,),
+    "CF-DMS-001": (_NET,), "CF-DMS-002": (_SB,), "CF-DMS-003": (_DP,), "CF-DMS-004": (_RES,),
+    "CF-ATH-001": (_DP,), "CF-ATH-002": (_DP,), "CF-GLUE-001": (_DP,), "CF-GLUE-002": (_OBS,),
+    "CF-GLUE-003": (_RES,), "CF-FH-001": (_DP,),
+    "CF-ASG-001": (_RES,), "CF-ASG-002": (_RES,), "CF-ASG-003": (_SB, _ID), "CF-ASG-004": (_NET,),
+    "CF-ASG-005": (_SB,), "CF-ASG-006": (_F,),
     "CF-ALB-001": (_OBS,), "CF-ALB-002": (_DP, _NET), "CF-ALB-003": (_DP, _NET),
     "CF-ALB-004": (_NET,), "CF-ALB-005": (_RES,), "CF-ALB-006": (_NET,), "CF-ALB-007": (_RES,),
     "CF-CLB-001": (_DP, _NET), "CF-CLB-002": (_DP,), "CF-CLB-003": (_OBS,), "CF-CLB-004": (_RES,),
@@ -467,6 +567,8 @@ CF_THEMES: dict[str, tuple[str, ...]] = {
     "CF-CB-001": (_DP, _ID), "CF-CB-002": (_DP, _ID), "CF-CB-003": (_SB,), "CF-CB-004": (_OBS,),
     "CF-CB-005": (_OBS, _DP), "CF-CP-001": (_DP,), "CF-CP-002": (_RES,), "CF-CP-003": (_OBS,),
     "CF-CF-001": (_DP, _NET), "CF-CF-002": (_DP, _NET), "CF-CF-003": (_NET,), "CF-CF-004": (_NET, _ID),
+    "CF-CF-005": (_OBS,), "CF-CF-006": (_F,), "CF-CF-007": (_SUS, _F), "CF-CF-008": (_NET,), "CF-CF-009": (_RES,),
+    "CF-CF-010": (_DP, _NET), "CF-CF-011": (_DP, _NET), "CF-CF-012": (_F,), "CF-CF-013": (_RES,),
     "CF-COG-001": (_ID,), "CF-COG-002": (_ID,), "CF-COG-003": (_ID,),
     "CF-COST-002": (_F,), "CF-CT-001": (_OBS, _SB), "CF-CT-002": (_OBS,), "CF-CT-003": (_OBS, _DP),
     "CF-CW-001": (_F, _DP), "CF-CW-002": (_DP,),
@@ -474,7 +576,10 @@ CF_THEMES: dict[str, tuple[str, ...]] = {
     "CF-EBS-001": (_DP,), "CF-EBS-002": (_F,), "CF-EC-001": (_DP,), "CF-EC-002": (_DP,),
     "CF-EC2-001": (_SB, _ID), "CF-EC2-002": (_NET,), "CF-EC2-003": (_NET,),
     "CF-ECR-001": (_SB,), "CF-ECR-002": (_SB,), "CF-ECR-003": (_SB, _F),
-    "CF-ECS-001": (_SB,), "CF-ECS-002": (_SB,), "CF-ECS-003": (_SB,), "CF-EFS-001": (_DP,),
+    "CF-ECS-001": (_SB,), "CF-ECS-002": (_SB,), "CF-ECS-003": (_SB,), "CF-ECS-004": (_SB, _NET),
+    "CF-ECS-005": (_NET,), "CF-ECS-006": (_SB,), "CF-ECS-007": (_DP, _ID), "CF-ECS-008": (_OBS,),
+    "CF-ECS-009": (_SB,), "CF-ECS-010": (_OBS,), "CF-ECS-011": (_F,), "CF-EKS-004": (_SB,),
+    "CF-EFS-001": (_DP,),
     "CF-EIP-001": (_F,), "CF-EKS-001": (_OBS,), "CF-EKS-002": (_NET,), "CF-EKS-003": (_DP,),
     "CF-ENV-001": (_F,), "CF-ENV-002": (_F,), "CF-ENV-003": (_F,), "CF-ENV-004": (_F,),
     "CF-ENV-005": (_F,), "CF-ENV-006": (_F,), "CF-FL-001": (_OBS, _NET),
@@ -516,8 +621,8 @@ CF_THEMES: dict[str, tuple[str, ...]] = {
 }
 
 
-def _imds_finding(res: Resource, template_path: Path, options: Any, defers: bool) -> Finding | None:
-    """CF-EC2-001 for one instance or launch template.
+def _imds_gap(options: Any, defers: bool) -> tuple[Severity, str] | None:
+    """(severity, what is wrong) when MetadataOptions does not require IMDSv2, else None.
 
     options: the MetadataOptions object. defers: an instance that takes its metadata
     settings from a launch template (that template is checked on its own).
@@ -545,6 +650,15 @@ def _imds_finding(res: Resource, template_path: Path, options: Any, defers: bool
         detail = "MetadataOptions.HttpTokens is optional, so IMDSv1 requests are accepted."
     else:
         return None
+    return severity, detail
+
+
+def _imds_finding(res: Resource, template_path: Path, options: Any, defers: bool) -> Finding | None:
+    """CF-EC2-001 for one instance or launch template."""
+    gap = _imds_gap(options, defers)
+    if gap is None:
+        return None
+    severity, detail = gap
     return Finding(
         id="CF-EC2-001",
         title="EC2 instance metadata does not require IMDSv2",
@@ -698,6 +812,289 @@ def _s3_origin_findings(res: Resource, template_path: Path, config: dict) -> Lis
     )]
 
 
+# The managed CachingDisabled cache policy. A behavior using it does not cache, and so does not compress.
+_CACHING_DISABLED_POLICY = "4135ea2d-6df8-44a3-9df3-4b5a84be39ad"
+# Path patterns that plainly serve static files. A longer path such as /api/assets/* is not judged.
+_STATIC_PATH = re.compile(
+    r"\*\.(?:js|mjs|css|map|png|jpe?g|gif|svg|ico|webp|avif|woff2?|ttf|otf|eot)$"
+    r"|^/?(?:_next/)?(?:static|assets|images|img|fonts|css|js)/\*$",
+    re.IGNORECASE,
+)
+# An S3 website endpoint, as a literal, a CloudFormation attribute or a Terraform attribute. It only speaks HTTP.
+_S3_WEBSITE_ORIGIN = re.compile(r"s3-website|website_endpoint|website_domain|WebsiteURL")
+
+
+def _names_one_origin(value: Any) -> bool:
+    """True when an origin id can be compared. Two unknown Terraform values are not the same id."""
+    return value is not None and not (isinstance(value, dict) and "Fn::Unresolved" in value)
+
+
+def _readable(value: Any) -> TypeGuard[dict]:
+    return isinstance(value, dict) and not _is_intrinsic(value)
+
+
+def _origins_behind(config: dict, target: Any) -> list[dict] | None:
+    """The origins a behavior's TargetOriginId leads to, through an origin group too. None when the
+    scan cannot tie them. With one origin, every behavior goes there."""
+    origins = config.get("Origins")
+    if not isinstance(origins, list) or not origins:
+        return None
+    if len(origins) == 1:
+        return [origins[0]] if _readable(origins[0]) else None
+    if not _names_one_origin(target):
+        return None
+    known = [o for o in origins if _readable(o)]
+    direct = [o for o in known if o.get("Id") == target]
+    if direct:
+        return direct
+    groups = config.get("OriginGroups")
+    items = groups.get("Items") if isinstance(groups, dict) else None
+    for group in items if isinstance(items, list) else []:
+        if not (isinstance(group, dict) and group.get("Id") == target):
+            continue
+        members = group.get("Members")
+        listed = members.get("Items") if isinstance(members, dict) else None
+        ids = [m.get("OriginId") for m in listed if isinstance(m, dict)] if isinstance(listed, list) else []
+        ids = [i for i in ids if _names_one_origin(i)]
+        found = [o for o in known if o.get("Id") in ids]
+        return found if found and isinstance(listed, list) and len(found) == len(listed) else None
+    return None
+
+
+def _changes_request(behavior: dict) -> bool:
+    """True when a function may rewrite the request, such as / to /index.html. Unknown counts."""
+    for key in ("FunctionAssociations", "LambdaFunctionAssociations"):
+        value = behavior.get(key)
+        if value is None:
+            continue
+        if not isinstance(value, list):
+            return True
+        for item in value:
+            if not isinstance(item, dict) or item.get("EventType") not in ("viewer-response", "origin-response"):
+                return True
+    return False
+
+
+def _default_goes_to_s3(config: dict) -> bool:
+    """True when the default behavior serves an S3 origin, so the root URL reaches the bucket.
+
+    When the target cannot be tied, every origin must be a readable S3 origin: a distribution that
+    also has an API origin may send its root URL to the API.
+    """
+    default = config.get("DefaultCacheBehavior")
+    origins = config.get("Origins")
+    if not _readable(default) or _changes_request(default) or not isinstance(origins, list):
+        return False
+    behind = _origins_behind(config, default.get("TargetOriginId"))
+    if behind is None:
+        if not all(_readable(o) for o in origins):
+            return False
+        behind = origins
+    return bool(behind) and all(_is_s3_origin(o) and o.get("CustomOriginConfig") is None for o in behind)
+
+
+def _no_origin_group(config: dict) -> bool:
+    """True when no origin group with two or more origins is set. Unknown is not judged."""
+    groups = config.get("OriginGroups")
+    if groups is None:
+        return True
+    if not _readable(groups):
+        return False
+    items = groups.get("Items")
+    if items is None:
+        return True
+    if not isinstance(items, list):
+        return False
+    for group in items:
+        members = group.get("Members") if _readable(group) else None
+        listed = members.get("Items") if _readable(members) else None
+        if not isinstance(listed, list) or len(listed) >= 2:
+            return False
+    return True
+
+
+def _custom_origins(config: dict) -> list[tuple[str, dict, dict]]:
+    """(name, origin, CustomOriginConfig) for each origin with custom settings the scan can read."""
+    origins = config.get("Origins")
+    out = []
+    for i, origin in enumerate(origins if isinstance(origins, list) else []):
+        if not _readable(origin) or origin.get("S3OriginConfig") is not None:
+            continue
+        settings = origin.get("CustomOriginConfig")
+        if _readable(settings):
+            name = origin.get("Id")
+            out.append((name if type(name) is str else f"origin {i + 1}", origin, settings))
+    return out
+
+
+def _plain_http_origins(config: dict, behaviors: list[tuple[str, dict]]) -> tuple[list[str], list[str]]:
+    """Custom origins that get plain HTTP: (http-only, match-viewer behind an allow-all behavior).
+    S3 website endpoints are left out: they cannot use HTTPS."""
+    http_only, matching = [], []
+    open_targets = [
+        _origins_behind(config, b.get("TargetOriginId")) or []
+        for _, b in behaviors if b.get("ViewerProtocolPolicy") == "allow-all"
+    ]
+    for name, origin, settings in _custom_origins(config):
+        if _S3_WEBSITE_ORIGIN.search(json.dumps(origin.get("DomainName"), default=str)):
+            continue
+        policy = settings.get("OriginProtocolPolicy")
+        if policy == "http-only":
+            http_only.append(name)
+        elif policy == "match-viewer" and any(origin is o for target in open_targets for o in target):
+            matching.append(name)
+    return http_only, matching
+
+
+def _compress_off(behavior: dict) -> bool:
+    """True when turning on Compress would work. The CachingDisabled policy cannot compress, and a
+    cache policy the scan cannot read may be that policy."""
+    policy = behavior.get("CachePolicyId")
+    if policy is not None and (type(policy) is not str or policy.lower() == _CACHING_DISABLED_POLICY):
+        return False
+    return _flag(behavior.get("Compress")) is False
+
+
+def _may_log_in_realtime(config: dict) -> bool:
+    """True when a behavior sends real-time logs, or a behavior the scan cannot read might."""
+    default = config.get("DefaultCacheBehavior")
+    extra = config.get("CacheBehaviors")
+    if extra is not None and not isinstance(extra, list):
+        return True
+    behaviors = [default, *(extra or [])]
+    return any(not _readable(b) or b.get("RealtimeLogConfigArn") not in (None, "") for b in behaviors)
+
+
+def _has_log_delivery(dist: Resource, sources: List[Resource], usable: List[Resource]) -> bool:
+    """True when a v2 standard logging delivery source names the distribution. A source the scan
+    cannot tie to any resource counts for all distributions."""
+    for source in sources:
+        arn = source.properties.get("ResourceArn")
+        if _value_mentions(arn, dist.name):
+            return True
+        if type(arn) is str:  # a literal ARN of another distribution still counts: it cannot be tied
+            if ":cloudfront:" in arn:
+                return True
+            continue
+        if not any(_value_mentions(arn, r.name) for r in usable if r is not source):
+            return True
+    return False
+
+
+def _cloudfront_settings_findings(resources: List[Resource], template_path: Path) -> List[Finding]:
+    """Logging (CF-CF-005), price class (CF-CF-006), compression (CF-CF-007), default root object
+    (CF-CF-008), origin failover (CF-CF-009), origin TLS (CF-CF-010, CF-CF-011), dedicated IP
+    certificates (CF-CF-012) and caching on static paths (CF-CF-013). A value the scan cannot read
+    is not judged."""
+    usable = [r for r in resources if not r.malformed]
+    dists = [r for r in usable if r.type == "cloudfront_distribution"]
+    sources = [r for r in usable if r.type == "cloudwatch_log_delivery_source"]
+    out: List[Finding] = []
+
+    def add(res: Resource, check_id: str, title: str, severity: Severity, category: str,
+            recommendation: str) -> None:
+        out.append(Finding(
+            id=check_id, title=title, severity=severity, category=category,
+            file=res.file or str(template_path), line=res.line,
+            evidence=f"{res.name} ({res.source_type})", recommendation=recommendation,
+        ))
+
+    for dist in dists:
+        config = dist.properties.get("DistributionConfig")
+        if not _readable(config):
+            continue
+        behaviors: list[tuple[str, dict]] = []
+        if _readable(config.get("DefaultCacheBehavior")):
+            behaviors.append(("default", config["DefaultCacheBehavior"]))
+        extra = config.get("CacheBehaviors")
+        for item in extra if isinstance(extra, list) else []:
+            if _readable(item):
+                path = item.get("PathPattern")
+                behaviors.append((path if type(path) is str else "a path", item))
+
+        if (config.get("Logging") is None and not _may_log_in_realtime(config)
+                and not _has_log_delivery(dist, sources, usable)):
+            add(dist, "CF-CF-005", "CloudFront distribution has no access logs", "Low", "Operational Excellence",
+                "This distribution has no Logging, no real-time log config on a behavior, and no log delivery "
+                "source, so requests cannot be traced after an incident. Set Logging to an S3 bucket "
+                "(Security Hub CloudFront.5 reads only this legacy standard logging), or deliver standard logs "
+                "with AWS::Logs::DeliverySource. In CDK: enableLogging: true and logBucket on the Distribution.")
+
+        # A multi-tenant distribution has no price class.
+        price = config.get("PriceClass")
+        if config.get("ConnectionMode") in (None, "direct") and price in (None, "PriceClass_All"):
+            add(dist, "CF-CF-006", "CloudFront distribution uses all edge locations", "Low", "Cost Optimization",
+                f"PriceClass is {price or 'unset, which means PriceClass_All'}. If most viewers are in North "
+                "America, Europe or Asia, PriceClass_100 or PriceClass_200 can cost less, with slower responses "
+                "for viewers elsewhere. Keep this if you serve viewers worldwide. "
+                "In CDK: priceClass: cloudfront.PriceClass.PRICE_CLASS_100.")
+
+        uncompressed = [name for name, b in behaviors if _compress_off(b)]
+        if uncompressed:
+            add(dist, "CF-CF-007", "CloudFront behavior does not compress responses", "Low", "Sustainability",
+                f"Compress is not true on behaviors: {', '.join(uncompressed)}, so text files cost more to send "
+                "and take longer to load. Set Compress to true, and use a cache policy that allows Gzip and "
+                "Brotli. In CDK: compress: true on the behavior.")
+
+        if config.get("DefaultRootObject") in (None, "") and _default_goes_to_s3(config):
+            add(dist, "CF-CF-008", "CloudFront distribution with an S3 origin has no default root object", "Low",
+                "Security",
+                "The default behavior serves an S3 origin and DefaultRootObject is not set, so a request for "
+                "the root URL goes to the bucket itself and may expose a listing or an error from S3 "
+                "(Security Hub CloudFront.1). Set DefaultRootObject, such as index.html. "
+                "In CDK: defaultRootObject on the Distribution.")
+
+        if _no_origin_group(config):
+            add(dist, "CF-CF-009", "CloudFront distribution has no origin failover", "Low", "Reliability",
+                "No origin group with two origins is set, so CloudFront has nothing to fail over to when the "
+                "origin is down (Security Hub CloudFront.4). This also reports a distribution with one origin: "
+                "many have one on purpose, and then you can ignore this. If this content must stay up, add a "
+                "second origin and an origin group. In CDK: origins.OriginGroup.")
+
+        http_only, matching = _plain_http_origins(config, behaviors)
+        if http_only or matching:
+            parts = []
+            if http_only:
+                parts.append(f"OriginProtocolPolicy is http-only on origins: {', '.join(http_only)}.")
+            if matching:
+                parts.append(f"OriginProtocolPolicy is match-viewer on origins: {', '.join(matching)}, behind a "
+                             "behavior with ViewerProtocolPolicy allow-all.")
+            add(dist, "CF-CF-010", "CloudFront sends plain HTTP to a custom origin", "Medium", "Security",
+                f"{' '.join(parts)} Traffic between CloudFront and the origin can then be read or changed "
+                "(Security Hub CloudFront.9). Set https-only, and give the origin a certificate. "
+                "In CDK: protocolPolicy: cloudfront.OriginProtocolPolicy.HTTPS_ONLY on the origin.")
+
+        weak = [
+            name for name, _o, settings in _custom_origins(config)
+            if isinstance(settings.get("OriginSSLProtocols"), list) and "SSLv3" in settings["OriginSSLProtocols"]
+        ]
+        if weak:
+            add(dist, "CF-CF-011", "CloudFront allows SSLv3 to a custom origin", "Medium", "Security",
+                f"OriginSSLProtocols includes SSLv3 on origins: {', '.join(weak)}, and SSLv3 is deprecated and "
+                "not secure (Security Hub CloudFront.10). Allow only TLSv1.2. "
+                "In CDK: originSslProtocols: [cloudfront.OriginSslPolicy.TLS_V1_2] on the origin.")
+
+        cert = config.get("ViewerCertificate")
+        if _readable(cert) and cert.get("SslSupportMethod") == "vip":
+            add(dist, "CF-CF-012", "CloudFront certificate uses a dedicated IP address", "Low", "Cost Optimization",
+                "SslSupportMethod is vip, which has a large monthly charge for dedicated IP addresses at each "
+                "edge location. Set sni-only, unless you must serve very old clients without SNI "
+                "(Security Hub CloudFront.8). In CDK: sslSupportMethod: cloudfront.SSLMethod.SNI.")
+
+        no_cache = [
+            name for name, b in behaviors
+            if type(b.get("PathPattern")) is str and _STATIC_PATH.search(b["PathPattern"])
+            and type(b.get("CachePolicyId")) is str and b["CachePolicyId"].lower() == _CACHING_DISABLED_POLICY
+        ]
+        if no_cache:
+            add(dist, "CF-CF-013", "CloudFront does not cache static paths", "Low", "Performance Efficiency",
+                f"Behaviors with the managed CachingDisabled policy on static paths: {', '.join(no_cache)}. Each "
+                "request for these files goes to the origin. Use the managed CachingOptimized policy, and name "
+                "files by content hash so a new version gets a new URL. "
+                "In CDK: cachePolicy: cloudfront.CachePolicy.CACHING_OPTIMIZED.")
+    return out
+
+
 def _references(text: str, name: str) -> bool:
     """True when a dumped ResourceArn refers to a resource by logical id or Terraform address."""
     if "." in name:  # Terraform address: aws_lb.app -> aws_lb.app.arn, aws_lb.app[0].arn
@@ -705,13 +1102,14 @@ def _references(text: str, name: str) -> bool:
     return f'"{name}"' in text or f"${{{name}}}" in text or f"${{{name}." in text
 
 
-def _waf_coverage(resources: List[Resource]) -> tuple[set[str], bool]:
-    """Names of ALBs and API stages a WAF association in this template points at.
+def _waf_coverage(resources: List[Resource], *extra_types: str) -> tuple[set[str], bool]:
+    """Names of ALBs and API stages, and of any extra types, a WAF association in this template
+    points at.
 
     The second value is True when an association points at something the scan cannot
     tie to a resource: it may then cover any of them.
     """
-    targets = [r.name for r in resources if r.type in ("lb", "api_gateway_stage")]
+    targets = [r.name for r in resources if r.type in ("lb", "api_gateway_stage", *extra_types)]
     covered: set[str] = set()
     unlinked = False
     for r in resources:
@@ -1371,6 +1769,20 @@ def _lambda_access_findings(res: Resource, template_path: Path) -> List[Finding]
     return out
 
 
+def _subnets_in_one_az(ids: list, subnets: List[Resource]) -> bool:
+    """True when every subnet is in this template and all are in one AZ. A subnet that is not in
+    this template, or whose AZ cannot be read, gives False."""
+    azs: set[str] = set()
+    for item in ids:
+        text = item if type(item) is str else json.dumps(item, default=str)
+        subnet = next((s for s in subnets if _references(text, s.name)), None)
+        az = _az_key(subnet) if subnet is not None else None
+        if az is None:
+            return False
+        azs.add(az)
+    return len(azs) == 1
+
+
 def _lambda_wiring_findings(resources: List[Resource], template_path: Path) -> List[Finding]:
     """CF-LAM-007: the 3 second default timeout on a function an event source mapping
     polls for, or the 900 second maximum behind API Gateway (which stops waiting at 29
@@ -1418,16 +1830,7 @@ def _lambda_wiring_findings(resources: List[Resource], template_path: Path) -> L
         ids = vpc.get("SubnetIds") if isinstance(vpc, dict) and "VpcConfig" not in fn.unresolved else None
         if not isinstance(ids, list) or not ids:
             continue
-        azs: set[str] = set()
-        for item in ids:
-            text = item if type(item) is str else json.dumps(item, default=str)
-            subnet = next((s for s in subnets if _references(text, s.name)), None)
-            az = _az_key(subnet) if subnet is not None else None
-            if az is None:
-                azs = set()
-                break
-            azs.add(az)
-        if len(azs) == 1:
+        if _subnets_in_one_az(ids, subnets):
             out.append(finding(
                 fn, "CF-LAM-008", "Lambda function in a VPC uses subnets in one AZ", "Medium", (
                     "All of this function's subnets are in one Availability Zone, so an AZ failure "
@@ -2259,6 +2662,936 @@ def _backup_findings(resources: List[Resource], template_path: Path) -> List[Fin
                 "No BackupSelection in this template selects the resource by ARN or tag, so the plan does "
                 "not back it up. Add it to a selection's Resources, or give it a tag in ListOfTags. In "
                 "CDK: addSelection on the BackupPlan.")
+    return out
+
+
+def _literal_count(value: Any) -> int | None:
+    """A whole number written in the template, or None for anything else."""
+    if type(value) is int:
+        return value
+    return int(value) if type(value) is str and value.isdigit() else None
+
+
+def _enabled_unless_set(res: Resource, key: str) -> bool:
+    """True when a setting that defaults to Enabled is unset or literally Enabled."""
+    if key in res.unresolved:
+        return False
+    value = res.properties.get(key)
+    return value is None or (type(value) is str and value.lower() == "enabled")
+
+
+def _instance_variants(config: Resource, *keys: str) -> list[dict]:
+    """The variants under these keys of an endpoint config that run on instances. A serverless
+    variant, or one the scan cannot read, is left out."""
+    variants: list[dict] = []
+    for key in keys:
+        listed = config.properties.get(key)
+        if key not in config.unresolved and isinstance(listed, list):
+            variants += [v for v in listed if _readable(v) and v.get("ServerlessConfig") is None
+                         and v.get("InstanceType") is not None]
+    return variants
+
+
+# The block that holds each FSx type's settings, in CloudFormation.
+_FSX_CONFIGURATION = {
+    "LUSTRE": "LustreConfiguration", "WINDOWS": "WindowsConfiguration",
+    "ONTAP": "OntapConfiguration", "OPENZFS": "OpenZFSConfiguration",
+}
+# Security Hub cites the setting for one FSx type each. ONTAP has no CopyTagsToBackups.
+_FSX_COPY_TAGS_CONTROL = {"LUSTRE": " (Security Hub FSx.2)", "WINDOWS": "", "OPENZFS": " (Security Hub FSx.1)"}
+
+
+def _fsx_settings(fs: Resource) -> tuple[str | None, dict | None]:
+    """The file system's type and its settings block. None for what the scan cannot read."""
+    kind = None if "FileSystemType" in fs.unresolved else fs.properties.get("FileSystemType")
+    kind = kind.upper() if type(kind) is str else None
+    key = _FSX_CONFIGURATION.get(kind or "")
+    if key is None:
+        return None, None
+    block = {} if fs.properties.get(key) is None else fs.properties.get(key)
+    return kind, block if key not in fs.unresolved and _readable(block) else None
+
+
+def _fsx_is_persistent_lustre(kind: str | None, block: dict | None) -> bool:
+    """True for a Lustre deployment type known to be persistent. Unset means SCRATCH_1."""
+    deployment = block.get("DeploymentType") if kind == "LUSTRE" and block is not None else None
+    return type(deployment) is str and deployment.upper().startswith("PERSISTENT")
+
+
+def _fsx_is_linked(fs: Resource, block: dict, associations: List[Resource], systems: List[Resource]) -> bool:
+    """True when a Lustre file system has, or may have, an S3 data repository. An association the
+    scan cannot tie to a file system counts for all of them."""
+    if block.get("ImportPath") is not None or block.get("ExportPath") is not None:
+        return True
+
+    def ties(association: Resource, target: Resource) -> bool:
+        return _value_mentions(association.properties.get("FileSystemId"), target.name)
+
+    return any(ties(a, fs) or not any(ties(a, s) for s in systems) for a in associations)
+
+
+def _sagemaker_fsx_findings(resources: List[Resource], template_path: Path) -> List[Finding]:
+    """SageMaker notebooks and endpoint configs (CF-SAGE-001..005) and FSx file systems
+    (CF-FSX-001..003). A value the scan cannot read is not judged."""
+    usable = [r for r in resources if not r.malformed]
+    systems = [r for r in usable if r.type == "fsx_file_system"]
+    associations = [r for r in usable if r.type == "fsx_data_repository_association"]
+    unlinkable = any(r.malformed and r.type == "fsx_data_repository_association" for r in resources)
+    out: List[Finding] = []
+
+    def add(res: Resource, check_id: str, title: str, severity: Severity, category: str,
+            recommendation: str) -> None:
+        out.append(Finding(
+            id=check_id, title=title, severity=severity, category=category,
+            file=res.file or str(template_path), line=res.line,
+            evidence=f"{res.name} ({res.source_type})", recommendation=recommendation,
+        ))
+
+    def no_key(res: Resource) -> bool:
+        return "KmsKeyId" not in res.unresolved and not res.properties.get("KmsKeyId")
+
+    for notebook in (r for r in usable if r.type == "sagemaker_notebook_instance"):
+        if _enabled_unless_set(notebook, "DirectInternetAccess"):
+            add(notebook, "CF-SAGE-001", "SageMaker notebook has direct internet access", "Medium", "Security",
+                "DirectInternetAccess defaults to Enabled, so the notebook can reach the internet and data "
+                "can leave through it. Set DirectInternetAccess: Disabled with a SubnetId, and reach the "
+                "internet through the VPC (Security Hub SageMaker.1). This replaces the notebook. In CDK: "
+                "directInternetAccess: 'Disabled' on the CfnNotebookInstance.")
+        if "SubnetId" not in notebook.unresolved and not notebook.properties.get("SubnetId"):
+            add(notebook, "CF-SAGE-002", "SageMaker notebook is not in a VPC", "Medium", "Security",
+                "With no SubnetId, the notebook runs outside your VPC, so your security groups and network "
+                "controls do not apply to it. Set SubnetId and SecurityGroupIds (Security Hub SageMaker.2). "
+                "This replaces the notebook. In CDK: subnetId and securityGroupIds on the CfnNotebookInstance.")
+        if _enabled_unless_set(notebook, "RootAccess"):
+            add(notebook, "CF-SAGE-003", "SageMaker notebook gives users root access", "Medium", "Security",
+                "RootAccess defaults to Enabled, so a notebook user can change anything on the instance. "
+                "Set RootAccess: Disabled (Security Hub SageMaker.3). A lifecycle configuration still runs "
+                "as root. In CDK: rootAccess: 'Disabled' on the CfnNotebookInstance.")
+        if no_key(notebook):
+            add(notebook, "CF-SAGE-004", "SageMaker notebook volume has no customer managed key", "Low", "Security",
+                "With no KmsKeyId, SageMaker encrypts the notebook's storage volume with an AWS managed key. "
+                "Set a customer managed key to control its policy and who can decrypt the data. In CDK: "
+                "kmsKeyId on the CfnNotebookInstance.")
+
+    for config in (r for r in usable if r.type == "sagemaker_endpoint_config"):
+        if _instance_variants(config, "ProductionVariants", "ShadowProductionVariants") and no_key(config):
+            add(config, "CF-SAGE-004", "SageMaker endpoint config volume has no customer managed key", "Low",
+                "Security",
+                "With no KmsKeyId, the storage volumes of this config's instance variants are not encrypted "
+                "with a key you control. Set a customer managed key, unless the instance type has local "
+                "storage: those types cannot take one and encrypt it in hardware. In CDK: kmsKeyId on the "
+                "CfnEndpointConfig.")
+        single = [v for v in _instance_variants(config, "ProductionVariants")
+                  if _literal_count(v.get("InitialInstanceCount")) == 1]
+        if single:
+            names = [v["VariantName"] if type(v.get("VariantName")) is str else "unnamed" for v in single]
+            add(config, "CF-SAGE-005", "SageMaker endpoint variant runs on one instance", "Low", "Reliability",
+                f"InitialInstanceCount is 1 on these production variants: {', '.join(names)}. One instance "
+                "means one Availability Zone and no redundancy. Set it to 2 or more so SageMaker spreads "
+                "them across zones (Security Hub SageMaker.4). In CDK: initialInstanceCount on the "
+                "production variant.")
+
+    for fs in systems:
+        kind, block = _fsx_settings(fs)
+        if kind is None:
+            continue
+        persistent = _fsx_is_persistent_lustre(kind, block)
+        restored = "BackupId" in fs.unresolved or fs.properties.get("BackupId") is not None
+        if no_key(fs) and not restored and (kind != "LUSTRE" or persistent):
+            add(fs, "CF-FSX-001", "FSx file system has no customer managed key", "Low", "Security",
+                "With no KmsKeyId, FSx encrypts the data with the FSx service key for the account. The data "
+                "is encrypted, but you do not control the key's policy. Set a customer managed key. This "
+                "replaces the file system. In CDK: kmsKey on the file system.")
+        if block is None:
+            continue
+        # Scratch Lustre and Lustre linked to S3 have no backups, so neither setting applies.
+        if kind == "LUSTRE" and (not persistent or unlinkable or _fsx_is_linked(fs, block, associations, systems)):
+            continue
+        copy_tags = block.get("CopyTagsToBackups")
+        if kind in _FSX_COPY_TAGS_CONTROL and _flag(copy_tags) is False and not (restored and copy_tags is None):
+            add(fs, "CF-FSX-002", "FSx file system does not copy tags to backups", "Low", "Operational Excellence",
+                "CopyTagsToBackups defaults to false, so backups lose the tags that identify their owner "
+                f"and purpose. Set it to true{_FSX_COPY_TAGS_CONTROL[kind]}."
+                f"{' FSx.1 also asks for CopyTagsToVolumes.' if kind == 'OPENZFS' else ''} In CDK: "
+                "copyTagsToBackups in the CfnFileSystem's configuration block.")
+        days = block.get("AutomaticBackupRetentionDays")
+        # Only Lustre is documented to default to 0: ONTAP, Windows and OpenZFS keep backups by default.
+        if _literal_count(days) == 0 or (days is None and kind == "LUSTRE" and not restored):
+            add(fs, "CF-FSX-003", "FSx file system has automatic backups off", "Low", "Reliability",
+                "AutomaticBackupRetentionDays is 0, so FSx takes no daily backups (on Lustre, unset means "
+                "0). Set the days to keep them, up to 90, unless AWS Backup covers the file system. In CDK: "
+                "automaticBackupRetentionDays in the CfnFileSystem's configuration block.")
+    return out
+
+
+def _unset_or_is(res: Resource, key: str, expected: str) -> bool:
+    """True when a setting is unset, or literally this value in any case. Unknown is not judged."""
+    if key in res.unresolved:
+        return False
+    value = res.properties.get(key)
+    return value is None or (type(value) is str and value.upper() == expected.upper())
+
+
+def _appsync_only_api_key(api: Resource) -> bool:
+    """True when an API key is the only way to call the API. An unknown provider is not judged."""
+    if "AdditionalAuthenticationProviders" in api.unresolved or _literal_upper(api, "AuthenticationType") != "API_KEY":
+        return False
+    others = api.properties.get("AdditionalAuthenticationProviders")
+    if others is None:
+        return True
+    return isinstance(others, list) and all(
+        _readable(p) and type(p.get("AuthenticationType")) is str and p["AuthenticationType"].upper() == "API_KEY"
+        for p in others
+    )
+
+
+def _literal_upper(res: Resource, key: str) -> str | None:
+    """A literal string setting in upper case, or None when it is unset or unknown."""
+    value = None if key in res.unresolved else res.properties.get(key)
+    return value.upper() if type(value) is str else None
+
+
+def _appsync_has_cache(api: Resource, apis: List[Resource], caches: List[Resource]) -> bool:
+    """True when a cache points at this API. A cache the scan cannot tie to an API counts for all."""
+
+    def ties(cache: Resource, target: Resource) -> bool:
+        return _value_mentions(cache.properties.get("ApiId"), target.name)
+
+    return any(ties(c, api) or not any(ties(c, a) for a in apis) for c in caches)
+
+
+_BEANSTALK_HEALTH = ("aws:elasticbeanstalk:healthreporting:system", "systemtype")
+_BEANSTALK_UPDATES = ("aws:elasticbeanstalk:managedactions", "managedactionsenabled")
+_BEANSTALK_LOGS = ("aws:elasticbeanstalk:cloudwatch:logs", "streamlogs")
+
+
+def _beanstalk_options(res: Resource) -> dict[tuple[str, str], Any] | None:
+    """Option values by lower-case namespace and name. None when the scan cannot read the settings:
+    an unreadable entry may set anything."""
+    if "OptionSettings" in res.unresolved:
+        return None
+    listed = res.properties.get("OptionSettings")
+    if listed is None:
+        return {}
+    if not isinstance(listed, list):
+        return None
+    options: dict[tuple[str, str], Any] = {}
+    for item in listed:
+        if not _readable(item):
+            return None
+        namespace, name = item.get("Namespace"), item.get("OptionName")
+        if type(namespace) is not str or type(name) is not str:
+            return None
+        if item.get("Value") is not None:
+            options[(namespace.lower(), name.lower())] = item["Value"]
+    return options
+
+
+def _beanstalk_template_is(template: Resource, name: Any) -> bool:
+    """True when an environment's TemplateName is this template. A literal matches only the template's
+    literal name: a CloudFormation template's generated name is never its logical id."""
+    if type(name) is str:
+        return name == template.properties.get("Name")
+    return _value_mentions(name, template.name)
+
+
+def _beanstalk_settings(env: Resource, templates: List[Resource]) -> dict[tuple[str, str], Any] | None:
+    """An environment's options, over those of a configuration template in this scan. None when the
+    scan cannot read them all, which includes a template outside this scan."""
+    own = _beanstalk_options(env)
+    if own is None or "TemplateName" in env.unresolved:
+        return None
+    name = env.properties.get("TemplateName")
+    if name is None:
+        return own
+    template = next((t for t in templates if _beanstalk_template_is(t, name)), None)
+    if template is None or template.malformed:
+        return None
+    # A template that copies another template or an environment holds settings the scan cannot read.
+    if any(k in template.unresolved or template.properties.get(k) is not None
+           for k in ("SourceConfiguration", "EnvironmentId")):
+        return None
+    inherited = _beanstalk_options(template)
+    return None if inherited is None else {**inherited, **own}
+
+
+def _app_services_findings(resources: List[Resource], template_path: Path) -> List[Finding]:
+    """AppSync (CF-APPSYNC-001..004), Transfer Family (CF-TRANSFER-001..003), App Runner
+    (CF-APPRUNNER-001) and Elastic Beanstalk (CF-BEANSTALK-001..003). A value the scan cannot read is
+    not judged."""
+    usable = [r for r in resources if not r.malformed]
+    apis = [r for r in usable if r.type == "appsync_graphql_api"]
+    caches = [r for r in usable if r.type == "appsync_api_cache"]
+    cache_malformed = any(r.malformed and r.type == "appsync_api_cache" for r in resources)
+    waf_covered, waf_unlinked = _waf_coverage(resources, "appsync_graphql_api")
+    templates = [r for r in resources if r.type == "elastic_beanstalk_configuration_template"]
+    out: List[Finding] = []
+
+    def add(res: Resource, check_id: str, title: str, severity: Severity, category: str,
+            recommendation: str) -> None:
+        out.append(Finding(
+            id=check_id, title=title, severity=severity, category=category,
+            file=res.file or str(template_path), line=res.line,
+            evidence=f"{res.name} ({res.source_type})", recommendation=recommendation,
+        ))
+
+    for api in apis:
+        log = None if "LogConfig" in api.unresolved else api.properties.get("LogConfig")
+        level = log.get("FieldLogLevel") if _readable(log) else None
+        if ("LogConfig" not in api.unresolved and log is None) or (type(level) is str and level.upper() == "NONE"):
+            add(api, "CF-APPSYNC-001", "AppSync API has no field-level logging", "Low", "Security",
+                "With no LogConfig, or FieldLogLevel: NONE, AppSync writes no resolver logs, so errors and "
+                "abuse leave no trace. Set LogConfig with FieldLogLevel: ERROR or ALL and a "
+                "CloudWatchLogsRoleArn (Security Hub AppSync.2). In CDK: logConfig: { fieldLogLevel: "
+                "appsync.FieldLogLevel.ERROR }.")
+        if _appsync_only_api_key(api):
+            add(api, "CF-APPSYNC-002", "AppSync API is authenticated only with an API key", "Medium", "Security",
+                "An API key is a shared value that sits in the client and identifies no caller, so anyone "
+                "who finds it can call the API until it expires. Use AWS_IAM, AMAZON_COGNITO_USER_POOLS, "
+                "OPENID_CONNECT or AWS_LAMBDA, unless the API is meant to be public (Security Hub "
+                "AppSync.5). In CDK: authorizationConfig with a defaultAuthorization other than "
+                "appsync.AuthorizationType.API_KEY.")
+        standard = _unset_or_is(api, "ApiType", "GRAPHQL")
+        if (standard and _unset_or_is(api, "Visibility", "GLOBAL") and not waf_unlinked
+                and api.name not in waf_covered):
+            add(api, "CF-APPSYNC-003", "AppSync API has no WAF web ACL in this template", "Medium", "Security",
+                "No AWS::WAFv2::WebACLAssociation (Terraform aws_wafv2_web_acl_association) in this template "
+                "points at this public API, so AWS WAF rules do not filter abuse or injection attempts. "
+                "Associate a web ACL with the API's ARN, or exclude this check if the association is in "
+                "another stack. In CDK: new wafv2.CfnWebACLAssociation(this, 'Waf', { resourceArn: "
+                "api.arn, webAclArn }).")
+        if standard and not cache_malformed and not _appsync_has_cache(api, apis, caches):
+            add(api, "CF-APPSYNC-004", "AppSync API has no cache in this template", "Low", "Performance Efficiency",
+                "No AWS::AppSync::ApiCache (Terraform aws_appsync_api_cache) in this template points at this "
+                "API. If the API serves repeated reads, a cache lowers latency and load on its data "
+                "sources. It adds an hourly cost and suits data that can be slightly stale, so exclude "
+                "this check when neither applies. In CDK: new appsync.CfnApiCache(this, 'Cache', { apiId: "
+                "api.apiId, apiCachingBehavior: 'PER_RESOLVER_CACHING', ttl: 300, type: 'SMALL' }).")
+
+    for server in (r for r in usable if r.type == "transfer_server"):
+        protocols = None if "Protocols" in server.unresolved else server.properties.get("Protocols")
+        if isinstance(protocols, list) and any(type(p) is str and p.upper() == "FTP" for p in protocols):
+            add(server, "CF-TRANSFER-001", "Transfer Family server allows FTP", "Medium", "Security",
+                "FTP sends credentials and data unencrypted, so anyone on the path can read or change them. "
+                "Remove FTP from Protocols and use SFTP, FTPS or AS2 (Security Hub Transfer.2). In CDK: "
+                "protocols: ['SFTP'] on the CfnServer.")
+        if not any(k in server.unresolved or server.properties.get(k)
+                   for k in ("LoggingRole", "StructuredLogDestinations")):
+            add(server, "CF-TRANSFER-002", "Transfer Family server has no logging", "Low", "Security",
+                "With neither LoggingRole nor StructuredLogDestinations, the server keeps no record of "
+                "who transferred which files. Set StructuredLogDestinations to a CloudWatch log group, or "
+                "LoggingRole to a role that can write logs. In CDK: structuredLogDestinations or "
+                "loggingRole on the CfnServer.")
+        if _literal_upper(server, "EndpointType") == "PUBLIC":
+            add(server, "CF-TRANSFER-003", "Transfer Family server has a public endpoint", "Low", "Security",
+                "A PUBLIC endpoint takes connections from anywhere, and security groups cannot limit it. "
+                "AWS recommends EndpointType: VPC with EndpointDetails: keep it internal, or attach Elastic "
+                "IP addresses and limit clients with security groups. Changing the type interrupts the "
+                "server. In CDK: endpointType: 'VPC' and endpointDetails on the CfnServer.")
+
+    for service in (r for r in usable if r.type == "apprunner_service"):
+        if "ObservabilityConfiguration" in service.unresolved:
+            continue
+        block = service.properties.get("ObservabilityConfiguration")
+        if block is None or (_readable(block) and _flag(block.get("ObservabilityEnabled")) is False):
+            add(service, "CF-APPRUNNER-001", "App Runner service has observability off", "Low",
+                "Operational Excellence",
+                "With ObservabilityConfiguration.ObservabilityEnabled not true, the App Runner service sends "
+                "no X-Ray traces, so slow or failing requests are harder to follow. Set it to true with an "
+                "ObservabilityConfigurationArn. In CDK: observabilityConfiguration on the CfnService.")
+
+    for env in (r for r in usable if r.type == "elastic_beanstalk_environment"):
+        settings = _beanstalk_settings(env, templates)
+        if settings is None:
+            continue
+        health = settings.get(_BEANSTALK_HEALTH)
+        if health is None or (type(health) is str and health.lower() != "enhanced"):
+            add(env, "CF-BEANSTALK-001", "Elastic Beanstalk environment does not use enhanced health", "Low",
+                "Operational Excellence",
+                "SystemType in aws:elasticbeanstalk:healthreporting:system defaults to basic, which sees "
+                "far less of what is wrong with an instance. Set it to enhanced, with a service role and a "
+                "version 2 or newer platform (Security Hub ElasticBeanstalk.1). A value set in .ebextensions "
+                "is not read. In CDK: optionSettings on the CfnEnvironment.")
+        if _flag(settings.get(_BEANSTALK_UPDATES)) is False:
+            add(env, "CF-BEANSTALK-002", "Elastic Beanstalk environment has managed updates off", "Low", "Security",
+                "ManagedActionsEnabled in aws:elasticbeanstalk:managedactions defaults to false, so the "
+                "platform gets no fixes until someone applies them. Set it to true, with PreferredStartTime, "
+                "and UpdateLevel in aws:elasticbeanstalk:managedactions:platformupdate (Security Hub "
+                "ElasticBeanstalk.2). A value set in .ebextensions is not read. In CDK: optionSettings on "
+                "the CfnEnvironment.")
+        if _flag(settings.get(_BEANSTALK_LOGS)) is False:
+            add(env, "CF-BEANSTALK-003", "Elastic Beanstalk environment does not stream logs to CloudWatch", "Low",
+                "Operational Excellence",
+                "StreamLogs in aws:elasticbeanstalk:cloudwatch:logs defaults to false, so logs stay on "
+                "instances and are lost when one is replaced. Set it to true, and set RetentionInDays "
+                "(Security Hub ElasticBeanstalk.3). A value set in .ebextensions is not read. In CDK: "
+                "optionSettings on the CfnEnvironment.")
+    return out
+
+
+def _zone_is_linked(zone: Resource, zones: List[Resource], links: List[Resource]) -> bool:
+    """True when a query log, DNSSEC or KSK resource names this zone in HostedZoneId. One the scan
+    cannot read or tie to a zone in this template counts for all of them."""
+
+    def ties(link: Resource, target: Resource) -> bool:
+        return _value_mentions(link.properties.get("HostedZoneId"), target.name)
+
+    return any(link.malformed or ties(link, zone) or not any(ties(link, z) for z in zones) for link in links)
+
+
+def _record_lacks_health_signal(record: dict, unknown: frozenset[str] = frozenset()) -> bool:
+    """True for a primary failover or a weighted record with no health check, and no alias target
+    health to go by. A secondary failover record may go without one: Route 53 documents that it then
+    always answers with the secondary when the primary is unhealthy. SetIdentifier alone is not read:
+    latency, geolocation and multivalue records have it too."""
+    if unknown & {"Failover", "Weight", "HealthCheckId", "AliasTarget"}:
+        return False
+    failover = record.get("Failover")
+    primary = type(failover) is str and failover.upper() == "PRIMARY"
+    if not (primary or type(record.get("Weight")) in (int, str)) or record.get("HealthCheckId"):
+        return False
+    alias = record.get("AliasTarget")
+    return alias is None or (_readable(alias) and _flag(alias.get("EvaluateTargetHealth")) is False)
+
+
+def _ga_group_uses_own_health_check(group: Resource, targets: List[Resource]) -> bool:
+    """True when an endpoint is an EC2 instance or an Elastic IP address. Global Accelerator takes a
+    load balancer's health from its target groups, so these settings do nothing for one. An endpoint
+    the scan cannot read is not judged."""
+    if "EndpointConfigurations" in group.unresolved:
+        return False
+    endpoints = group.properties.get("EndpointConfigurations")
+    if not isinstance(endpoints, list):
+        return False
+
+    def own(endpoint_id: Any) -> bool:
+        if type(endpoint_id) is str and endpoint_id.startswith(("i-", "eipalloc-")):
+            return True
+        return any(_value_mentions(endpoint_id, target.name) for target in targets)
+
+    return any(_readable(e) and own(e.get("EndpointId")) for e in endpoints)
+
+
+def _dns_certificate_findings(resources: List[Resource], template_path: Path) -> List[Finding]:
+    """Route 53 (CF-R53-001..003), ACM (CF-ACM-001..003) and Global Accelerator (CF-GA-001). A value
+    the scan cannot read is not judged."""
+    usable = [r for r in resources if not r.malformed]
+    zones = [r for r in resources if r.type == "route53_hosted_zone"]
+    query_logs = [r for r in resources if r.type == "route53_query_log"]
+    signing = [r for r in resources if r.type in ("route53_dnssec", "route53_key_signing_key")]
+    out: List[Finding] = []
+
+    def add(res: Resource, check_id: str, title: str, severity: Severity, category: str,
+            recommendation: str) -> None:
+        out.append(Finding(
+            id=check_id, title=title, severity=severity, category=category,
+            file=res.file or str(template_path), line=res.line,
+            evidence=f"{res.name} ({res.source_type})", recommendation=recommendation,
+        ))
+
+    for zone in (r for r in zones if not r.malformed):
+        if "VPCs" in zone.unresolved or zone.properties.get("VPCs"):
+            continue  # a private zone, or one that may be
+        if ("QueryLoggingConfig" not in zone.unresolved and zone.properties.get("QueryLoggingConfig") is None
+                and not _zone_is_linked(zone, zones, query_logs)):
+            add(zone, "CF-R53-001", "Public hosted zone does not log DNS queries", "Low", "Security",
+                "With no QueryLoggingConfig on the zone (Terraform aws_route53_query_log), nothing records "
+                "which names were queried, when, or the response, which DNS abuse and incident work rely "
+                "on. Point it at a CloudWatch Logs group in us-east-1 (Security Hub Route53.2). In CDK: "
+                "queryLogsLogGroupArn on the PublicHostedZone.")
+        if not _zone_is_linked(zone, zones, signing):
+            add(zone, "CF-R53-002", "Public hosted zone has no DNSSEC in this template", "Low", "Security",
+                "No AWS::Route53::DNSSEC or AWS::Route53::KeySigningKey (Terraform "
+                "aws_route53_hosted_zone_dnssec, aws_route53_key_signing_key) in this template points at "
+                "this zone, so resolvers cannot verify its answers are genuine. Add a key-signing key and "
+                "enable signing, then add the DS record at the parent, or exclude this check if it is "
+                "managed in another stack. In CDK: new route53.CfnKeySigningKey and new "
+                "route53.CfnDNSSEC.")
+
+    for res in usable:
+        if res.type == "route53_record_set":
+            flagged = _record_lacks_health_signal(res.properties, res.unresolved)
+        elif res.type == "route53_record_set_group":
+            records = None if "RecordSets" in res.unresolved else res.properties.get("RecordSets")
+            flagged = isinstance(records, list) and any(
+                _readable(record) and _record_lacks_health_signal(record) for record in records)
+        else:
+            continue
+        if flagged:
+            add(res, "CF-R53-003", "Failover or weighted DNS record has no health check", "Medium", "Reliability",
+                "With no HealthCheckId (and, on an alias record, no EvaluateTargetHealth: true), Route 53 "
+                "treats this record as always healthy, so it keeps sending traffic to a failed endpoint. "
+                "Add an AWS::Route53::HealthCheck and set HealthCheckId, or exclude this check for a plain "
+                "traffic split that needs none. In CDK: healthCheck on the record.")
+
+    for cert in (r for r in usable if r.type == "acm_certificate"):
+        imported = any(k in cert.unresolved or cert.properties.get(k) for k in ("PrivateKey", "CertificateBody"))
+        if imported:
+            continue  # no validation method, no logging choice, and the key is not visible
+        private = "CertificateAuthorityArn" in cert.unresolved or cert.properties.get("CertificateAuthorityArn")
+        if not private:
+            # CloudFormation documents email as the default. Terraform requires the argument.
+            method_is_email = (_unset_or_is(cert, "ValidationMethod", "EMAIL")
+                               if cert.source_type.startswith("AWS::")
+                               else _literal_upper(cert, "ValidationMethod") == "EMAIL")
+            if method_is_email:
+                add(cert, "CF-ACM-001", "ACM certificate does not use DNS validation", "Low", "Reliability",
+                    "ValidationMethod is EMAIL, which is also what CloudFormation uses when it is unset. Each "
+                    "renewal then waits for someone to answer an email, and an unanswered one lets the "
+                    "certificate expire. Set ValidationMethod: DNS, so ACM renews it by itself. In CDK: "
+                    "validation: acm.CertificateValidation.fromDns().")
+            if _literal_upper(cert, "CertificateTransparencyLoggingPreference") == "DISABLED":
+                add(cert, "CF-ACM-003", "ACM certificate opts out of certificate transparency logging", "Low",
+                    "Security",
+                    "With CertificateTransparencyLoggingPreference: DISABLED, the certificate is not in the "
+                    "public logs that domain owners watch for wrongly issued certificates, and browsers may "
+                    "refuse it. Set it to ENABLED, unless the host names must stay out of public logs. In "
+                    "CDK: transparencyLoggingEnabled: true.")
+        if _literal_upper(cert, "KeyAlgorithm") == "RSA_1024":
+            add(cert, "CF-ACM-002", "ACM certificate uses an RSA key shorter than 2,048 bits", "Medium", "Security",
+                "KeyAlgorithm: RSA_1024 is too short to protect traffic against today's computing power. Use "
+                "RSA_2048 or an EC_ algorithm (Security Hub ACM.2). The key length cannot change after "
+                "issue, so request a new certificate. In CDK: keyAlgorithm: "
+                "acm.KeyAlgorithm.RSA_2048.")
+
+    health_targets = [r for r in resources if r.type in ("instance", "eip")]
+    for group in (r for r in usable if r.type == "globalaccelerator_endpoint_group"):
+        settings = ("HealthCheckProtocol", "HealthCheckPath", "HealthCheckPort")
+        if (_ga_group_uses_own_health_check(group, health_targets)
+                and not any(k in group.unresolved or group.properties.get(k) is not None for k in settings)):
+            add(group, "CF-GA-001", "Global Accelerator endpoint group has no health check settings", "Low",
+                "Reliability",
+                "This group sends traffic to an EC2 instance or Elastic IP address and sets none of "
+                "HealthCheckProtocol, HealthCheckPath or HealthCheckPort. AWS then uses a TCP check on the "
+                "listener's port, which can pass while the application is failing. Consider an HTTP or "
+                "HTTPS check on a path that shows it works. In CDK: healthCheckProtocol and healthCheckPath "
+                "on the endpoint group.")
+    return out
+
+
+DEFAULT_DASHBOARD_MIN_RESOURCES = 20
+_dashboard_min_resources = DEFAULT_DASHBOARD_MIN_RESOURCES
+
+
+@contextmanager
+def use_dashboard_min_resources(limit: int | None) -> Iterator[None]:
+    """The resource count a stack may reach with no dashboard, for a scan."""
+    global _dashboard_min_resources
+    previous, _dashboard_min_resources = _dashboard_min_resources, limit or DEFAULT_DASHBOARD_MIN_RESOURCES
+    try:
+        yield
+    finally:
+        _dashboard_min_resources = previous
+
+
+# What an alarm can watch for CF-ALARM-001: type -> (the dimension that names one, the property
+# holding its name).
+_ALARM_TARGETS: dict[str, tuple[str, str]] = {
+    "db_instance": ("DBInstanceIdentifier", "DBInstanceIdentifier"),
+    "rds_cluster": ("DBClusterIdentifier", "DBClusterIdentifier"),
+    "dynamodb_table": ("TableName", "TableName"),
+    "lambda_function": ("FunctionName", "FunctionName"),
+    "ecs_service": ("ServiceName", "ServiceName"),
+    "lb": ("LoadBalancer", "Name"),
+    "sqs_queue": ("QueueName", "QueueName"),
+}
+_ALARM_NAMESPACES: dict[str, tuple[str, ...]] = {
+    "AWS/RDS": ("db_instance", "rds_cluster"),
+    "AWS/DynamoDB": ("dynamodb_table",),
+    "AWS/Lambda": ("lambda_function",),
+    "AWS/ECS": ("ecs_service",),
+    "ECS/ContainerInsights": ("ecs_service",),
+    "AWS/ApplicationELB": ("lb",),
+    "AWS/SQS": ("sqs_queue",),
+}
+# CDK's own helper functions have a fixed UUID or CustomResourceProvider in their logical id:
+# LogRetention<uuid>, AWS679f53fa..., CustomS3AutoDeleteObjectsCustomResourceProviderHandler.
+_CDK_HELPER_FUNCTION = re.compile(r"[0-9a-fA-F]{32}|CustomResourceProvider")
+# Other stacks this one creates: what they hold cannot be read from here.
+_CHILD_STACK_TYPES = ("AWS::CloudFormation::Stack", "AWS::Serverless::Application")
+# A word that marks a bucket sensitive, not "insensitive", "non-sensitive" or "pii-free".
+_SENSITIVE_WORD = re.compile(
+    r"(?<![a-z0-9])(?<!non[-_ ])(?<!not[-_ ])(?<!no[-_ ])"
+    r"(?:sensitive|pii|phi|confidential|secrets?)(?![a-z0-9])(?![-_ ]free)")
+# A data event selector value for every bucket.
+_ALL_S3_OBJECTS = re.compile(r"^arn:[a-z-]+:s3(?::::)?/?$")
+
+
+def _may_be_out_of_sight(resources: List[Resource], tf_types: tuple[str, ...]) -> bool:
+    """True when a child stack or Terraform module may define one of these types. A local module
+    is read, a remote one is not."""
+    for res in resources:
+        if res.source_type in _CHILD_STACK_TYPES:
+            return True
+        if res.source_type == TF_MODULE_CALL and (
+                "ResourceTypes" in res.unresolved or set(tf_types) & set(res.properties.get("ResourceTypes", ()))):
+            return True
+    return False
+
+
+def _is_alarm_target(res: Resource) -> bool:
+    """A resource CF-ALARM-001 asks an alarm for. Only an ALB of the load balancers, known to be
+    one, and not CDK's helper functions."""
+    if res.type not in _ALARM_TARGETS:
+        return False
+    if res.type == "lb":
+        return "Type" not in res.unresolved and res.properties.get("Type", "application") == "application"
+    return res.type != "lambda_function" or not _CDK_HELPER_FUNCTION.search(res.name)
+
+
+def _metric_may_watch(namespace: Any, dimensions: Any, targets: List[Resource], names: List[str]) -> bool:
+    """True when a metric may be about one of the targets. A dimension that cannot be tied to a
+    resource counts for all of them, and a literal counts for a target whose name is not known.
+    A namespace with no dimension naming another resource covers that service's targets."""
+    if (namespace is not None and type(namespace) is not str) or (
+            dimensions is not None and not isinstance(dimensions, list)):
+        return True
+    naming = {key for key, _prop in _ALARM_TARGETS.values()}
+    named_other = False
+    for dimension in dimensions or []:
+        if not isinstance(dimension, dict) or _is_intrinsic(dimension):
+            return True
+        key, value = dimension.get("Name"), dimension.get("Value")
+        if type(key) is not str:
+            return True
+        if type(value) is str:
+            for target in targets:
+                dimension_key, name_key = _ALARM_TARGETS[str(target.type)]
+                literal = target.properties.get(name_key)
+                if key == dimension_key and (type(literal) is not str or literal in value):
+                    return True
+            named_other = named_other or key in naming
+        elif (key in naming or any(_value_mentions(value, t.name) for t in targets)
+              or not any(_value_mentions(value, name) for name in names)):
+            return True
+    covered = _ALARM_NAMESPACES.get(namespace, ()) if namespace else ()
+    return not named_other and any(t.type in covered for t in targets)
+
+
+def _alarm_may_watch(alarm: Resource, targets: List[Resource], names: List[str]) -> bool:
+    """True when an alarm's metric, or any metric of its math, may be about one of the targets."""
+    if alarm.malformed or {"Namespace", "Dimensions", "Metrics"} & alarm.unresolved:
+        return True
+    metrics = alarm.properties.get("Metrics")
+    if metrics is None:
+        return _metric_may_watch(alarm.properties.get("Namespace"), alarm.properties.get("Dimensions"),
+                                 targets, names)
+    if not isinstance(metrics, list):
+        return True
+    for item in metrics:
+        if not isinstance(item, dict) or _is_intrinsic(item):
+            return True
+        stat = item.get("MetricStat")
+        if stat is None:
+            expression = item.get("Expression")
+            # Math over the other metrics adds nothing. A query reads metrics of its own.
+            if type(expression) is not str or "select" in expression.lower():
+                return True
+            continue
+        metric = stat.get("Metric") if isinstance(stat, dict) and not _is_intrinsic(stat) else None
+        if not isinstance(metric, dict) or _is_intrinsic(metric):
+            return True
+        if _metric_may_watch(metric.get("Namespace"), metric.get("Dimensions"), targets, names):
+            return True
+    return False
+
+
+def _alarm_is_read(alarm: Resource, resources: List[Resource]) -> bool:
+    """True when something in the template may act on this alarm with no action of its own: a
+    composite alarm, an EventBridge rule on alarm state, or any resource or module that refers to
+    it, such as a CodeDeploy group, a Route 53 health check or an ECS deployment."""
+    literal = alarm.properties.get("AlarmName")
+    for other in resources:
+        if other is alarm:
+            continue
+        if other.malformed and other.type in ("cloudwatch_composite_alarm", "events_rule"):
+            return True
+        if other.type == "cloudwatch_composite_alarm":
+            rule = other.properties.get("AlarmRule")
+            if "AlarmRule" in other.unresolved or type(rule) is not str:
+                return True  # built from values the scan cannot read in full
+            if type(literal) is not str or literal in rule:
+                return True
+        if other.type == "events_rule":
+            pattern = other.properties.get("EventPattern")
+            if "EventPattern" in other.unresolved or (isinstance(pattern, dict) and _is_intrinsic(pattern)):
+                return True
+            text = json.dumps(pattern, default=str)
+            if "aws.cloudwatch" in text or "CloudWatch Alarm State Change" in text:
+                return True
+        if _refers_to(other, alarm):
+            return True
+    return False
+
+
+def _arns_may_reach(values: Any, bucket: Resource, buckets: List[Resource]) -> bool:
+    """True when selector values may cover this bucket. A value that cannot be tied to a bucket
+    counts, and so does a literal when the bucket's name is not known."""
+    if not isinstance(values, list):
+        return True
+    literal = bucket.properties.get("BucketName")
+    for value in values:
+        if type(value) is str:
+            if _ALL_S3_OBJECTS.match(value) or type(literal) is not str or literal in value:
+                return True
+        elif (_value_mentions(value, bucket.name)
+              or not any(_value_mentions(value, other.name) for other in buckets)):
+            return True
+    return False
+
+
+def _advanced_selector_may_reach(selector: Any, bucket: Resource, buckets: List[Resource]) -> bool:
+    """True unless an advanced selector is readable and leaves this bucket's objects out."""
+    fields = selector.get("FieldSelectors") if isinstance(selector, dict) and not _is_intrinsic(selector) else None
+    if not isinstance(fields, list):
+        return True
+    arn_values: list[Any] = []
+    arns_limited = False
+    for field in fields:
+        if not isinstance(field, dict) or _is_intrinsic(field) or type(field.get("Field")) is not str:
+            return True
+        equals = field.get("Equals")
+        wanted = {"eventCategory": "Data", "resources.type": "AWS::S3::Object"}.get(field["Field"])
+        if wanted is not None and isinstance(equals, list) and wanted not in equals and all(
+                type(v) is str for v in equals):
+            return False
+        if field["Field"] == "resources.ARN":
+            operators = set(field) - {"Field"}
+            if operators - {"Equals", "StartsWith"}:
+                return True  # an exclusion or suffix: not judged
+            for key in operators:
+                if not isinstance(field[key], list):
+                    return True
+                arn_values.extend(field[key])
+            arns_limited = True
+    return not arns_limited or _arns_may_reach(arn_values, bucket, buckets)
+
+
+def _trail_may_reach(trail: Resource, bucket: Resource, buckets: List[Resource]) -> bool:
+    """True when a trail may record S3 data events on this bucket. What cannot be read counts."""
+    if trail.malformed or {"EventSelectors", "AdvancedEventSelectors"} & trail.unresolved:
+        return True
+    basic = trail.properties.get("EventSelectors")
+    advanced = trail.properties.get("AdvancedEventSelectors")
+    if (basic is not None and not isinstance(basic, list)) or (
+            advanced is not None and not isinstance(advanced, list)):
+        return True
+    for selector in basic or []:
+        if not isinstance(selector, dict) or _is_intrinsic(selector):
+            return True
+        data = selector.get("DataResources")
+        if data is not None and not isinstance(data, list):
+            return True
+        for item in data or []:
+            if not isinstance(item, dict) or _is_intrinsic(item) or type(item.get("Type")) is not str:
+                return True
+            if item["Type"] == "AWS::S3::Object" and _arns_may_reach(item.get("Values"), bucket, buckets):
+                return True
+    return any(_advanced_selector_may_reach(selector, bucket, buckets) for selector in advanced or [])
+
+
+def _monitoring_findings(resources: List[Resource], template_path: Path) -> List[Finding]:
+    """CloudWatch alarms (CF-ALARM-001..002), a dashboard (CF-DASH-001) and S3 data events on a
+    trail (CF-CT-005). A value the scan cannot read is not judged."""
+    usable = [r for r in resources if not r.malformed]
+    out: List[Finding] = []
+
+    def add(res: Resource, check_id: str, title: str, category: str, recommendation: str) -> None:
+        out.append(Finding(
+            id=check_id, title=title, severity="Low", category=category,
+            file=res.file or str(template_path), line=res.line,
+            evidence=f"{res.name} ({res.source_type})", recommendation=recommendation,
+        ))
+
+    targets = [r for r in usable if _is_alarm_target(r)]
+    metric_alarms = [r for r in resources if r.type == "cloudwatch_alarm"]
+    names = [r.name for r in usable]
+    if (targets and not _may_be_out_of_sight(resources, ("aws_cloudwatch_metric_alarm",))
+            and not any(_alarm_may_watch(a, targets, names) for a in metric_alarms)):
+        add(targets[0], "CF-ALARM-001", "Stack has no CloudWatch alarm on its main resources",
+            "Operational Excellence",
+            "This stack defines RDS, DynamoDB, Lambda, ECS service, ALB or SQS resources, and no "
+            "AWS::CloudWatch::Alarm (Terraform aws_cloudwatch_metric_alarm) in it refers to any of them, so "
+            "errors, latency or backlog raise no signal. Add alarms on the metrics that show users are "
+            "affected. Another stack or a central monitoring setup may cover it: if so, exclude this check. "
+            "In CDK: metric.createAlarm() on each resource.")
+
+    for alarm in (r for r in usable if r.type in ("cloudwatch_alarm", "cloudwatch_composite_alarm")):
+        actions = None if "AlarmActions" in alarm.unresolved else alarm.properties.get("AlarmActions", [])
+        if actions == [] and not _alarm_is_read(alarm, resources):
+            add(alarm, "CF-ALARM-002", "CloudWatch alarm has no action", "Operational Excellence",
+                "This alarm has no AlarmActions, and nothing in this template reads its state, so when it "
+                "fires nobody is told. Point AlarmActions at an SNS topic, or exclude this check if a "
+                "composite alarm or EventBridge rule in another stack reads it. In CDK: "
+                "alarm.addAlarmAction(new SnsAction(topic)).")
+
+    # Wiring such as a security group rule or a permission does not make a stack large.
+    counted = [r for r in resources if r.type is not None and not r.malformed and not stack_cost.is_free(r.source_type)]
+    if (len(counted) > _dashboard_min_resources
+            and not any(r.type == "cloudwatch_dashboard" for r in resources)
+            and not _may_be_out_of_sight(resources, ("aws_cloudwatch_dashboard",))):
+        add(counted[0], "CF-DASH-001", "Large stack has no CloudWatch dashboard", "Operational Excellence",
+            f"This stack defines {len(counted)} resources and no AWS::CloudWatch::Dashboard (Terraform "
+            "aws_cloudwatch_dashboard), so nothing shows its health in one place. Add a dashboard for its "
+            "key metrics. Set dashboards.min_resources to change the limit "
+            f"({_dashboard_min_resources}), or exclude this check if another stack or a central monitoring "
+            "setup has one. In CDK: new cloudwatch.Dashboard().")
+
+    trails = [r for r in resources if r.type == "cloudtrail"]
+    buckets = [r for r in usable if r.type == "s3_bucket"]
+    # A bucket a trail logs to takes no data events of its own: they would log their own delivery.
+    sensitive = [b for b in buckets if _s3_marked(b, _SENSITIVE_WORD) and not any(
+        _names_bucket(t.properties.get("S3BucketName"), b) for t in trails)]
+    missed = [b.name for b in sensitive if not any(_trail_may_reach(t, b, buckets) for t in trails)]
+    if missed:
+        for trail in (t for t in trails if not t.malformed):
+            add(trail, "CF-CT-005", "No trail records S3 data events on a sensitive bucket", "Security",
+                f"No trail in this template has an S3 data event selector that reaches {', '.join(missed)}, "
+                "whose name or tags mark it sensitive, so object reads and writes leave no audit record. Add "
+                "EventSelectors with DataResources of type AWS::S3::Object, or AdvancedEventSelectors for "
+                "those objects, on one trail. Data events are charged per event, so limit them to these "
+                "buckets. A trail in another stack may already hold them. In CDK: trail.addS3EventSelector().")
+    return out
+
+
+def _is_literal_false(value: Any) -> bool:
+    """True only when the template says false. Unset, an intrinsic and an expression are not."""
+    return value is False or (type(value) is str and value.lower() == "false")
+
+
+def _dig(value: Any, *keys: str) -> Any:
+    """The value at this path of nested dicts, or None when any step is missing."""
+    for key in keys:
+        value = value.get(key) if isinstance(value, dict) else None
+    return value
+
+
+# (Features name, what to call it, path under DataSources, Security Hub control)
+_GUARDDUTY_FEATURES: tuple[tuple[str, str, tuple[str, ...], str], ...] = (
+    ("S3_DATA_EVENTS", "S3 Protection", ("S3Logs", "Enable"), "GuardDuty.10"),
+    ("EKS_AUDIT_LOGS", "EKS Audit Log Monitoring", ("Kubernetes", "AuditLogs", "Enable"), "GuardDuty.5"),
+    ("EBS_MALWARE_PROTECTION", "Malware Protection for EC2",
+     ("MalwareProtection", "ScanEc2InstanceWithFindings", "EbsVolumes"), "GuardDuty.8"),
+)
+
+
+def _guardduty_features_off(detector: Resource, detectors: List[Resource], features: List[Resource]) -> list[str]:
+    """The features the template sets off on this detector, with their control. Unset is not off:
+    a feature may be on by default. Anything that may turn the same feature on wins, including a
+    Terraform feature resource the scan cannot tie to a detector. Such a resource never counts as off."""
+    sources, entries = detector.properties.get("DataSources"), detector.properties.get("Features", [])
+    if ("DataSources" in detector.unresolved or "Features" in detector.unresolved
+            or not isinstance(entries, list) or (isinstance(sources, dict) and _is_intrinsic(sources))):
+        return []
+    states = [(e.get("Name"), e.get("Status"), True) if isinstance(e, dict) else (None, None, True)
+              for e in entries]
+    for feature in features:
+        tied = detector.name in feature.references
+        if tied or not any(d.name in feature.references for d in detectors):
+            states.append((feature.properties.get("Name"), feature.properties.get("Status"), tied))
+    off: list[str] = []
+    for name, label, path, control in _GUARDDUTY_FEATURES:
+        legacy = _dig(sources, *path)
+        said_off = _is_literal_false(legacy)
+        may_be_on = legacy is not None and not said_off
+        for state_name, status, tied in states:
+            literal_name = state_name.upper() if type(state_name) is str else None
+            if literal_name not in (None, name):
+                continue
+            if type(status) is str and status.upper() == "DISABLED":
+                said_off = said_off or (tied and literal_name == name)
+            else:
+                may_be_on = True
+        if said_off and not may_be_on:
+            off.append(f"{label} (Security Hub {control})")
+    return off
+
+
+def _may_be_fsbp(standard: Resource) -> bool:
+    """False only when the standard's ARN is a literal that names another standard."""
+    arn = standard.properties.get("StandardsArn")
+    return type(arn) is not str or "aws-foundational-security-best-practices" in arn.lower()
+
+
+def _account_baseline_findings(resources: List[Resource], template_path: Path) -> List[Finding]:
+    """GuardDuty (CF-GD-001), Security Hub (CF-SH-001), AWS Config (CF-CFG-001), Macie (CF-MACIE-001)
+    and Budgets (CF-BUDGET-001) when the template defines them. They never report a missing service.
+    A value the scan cannot read is not judged."""
+    usable = [r for r in resources if not r.malformed]
+    out: List[Finding] = []
+
+    def add(res: Resource, check_id: str, title: str, severity: Severity, category: str,
+            recommendation: str) -> None:
+        out.append(Finding(
+            id=check_id, title=title, severity=severity, category=category,
+            file=res.file or str(template_path), line=res.line,
+            evidence=f"{res.name} ({res.source_type})", recommendation=recommendation,
+        ))
+
+    detectors = [r for r in usable if r.type == "guardduty_detector"]
+    # A malformed feature resource may turn a feature on, so nothing is judged from the features then.
+    features_readable = not any(r.malformed and r.type == "guardduty_detector_feature" for r in resources)
+    features_in_sight = not _may_be_out_of_sight(resources, ("aws_guardduty_detector_feature",))
+    features = [r for r in usable if r.type == "guardduty_detector_feature"]
+    for detector in detectors:
+        # One finding per detector: findings with the same id and evidence are merged.
+        if _is_literal_false(detector.properties.get("Enable")):
+            add(detector, "CF-GD-001", "GuardDuty detector is turned off", "Medium", "Security",
+                "Enable is false, so GuardDuty produces no findings in this account and Region (Security Hub "
+                "GuardDuty.1). Set Enable: true. In CDK: enable: true on the CfnDetector.")
+            continue
+        off = (_guardduty_features_off(detector, detectors, features)
+               if features_readable and features_in_sight else [])
+        if off:
+            add(detector, "CF-GD-001", "GuardDuty detector has protection features turned off", "Medium",
+                "Security",
+                f"The template turns these off: {', '.join(off)}. GuardDuty then misses threats in those "
+                "sources. Turn them on in Features with Status: ENABLED (Terraform "
+                "aws_guardduty_detector_feature). In CDK: features on the CfnDetector.")
+
+    standards = [r for r in resources if r.type == "securityhub_standard"]
+    policy = any(r.type == "securityhub_configuration_policy" for r in resources)
+    hubs = [r for r in usable if r.type == "securityhub_hub"]
+    if hubs and not policy and not any(_may_be_fsbp(s) for s in standards) and not _may_be_out_of_sight(
+            resources, ("aws_securityhub_standards_subscription", "aws_securityhub_configuration_policy")):
+        for hub in hubs:
+            if _is_literal_false(hub.properties.get("EnableDefaultStandards")):
+                add(hub, "CF-SH-001", "Security Hub hub leaves out the FSBP standard", "Low", "Security",
+                    "EnableDefaultStandards is false and no AWS::SecurityHub::Standard in this template (Terraform "
+                    "aws_securityhub_standards_subscription) turns on AWS Foundational Security Best Practices, "
+                    "so its controls are not evaluated. Add that standard, unless another stack or a central "
+                    "configuration policy turns it on. In CDK: securityhub.CfnStandard.")
+
+    for recorder in (r for r in usable if r.type == "config_configuration_recorder"):
+        group = recorder.properties.get("RecordingGroup")
+        if ("RecordingGroup" not in recorder.unresolved and isinstance(group, dict) and not _is_intrinsic(group)
+                and _is_literal_false(group.get("AllSupported"))
+                and not any(group.get(k) for k in ("ResourceTypes", "ExclusionByResourceTypes", "RecordingStrategy"))):
+            add(recorder, "CF-CFG-001", "Config recorder does not record all resources", "Medium",
+                "Operational Excellence",
+                "RecordingGroup.AllSupported is false and no resource types are listed, so AWS Config has "
+                "nothing to record and Security Hub controls lack the data they read (Security Hub Config.1, in "
+                "part). Set AllSupported: true, or list the types. In CDK: recordingGroup on the "
+                "CfnConfigurationRecorder.")
+
+    for session in (r for r in usable if r.type == "macie_session"):
+        status = session.properties.get("Status")
+        if type(status) is str and status.upper() == "PAUSED":
+            add(session, "CF-MACIE-001", "Macie session is paused", "Low", "Security",
+                "Status is PAUSED, so Macie runs no sensitive data discovery on S3 (Security Hub Macie.1). Set "
+                "Status: ENABLED. In CDK: status on the CfnSession.")
+
+    budgets = [r for r in usable if r.type == "budgets_budget"]
+    # A budget action has subscribers of its own, and the scan does not tie it to one budget.
+    if budgets and not any(r.type == "budgets_action" for r in resources) and not _may_be_out_of_sight(
+            resources, ("aws_budgets_budget_action",)):
+        for budget in budgets:
+            if ("NotificationsWithSubscribers" not in budget.unresolved
+                    and not budget.properties.get("NotificationsWithSubscribers")):
+                add(budget, "CF-BUDGET-001", "Budget sends no notifications", "Low", "Cost Optimization",
+                    "This AWS Budgets budget has no NotificationsWithSubscribers (Terraform notification), so "
+                    "nobody is told when spend passes it. Add a notification with a subscriber. In CDK: "
+                    "notificationsWithSubscribers on the CfnBudget.")
     return out
 
 
@@ -3447,6 +4780,922 @@ def _ecs_findings(res: Resource, template_path: Path) -> List[Finding]:
     return out
 
 
+# Security Hub ECS.8 names these. The shared name rules do not: *_ID points at a value.
+_ECS_SECRET_NAMES = _AWS_KEY_NAMES | {"ECS_ENGINE_AUTH_DATA"}
+# Below this a pin is out of date (Security Hub ECS.10: latest Linux version 1.4.0).
+_LATEST_FARGATE_LINUX = (1, 4, 0)
+# The only Windows platform version. A service does not say which OS it runs, so not judged.
+_FARGATE_WINDOWS_VERSION = (1, 0, 0)
+# Task CPU units -> memory in MiB that Fargate offers with it.
+_FARGATE_SIZES: dict[int, tuple[int, ...]] = {
+    256: (512, 1024, 2048),
+    512: tuple(range(1024, 4097, 1024)),
+    1024: tuple(range(2048, 8193, 1024)),
+    2048: tuple(range(4096, 16385, 1024)),
+    4096: tuple(range(8192, 30721, 1024)),
+    8192: tuple(range(16384, 61441, 4096)),
+    16384: tuple(range(32768, 122881, 8192)),
+}
+
+
+def _literal_units(value: Any) -> int | None:
+    """A Cpu or Memory value as a number. "1 vCPU", "2 GB" and an expression are not read."""
+    if type(value) is int:
+        return value
+    return int(value) if type(value) is str and value.strip().isdigit() else None
+
+
+def _fargate_size_note(cpu: int, memory: int) -> str | None:
+    """None for a size Fargate offers, else what to use instead."""
+    if memory in _FARGATE_SIZES.get(cpu, ()):
+        return None
+    for size_cpu, memories in _FARGATE_SIZES.items():
+        fits = [m for m in memories if size_cpu >= cpu and m >= memory]
+        if fits:
+            return f"The smallest pair that fits is Cpu {size_cpu} with Memory {fits[0]}."
+    return "It is above the largest pair, Cpu 16384 with Memory 122880."
+
+
+def _uses_fargate(service: Resource) -> bool:
+    """True when a service states Fargate by LaunchType or a literal capacity provider."""
+    launch = service.properties.get("LaunchType")
+    if type(launch) is str and launch.upper() == "FARGATE":
+        return True
+    strategy = service.properties.get("CapacityProviderStrategy")
+    return isinstance(strategy, list) and any(
+        isinstance(s, dict) and type(s.get("CapacityProvider")) is str
+        and s["CapacityProvider"].upper() in ("FARGATE", "FARGATE_SPOT")
+        for s in strategy
+    )
+
+
+def _old_fargate_version(version: Any) -> bool:
+    if type(version) is not str:
+        return False
+    match = re.fullmatch(r"(\d+)\.(\d+)\.(\d+)", version.strip())
+    if not match:
+        return False  # LATEST, or a form this check does not read
+    parts = (int(match[1]), int(match[2]), int(match[3]))
+    return parts < _LATEST_FARGATE_LINUX and parts != _FARGATE_WINDOWS_VERSION
+
+
+def _insights_off(cluster: Resource) -> bool:
+    """True when Container Insights is unset or disabled. A value the scan cannot read is not judged."""
+    if "ClusterSettings" in cluster.unresolved:
+        return False
+    settings = cluster.properties.get("ClusterSettings")
+    if settings is None:
+        return True
+    if not isinstance(settings, list):
+        return False
+    value = None
+    for item in settings:
+        if not isinstance(item, dict) or _is_intrinsic(item) or type(item.get("Name")) is not str:
+            return False  # may be the setting, such as an Fn::If entry
+        if item["Name"] == "containerInsights":
+            value = item.get("Value")
+    if value is None:
+        return True
+    return type(value) is str and value.lower() == "disabled"
+
+
+def _container_label(container: dict, index: int) -> str:
+    name = container.get("Name")
+    return name if type(name) is str else f"#{index + 1}"
+
+
+def _literal_containers(task: Resource) -> list[tuple[str, dict]]:
+    """(label, container) for each container the scan can read. A container that is an
+    intrinsic is left out; ContainerDefinitions it cannot read gives none."""
+    containers = task.properties.get("ContainerDefinitions")
+    if not isinstance(containers, list):
+        return []
+    return [
+        (_container_label(c, i), c)
+        for i, c in enumerate(containers)
+        if isinstance(c, dict) and not _is_intrinsic(c)
+    ]
+
+
+def _container_secret_names(container: dict) -> list[str]:
+    """Names of environment variables that hold a literal secret. Never the values: they go in reports."""
+    environment = container.get("Environment")
+    names: list[str] = []
+    for item in environment if isinstance(environment, list) else []:
+        if not isinstance(item, dict) or type(item.get("Name")) is not str:
+            continue
+        name = item["Name"]
+        if (name in _ECS_SECRET_NAMES or is_secret_name(name)) and is_literal_secret(item.get("Value")):
+            names.append(name)
+    return names
+
+
+def _no_log_driver(container: dict) -> bool:
+    config = container.get("LogConfiguration")
+    if config is None:
+        return True
+    return isinstance(config, dict) and not _is_intrinsic(config) and config.get("LogDriver") is None
+
+
+def _asg_link_names(link: Resource, group: Resource) -> bool:
+    """True when a scaling policy, schedule or attachment names this group: by Ref or Terraform
+    address, or by the group's literal name."""
+    if _points_at(link, "AutoScalingGroupName", group):
+        return True
+    name = group.properties.get("AutoScalingGroupName")
+    return type(name) is str and link.properties.get("AutoScalingGroupName") == name
+
+
+def _asg_behind_load_balancer(group: Resource, attachments: List[Resource]) -> bool:
+    """True when the group is known to have a load balancer. A list from a parameter or a variable
+    may be empty, and so may an entry under Fn::If. An attachment the scan cannot tie to this group
+    says nothing about it."""
+    for key in ("TargetGroupARNs", "LoadBalancerNames"):
+        value = group.properties.get(key)
+        if isinstance(value, list) and any(not (isinstance(v, dict) and "Fn::If" in v) for v in value):
+            return True
+    return any(_asg_link_names(a, group) for a in attachments)
+
+
+def _one_subnet(item: Any, subnets: List[Resource]) -> bool:
+    """True for a VPCZoneIdentifier entry known to hold one subnet: a literal with no comma, an
+    attribute or list element, or a subnet in this template. A parameter or variable may hold a
+    comma-separated list, and so may an import, a join or a function call."""
+    if isinstance(item, dict):
+        if len(item) != 1:
+            return False
+        return ("Fn::GetAtt" in item or "Fn::Select" in item
+                or any(s.name == item.get("Ref") for s in subnets))
+    if type(item) is str:
+        return "," not in item
+    return (isinstance(item, str) and not any(mark in item for mark in ("(", "*", " for "))
+            and "aws_subnet." in item)
+
+
+def _asg_in_one_az(group: Resource, subnets: List[Resource]) -> bool:
+    """True when the group's AZ count is known to be one: one literal Availability Zone, one subnet,
+    or several subnets from this template that are all in one AZ (as CF-LAM-008 reads them)."""
+    azs = group.properties.get("AvailabilityZones")
+    if isinstance(azs, list) and len(azs) == 1 and type(azs[0]) is str:
+        return True
+    ids = group.properties.get("VPCZoneIdentifier")
+    if not isinstance(ids, list) or not ids:
+        return False
+    return _one_subnet(ids[0], subnets) if len(ids) == 1 else _subnets_in_one_az(ids, subnets)
+
+
+def _asg_uses_launch_configuration(group: Resource, configurations: List[Resource]) -> bool:
+    """True for a literal name or a launch configuration in this template. A parameter or a variable
+    may be empty, with the launch template set instead, and Fn::If may choose either."""
+    value = group.properties.get("LaunchConfigurationName")
+    if type(value) is str:
+        return bool(value.strip())
+    if value is None or (isinstance(value, dict) and "Fn::If" in value):
+        return False
+    text = value if isinstance(value, str) else json.dumps(value, default=str)
+    return any(_references(text, c.name) for c in configurations)
+
+
+def _asg_size(group: Resource, key: str) -> int | None:
+    """MinSize or MaxSize, or None when the scan cannot read it. CloudFormation writes a string."""
+    value = None if key in group.unresolved else group.properties.get(key)
+    if type(value) is int or type(value) is str:
+        try:
+            return int(value)
+        except ValueError:
+            return None
+    return None
+
+
+_ASG_SCALERS = ("autoscaling_policy", "autoscaling_schedule")
+
+
+def _athena_config(group: Resource) -> dict | None:
+    """The workgroup's configuration, {} when unset, None when the scan cannot read it. The older
+    WorkGroupConfigurationUpdates changes a workgroup on update, so it cannot be read as the whole
+    configuration."""
+    if "WorkGroupConfiguration" in group.unresolved or "WorkGroupConfigurationUpdates" in group.properties:
+        return None
+    config = group.properties.get("WorkGroupConfiguration", {})
+    return config if isinstance(config, dict) and not _unread(config) else None
+
+
+def _athena_results_unencrypted(config: dict) -> bool:
+    """True when the configuration is known to set no encryption for query results. Athena-managed
+    results are encrypted without this setting, and a Spark engine does not use it."""
+    managed = config.get("ManagedQueryResultsConfiguration")
+    if managed is not None and (not isinstance(managed, dict) or _unread(managed)
+                                or _flag(managed.get("Enabled")) is not False):
+        return False
+    engine = config.get("EngineVersion")
+    if engine is not None:
+        if not isinstance(engine, dict) or _unread(engine):
+            return False
+        selected = engine.get("SelectedEngineVersion")
+        if selected is not None and (type(selected) is not str or "spark" in selected.lower()):
+            return False
+    result = config.get("ResultConfiguration")
+    if result is None:
+        return True
+    if not isinstance(result, dict) or _unread(result):
+        return False
+    encryption = result.get("EncryptionConfiguration")
+    if encryption is None:
+        return True
+    return isinstance(encryption, dict) and not _unread(encryption) and encryption.get("EncryptionOption") is None
+
+
+def _glue_arguments(job: Resource) -> list[dict] | None:
+    """The job's argument maps, or None when one cannot be read: a parameter or a variable may hold
+    any argument."""
+    maps = []
+    for key in ("DefaultArguments", "NonOverridableArguments"):
+        value = job.properties.get(key)
+        if key in job.unresolved or (value is not None and not isinstance(value, dict)):
+            return None
+        if value is not None:
+            if any(isinstance(k, str) and (k == "Ref" or k.startswith("Fn::")) for k in value):
+                return None
+            maps.append(value)
+    return maps
+
+
+def _glue_mode_off(block: Any, key: str) -> bool:
+    """True when one encryption block is known to be off. No block or no mode encrypts nothing."""
+    if block is None:
+        return True
+    if not isinstance(block, dict) or _unread(block):
+        return False
+    mode = block.get(key)
+    return mode is None or (type(mode) is str and mode.upper() == "DISABLED")
+
+
+def _glue_encryption_gaps(config: Resource) -> list[str]:
+    """What a security configuration is known not to encrypt."""
+    encryption = config.properties.get("EncryptionConfiguration", {})
+    if "EncryptionConfiguration" in config.unresolved or not isinstance(encryption, dict) or _unread(encryption):
+        return []
+    gaps = []
+    s3 = encryption.get("S3Encryptions")
+    entries = s3 if isinstance(s3, list) else [s3]
+    if all(_glue_mode_off(entry, "S3EncryptionMode") for entry in entries):
+        gaps.append("S3 data")
+    if _glue_mode_off(encryption.get("CloudWatchEncryption"), "CloudWatchEncryptionMode"):
+        gaps.append("CloudWatch logs")
+    if _glue_mode_off(encryption.get("JobBookmarksEncryption"), "JobBookmarksEncryptionMode"):
+        gaps.append("job bookmarks")
+    return gaps
+
+
+def _firehose_direct_put(stream: Resource) -> bool:
+    """True when the stream is known to take direct puts. A stream with a source takes its encryption
+    from that source."""
+    if "DeliveryStreamType" in stream.unresolved:
+        return False
+    return (stream.properties.get("DeliveryStreamType", "DirectPut") == "DirectPut"
+            and not any(key.endswith("SourceConfiguration") for key in stream.properties))
+
+
+def _s3_ownership(bucket: Resource) -> str | None:
+    """The bucket's literal ObjectOwnership, "" when unset, or None when the scan cannot read it."""
+    if "OwnershipControls" in bucket.unresolved:
+        return None
+    controls = bucket.properties.get("OwnershipControls")
+    if controls is None:
+        return ""
+    rules = controls.get("Rules") if isinstance(controls, dict) and not _is_intrinsic(controls) else None
+    if not isinstance(rules, list) or len(rules) != 1 or not isinstance(rules[0], dict):
+        return None
+    ownership = rules[0].get("ObjectOwnership")
+    return ownership if type(ownership) is str else None
+
+
+def _s3_public_acls_apply(bucket: Resource) -> bool:
+    """True when the bucket's Block Public Access settings are known not to stop a public ACL:
+    BlockPublicAcls rejects one and IgnorePublicAcls makes S3 ignore it."""
+    if "PublicAccessBlockConfiguration" in bucket.unresolved:
+        return False
+    block = bucket.properties.get("PublicAccessBlockConfiguration")
+    if block is None:
+        return True
+    if not isinstance(block, dict) or _is_intrinsic(block):
+        return False
+    return all(_flag(block.get(key)) is False for key in ("BlockPublicAcls", "IgnorePublicAcls"))
+
+
+def _s3_acls_in_use(acl: Any, ownership: str | None) -> bool:
+    """S3.12. An unset ownership is not ACL use: new buckets default to BucketOwnerEnforced, so
+    it needs an explicit ACL as well. LogDeliveryWrite only grants the S3 log delivery group,
+    not user access, so it passes that control. An ACL the scan cannot read may be that one."""
+    if (acl is not None and type(acl) is not str) or acl == "LogDeliveryWrite":
+        return False
+    if ownership in ("ObjectWriter", "BucketOwnerPreferred"):
+        return True
+    return ownership == "" and acl not in (None, "Private")
+
+
+def _names_bucket(value: Any, bucket: Resource) -> bool:
+    """True when a value names this bucket, by reference or by its literal name, ARN or domain."""
+    if _value_mentions(value, bucket.name):
+        return True
+    literal = bucket.properties.get("BucketName")
+    return (type(literal) is str and type(value) is str
+            and (value == literal or value.endswith(f":::{literal}") or value.startswith(f"{literal}.s3")))
+
+
+def _cloudfront_log_buckets(resources: List[Resource]) -> list[Any]:
+    """The buckets CloudFront standard logs go to, as written. Those logs need ACLs on the bucket."""
+    out = []
+    for dist in (r for r in resources if r.type == "cloudfront_distribution"):
+        config = dist.properties.get("DistributionConfig")
+        logging = config.get("Logging") if isinstance(config, dict) else None
+        if isinstance(logging, dict) and logging.get("Bucket") is not None:
+            out.append(logging["Bucket"])
+    return out
+
+
+def _s3_replication_rules(bucket: Resource) -> list[dict]:
+    """The replication rules the scan can read. A rule from Fn::If is left out."""
+    config = bucket.properties.get("ReplicationConfiguration")
+    if "ReplicationConfiguration" in bucket.unresolved or not isinstance(config, dict):
+        return []
+    rules = config.get("Rules")
+    if _is_intrinsic(config) or not isinstance(rules, list):
+        return []
+    return [rule for rule in rules if isinstance(rule, dict) and not _is_intrinsic(rule)]
+
+
+def _s3_rule_destination(rule: dict) -> dict | None:
+    destination = rule.get("Destination")
+    return destination if isinstance(destination, dict) and not _is_intrinsic(destination) else None
+
+
+def _s3_replication_gaps(bucket: Resource) -> list[str]:
+    """Metrics and ReplicationTime settings that are unset or not Enabled on an enabled rule whose
+    destination can be read. A status the scan cannot read is not judged."""
+    gaps: set[str] = set()
+    for rule in _s3_replication_rules(bucket):
+        destination = _s3_rule_destination(rule)
+        if destination is None or rule.get("Status") != "Enabled":
+            continue
+        for key in ("Metrics", "ReplicationTime"):
+            setting = destination.get(key)
+            if setting is None:
+                gaps.add(key)
+            elif isinstance(setting, dict) and not _is_intrinsic(setting):
+                status = setting.get("Status")
+                if type(status) is str and status != "Enabled":
+                    gaps.add(key)
+    return sorted(gaps)
+
+
+# The word critical, not noncritical, "non-critical" or "not critical".
+_CRITICAL_WORD = re.compile(r"(?<![a-z0-9])(?<!non[-_ ])(?<!not[-_ ])critical(?![a-z0-9])")
+# A log bucket or a replica, by its name. These have little reason to replicate.
+_LOG_OR_REPLICA_WORD = re.compile(r"(?<![a-z0-9])(?:log|logs|logging|replica|replicas)(?![a-z0-9])")
+# Tags holding a sentence, which can mention the word without saying the bucket is critical.
+_FREE_TEXT_TAGS = frozenset({"description", "desc", "notes", "note", "comment", "comments", "summary", "purpose"})
+
+
+def _name_words(text: str) -> str:
+    """Lower case, with camelCase split: CriticalDataBucket -> critical data bucket."""
+    return re.sub(r"(?<=[a-z0-9])(?=[A-Z])", " ", text).lower()
+
+
+def _bucket_names(bucket: Resource) -> list[str]:
+    """The logical id or Terraform label, and the literal bucket name if there is one."""
+    literal = bucket.properties.get("BucketName")
+    return [_name_words(n) for n in (bucket.name.rsplit(".", 1)[-1], literal) if type(n) is str]
+
+
+def _s3_marked_critical(bucket: Resource) -> bool:
+    """True when a literal name or tag says critical."""
+    return _s3_marked(bucket, _CRITICAL_WORD)
+
+
+def _s3_marked(bucket: Resource, word: re.Pattern[str]) -> bool:
+    """True when a literal name or tag holds the word. A tag key with it needs a true value."""
+    if any(word.search(name) for name in _bucket_names(bucket)):
+        return True
+    for key, value in (tag_policy.effective_tags(bucket) or {}).items():
+        if type(value) is not str or key.lower() in _FREE_TEXT_TAGS:
+            continue
+        if word.search(_name_words(value)):
+            return True
+        if word.search(_name_words(key)) and value.lower() in ("true", "yes", "1"):
+            return True
+    return False
+
+
+def _s3_receives_logs(bucket: Resource, buckets: List[Resource], resources: List[Resource],
+                      cloudfront_logs: list[Any]) -> bool:
+    """True when the template shows this bucket receiving logs."""
+    if bucket.properties.get("AccessControl") == "LogDeliveryWrite":
+        return True
+    for other in buckets:
+        logging = other.properties.get("LoggingConfiguration")
+        if (other is not bucket and isinstance(logging, dict)
+                and _names_bucket(logging.get("DestinationBucketName"), bucket)):
+            return True
+    return (any(_names_bucket(value, bucket) for value in cloudfront_logs)
+            or any(_refers_to(trail, bucket) for trail in resources if trail.type == "cloudtrail"))
+
+
+def _s3_needs_replication(bucket: Resource, buckets: List[Resource], resources: List[Resource],
+                          cloudfront_logs: list[Any], prod: bool) -> bool:
+    """A bucket marked critical or in a prod stack, with no replication, that is not itself a
+    replication destination or a log bucket."""
+    if "ReplicationConfiguration" in bucket.unresolved or bucket.properties.get("ReplicationConfiguration"):
+        return False
+    critical = _s3_marked_critical(bucket)
+    if not critical and not prod:
+        return False
+    if _s3_receives_logs(bucket, buckets, resources, cloudfront_logs):
+        return False
+    for other in buckets:
+        for rule in _s3_replication_rules(other):
+            destination = _s3_rule_destination(rule)
+            if destination is not None and _names_bucket(destination.get("Bucket"), bucket):
+                return False
+    # A bucket named for logs or as a replica may get them from outside this template.
+    return critical or not any(_LOG_OR_REPLICA_WORD.search(name) for name in _bucket_names(bucket))
+
+
+def _s3_bucket_key_off(bucket: Resource) -> bool:
+    """True when a default encryption rule uses SSE-KMS with no S3 Bucket Key. DSSE-KMS does not
+    support Bucket Keys, so aws:kms:dsse is not reported."""
+    encryption = bucket.properties.get("BucketEncryption")
+    if "BucketEncryption" in bucket.unresolved or not isinstance(encryption, dict):
+        return False
+    rules = encryption.get("ServerSideEncryptionConfiguration")
+    if not isinstance(rules, list):
+        return False
+    for rule in rules:
+        default = rule.get("ServerSideEncryptionByDefault") if isinstance(rule, dict) else None
+        if (isinstance(default, dict) and default.get("SSEAlgorithm") == "aws:kms"
+                and _flag(rule.get("BucketKeyEnabled")) is False):
+            return True
+    return False
+
+
+def _s3_settings_findings(resources: List[Resource], template_path: Path) -> List[Finding]:
+    """S3 ACLs (CF-S3-008, CF-S3-009), replication (CF-S3-010, CF-S3-011) and Bucket Keys
+    (CF-S3-012). A value the scan cannot read is not judged."""
+    usable = [r for r in resources if not r.malformed]
+    buckets = [r for r in usable if r.type == "s3_bucket"]
+    out: List[Finding] = []
+
+    def add(res: Resource, check_id: str, title: str, severity: Severity, category: str,
+            recommendation: str) -> None:
+        out.append(Finding(
+            id=check_id, title=title, severity=severity, category=category,
+            file=res.file or str(template_path), line=res.line,
+            evidence=f"{res.name} ({res.source_type})", recommendation=recommendation,
+        ))
+
+    prod = bool(buckets) and environments.resolve(template_path, resources) == "prod"
+    cloudfront_logs = _cloudfront_log_buckets(usable)
+    for bucket in buckets:
+        acl = bucket.properties.get("AccessControl")
+        ownership = _s3_ownership(bucket)
+        # A CloudFront log target needs ACLs. A log target the scan cannot tie to a bucket may be this one.
+        takes_cloudfront_logs = any(
+            _names_bucket(value, bucket)
+            or (type(value) is not str and not any(_names_bucket(value, b) for b in buckets))
+            for value in cloudfront_logs
+        )
+        if (acl in ("PublicRead", "PublicReadWrite") and ownership not in (None, "BucketOwnerEnforced")
+                and _s3_public_acls_apply(bucket)):
+            add(bucket, "CF-S3-009", "S3 bucket has a public ACL", "High", "Security",
+                f"AccessControl is {acl}, and Block Public Access on this bucket does not stop it, so anyone can "
+                "read the bucket (Security Hub S3.2), or write to it with PublicReadWrite (Security Hub S3.3). "
+                "Remove the ACL and turn on Block Public Access. To serve files publicly, use CloudFront with "
+                "origin access control. In CDK: remove accessControl and set "
+                "blockPublicAccess: s3.BlockPublicAccess.BLOCK_ALL.")
+        elif ("AccessControl" not in bucket.unresolved and not takes_cloudfront_logs
+              and _s3_acls_in_use(acl, ownership)):
+            add(bucket, "CF-S3-008", "S3 bucket uses ACLs to manage access", "Medium", "Security",
+                "This bucket has ACLs turned on or sets an ACL, and ACLs are a legacy way to grant access "
+                "(Security Hub S3.12). Set OwnershipControls to BucketOwnerEnforced, remove AccessControl, and "
+                "grant access with a bucket policy or IAM. Check first that no client still writes objects with "
+                "an ACL. In CDK: objectOwnership: s3.ObjectOwnership.BUCKET_OWNER_ENFORCED.")
+
+        if _s3_needs_replication(bucket, buckets, usable, cloudfront_logs, prod):
+            add(bucket, "CF-S3-010", "Critical or production S3 bucket has no replication", "Low", "Reliability",
+                "This bucket is marked critical or is in a prod stack, and has no ReplicationConfiguration, so "
+                "its only copy is in one Region (Security Hub S3.7). If the data must survive a Regional failure, "
+                "turn on versioning and replicate to a bucket in another Region. In CDK: replicationRules.")
+        gaps = _s3_replication_gaps(bucket)
+        if gaps:
+            add(bucket, "CF-S3-011", "S3 replication rule has no metrics or replication time control", "Low",
+                "Operational Excellence",
+                f"{' and '.join(gaps)} not enabled in Destination of a replication rule, so replication lag and "
+                "failures are hard to see. Set Metrics and ReplicationTime to Enabled, with a 15 minute threshold. "
+                "S3 Replication Time Control has an extra charge per GB. "
+                "In CDK: metrics and replicationTimeControl on the replication rule.")
+        if _s3_bucket_key_off(bucket):
+            add(bucket, "CF-S3-012", "S3 bucket uses SSE-KMS without an S3 Bucket Key", "Low", "Cost Optimization",
+                "Without a Bucket Key, S3 calls KMS for each object, which adds request cost. Set "
+                "BucketKeyEnabled to true on the encryption rule. Check first that no KMS key policy or audit "
+                "relies on the object ARN in the encryption context: with a Bucket Key it is the bucket ARN. "
+                "In CDK: bucketKeyEnabled: true.")
+    return out
+
+
+def _analytics_findings(resources: List[Resource], template_path: Path) -> List[Finding]:
+    """Athena (CF-ATH-001/002), Glue (CF-GLUE-001..003) and Firehose (CF-FH-001). A value the scan
+    cannot read is not judged."""
+    usable = [r for r in resources if not r.malformed]
+    out: List[Finding] = []
+
+    def add(res: Resource, check_id: str, title: str, severity: Severity, category: str,
+            recommendation: str) -> None:
+        out.append(Finding(
+            id=check_id, title=title, severity=severity, category=category,
+            file=res.file or str(template_path), line=res.line,
+            evidence=f"{res.name} ({res.source_type})", recommendation=recommendation,
+        ))
+
+    for group in (r for r in usable if r.type == "athena_workgroup"):
+        config = _athena_config(group)
+        if config is None:
+            continue
+        if _athena_results_unencrypted(config):
+            add(group, "CF-ATH-001", "Athena workgroup does not encrypt query results", "Medium", "Security",
+                "Query results can hold the data the query read. Set ResultConfiguration.EncryptionConfiguration "
+                "in WorkGroupConfiguration, with SSE_KMS and a key of your own where you need to control access. "
+                "In CDK: workGroupConfiguration.resultConfiguration.encryptionConfiguration.")
+        enforce = config.get("EnforceWorkGroupConfiguration")
+        if enforce is not None and _flag(enforce) is False:
+            add(group, "CF-ATH-002", "Athena workgroup lets clients override its settings", "Low", "Security",
+                "EnforceWorkGroupConfiguration is false, so a client can choose its own result location and "
+                "encryption. Set it to true so the workgroup's settings apply to every query. "
+                "In CDK: workGroupConfiguration.enforceWorkGroupConfiguration.")
+
+    for job in (r for r in usable if r.type == "glue_job"):
+        secured = job.properties.get("SecurityConfiguration")
+        if "SecurityConfiguration" not in job.unresolved and (secured is None or secured == ""):
+            add(job, "CF-GLUE-001", "Glue job or security configuration does not encrypt its data", "Medium",
+                "Security",
+                "The job has no SecurityConfiguration, so its S3 data, CloudWatch logs and job bookmarks are "
+                "not encrypted by Glue. Create an AWS::Glue::SecurityConfiguration and name it on the job. "
+                "In CDK: securityConfiguration.")
+        command = job.properties.get("Command")
+        kind = command.get("Name") if isinstance(command, dict) else None
+        arguments = _glue_arguments(job)
+        if arguments is None or "Command" in job.unresolved:
+            continue
+        if kind in ("glueetl", "gluestreaming") and not any("--enable-metrics" in m for m in arguments):
+            add(job, "CF-GLUE-002", "Glue job does not publish CloudWatch metrics", "Low",
+                "Operational Excellence",
+                "Without job metrics a slow or failing run is harder to see. Add --enable-metrics to "
+                "DefaultArguments. In CDK: defaultArguments.")
+        # Only Spark ETL jobs have bookmarks: streaming jobs use checkpoints.
+        if kind == "glueetl" and any(m.get("--job-bookmark-option") == "job-bookmark-disable" for m in arguments):
+            add(job, "CF-GLUE-003", "Glue job has job bookmarks turned off", "Low", "Operational Excellence",
+                "--job-bookmark-option is job-bookmark-disable, so each run processes all the data again. A "
+                "full reload may be intended. If the job loads data incrementally, set it to "
+                "job-bookmark-enable. In CDK: defaultArguments.")
+
+    for security in (r for r in usable if r.type == "glue_security_configuration"):
+        gaps = _glue_encryption_gaps(security)
+        if gaps:
+            add(security, "CF-GLUE-001", "Glue job or security configuration does not encrypt its data", "Medium",
+                "Security",
+                f"Encryption is off for {', '.join(gaps)}. Set S3EncryptionMode, CloudWatchEncryptionMode and "
+                "JobBookmarksEncryptionMode to an encrypting mode, with a KMS key. "
+                "In CDK: s3Encryption, cloudWatchEncryption and jobBookmarksEncryption.")
+
+    for stream in (r for r in usable if r.type == "firehose_delivery_stream"):
+        if (_firehose_direct_put(stream) and "DeliveryStreamEncryptionConfigurationInput" not in stream.unresolved
+                and stream.properties.get("DeliveryStreamEncryptionConfigurationInput") is None):
+            add(stream, "CF-FH-001", "Firehose delivery stream is not encrypted at rest", "Medium", "Security",
+                "This stream takes direct puts and has no server-side encryption. Set "
+                "DeliveryStreamEncryptionConfigurationInput (Security Hub DataFirehose.1). "
+                "In CDK: encryption on the delivery stream.")
+    return out
+
+
+def _emr_in_public_subnet(cluster: Resource, subnets: List[Resource]) -> bool:
+    """True when Ec2SubnetId names one subnet in this template that literally maps public IPs. A
+    template shows the subnet, not the node's address. A parameter, a variable, a choice between
+    subnets or a subnet outside the template is not judged."""
+    instances = cluster.properties.get("Instances")
+    value = instances.get("Ec2SubnetId") if isinstance(instances, dict) else None
+    if isinstance(value, dict):
+        attribute = value.get("Fn::GetAtt")
+        name = attribute[0] if isinstance(attribute, list) and attribute[1:] == ["SubnetId"] else value.get("Ref")
+        if len(value) != 1:
+            return False
+        chosen = [s for s in subnets if s.name == name]
+    elif isinstance(value, str) and type(value) is not str:
+        text = value.strip()
+        text = text[2:-1] if text.startswith("${") and text.endswith("}") else text
+        chosen = [s for s in subnets if re.fullmatch(rf"{re.escape(s.name)}(?:\[[^\]]*\])?\.id", text)]
+    else:
+        return False
+    return any("MapPublicIpOnLaunch" not in s.unresolved and _flag(s.properties.get("MapPublicIpOnLaunch")) is True
+               for s in chosen)
+
+
+def _emr_encryption(security: Resource) -> dict | None:
+    """A security configuration's EncryptionConfiguration, {} when the document has none, or None
+    when the document or that part of it cannot be read."""
+    if "SecurityConfiguration" in security.unresolved:
+        return None
+    document = security.properties.get("SecurityConfiguration")
+    if type(document) is str:
+        try:
+            document = json.loads(document)
+        except ValueError:
+            return None
+    if not isinstance(document, dict) or _is_intrinsic(document):
+        return None
+    encryption = document.get("EncryptionConfiguration", {})
+    return encryption if isinstance(encryption, dict) and not _is_intrinsic(encryption) else None
+
+
+# Engines the DMS guide says can use SSL through SslMode. Not Redshift, where DMS does not support
+# it, nor engines with no SslMode, such as S3, DynamoDB and Kinesis.
+_DMS_SSL_ENGINES = frozenset({
+    "aurora", "aurora-postgresql", "db2", "docdb", "mariadb", "mysql", "oracle", "postgres", "sqlserver",
+})
+
+
+def _dms_ssl_off(endpoint: Resource) -> bool:
+    """True when an endpoint on a known SSL engine has SslMode none, or unset, which means none. An
+    unset mode is not judged when a secret, a certificate or extra attributes configure the
+    connection in a way the template does not show."""
+    props = endpoint.properties
+    engine = None if "EngineName" in endpoint.unresolved else props.get("EngineName")
+    if type(engine) is not str or engine.lower() not in _DMS_SSL_ENGINES or "SslMode" in endpoint.unresolved:
+        return False
+    mode = props.get("SslMode")
+    if mode is not None:
+        return type(mode) is str and mode.lower() == "none"
+    if any(key in endpoint.unresolved or props.get(key)
+           for key in ("SecretsManagerSecretId", "CertificateArn", "ExtraConnectionAttributes")):
+        return False
+    return not any(
+        key.endswith("Settings") and (
+            not isinstance(value, dict) or _is_intrinsic(value) or "SecretsManagerSecretId" in value)
+        for key, value in props.items())
+
+
+def _emr_dms_findings(resources: List[Resource], template_path: Path) -> List[Finding]:
+    """EMR (CF-EMR-001..003) and DMS (CF-DMS-001..004). A value the scan cannot read is not judged."""
+    usable = [r for r in resources if not r.malformed]
+    subnets = [r for r in usable if r.type == "subnet"]
+    instances = [r for r in usable if r.type == "dms_replication_instance"]
+    out: List[Finding] = []
+
+    def add(res: Resource, check_id: str, title: str, severity: Severity, category: str,
+            recommendation: str) -> None:
+        out.append(Finding(
+            id=check_id, title=title, severity=severity, category=category,
+            file=res.file or str(template_path), line=res.line,
+            evidence=f"{res.name} ({res.source_type})", recommendation=recommendation,
+        ))
+
+    for cluster in (r for r in usable if r.type == "emr_cluster"):
+        if _emr_in_public_subnet(cluster, subnets):
+            add(cluster, "CF-EMR-001", "EMR cluster runs in a subnet that assigns public IPs", "High", "Security",
+                "Ec2SubnetId is a subnet with MapPublicIpOnLaunch true, so the primary node gets a public "
+                "address. A cluster cannot drop it after launch, so launch a new one in a private subnet "
+                "(Security Hub EMR.1). In CDK: instances.ec2SubnetId on emr.CfnCluster.")
+        secured = cluster.properties.get("SecurityConfiguration")
+        if "SecurityConfiguration" not in cluster.unresolved and (secured is None or secured == ""):
+            add(cluster, "CF-EMR-002", "EMR cluster or security configuration does not encrypt data at rest",
+                "Medium", "Security",
+                "The cluster has no SecurityConfiguration, so encryption at rest is off, and encryption in "
+                "transit is off too. Create an AWS::EMR::SecurityConfiguration that enables both, and name it "
+                "on the cluster. In CDK: securityConfiguration on emr.CfnCluster.")
+
+    for security in (r for r in usable if r.type == "emr_security_configuration"):
+        encryption = _emr_encryption(security)
+        if encryption is None:
+            continue
+        if _flag(encryption.get("EnableAtRestEncryption")) is False:
+            add(security, "CF-EMR-002", "EMR cluster or security configuration does not encrypt data at rest",
+                "Medium", "Security",
+                "EncryptionConfiguration.EnableAtRestEncryption is false or unset. Set it to true, with "
+                "AtRestEncryptionConfiguration for S3 and local disks (Security Hub EMR.3). "
+                "In CDK: emr.CfnSecurityConfiguration.")
+        if _flag(encryption.get("EnableInTransitEncryption")) is False:
+            add(security, "CF-EMR-003", "EMR security configuration does not encrypt data in transit", "Medium",
+                "Security",
+                "EncryptionConfiguration.EnableInTransitEncryption is false or unset. Set it to true, with "
+                "InTransitEncryptionConfiguration and a TLS certificate provider (Security Hub EMR.4). "
+                "In CDK: emr.CfnSecurityConfiguration.")
+
+    prod = bool(instances) and environments.resolve(template_path, resources) == "prod"
+    for instance in instances:
+        # CloudFormation defaults PubliclyAccessible to true. The Terraform adapter writes the provider's false.
+        if "PubliclyAccessible" not in instance.unresolved \
+                and _flag(instance.properties.get("PubliclyAccessible", True)) is True:
+            add(instance, "CF-DMS-001", "DMS replication instance is publicly accessible", "High", "Security",
+                "PubliclyAccessible is true, or unset in CloudFormation, where it defaults to true, so the "
+                "instance has a public address. The setting cannot change after creation: create it again "
+                "with PubliclyAccessible: false (Security Hub DMS.1). "
+                "In CDK: publiclyAccessible on dms.CfnReplicationInstance.")
+        # CloudFormation defaults AutoMinorVersionUpgrade to true. The Terraform adapter writes the provider's false.
+        if "AutoMinorVersionUpgrade" not in instance.unresolved \
+                and _flag(instance.properties.get("AutoMinorVersionUpgrade", True)) is False:
+            add(instance, "CF-DMS-002", "DMS replication instance does not apply minor version upgrades", "Low",
+                "Security",
+                "AutoMinorVersionUpgrade is off, so the instance misses fixes in minor engine versions. Set it "
+                "to true (Security Hub DMS.6). In CDK: autoMinorVersionUpgrade on dms.CfnReplicationInstance.")
+        if prod and _is_off(instance, "MultiAZ"):
+            add(instance, "CF-DMS-004", "DMS replication instance in a prod stack is not Multi-AZ", "Low",
+                "Reliability",
+                "MultiAZ is false or unset, so a failure in one Availability Zone stops running migration "
+                "tasks until the instance is back. Set MultiAZ: true (Security Hub DMS.13). "
+                "In CDK: multiAz on dms.CfnReplicationInstance.")
+
+    for endpoint in (r for r in usable if r.type == "dms_endpoint"):
+        if _dms_ssl_off(endpoint):
+            add(endpoint, "CF-DMS-003", "DMS endpoint does not use SSL", "Medium", "Security",
+                "SslMode is none, or unset, which means none, on an engine that supports SSL, so data moves "
+                "between the database and the replication instance unencrypted. Set SslMode to verify-full "
+                "or verify-ca with a certificate; some engines support only some modes (Security Hub DMS.9). "
+                "In CDK: sslMode on dms.CfnEndpoint.")
+    return out
+
+
+def _autoscaling_findings(resources: List[Resource], template_path: Path) -> List[Finding]:
+    """Auto Scaling groups and launch configurations (CF-ASG-001..006). A value the scan cannot read
+    is not judged."""
+    usable = [r for r in resources if not r.malformed]
+    groups = [r for r in usable if r.type == "autoscaling_group"]
+    configurations = [r for r in usable if r.type == "launch_configuration"]
+    attachments = [r for r in usable if r.type == "autoscaling_attachment"]
+    subnets = [r for r in usable if r.type == "subnet"]
+    scalers = [r for r in usable if r.type in _ASG_SCALERS]
+    # A policy or schedule the scan cannot tie to a group may scale any of them.
+    scaler_for_any = any(r.malformed and r.type in _ASG_SCALERS for r in resources) or any(
+        not any(_asg_link_names(s, g) for g in groups) for s in scalers)
+    out: List[Finding] = []
+
+    def add(res: Resource, check_id: str, title: str, severity: Severity, category: str,
+            recommendation: str) -> None:
+        out.append(Finding(
+            id=check_id, title=title, severity=severity, category=category,
+            file=res.file or str(template_path), line=res.line,
+            evidence=f"{res.name} ({res.source_type})", recommendation=recommendation,
+        ))
+
+    for group in groups:
+        health = None if "HealthCheckType" in group.unresolved else group.properties.get("HealthCheckType", "EC2")
+        if type(health) is str and "ELB" not in (part.strip().upper() for part in health.split(",")) \
+                and _asg_behind_load_balancer(group, attachments):
+            add(group, "CF-ASG-001", "Auto Scaling group behind a load balancer does not use ELB health checks",
+                "Low", "Reliability",
+                "The group only sees EC2 status checks, so it keeps an instance that the load balancer "
+                "reports as unhealthy. Set HealthCheckType: ELB and a HealthCheckGracePeriod (Security Hub "
+                "AutoScaling.1). In CDK: healthCheck: autoscaling.HealthCheck.elb({ grace: Duration.minutes(5) }).")
+        if _asg_in_one_az(group, subnets):
+            add(group, "CF-ASG-002", "Auto Scaling group uses one Availability Zone", "Medium", "Reliability",
+                "The group can only launch instances in one AZ, so it cannot replace capacity if that AZ "
+                "fails. Give it subnets in at least two AZs, unless one AZ is intended, as for a batch job "
+                "(Security Hub AutoScaling.2). In CDK: vpcSubnets: { subnetType: "
+                "ec2.SubnetType.PRIVATE_WITH_EGRESS }.")
+        if _asg_uses_launch_configuration(group, configurations):
+            add(group, "CF-ASG-005", "Auto Scaling group uses a launch configuration", "Low",
+                "Operational Excellence",
+                "Launch configurations get no new EC2 features and cannot be versioned. Use a launch "
+                "template instead, and set LaunchTemplate in place of LaunchConfigurationName (Security Hub "
+                "AutoScaling.9). In CDK: launchTemplate: new ec2.LaunchTemplate(...).")
+        size = _asg_size(group, "MinSize")
+        if size and size == _asg_size(group, "MaxSize") and not scaler_for_any \
+                and not any(_asg_link_names(s, group) for s in scalers):
+            add(group, "CF-ASG-006", "Auto Scaling group has a fixed size and no scaling policy", "Low",
+                "Cost Optimization",
+                f"MinSize and MaxSize are both {size}, and no scaling policy or schedule in the template "
+                "changes them, so the group cannot follow demand. A fixed fleet can be intended. If not, "
+                "raise MaxSize and add a target tracking policy. In CDK: "
+                "autoScalingGroup.scaleOnCpuUtilization('Cpu', { targetUtilizationPercent: 60 }).")
+
+    for config in configurations:
+        gap = None if "MetadataOptions" in config.unresolved else _imds_gap(
+            config.properties.get("MetadataOptions"), defers=False)
+        if gap is not None:
+            add(config, "CF-ASG-003", "Launch configuration does not require IMDSv2", "High", "Security",
+                f"{gap[1]} With IMDSv1, an SSRF bug in the workload can read the instance role's "
+                "credentials. Launch configurations cannot be changed, so create a new one with "
+                "MetadataOptions.HttpTokens: required, or move to a launch template (Security Hub "
+                "AutoScaling.3). In CDK: requireImdsv2: true on the AutoScalingGroup.")
+        public_ip = None if "AssociatePublicIpAddress" in config.unresolved else config.properties.get(
+            "AssociatePublicIpAddress")
+        if _is_true(public_ip):
+            add(config, "CF-ASG-004", "Launch configuration assigns public IP addresses", "Medium", "Security",
+                "Every instance gets a public address and can be reached directly from the internet if its "
+                "security group allows it. Set AssociatePublicIpAddress: false, use private subnets and put "
+                "a load balancer in front (Security Hub AutoScaling.5). In CDK: associatePublicIpAddress: "
+                "false on the AutoScalingGroup.")
+    return out
+
+
+def _container_findings(resources: List[Resource], template_path: Path) -> List[Finding]:
+    """ECS tasks, services and clusters (CF-ECS-004..011) and the EKS version (CF-EKS-004).
+    A value the scan cannot read is not judged."""
+    usable = [r for r in resources if not r.malformed]
+    out: List[Finding] = []
+
+    def add(res: Resource, check_id: str, title: str, severity: Severity, category: str,
+            recommendation: str) -> None:
+        out.append(Finding(
+            id=check_id, title=title, severity=severity, category=category,
+            file=res.file or str(template_path), line=res.line,
+            evidence=f"{res.name} ({res.source_type})", recommendation=recommendation,
+        ))
+
+    for task in (r for r in usable if r.type == "ecs_task_definition"):
+        props = task.properties
+        containers = _literal_containers(task)
+        network_mode = props.get("NetworkMode")
+        if type(network_mode) is str and network_mode.lower() == "host":
+            exposed = [
+                label for label, c in containers
+                if _flag(c.get("Privileged")) is True
+                or (type(c.get("User")) is str and _is_root_user(c["User"]))
+                or (type(c.get("User")) is int and c["User"] == 0)
+            ]
+            if exposed:
+                add(task, "CF-ECS-004", "ECS container with host networking runs privileged or as root", "High",
+                    "Security",
+                    f"NetworkMode is host and {', '.join(exposed)} is privileged or runs as root, so a "
+                    "compromised container acts on the host's network as a powerful user. Use awsvpc "
+                    "networking, or set Privileged to false and User to a non-root UID (Security Hub "
+                    "ECS.17 reports any host networking). In CDK: networkMode: ecs.NetworkMode.AWS_VPC.")
+        pid_mode = props.get("PidMode")
+        if type(pid_mode) is str and pid_mode.lower() == "host":
+            add(task, "CF-ECS-006", "ECS task shares the host's process namespace", "High", "Security",
+                "PidMode is host, so containers can see the processes on the host. Remove PidMode, or "
+                "use task to share processes only within the task (Security Hub ECS.3). "
+                "In CDK: pidMode: ecs.PidMode.TASK.")
+        secrets = sorted({n for _label, c in containers for n in _container_secret_names(c)})
+        if secrets:
+            add(task, "CF-ECS-007", "ECS container environment variable holds a secret", "High", "Security",
+                f"{', '.join(secrets)} set a literal value in Environment, in plain text in the task "
+                "definition. Move it to Secrets Manager or Parameter Store and pass it with Secrets "
+                "(Security Hub ECS.8). In CDK: secrets: { NAME: ecs.Secret.fromSecretsManager(secret) }.")
+        no_logs = [label for label, c in containers if _no_log_driver(c)]
+        if no_logs:
+            add(task, "CF-ECS-008", "ECS container has no logging configuration", "Medium",
+                "Operational Excellence",
+                f"LogConfiguration or its LogDriver is not set on {', '.join(no_logs)}, so ECS does not "
+                "send its output anywhere. Set a log driver, such as awslogs (Security Hub ECS.9). "
+                "In CDK: logging: ecs.LogDrivers.awsLogs({ streamPrefix: 'app' }).")
+        compatibilities = props.get("RequiresCompatibilities")
+        cpu, memory = _literal_units(props.get("Cpu")), _literal_units(props.get("Memory"))
+        if isinstance(compatibilities, list) and "FARGATE" in compatibilities and cpu and memory:
+            note = _fargate_size_note(cpu, memory)
+            if note:
+                add(task, "CF-ECS-011", "Fargate task CPU and memory are not a published pair", "Low",
+                    "Performance Efficiency",
+                    f"Cpu {cpu} with Memory {memory} is not a size Fargate offers. {note} Set a published "
+                    "pair so that the size you pay for is the size you ask for. "
+                    "In CDK: cpu and memoryLimitMiB on ecs.FargateTaskDefinition.")
+
+    for service in (r for r in usable if r.type == "ecs_service"):
+        network = service.properties.get("NetworkConfiguration")
+        awsvpc = network.get("AwsvpcConfiguration") if isinstance(network, dict) else None
+        assign = awsvpc.get("AssignPublicIp") if isinstance(awsvpc, dict) else None
+        if type(assign) is str and assign.upper() == "ENABLED":
+            add(service, "CF-ECS-005", "ECS service assigns public IP addresses", "Medium", "Security",
+                "AssignPublicIp is ENABLED, so each task gets an address reachable from the internet. "
+                "Set it to DISABLED and run tasks in private subnets behind a load balancer "
+                "(Security Hub ECS.2). In CDK: assignPublicIp: false.")
+        version = service.properties.get("PlatformVersion")
+        if _uses_fargate(service) and _old_fargate_version(version):
+            add(service, "CF-ECS-009", "ECS Fargate service is pinned to an old platform version", "Low",
+                "Security",
+                f"PlatformVersion is {version}, below the latest Linux version. Set it to LATEST "
+                "(Security Hub ECS.10). In CDK: platformVersion: ecs.FargatePlatformVersion.LATEST.")
+
+    for cluster in (r for r in usable if r.type == "ecs_cluster"):
+        if _insights_off(cluster):
+            add(cluster, "CF-ECS-010", "ECS cluster does not use Container Insights", "Low",
+                "Operational Excellence",
+                "containerInsights in ClusterSettings is unset or disabled, so the cluster has no task and "
+                "service metrics unless the account default turns it on. Set it to enabled or enhanced "
+                "(Security Hub ECS.12). In CDK: containerInsightsV2: ecs.ContainerInsights.ENABLED.")
+
+    for cluster in (r for r in usable if r.type == "eks_cluster"):
+        minor = _k8s_minor(cluster.properties.get("Version"))
+        if minor is None:
+            continue
+        past, ended = eks_versions.past_standard_support(minor)
+        if past:
+            since = f"ended on {ended.isoformat()}" if ended else "has ended"
+            add(cluster, "CF-EKS-004", "EKS cluster runs a Kubernetes version past standard support", "Medium",
+                "Security",
+                f"Standard support for Kubernetes 1.{minor} {since}, so the cluster is on extended support "
+                "at extra cost, or unsupported. Upgrade to a version in standard support "
+                "(Security Hub EKS.2). In CDK: version: a newer eks.KubernetesVersion.")
+    return out
+
+
 def _runtime_finding(res: Resource, template_path: Path) -> Finding | None:
     """CF-LAM-003: a deprecated (High) or soon-deprecated (Low) Lambda runtime.
 
@@ -4425,6 +6674,20 @@ def _run_resource_checks(
                             evidence=f"{logical_id} ({rtype})",
                             recommendation="Use KmsKeyId to encrypt CloudTrail log files for integrity and compliance.",
                         ))
+                    if not props.get("CloudWatchLogsLogGroupArn"):
+                        findings.append(Finding(
+                            id="CF-CT-004",
+                            title="CloudTrail does not send events to CloudWatch Logs",
+                            severity="Low",
+                            category="Operational Excellence",
+                            file=res.file or str(template_path),
+                            line=res.line,
+                            evidence=f"{logical_id} ({rtype})",
+                            recommendation=(
+                                "With no CloudWatchLogsLogGroupArn, trail events reach only S3, so nothing can alarm "
+                                "on them as they happen. Set CloudWatchLogsLogGroupArn and CloudWatchLogsRoleArn "
+                                "(Security Hub CloudTrail.5). In CDK: sendToCloudWatchLogs: true on the Trail."),
+                        ))
 
                 # --- VPC Flow Logs ---
                 if ctype == "flow_log":
@@ -4912,6 +7175,39 @@ def _run_resource_checks(
 
     # --- DynamoDB, ElastiCache and EFS resilience and access ---
     findings.extend(_data_store_findings(resources, template_path))
+
+    # --- GuardDuty, Security Hub, AWS Config, Macie and Budgets a repo defines ---
+    findings.extend(_account_baseline_findings(resources, template_path))
+
+    # --- ECS network, secrets, logging, platform, insights and sizing; EKS version ---
+    findings.extend(_container_findings(resources, template_path))
+
+    # --- Auto Scaling groups and launch configurations ---
+    findings.extend(_autoscaling_findings(resources, template_path))
+
+    # --- Athena workgroups, Glue jobs and security configurations, Firehose delivery streams ---
+    findings.extend(_analytics_findings(resources, template_path))
+
+    # --- CloudFront logging, price class, compression, origins, certificates, caching ---
+    findings.extend(_cloudfront_settings_findings(resources, template_path))
+
+    # --- S3 bucket ACLs and ownership, replication, S3 Bucket Keys ---
+    findings.extend(_s3_settings_findings(resources, template_path))
+
+    # --- EMR clusters and security configurations, DMS replication instances and endpoints ---
+    findings.extend(_emr_dms_findings(resources, template_path))
+
+    # --- SageMaker notebooks and endpoint configs, FSx file systems ---
+    findings.extend(_sagemaker_fsx_findings(resources, template_path))
+
+    # --- AppSync, Transfer Family, App Runner and Elastic Beanstalk ---
+    findings.extend(_app_services_findings(resources, template_path))
+
+    # --- Route 53, ACM and Global Accelerator ---
+    findings.extend(_dns_certificate_findings(resources, template_path))
+
+    # --- CloudWatch alarms and dashboards; S3 data events on a trail ---
+    findings.extend(_monitoring_findings(resources, template_path))
 
     # --- AWS Backup vaults, plans and which resources they select ---
     findings.extend(_backup_findings(resources, template_path))

@@ -1,5 +1,12 @@
 [
   {
+    "id": "CF-ALARM-001",
+    "severity": "Low",
+    "file": "stack.yaml",
+    "line": null,
+    "evidence": "Database (AWS::RDS::DBInstance)"
+  },
+  {
     "id": "CF-BAK-005",
     "severity": "Low",
     "file": "stack.yaml",

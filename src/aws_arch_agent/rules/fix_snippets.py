@@ -128,6 +128,89 @@ _CLOUDFORMATION: dict[str, str] = {
   Type: AWS::CloudTrail::Trail
   Properties:
     KmsKeyId: !Ref TrailKey""",
+    "CF-CT-004": """$name:
+  Type: AWS::CloudTrail::Trail
+  Properties:
+    CloudWatchLogsLogGroupArn: !GetAtt TrailLogGroup.Arn
+    CloudWatchLogsRoleArn: !GetAtt TrailLogsRole.Arn""",
+    "CF-CT-005": """$name:
+  Type: AWS::CloudTrail::Trail
+  Properties:
+    EventSelectors:
+      - ReadWriteType: All
+        DataResources:
+          - Type: AWS::S3::Object
+            Values:
+              - !Sub '$${SensitiveBucket.Arn}/'""",
+    "CF-ALARM-001": """# For a Lambda function. Use the metric and dimension of the resource you watch.
+${name}ErrorsAlarm:
+  Type: AWS::CloudWatch::Alarm
+  Properties:
+    Namespace: AWS/Lambda
+    MetricName: Errors
+    Dimensions:
+      - Name: FunctionName
+        Value: !Ref $name
+    Statistic: Sum
+    Period: 300
+    EvaluationPeriods: 1
+    Threshold: 1
+    ComparisonOperator: GreaterThanOrEqualToThreshold
+    AlarmActions:
+      - !Ref AlarmTopic""",
+    "CF-ALARM-002": """$name:
+  Type: AWS::CloudWatch::Alarm
+  Properties:
+    AlarmActions:
+      - !Ref AlarmTopic""",
+    "CF-DASH-001": """StackDashboard:
+  Type: AWS::CloudWatch::Dashboard
+  Properties:
+    DashboardBody: '{"widgets": []}'""",
+    "CF-GD-001": """$name:
+  Type: AWS::GuardDuty::Detector
+  Properties:
+    Enable: true
+    Features:
+      - Name: S3_DATA_EVENTS
+        Status: ENABLED
+      - Name: EKS_AUDIT_LOGS
+        Status: ENABLED
+      - Name: EBS_MALWARE_PROTECTION
+        Status: ENABLED""",
+    "CF-SH-001": """FsbpStandard:
+  Type: AWS::SecurityHub::Standard
+  DependsOn: $name
+  Properties:
+    StandardsArn: !Sub arn:$${AWS::Partition}:securityhub:$${AWS::Region}::standards/aws-foundational-security-best-practices/v/1.0.0""",
+    "CF-CFG-001": """$name:
+  Type: AWS::Config::ConfigurationRecorder
+  Properties:
+    RoleARN: !Sub arn:$${AWS::Partition}:iam::$${AWS::AccountId}:role/aws-service-role/config.amazonaws.com/AWSServiceRoleForConfig
+    RecordingGroup:
+      AllSupported: true
+      IncludeGlobalResourceTypes: true""",
+    "CF-MACIE-001": """$name:
+  Type: AWS::Macie::Session
+  Properties:
+    Status: ENABLED""",
+    "CF-BUDGET-001": """$name:
+  Type: AWS::Budgets::Budget
+  Properties:
+    Budget:
+      BudgetType: COST
+      TimeUnit: MONTHLY
+      BudgetLimit:
+        Amount: 1000
+        Unit: USD
+    NotificationsWithSubscribers:
+      - Notification:
+          NotificationType: ACTUAL
+          ComparisonOperator: GREATER_THAN
+          Threshold: 80
+        Subscribers:
+          - SubscriptionType: EMAIL
+            Address: ops@example.com""",
     "CF-KMS-001": """$name:
   Type: AWS::KMS::Key
   Properties:
@@ -403,6 +486,92 @@ resource "aws_s3_bucket_policy" "$tf_name" {
 }""",
     "CF-CT-003": """resource "aws_cloudtrail" "$tf_name" {
   kms_key_id = aws_kms_key.trail.arn
+}""",
+    "CF-CT-004": """resource "aws_cloudtrail" "$tf_name" {
+  cloud_watch_logs_group_arn = "$${aws_cloudwatch_log_group.trail.arn}:*"
+  cloud_watch_logs_role_arn  = aws_iam_role.trail_logs.arn
+}""",
+    "CF-CT-005": """resource "aws_cloudtrail" "$tf_name" {
+  event_selector {
+    read_write_type = "All"
+    data_resource {
+      type   = "AWS::S3::Object"
+      values = ["$${aws_s3_bucket.sensitive.arn}/"]
+    }
+  }
+}""",
+    "CF-ALARM-001": """# For a Lambda function. Use the metric and dimension of the resource you watch.
+resource "aws_cloudwatch_metric_alarm" "${tf_name}_errors" {
+  alarm_name          = "$tf_name-errors"
+  namespace           = "AWS/Lambda"
+  metric_name         = "Errors"
+  dimensions          = { FunctionName = aws_lambda_function.$tf_name.function_name }
+  statistic           = "Sum"
+  period              = 300
+  evaluation_periods  = 1
+  threshold           = 1
+  comparison_operator = "GreaterThanOrEqualToThreshold"
+  alarm_actions       = [aws_sns_topic.alarms.arn]
+}""",
+    "CF-ALARM-002": """resource "aws_cloudwatch_metric_alarm" "$tf_name" {
+  alarm_actions = [aws_sns_topic.alarms.arn]
+}""",
+    "CF-DASH-001": """resource "aws_cloudwatch_dashboard" "stack" {
+  dashboard_name = "stack"
+  dashboard_body = jsonencode({ widgets = [] })
+}""",
+    "CF-GD-001": """resource "aws_guardduty_detector" "$tf_name" {
+  enable = true
+}
+
+resource "aws_guardduty_detector_feature" "s3" {
+  detector_id = aws_guardduty_detector.$tf_name.id
+  name        = "S3_DATA_EVENTS"
+  status      = "ENABLED"
+}
+
+resource "aws_guardduty_detector_feature" "eks_audit" {
+  detector_id = aws_guardduty_detector.$tf_name.id
+  name        = "EKS_AUDIT_LOGS"
+  status      = "ENABLED"
+}
+
+resource "aws_guardduty_detector_feature" "malware" {
+  detector_id = aws_guardduty_detector.$tf_name.id
+  name        = "EBS_MALWARE_PROTECTION"
+  status      = "ENABLED"
+}""",
+    "CF-SH-001": """data "aws_region" "current" {}
+data "aws_partition" "current" {}
+
+resource "aws_securityhub_standards_subscription" "fsbp" {
+  depends_on    = [aws_securityhub_account.$tf_name]
+  standards_arn = "arn:$${data.aws_partition.current.partition}:securityhub:$${data.aws_region.current.name}::standards/aws-foundational-security-best-practices/v/1.0.0"
+}""",
+    "CF-CFG-001": """resource "aws_config_configuration_recorder" "$tf_name" {
+  role_arn = aws_iam_service_linked_role.config.arn
+
+  recording_group {
+    all_supported                 = true
+    include_global_resource_types = true
+  }
+}""",
+    "CF-MACIE-001": """resource "aws_macie2_account" "$tf_name" {
+  status = "ENABLED"
+}""",
+    "CF-BUDGET-001": """resource "aws_budgets_budget" "$tf_name" {
+  budget_type  = "COST"
+  limit_amount = "1000"
+  limit_unit   = "USD"
+  time_unit    = "MONTHLY"
+
+  notification {
+    comparison_operator        = "GREATER_THAN"
+    threshold                  = 80
+    threshold_type             = "PERCENTAGE"
+    notification_type          = "ACTUAL"
+    subscriber_email_addresses = ["ops@example.com"]
+  }
 }""",
     "CF-KMS-001": """data "aws_caller_identity" "current" {}
 data "aws_partition" "current" {}
@@ -1333,6 +1502,496 @@ _CLOUDFORMATION["CF-EFS-005"] = """$name:
     PosixUser:
       Uid: '1000'
       Gid: '1000'"""
+_CLOUDFORMATION["CF-ATH-001"] = """$name:
+  Type: AWS::Athena::WorkGroup
+  Properties:
+    WorkGroupConfiguration:
+      ResultConfiguration:
+        EncryptionConfiguration:
+          EncryptionOption: SSE_KMS
+          KmsKey: !GetAtt ResultsKey.Arn"""
+_CLOUDFORMATION["CF-ATH-002"] = """$name:
+  Type: AWS::Athena::WorkGroup
+  Properties:
+    WorkGroupConfiguration:
+      EnforceWorkGroupConfiguration: true"""
+_CLOUDFORMATION["CF-GLUE-001"] = """# Create an AWS::Glue::SecurityConfiguration with S3, CloudWatch and bookmark encryption, and name it here.
+$name:
+  Type: AWS::Glue::Job
+  Properties:
+    SecurityConfiguration: !Ref AppSecurityConfiguration"""
+_CLOUDFORMATION["CF-GLUE-001:AWS::Glue::SecurityConfiguration"] = """$name:
+  Type: AWS::Glue::SecurityConfiguration
+  Properties:
+    EncryptionConfiguration:
+      S3Encryptions:
+        - S3EncryptionMode: SSE-KMS
+          KmsKeyArn: !GetAtt GlueKey.Arn
+      CloudWatchEncryption:
+        CloudWatchEncryptionMode: SSE-KMS
+        KmsKeyArn: !GetAtt GlueKey.Arn
+      JobBookmarksEncryption:
+        JobBookmarksEncryptionMode: CSE-KMS
+        KmsKeyArn: !GetAtt GlueKey.Arn"""
+_CLOUDFORMATION["CF-GLUE-002"] = """$name:
+  Type: AWS::Glue::Job
+  Properties:
+    DefaultArguments:
+      --enable-metrics: 'true'"""
+_CLOUDFORMATION["CF-GLUE-003"] = """# For a job that loads data incrementally.
+$name:
+  Type: AWS::Glue::Job
+  Properties:
+    DefaultArguments:
+      --job-bookmark-option: job-bookmark-enable"""
+_CLOUDFORMATION["CF-FH-001"] = """$name:
+  Type: AWS::KinesisFirehose::DeliveryStream
+  Properties:
+    DeliveryStreamEncryptionConfigurationInput:
+      KeyType: AWS_OWNED_CMK"""
+_CLOUDFORMATION["CF-S3-008"] = """$name:
+  Type: AWS::S3::Bucket
+  Properties:
+    # keep the other properties as they are, and remove AccessControl
+    OwnershipControls:
+      Rules:
+        - ObjectOwnership: BucketOwnerEnforced"""
+
+_CLOUDFORMATION["CF-S3-009"] = """$name:
+  Type: AWS::S3::Bucket
+  Properties:
+    # keep the other properties as they are, and remove AccessControl
+    OwnershipControls:
+      Rules:
+        - ObjectOwnership: BucketOwnerEnforced
+    PublicAccessBlockConfiguration:
+      BlockPublicAcls: true
+      IgnorePublicAcls: true
+      BlockPublicPolicy: true
+      RestrictPublicBuckets: true"""
+
+_CLOUDFORMATION["CF-S3-010"] = """$name:
+  Type: AWS::S3::Bucket
+  Properties:
+    # keep the other properties as they are
+    VersioningConfiguration:
+      Status: Enabled
+    ReplicationConfiguration:
+      Role: !GetAtt ${name}ReplicationRole.Arn # a role S3 can assume to replicate
+      Rules:
+        - Id: to-other-region
+          Status: Enabled
+          Priority: 1
+          Filter:
+            Prefix: ''
+          DeleteMarkerReplication:
+            Status: Enabled
+          Destination:
+            Bucket: arn:aws:s3:::my-replica-bucket # versioned, in another Region
+            Metrics:
+              Status: Enabled
+              EventThreshold:
+                Minutes: 15
+            ReplicationTime:
+              Status: Enabled
+              Time:
+                Minutes: 15"""
+
+_CLOUDFORMATION["CF-SAGE-001"] = """$name:
+  Type: AWS::SageMaker::NotebookInstance
+  Properties:
+    # keep the other settings as they are; this replaces the notebook
+    DirectInternetAccess: Disabled
+    SubnetId: subnet-0123456789abcdef0
+    SecurityGroupIds:
+      - sg-0123456789abcdef0"""
+
+_CLOUDFORMATION["CF-SAGE-002"] = """$name:
+  Type: AWS::SageMaker::NotebookInstance
+  Properties:
+    # keep the other settings as they are; this replaces the notebook
+    SubnetId: subnet-0123456789abcdef0
+    SecurityGroupIds:
+      - sg-0123456789abcdef0"""
+
+_CLOUDFORMATION["CF-SAGE-003"] = """$name:
+  Type: AWS::SageMaker::NotebookInstance
+  Properties:
+    # keep the other settings as they are
+    RootAccess: Disabled"""
+
+_CLOUDFORMATION["CF-SAGE-004"] = """$name:
+  Type: AWS::SageMaker::NotebookInstance  # or AWS::SageMaker::EndpointConfig
+  Properties:
+    # keep the other settings as they are; this replaces the resource
+    KmsKeyId: arn:aws:kms:us-east-1:111122223333:key/my-key"""
+
+_CLOUDFORMATION["CF-SAGE-005"] = """$name:
+  Type: AWS::SageMaker::EndpointConfig
+  Properties:
+    # keep the other settings as they are
+    ProductionVariants:
+      - VariantName: main
+        ModelName: my-model
+        InstanceType: ml.m5.large
+        InitialVariantWeight: 1
+        InitialInstanceCount: 2"""
+
+_CLOUDFORMATION["CF-FSX-001"] = """$name:
+  Type: AWS::FSx::FileSystem
+  Properties:
+    # keep the other settings as they are; this replaces the file system
+    KmsKeyId: arn:aws:kms:us-east-1:111122223333:key/my-key"""
+
+_CLOUDFORMATION["CF-FSX-002"] = """$name:
+  Type: AWS::FSx::FileSystem
+  Properties:
+    # keep the other settings as they are; use the block for your FileSystemType
+    OpenZFSConfiguration:
+      CopyTagsToBackups: true
+      CopyTagsToVolumes: true"""
+
+_CLOUDFORMATION["CF-FSX-003"] = """$name:
+  Type: AWS::FSx::FileSystem
+  Properties:
+    # keep the other settings as they are; use the block for your FileSystemType
+    LustreConfiguration:
+      AutomaticBackupRetentionDays: 7"""
+
+_CLOUDFORMATION["CF-R53-001"] = """$name:
+  Type: AWS::Route53::HostedZone
+  Properties:
+    # keep the other settings as they are
+    QueryLoggingConfig:
+      CloudWatchLogsLogGroupArn: arn:aws:logs:us-east-1:111122223333:log-group:/aws/route53/example"""
+
+_CLOUDFORMATION["CF-R53-002"] = """${name}Dnssec:
+  Type: AWS::Route53::DNSSEC
+  # needs an active AWS::Route53::KeySigningKey for this zone first (DependsOn it)
+  Properties:
+    HostedZoneId: !Ref $name"""
+
+_CLOUDFORMATION["CF-R53-003"] = """$name:
+  Type: AWS::Route53::RecordSet
+  Properties:
+    # keep the other settings as they are
+    HealthCheckId: !Ref MyHealthCheck  # an AWS::Route53::HealthCheck"""
+
+_CLOUDFORMATION["CF-R53-003:AWS::Route53::RecordSetGroup"] = """$name:
+  Type: AWS::Route53::RecordSetGroup
+  Properties:
+    # keep the other settings as they are
+    RecordSets:
+      - Name: app.example.com
+        Type: A
+        SetIdentifier: primary
+        Failover: PRIMARY
+        HealthCheckId: !Ref MyHealthCheck  # an AWS::Route53::HealthCheck"""
+
+_CLOUDFORMATION["CF-ACM-001"] = """$name:
+  Type: AWS::CertificateManager::Certificate
+  Properties:
+    # keep the other settings as they are
+    ValidationMethod: DNS"""
+
+_CLOUDFORMATION["CF-ACM-002"] = """$name:
+  Type: AWS::CertificateManager::Certificate
+  Properties:
+    # keep the other settings as they are; a new key means a new certificate
+    KeyAlgorithm: RSA_2048"""
+
+_CLOUDFORMATION["CF-ACM-003"] = """$name:
+  Type: AWS::CertificateManager::Certificate
+  Properties:
+    # keep the other settings as they are
+    CertificateTransparencyLoggingPreference: ENABLED"""
+
+_CLOUDFORMATION["CF-GA-001"] = """$name:
+  Type: AWS::GlobalAccelerator::EndpointGroup
+  Properties:
+    # keep the other settings as they are
+    HealthCheckProtocol: HTTPS
+    HealthCheckPort: 443
+    HealthCheckPath: /health"""
+
+_CLOUDFORMATION["CF-APPSYNC-001"] = """$name:
+  Type: AWS::AppSync::GraphQLApi
+  Properties:
+    # keep the other settings as they are
+    LogConfig:
+      FieldLogLevel: ERROR
+      CloudWatchLogsRoleArn: arn:aws:iam::111122223333:role/appsync-logs"""
+
+_CLOUDFORMATION["CF-APPSYNC-002"] = """$name:
+  Type: AWS::AppSync::GraphQLApi
+  Properties:
+    # keep the other settings as they are
+    AuthenticationType: AWS_IAM"""
+
+_CLOUDFORMATION["CF-APPSYNC-003"] = """${name}WebAcl:
+  Type: AWS::WAFv2::WebACLAssociation
+  Properties:
+    ResourceArn: !GetAtt $name.Arn
+    WebACLArn: arn:aws:wafv2:us-east-1:111122223333:regional/webacl/my-acl/0123"""
+
+_CLOUDFORMATION["CF-APPSYNC-004"] = """${name}Cache:
+  Type: AWS::AppSync::ApiCache
+  Properties:
+    ApiId: !GetAtt $name.ApiId
+    ApiCachingBehavior: PER_RESOLVER_CACHING
+    Ttl: 300
+    Type: SMALL"""
+
+_CLOUDFORMATION["CF-TRANSFER-001"] = """$name:
+  Type: AWS::Transfer::Server
+  Properties:
+    # keep the other settings as they are
+    Protocols:
+      - SFTP"""
+
+_CLOUDFORMATION["CF-TRANSFER-002"] = """$name:
+  Type: AWS::Transfer::Server
+  Properties:
+    # keep the other settings as they are
+    StructuredLogDestinations:
+      - arn:aws:logs:us-east-1:111122223333:log-group:/aws/transfer/server:*"""
+
+_CLOUDFORMATION["CF-TRANSFER-003"] = """$name:
+  Type: AWS::Transfer::Server
+  Properties:
+    # keep the other settings as they are; this interrupts the server
+    EndpointType: VPC
+    EndpointDetails:
+      VpcId: vpc-0123456789abcdef0
+      SubnetIds:
+        - subnet-0123456789abcdef0
+      SecurityGroupIds:
+        - sg-0123456789abcdef0"""
+
+_CLOUDFORMATION["CF-APPRUNNER-001"] = """$name:
+  Type: AWS::AppRunner::Service
+  Properties:
+    # keep the other settings as they are
+    ObservabilityConfiguration:
+      ObservabilityEnabled: true
+      ObservabilityConfigurationArn: arn:aws:apprunner:us-east-1:111122223333:observabilityconfiguration/xray/1/0123"""
+
+_CLOUDFORMATION["CF-BEANSTALK-001"] = """$name:
+  Type: AWS::ElasticBeanstalk::Environment
+  Properties:
+    # keep the other settings as they are; enhanced health needs a service role
+    OptionSettings:
+      - Namespace: aws:elasticbeanstalk:healthreporting:system
+        OptionName: SystemType
+        Value: enhanced"""
+
+_CLOUDFORMATION["CF-BEANSTALK-002"] = """$name:
+  Type: AWS::ElasticBeanstalk::Environment
+  Properties:
+    # keep the other settings as they are
+    OptionSettings:
+      - Namespace: aws:elasticbeanstalk:managedactions
+        OptionName: ManagedActionsEnabled
+        Value: 'true'
+      - Namespace: aws:elasticbeanstalk:managedactions
+        OptionName: PreferredStartTime
+        Value: 'Sun:02:00'
+      - Namespace: aws:elasticbeanstalk:managedactions:platformupdate
+        OptionName: UpdateLevel
+        Value: minor"""
+
+_CLOUDFORMATION["CF-BEANSTALK-003"] = """$name:
+  Type: AWS::ElasticBeanstalk::Environment
+  Properties:
+    # keep the other settings as they are
+    OptionSettings:
+      - Namespace: aws:elasticbeanstalk:cloudwatch:logs
+        OptionName: StreamLogs
+        Value: 'true'
+      - Namespace: aws:elasticbeanstalk:cloudwatch:logs
+        OptionName: RetentionInDays
+        Value: '30'"""
+
+_CLOUDFORMATION["CF-CF-005"] = """$name:
+  Type: AWS::CloudFront::Distribution
+  Properties:
+    DistributionConfig:
+      # keep the other settings as they are
+      Logging:
+        Bucket: my-log-bucket.s3.amazonaws.com  # the bucket must allow ACLs
+        IncludeCookies: false"""
+
+_CLOUDFORMATION["CF-CF-006"] = """$name:
+  Type: AWS::CloudFront::Distribution
+  Properties:
+    DistributionConfig:
+      # keep the other settings as they are
+      PriceClass: PriceClass_100  # or PriceClass_200, if viewers are in those Regions"""
+
+_CLOUDFORMATION["CF-CF-007"] = """$name:
+  Type: AWS::CloudFront::Distribution
+  Properties:
+    DistributionConfig:
+      # keep the other settings as they are
+      DefaultCacheBehavior:
+        Compress: true  # also on each CacheBehaviors entry"""
+
+_CLOUDFORMATION["CF-CF-008"] = """$name:
+  Type: AWS::CloudFront::Distribution
+  Properties:
+    DistributionConfig:
+      # keep the other settings as they are
+      DefaultRootObject: index.html"""
+
+_CLOUDFORMATION["CF-CF-009"] = """$name:
+  Type: AWS::CloudFront::Distribution
+  Properties:
+    DistributionConfig:
+      # keep the other settings as they are
+      OriginGroups:
+        Quantity: 1
+        Items:
+          - Id: failover
+            FailoverCriteria:
+              StatusCodes:
+                Quantity: 3
+                Items: [500, 502, 503]
+            Members:
+              Quantity: 2
+              Items:
+                - OriginId: primary
+                - OriginId: secondary
+      DefaultCacheBehavior:
+        TargetOriginId: failover"""
+
+_CLOUDFORMATION["CF-CF-010"] = """$name:
+  Type: AWS::CloudFront::Distribution
+  Properties:
+    DistributionConfig:
+      # keep the other settings as they are
+      Origins:
+        - Id: app
+          DomainName: app.example.com
+          CustomOriginConfig:
+            OriginProtocolPolicy: https-only"""
+
+_CLOUDFORMATION["CF-CF-011"] = """$name:
+  Type: AWS::CloudFront::Distribution
+  Properties:
+    DistributionConfig:
+      # keep the other settings as they are
+      Origins:
+        - Id: app
+          DomainName: app.example.com
+          CustomOriginConfig:
+            OriginProtocolPolicy: https-only
+            OriginSSLProtocols: [TLSv1.2]"""
+
+_CLOUDFORMATION["CF-CF-012"] = """$name:
+  Type: AWS::CloudFront::Distribution
+  Properties:
+    DistributionConfig:
+      # keep the other settings as they are
+      ViewerCertificate:
+        AcmCertificateArn: arn:aws:acm:us-east-1:111122223333:certificate/example  # keep your certificate
+        SslSupportMethod: sni-only
+        MinimumProtocolVersion: TLSv1.2_2021"""
+
+_CLOUDFORMATION["CF-CF-013"] = """$name:
+  Type: AWS::CloudFront::Distribution
+  Properties:
+    DistributionConfig:
+      # keep the other settings as they are
+      CacheBehaviors:
+        - PathPattern: '*.js'
+          TargetOriginId: app
+          ViewerProtocolPolicy: redirect-to-https
+          CachePolicyId: 658327ea-f89d-4fab-a63d-7e88639e58f6  # managed CachingOptimized"""
+
+_CLOUDFORMATION["CF-S3-011"] = """$name:
+  Type: AWS::S3::Bucket
+  Properties:
+    # keep the other properties as they are
+    ReplicationConfiguration:
+      Role: !GetAtt ${name}ReplicationRole.Arn
+      Rules:
+        - Id: to-other-region # in each rule, add Metrics and ReplicationTime
+          Status: Enabled
+          Priority: 1
+          Filter:
+            Prefix: ''
+          DeleteMarkerReplication:
+            Status: Enabled
+          Destination:
+            Bucket: arn:aws:s3:::my-replica-bucket
+            Metrics:
+              Status: Enabled
+              EventThreshold:
+                Minutes: 15
+            ReplicationTime:
+              Status: Enabled
+              Time:
+                Minutes: 15"""
+
+_CLOUDFORMATION["CF-S3-012"] = """$name:
+  Type: AWS::S3::Bucket
+  Properties:
+    # keep the other properties as they are
+    BucketEncryption:
+      ServerSideEncryptionConfiguration:
+        - BucketKeyEnabled: true
+          ServerSideEncryptionByDefault:
+            SSEAlgorithm: aws:kms
+            KMSMasterKeyID: !Ref ${name}Key"""
+
+_CLOUDFORMATION["CF-EMR-001"] = """$name:
+  Type: AWS::EMR::Cluster
+  Properties:
+    Instances:
+      Ec2SubnetId: !Ref PrivateSubnet"""
+_CLOUDFORMATION["CF-EMR-002"] = """# Create an AWS::EMR::SecurityConfiguration that enables encryption at rest and in transit, and name it here.
+$name:
+  Type: AWS::EMR::Cluster
+  Properties:
+    SecurityConfiguration: !Ref AppSecurityConfiguration"""
+_CLOUDFORMATION["CF-EMR-002:AWS::EMR::SecurityConfiguration"] = """$name:
+  Type: AWS::EMR::SecurityConfiguration
+  Properties:
+    SecurityConfiguration:
+      EncryptionConfiguration:
+        EnableAtRestEncryption: true
+        EnableInTransitEncryption: true
+        AtRestEncryptionConfiguration:
+          S3EncryptionConfiguration:
+            EncryptionMode: SSE-S3"""
+_CLOUDFORMATION["CF-EMR-003"] = """$name:
+  Type: AWS::EMR::SecurityConfiguration
+  Properties:
+    SecurityConfiguration:
+      EncryptionConfiguration:
+        EnableAtRestEncryption: true
+        EnableInTransitEncryption: true
+        InTransitEncryptionConfiguration:
+          TLSCertificateConfiguration:
+            CertificateProviderType: PEM
+            S3Object: s3://my-bucket/certs.zip"""
+_CLOUDFORMATION["CF-DMS-001"] = """$name:
+  Type: AWS::DMS::ReplicationInstance
+  Properties:
+    PubliclyAccessible: false"""
+_CLOUDFORMATION["CF-DMS-002"] = """$name:
+  Type: AWS::DMS::ReplicationInstance
+  Properties:
+    AutoMinorVersionUpgrade: true"""
+_CLOUDFORMATION["CF-DMS-003"] = """$name:
+  Type: AWS::DMS::Endpoint
+  Properties:
+    SslMode: verify-full
+    CertificateArn: !Ref DatabaseCertificate"""
+_CLOUDFORMATION["CF-DMS-004"] = """$name:
+  Type: AWS::DMS::ReplicationInstance
+  Properties:
+    MultiAZ: true"""
 _CLOUDFORMATION["CF-BAK-001"] = """$name:
   Type: AWS::Backup::BackupVault
   Properties:
@@ -1486,6 +2145,516 @@ _TERRAFORM["CF-EFS-005"] = """resource "aws_efs_access_point" "$tf_name" {
     uid = 1000
     gid = 1000
   }
+}"""
+_TERRAFORM["CF-ATH-001"] = """resource "aws_athena_workgroup" "$tf_name" {
+  # keep the other arguments as they are
+  configuration {
+    result_configuration {
+      encryption_configuration {
+        encryption_option = "SSE_KMS"
+        kms_key_arn       = aws_kms_key.results.arn
+      }
+    }
+  }
+}"""
+_TERRAFORM["CF-ATH-002"] = """resource "aws_athena_workgroup" "$tf_name" {
+  # keep the other arguments as they are
+  configuration {
+    enforce_workgroup_configuration = true
+  }
+}"""
+_TERRAFORM["CF-GLUE-001"] = """# Create an aws_glue_security_configuration with S3, CloudWatch and bookmark encryption, and name it here.
+resource "aws_glue_job" "$tf_name" {
+  # keep the other arguments as they are
+  security_configuration = aws_glue_security_configuration.app.name
+}"""
+_TERRAFORM["CF-GLUE-001:aws_glue_security_configuration"] = """resource "aws_glue_security_configuration" "$tf_name" {
+  # keep the other arguments as they are
+  encryption_configuration {
+    s3_encryption {
+      s3_encryption_mode = "SSE-KMS"
+      kms_key_arn        = aws_kms_key.glue.arn
+    }
+    cloudwatch_encryption {
+      cloudwatch_encryption_mode = "SSE-KMS"
+      kms_key_arn                = aws_kms_key.glue.arn
+    }
+    job_bookmarks_encryption {
+      job_bookmarks_encryption_mode = "CSE-KMS"
+      kms_key_arn                   = aws_kms_key.glue.arn
+    }
+  }
+}"""
+_TERRAFORM["CF-GLUE-002"] = """resource "aws_glue_job" "$tf_name" {
+  # keep the other arguments as they are
+  default_arguments = {
+    "--enable-metrics" = "true"
+  }
+}"""
+_TERRAFORM["CF-GLUE-003"] = """# For a job that loads data incrementally.
+resource "aws_glue_job" "$tf_name" {
+  # keep the other arguments as they are
+  default_arguments = {
+    "--job-bookmark-option" = "job-bookmark-enable"
+  }
+}"""
+_TERRAFORM["CF-FH-001"] = """resource "aws_kinesis_firehose_delivery_stream" "$tf_name" {
+  # keep the other arguments as they are
+  server_side_encryption {
+    enabled  = true
+    key_type = "AWS_OWNED_CMK"
+  }
+}"""
+_TERRAFORM["CF-S3-008"] = """# remove any aws_s3_bucket_acl for this bucket, and the inline acl argument
+resource "aws_s3_bucket_ownership_controls" "$tf_name" {
+  bucket = aws_s3_bucket.$tf_name.id
+
+  rule {
+    object_ownership = "BucketOwnerEnforced"
+  }
+}"""
+
+_TERRAFORM["CF-S3-009"] = """# remove any aws_s3_bucket_acl for this bucket, and the inline acl argument
+resource "aws_s3_bucket_ownership_controls" "$tf_name" {
+  bucket = aws_s3_bucket.$tf_name.id
+
+  rule {
+    object_ownership = "BucketOwnerEnforced"
+  }
+}
+
+resource "aws_s3_bucket_public_access_block" "$tf_name" {
+  bucket                  = aws_s3_bucket.$tf_name.id
+  block_public_acls       = true
+  ignore_public_acls      = true
+  block_public_policy     = true
+  restrict_public_buckets = true
+}"""
+
+_TERRAFORM["CF-S3-010"] = """# the bucket and the destination need versioning on
+resource "aws_s3_bucket_replication_configuration" "$tf_name" {
+  bucket = aws_s3_bucket.$tf_name.id
+  role   = aws_iam_role.replication.arn # a role S3 can assume to replicate
+
+  rule {
+    id     = "to-other-region"
+    status = "Enabled"
+
+    filter {}
+
+    delete_marker_replication {
+      status = "Enabled"
+    }
+
+    destination {
+      bucket = aws_s3_bucket.replica.arn # in another Region
+
+      metrics {
+        status = "Enabled"
+        event_threshold {
+          minutes = 15
+        }
+      }
+
+      replication_time {
+        status = "Enabled"
+        time {
+          minutes = 15
+        }
+      }
+    }
+  }
+}"""
+
+_TERRAFORM["CF-APPSYNC-001"] = """resource "aws_appsync_graphql_api" "$tf_name" {
+  # keep the other arguments as they are
+  log_config {
+    field_log_level          = "ERROR"
+    cloudwatch_logs_role_arn = aws_iam_role.appsync_logs.arn
+  }
+}"""
+
+_TERRAFORM["CF-APPSYNC-002"] = """resource "aws_appsync_graphql_api" "$tf_name" {
+  # keep the other arguments as they are
+  authentication_type = "AWS_IAM"
+}"""
+
+_TERRAFORM["CF-R53-001"] = """resource "aws_route53_query_log" "$tf_name" {
+  zone_id                  = aws_route53_zone.$tf_name.zone_id
+  cloudwatch_log_group_arn = aws_cloudwatch_log_group.route53_queries.arn
+}"""
+
+_TERRAFORM["CF-R53-002"] = """resource "aws_route53_key_signing_key" "$tf_name" {
+  hosted_zone_id             = aws_route53_zone.$tf_name.id
+  key_management_service_arn = aws_kms_key.dnssec.arn
+  name                       = "ksk1"
+}
+
+resource "aws_route53_hosted_zone_dnssec" "$tf_name" {
+  hosted_zone_id = aws_route53_key_signing_key.$tf_name.hosted_zone_id
+}"""
+
+_TERRAFORM["CF-R53-003"] = """resource "aws_route53_health_check" "$tf_name" {
+  type              = "HTTPS"
+  fqdn              = "app.example.com"
+  port              = 443
+  resource_path     = "/health"
+  failure_threshold = 3
+  request_interval  = 30
+}
+
+resource "aws_route53_record" "$tf_name" {
+  # keep the other arguments as they are
+  health_check_id = aws_route53_health_check.$tf_name.id
+}"""
+
+_TERRAFORM["CF-ACM-001"] = """resource "aws_acm_certificate" "$tf_name" {
+  # keep the other arguments as they are
+  validation_method = "DNS"
+}"""
+
+_TERRAFORM["CF-ACM-002"] = """resource "aws_acm_certificate" "$tf_name" {
+  # keep the other arguments as they are; a new key means a new certificate
+  key_algorithm = "RSA_2048"
+}"""
+
+_TERRAFORM["CF-ACM-003"] = """resource "aws_acm_certificate" "$tf_name" {
+  # keep the other arguments as they are
+  options {
+    certificate_transparency_logging_preference = "ENABLED"
+  }
+}"""
+
+_TERRAFORM["CF-GA-001"] = """resource "aws_globalaccelerator_endpoint_group" "$tf_name" {
+  # keep the other arguments as they are
+  health_check_protocol = "HTTPS"
+  health_check_port     = 443
+  health_check_path     = "/health"
+}"""
+
+_TERRAFORM["CF-APPSYNC-003"] = """resource "aws_wafv2_web_acl_association" "${tf_name}_web_acl" {
+  resource_arn = aws_appsync_graphql_api.$tf_name.arn
+  web_acl_arn  = aws_wafv2_web_acl.main.arn
+}"""
+
+_TERRAFORM["CF-APPSYNC-004"] = """resource "aws_appsync_api_cache" "${tf_name}_cache" {
+  api_id               = aws_appsync_graphql_api.$tf_name.id
+  api_caching_behavior = "PER_RESOLVER_CACHING"
+  ttl                  = 300
+  type                 = "SMALL"
+}"""
+
+_TERRAFORM["CF-TRANSFER-001"] = """resource "aws_transfer_server" "$tf_name" {
+  # keep the other arguments as they are
+  protocols = ["SFTP"]
+}"""
+
+_TERRAFORM["CF-TRANSFER-002"] = """resource "aws_transfer_server" "$tf_name" {
+  # keep the other arguments as they are
+  structured_log_destinations = ["$${aws_cloudwatch_log_group.transfer.arn}:*"]
+}"""
+
+_TERRAFORM["CF-TRANSFER-003"] = """resource "aws_transfer_server" "$tf_name" {
+  # keep the other arguments as they are; this interrupts the server
+  endpoint_type = "VPC"
+  endpoint_details {
+    vpc_id             = aws_vpc.main.id
+    subnet_ids         = [aws_subnet.private.id]
+    security_group_ids = [aws_security_group.transfer.id]
+  }
+}"""
+
+_TERRAFORM["CF-APPRUNNER-001"] = """resource "aws_apprunner_service" "$tf_name" {
+  # keep the other arguments as they are
+  observability_configuration {
+    observability_enabled           = true
+    observability_configuration_arn = aws_apprunner_observability_configuration.xray.arn
+  }
+}"""
+
+_TERRAFORM["CF-BEANSTALK-001"] = """resource "aws_elastic_beanstalk_environment" "$tf_name" {
+  # keep the other arguments as they are; enhanced health needs a service role
+  setting {
+    namespace = "aws:elasticbeanstalk:healthreporting:system"
+    name      = "SystemType"
+    value     = "enhanced"
+  }
+}"""
+
+_TERRAFORM["CF-BEANSTALK-002"] = """resource "aws_elastic_beanstalk_environment" "$tf_name" {
+  # keep the other arguments as they are
+  setting {
+    namespace = "aws:elasticbeanstalk:managedactions"
+    name      = "ManagedActionsEnabled"
+    value     = "true"
+  }
+  setting {
+    namespace = "aws:elasticbeanstalk:managedactions"
+    name      = "PreferredStartTime"
+    value     = "Sun:02:00"
+  }
+  setting {
+    namespace = "aws:elasticbeanstalk:managedactions:platformupdate"
+    name      = "UpdateLevel"
+    value     = "minor"
+  }
+}"""
+
+_TERRAFORM["CF-BEANSTALK-003"] = """resource "aws_elastic_beanstalk_environment" "$tf_name" {
+  # keep the other arguments as they are
+  setting {
+    namespace = "aws:elasticbeanstalk:cloudwatch:logs"
+    name      = "StreamLogs"
+    value     = "true"
+  }
+  setting {
+    namespace = "aws:elasticbeanstalk:cloudwatch:logs"
+    name      = "RetentionInDays"
+    value     = "30"
+  }
+}"""
+
+_TERRAFORM["CF-SAGE-001"] = """resource "aws_sagemaker_notebook_instance" "$tf_name" {
+  # keep the other arguments as they are; this replaces the notebook
+  direct_internet_access = "Disabled"
+  subnet_id              = aws_subnet.private.id
+  security_groups        = [aws_security_group.notebook.id]
+}"""
+
+_TERRAFORM["CF-SAGE-002"] = """resource "aws_sagemaker_notebook_instance" "$tf_name" {
+  # keep the other arguments as they are; this replaces the notebook
+  subnet_id       = aws_subnet.private.id
+  security_groups = [aws_security_group.notebook.id]
+}"""
+
+_TERRAFORM["CF-SAGE-003"] = """resource "aws_sagemaker_notebook_instance" "$tf_name" {
+  # keep the other arguments as they are
+  root_access = "Disabled"
+}"""
+
+_TERRAFORM["CF-SAGE-004"] = """resource "aws_sagemaker_notebook_instance" "$tf_name" {
+  # keep the other arguments as they are; this replaces the resource
+  # on aws_sagemaker_endpoint_configuration, the argument is kms_key_arn
+  kms_key_id = aws_kms_key.main.arn
+}"""
+
+_TERRAFORM["CF-SAGE-005"] = """resource "aws_sagemaker_endpoint_configuration" "$tf_name" {
+  # keep the other arguments as they are
+  production_variants {
+    variant_name           = "main"
+    model_name             = aws_sagemaker_model.main.name
+    instance_type          = "ml.m5.large"
+    initial_instance_count = 2
+  }
+}"""
+
+_TERRAFORM["CF-FSX-001"] = """resource "aws_fsx_openzfs_file_system" "$tf_name" {
+  # keep the other arguments as they are, and keep your aws_fsx_* type; this replaces the file system
+  kms_key_id = aws_kms_key.main.arn
+}"""
+
+_TERRAFORM["CF-FSX-002"] = """resource "aws_fsx_openzfs_file_system" "$tf_name" {
+  # keep the other arguments as they are, and keep your aws_fsx_* type
+  copy_tags_to_backups = true
+  copy_tags_to_volumes = true # OpenZFS only
+}"""
+
+_TERRAFORM["CF-FSX-003"] = """resource "aws_fsx_lustre_file_system" "$tf_name" {
+  # keep the other arguments as they are, and keep your aws_fsx_* type
+  automatic_backup_retention_days = 7
+}"""
+
+_TERRAFORM["CF-CF-005"] = """resource "aws_cloudfront_distribution" "$tf_name" {
+  # keep the other arguments as they are
+  logging_config {
+    bucket          = "my-log-bucket.s3.amazonaws.com" # the bucket must allow ACLs
+    include_cookies = false
+  }
+}"""
+
+_TERRAFORM["CF-CF-006"] = """resource "aws_cloudfront_distribution" "$tf_name" {
+  # keep the other arguments as they are
+  price_class = "PriceClass_100" # or PriceClass_200, if viewers are in those Regions
+}"""
+
+_TERRAFORM["CF-CF-007"] = """resource "aws_cloudfront_distribution" "$tf_name" {
+  # keep the other arguments as they are
+  default_cache_behavior {
+    compress = true # also on each ordered_cache_behavior
+  }
+}"""
+
+_TERRAFORM["CF-CF-008"] = """resource "aws_cloudfront_distribution" "$tf_name" {
+  # keep the other arguments as they are
+  default_root_object = "index.html"
+}"""
+
+_TERRAFORM["CF-CF-009"] = """resource "aws_cloudfront_distribution" "$tf_name" {
+  # keep the other arguments as they are
+  origin_group {
+    origin_id = "failover"
+    failover_criteria {
+      status_codes = [500, 502, 503]
+    }
+    member {
+      origin_id = "primary"
+    }
+    member {
+      origin_id = "secondary"
+    }
+  }
+  default_cache_behavior {
+    target_origin_id = "failover"
+  }
+}"""
+
+_TERRAFORM["CF-CF-010"] = """resource "aws_cloudfront_distribution" "$tf_name" {
+  # keep the other arguments as they are
+  origin {
+    origin_id   = "app"
+    domain_name = "app.example.com"
+    custom_origin_config {
+      http_port              = 80
+      https_port             = 443
+      origin_protocol_policy = "https-only"
+      origin_ssl_protocols   = ["TLSv1.2"]
+    }
+  }
+}"""
+
+_TERRAFORM["CF-CF-011"] = """resource "aws_cloudfront_distribution" "$tf_name" {
+  # keep the other arguments as they are
+  origin {
+    origin_id   = "app"
+    domain_name = "app.example.com"
+    custom_origin_config {
+      http_port              = 80
+      https_port             = 443
+      origin_protocol_policy = "https-only"
+      origin_ssl_protocols   = ["TLSv1.2"]
+    }
+  }
+}"""
+
+_TERRAFORM["CF-CF-012"] = """resource "aws_cloudfront_distribution" "$tf_name" {
+  # keep the other arguments as they are
+  viewer_certificate {
+    acm_certificate_arn      = "arn:aws:acm:us-east-1:111122223333:certificate/example" # keep your certificate
+    ssl_support_method       = "sni-only"
+    minimum_protocol_version = "TLSv1.2_2021"
+  }
+}"""
+
+_TERRAFORM["CF-CF-013"] = """resource "aws_cloudfront_distribution" "$tf_name" {
+  # keep the other arguments as they are
+  ordered_cache_behavior {
+    path_pattern    = "*.js"
+    cache_policy_id = "658327ea-f89d-4fab-a63d-7e88639e58f6" # managed CachingOptimized
+    # keep the other arguments of this behavior
+  }
+}"""
+
+_TERRAFORM["CF-S3-011"] = """resource "aws_s3_bucket_replication_configuration" "$tf_name" {
+  bucket = aws_s3_bucket.$tf_name.id
+  role   = aws_iam_role.replication.arn
+
+  rule {
+    id     = "to-other-region" # in each rule, add metrics and replication_time
+    status = "Enabled"
+
+    filter {}
+
+    delete_marker_replication {
+      status = "Enabled"
+    }
+
+    destination {
+      bucket = aws_s3_bucket.replica.arn
+
+      metrics {
+        status = "Enabled"
+        event_threshold {
+          minutes = 15
+        }
+      }
+
+      replication_time {
+        status = "Enabled"
+        time {
+          minutes = 15
+        }
+      }
+    }
+  }
+}"""
+
+_TERRAFORM["CF-S3-012"] = """resource "aws_s3_bucket_server_side_encryption_configuration" "$tf_name" {
+  bucket = aws_s3_bucket.$tf_name.id
+
+  rule {
+    bucket_key_enabled = true
+
+    apply_server_side_encryption_by_default {
+      sse_algorithm     = "aws:kms"
+      kms_master_key_id = aws_kms_key.$tf_name.arn
+    }
+  }
+}"""
+
+_TERRAFORM["CF-EMR-001"] = """resource "aws_emr_cluster" "$tf_name" {
+  # keep the other arguments as they are
+  ec2_attributes {
+    subnet_id = aws_subnet.private.id
+  }
+}"""
+_TERRAFORM["CF-EMR-002"] = """# Create an aws_emr_security_configuration that enables encryption at rest and in transit, and name it here.
+resource "aws_emr_cluster" "$tf_name" {
+  # keep the other arguments as they are
+  security_configuration = aws_emr_security_configuration.app.name
+}"""
+_TERRAFORM["CF-EMR-002:aws_emr_security_configuration"] = """resource "aws_emr_security_configuration" "$tf_name" {
+  configuration = jsonencode({
+    EncryptionConfiguration = {
+      EnableAtRestEncryption    = true
+      EnableInTransitEncryption = true
+      AtRestEncryptionConfiguration = {
+        S3EncryptionConfiguration = {
+          EncryptionMode = "SSE-S3"
+        }
+      }
+    }
+  })
+}"""
+_TERRAFORM["CF-EMR-003"] = """resource "aws_emr_security_configuration" "$tf_name" {
+  configuration = jsonencode({
+    EncryptionConfiguration = {
+      EnableAtRestEncryption    = true
+      EnableInTransitEncryption = true
+      InTransitEncryptionConfiguration = {
+        TLSCertificateConfiguration = {
+          CertificateProviderType = "PEM"
+          S3Object                = "s3://my-bucket/certs.zip"
+        }
+      }
+    }
+  })
+}"""
+_TERRAFORM["CF-DMS-001"] = """resource "aws_dms_replication_instance" "$tf_name" {
+  # keep the other arguments as they are
+  publicly_accessible = false
+}"""
+_TERRAFORM["CF-DMS-002"] = """resource "aws_dms_replication_instance" "$tf_name" {
+  # keep the other arguments as they are
+  auto_minor_version_upgrade = true
+}"""
+_TERRAFORM["CF-DMS-003"] = """resource "aws_dms_endpoint" "$tf_name" {
+  # keep the other arguments as they are
+  ssl_mode        = "verify-full"
+  certificate_arn = aws_dms_certificate.database.certificate_arn
+}"""
+_TERRAFORM["CF-DMS-004"] = """resource "aws_dms_replication_instance" "$tf_name" {
+  # keep the other arguments as they are
+  multi_az = true
 }"""
 _TERRAFORM["CF-BAK-001"] = """resource "aws_backup_vault" "$tf_name" {
   name        = "my-vault"
@@ -2488,6 +3657,67 @@ _CLOUDFORMATION.update({
     ContainerDefinitions:
       - Name: app # each container: keep its other keys as they are
         User: '1000'""",
+    "CF-ECS-004": """$name:
+  Type: AWS::ECS::TaskDefinition
+  Properties:
+    # keep the other properties as they are
+    NetworkMode: awsvpc""",
+    "CF-ECS-005": """$name:
+  Type: AWS::ECS::Service
+  Properties:
+    # keep the other properties as they are
+    NetworkConfiguration:
+      AwsvpcConfiguration:
+        AssignPublicIp: DISABLED""",
+    "CF-ECS-006": """$name:
+  Type: AWS::ECS::TaskDefinition
+  Properties:
+    # keep the other properties as they are; remove PidMode, or share only within the task
+    PidMode: task""",
+    "CF-ECS-007": """$name:
+  Type: AWS::ECS::TaskDefinition
+  Properties:
+    # keep the other properties as they are
+    ContainerDefinitions:
+      - Name: app # each container: keep its other keys, and remove the variable from Environment
+        Secrets:
+          - Name: DB_PASSWORD
+            ValueFrom: arn:aws:secretsmanager:eu-north-1:111122223333:secret:app-db""",
+    "CF-ECS-008": """$name:
+  Type: AWS::ECS::TaskDefinition
+  Properties:
+    # keep the other properties as they are
+    ContainerDefinitions:
+      - Name: app # each container: keep its other keys as they are
+        LogConfiguration:
+          LogDriver: awslogs
+          Options:
+            awslogs-group: /ecs/app
+            awslogs-region: eu-north-1
+            awslogs-stream-prefix: app""",
+    "CF-ECS-009": """$name:
+  Type: AWS::ECS::Service
+  Properties:
+    # keep the other properties as they are
+    PlatformVersion: LATEST""",
+    "CF-ECS-010": """$name:
+  Type: AWS::ECS::Cluster
+  Properties:
+    # keep the other properties as they are
+    ClusterSettings:
+      - Name: containerInsights
+        Value: enabled""",
+    "CF-ECS-011": """$name:
+  Type: AWS::ECS::TaskDefinition
+  Properties:
+    # keep the other properties as they are; use a pair Fargate offers
+    Cpu: '256'
+    Memory: '512'""",
+    "CF-EKS-004": """$name:
+  Type: AWS::EKS::Cluster
+  Properties:
+    # keep the other properties as they are; upgrade one minor version at a time
+    Version: '1.34'""",
 })
 _TERRAFORM.update({
     "CF-ECR-001": """resource "aws_ecr_repository" "$tf_name" {
@@ -2536,6 +3766,65 @@ _TERRAFORM.update({
     name = "app" # each container: keep its other keys as they are
     user = "1000"
   }])
+}""",
+    "CF-ECS-004": """resource "aws_ecs_task_definition" "$tf_name" {
+  # keep the other arguments as they are
+  network_mode = "awsvpc"
+}""",
+    "CF-ECS-005": """resource "aws_ecs_service" "$tf_name" {
+  # keep the other arguments as they are
+  network_configuration {
+    subnets          = var.private_subnet_ids
+    assign_public_ip = false
+  }
+}""",
+    "CF-ECS-006": """resource "aws_ecs_task_definition" "$tf_name" {
+  # keep the other arguments as they are; remove pid_mode, or share only within the task
+  pid_mode = "task"
+}""",
+    "CF-ECS-007": """resource "aws_ecs_task_definition" "$tf_name" {
+  # keep the other arguments as they are
+  container_definitions = jsonencode([{
+    name = "app" # each container: keep its other keys, and remove the variable from environment
+    secrets = [{
+      name      = "DB_PASSWORD"
+      valueFrom = aws_secretsmanager_secret.app_db.arn
+    }]
+  }])
+}""",
+    "CF-ECS-008": """resource "aws_ecs_task_definition" "$tf_name" {
+  # keep the other arguments as they are
+  container_definitions = jsonencode([{
+    name = "app" # each container: keep its other keys as they are
+    logConfiguration = {
+      logDriver = "awslogs"
+      options = {
+        awslogs-group         = "/ecs/app"
+        awslogs-region        = "eu-north-1"
+        awslogs-stream-prefix = "app"
+      }
+    }
+  }])
+}""",
+    "CF-ECS-009": """resource "aws_ecs_service" "$tf_name" {
+  # keep the other arguments as they are
+  platform_version = "LATEST"
+}""",
+    "CF-ECS-010": """resource "aws_ecs_cluster" "$tf_name" {
+  # keep the other arguments as they are
+  setting {
+    name  = "containerInsights"
+    value = "enabled"
+  }
+}""",
+    "CF-ECS-011": """resource "aws_ecs_task_definition" "$tf_name" {
+  # keep the other arguments as they are; use a pair Fargate offers
+  cpu    = "256"
+  memory = "512"
+}""",
+    "CF-EKS-004": """resource "aws_eks_cluster" "$tf_name" {
+  # keep the other arguments as they are; upgrade one minor version at a time
+  version = "1.34"
 }""",
 })
 
@@ -2724,6 +4013,93 @@ resource "aws_iam_role" "$tf_name" {
   assume_role_policy = data.aws_iam_policy_document.${tf_name}_trust.json
 }"""
 
+
+_CLOUDFORMATION.update({
+    "CF-ASG-001": """$name:
+  Type: AWS::AutoScaling::AutoScalingGroup
+  Properties:
+    HealthCheckType: ELB
+    HealthCheckGracePeriod: 300""",
+    "CF-ASG-002": """$name:
+  Type: AWS::AutoScaling::AutoScalingGroup
+  Properties:
+    VPCZoneIdentifier:  # subnets in at least two AZs
+      - !Ref PrivateSubnetA
+      - !Ref PrivateSubnetB""",
+    "CF-ASG-003": """# A launch configuration cannot be changed: create a new one and point the group at it.
+$name:
+  Type: AWS::AutoScaling::LaunchConfiguration
+  Properties:
+    MetadataOptions:
+      HttpTokens: required
+      HttpEndpoint: enabled""",
+    "CF-ASG-004": """# A launch configuration cannot be changed: create a new one and point the group at it.
+$name:
+  Type: AWS::AutoScaling::LaunchConfiguration
+  Properties:
+    AssociatePublicIpAddress: false""",
+    "CF-ASG-005": """$name:
+  Type: AWS::AutoScaling::AutoScalingGroup
+  Properties:
+    # Remove LaunchConfigurationName, and create the template with the same settings.
+    LaunchTemplate:
+      LaunchTemplateId: !Ref AppLaunchTemplate
+      Version: !GetAtt AppLaunchTemplate.LatestVersionNumber""",
+    "CF-ASG-006": """# If the fixed size is not intended, raise MaxSize on $name and scale on load.
+${name}ScaleOnCpu:
+  Type: AWS::AutoScaling::ScalingPolicy
+  Properties:
+    AutoScalingGroupName: !Ref $name
+    PolicyType: TargetTrackingScaling
+    TargetTrackingConfiguration:
+      PredefinedMetricSpecification:
+        PredefinedMetricType: ASGAverageCPUUtilization
+      TargetValue: 60""",
+})
+
+_TERRAFORM.update({
+    "CF-ASG-001": """resource "aws_autoscaling_group" "$tf_name" {
+  # keep the other arguments as they are
+  health_check_type         = "ELB"
+  health_check_grace_period = 300
+}""",
+    "CF-ASG-002": """resource "aws_autoscaling_group" "$tf_name" {
+  # keep the other arguments as they are
+  vpc_zone_identifier = var.private_subnet_ids # subnets in at least two AZs
+}""",
+    "CF-ASG-003": """# A launch configuration cannot be changed in place: Terraform replaces it.
+resource "aws_launch_configuration" "$tf_name" {
+  # keep the other arguments as they are
+  metadata_options {
+    http_tokens   = "required"
+    http_endpoint = "enabled"
+  }
+}""",
+    "CF-ASG-004": """# A launch configuration cannot be changed in place: Terraform replaces it.
+resource "aws_launch_configuration" "$tf_name" {
+  # keep the other arguments as they are
+  associate_public_ip_address = false
+}""",
+    "CF-ASG-005": """resource "aws_autoscaling_group" "$tf_name" {
+  # keep the other arguments as they are; remove launch_configuration
+  launch_template {
+    id      = aws_launch_template.app.id
+    version = aws_launch_template.app.latest_version
+  }
+}""",
+    "CF-ASG-006": """# If the fixed size is not intended, raise max_size on aws_autoscaling_group.$tf_name and scale on load.
+resource "aws_autoscaling_policy" "${tf_name}_cpu" {
+  name                   = "${tf_name}-cpu"
+  autoscaling_group_name = aws_autoscaling_group.$tf_name.name
+  policy_type            = "TargetTrackingScaling"
+  target_tracking_configuration {
+    predefined_metric_specification {
+      predefined_metric_type = "ASGAverageCPUUtilization"
+    }
+    target_value = 60
+  }
+}""",
+})
 
 _CLOUDFORMATION.update({
     "CF-IAM-004": _cf_trust("""        - Effect: Allow

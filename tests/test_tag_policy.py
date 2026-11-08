@@ -10,6 +10,8 @@ from aws_arch_agent.config import ConfigError, load_config
 from aws_arch_agent.models import Finding
 from aws_arch_agent.rules.cf_template import drop_static_covered_by_cf, run_cf_rules_from_paths, run_resource_checks
 from aws_arch_agent.rules.fix_snippets import attach_fixes
+from aws_arch_agent.rules.resource_model import TF_MODULE_CALL, Resource
+from aws_arch_agent.rules import tag_policy
 from aws_arch_agent.rules.tag_policy import TagPolicy, use_tag_policy
 from aws_arch_agent.rules.terraform_model import resources_from_terraform
 
@@ -286,3 +288,14 @@ def test_cli_scan_and_cdk_source_note(tmp_path: Path) -> None:
     result = CliRunner().invoke(app, ["--repo", str(cdk), "--no-llm", "--out", str(tmp_path / "c.md")])
     assert result.exit_code == 0, result.output
     assert "tags.required is checked on templates, and this scan read none" in result.output
+
+
+def test_a_terraform_module_call_alone_does_not_count_as_checked(tmp_path: Path) -> None:
+    """A root with only module calls has checked no tags, so BP-001 and COST-015 must stay."""
+    module = Resource(type=None, name="module.app", source_type=TF_MODULE_CALL)
+    queue = Resource(type="sqs_queue", name="q", source_type="aws_sqs_queue")
+    with use_tag_policy(TagPolicy(required=("team",))):
+        tag_policy.findings([module], tmp_path / "main.tf")
+        assert not tag_policy.policy_checked()
+        tag_policy.findings([module, queue], tmp_path / "main.tf")
+        assert tag_policy.policy_checked()

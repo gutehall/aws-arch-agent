@@ -87,6 +87,10 @@ _FN = (
 
 # (template check, CDK rule, synthesised resource, CDK source that fires the CDK rule)
 PAIRS: list[tuple[str, str, dict, str]] = [
+    ("CF-ALARM-001", "OPS-010", {"Type": "AWS::SQS::Queue", "Properties": {}}, _FN),
+    ("CF-ALARM-002", "OPS-011", {"Type": "AWS::CloudWatch::Alarm", "Properties": {}},
+     "new cloudwatch.Alarm(this, 'A', {});"),
+    ("CF-DASH-001", "OPS-021", {f"Queue{i}": {"Type": "AWS::SQS::Queue", "Properties": {}} for i in range(21)}, _FN),
     ("CF-SQS-001", "SEC-013", {"Type": "AWS::SQS::Queue", "Properties": {}},
      "new sqs.Queue(this, 'Q');"),
     ("CF-SQS-002", "REL-008", {"Type": "AWS::SQS::Queue", "Properties": {}},
@@ -230,9 +234,69 @@ PAIRS: list[tuple[str, str, dict, str]] = [
      "new backup.BackupPlan(this, 'P');"),
     ("CF-BAK-005", "REL-013", {"Type": "AWS::DynamoDB::Table", "Properties": {}},
      "new DynamoDB.Table(this, 'T');"),
+    ("CF-ECS-010", "OPS-008", {"Type": "AWS::ECS::Cluster", "Properties": {}},
+     "new ecs.Cluster(this, 'C');"),
+    ("CF-ECS-011", "PERF-007", {"Type": "AWS::ECS::TaskDefinition", "Properties": {
+        "RequiresCompatibilities": ["FARGATE"], "Cpu": "256", "Memory": "600"}},
+     "new ecs.FargateTaskDefinition(this, 'Td');"),
+    ("CF-ATH-001", "SEC-042", {"Type": "AWS::Athena::WorkGroup", "Properties": {"Name": "wg"}},
+     "new athena.CfnWorkGroup(this, 'W', { name: 'wg' });"),
+    ("CF-GLUE-001", "SEC-043", {"Type": "AWS::Glue::Job", "Properties": {"Command": {"Name": "glueetl"}}},
+     "new glue.CfnJob(this, 'J', { command: { name: 'glueetl' }, role: role.roleArn });"),
+    ("CF-GLUE-002", "OPS-015", {"Type": "AWS::Glue::Job", "Properties": {"Command": {"Name": "glueetl"}}},
+     "new glue.CfnJob(this, 'J', { command: { name: 'glueetl' }, role: role.roleArn });"),
+    ("CF-GLUE-003", "OPS-019", {"Type": "AWS::Glue::Job", "Properties": {
+        "Command": {"Name": "glueetl"}, "DefaultArguments": {"--job-bookmark-option": "job-bookmark-disable"}}},
+     "new glue.CfnJob(this, 'J', { command: { name: 'glueetl' }, role: role.roleArn });"),
     ("CF-COST-002", "COST-006",
      {"Type": "AWS::EC2::NatGateway", "Properties": {"SubnetId": {"Ref": "Public"}}},
      "new ec2.Vpc(this, 'Vpc', { natGateways: 1 });"),
+    ("CF-S3-010", "REL-026",
+     {"Type": "AWS::S3::Bucket", "Properties": {"Tags": [{"Key": "Tier", "Value": "critical"}]}},
+     'new s3.Bucket(this, "B");'),
+    ("CF-S3-011", "OPS-025",
+     {"Type": "AWS::S3::Bucket", "Properties": {"ReplicationConfiguration": {"Role": "r", "Rules": [
+         {"Status": "Enabled", "Destination": {"Bucket": "arn:aws:s3:::dest"}}]}}},
+     "new s3.Bucket(this, 'B', { replicationRule: {} });"),
+    ("CF-SAGE-002", "SEC-046", {"Type": "AWS::SageMaker::NotebookInstance", "Properties": {}},
+     "new sagemaker.CfnNotebookInstance(this, 'N', {});"),
+    ("CF-SAGE-004", "SEC-047", {"Type": "AWS::SageMaker::NotebookInstance", "Properties": {}},
+     "new sagemaker.CfnNotebookInstance(this, 'N', {});"),
+    ("CF-FSX-001", "SEC-050", {"Type": "AWS::FSx::FileSystem", "Properties": {"FileSystemType": "WINDOWS"}},
+     "new fsx.LustreFileSystem(this, 'F', {});"),
+    ("CF-R53-002", "SEC-032", {"Type": "AWS::Route53::HostedZone", "Properties": {"Name": "example.com"}},
+     "new route53.PublicHostedZone(this, 'Z', { zoneName: 'example.com' });"),
+    ("CF-R53-003", "SEC-031", {"Type": "AWS::Route53::RecordSet", "Properties": {
+        "Name": "a.example.com", "Type": "A", "Weight": 10, "SetIdentifier": "a"}},
+     "new route53.RecordSet(this, 'R', { zone, recordName: 'a' });"),
+    ("CF-ACM-001", "REL-022", {"Type": "AWS::CertificateManager::Certificate", "Properties": {
+        "DomainName": "example.com"}},
+     "new acm.Certificate(this, 'C', { domainName: 'example.com' });"),
+    ("CF-GA-001", "REL-020", {"Type": "AWS::GlobalAccelerator::EndpointGroup", "Properties": {
+        "EndpointConfigurations": [{"EndpointId": "i-0123456789abcdef0"}]}},
+     "new globalaccelerator.Accelerator(this, 'A');"),
+    ("CF-APPSYNC-001", "SEC-048", {"Type": "AWS::AppSync::GraphQLApi", "Properties": {"AuthenticationType": "AWS_IAM"}},
+     "new appsync.GraphqlApi(this, 'A', { name: 'api', schema: schema });"),
+    ("CF-APPSYNC-003", "SEC-049", {"Type": "AWS::AppSync::GraphQLApi", "Properties": {"AuthenticationType": "AWS_IAM"}},
+     "new appsync.GraphqlApi(this, 'A', { name: 'api', schema: schema });"),
+    ("CF-APPSYNC-004", "PERF-013", {"Type": "AWS::AppSync::GraphQLApi", "Properties": {"AuthenticationType": "AWS_IAM"}},
+     "new appsync.GraphqlApi(this, 'A', { name: 'api', schema: schema });"),
+    ("CF-TRANSFER-002", "SEC-051", {"Type": "AWS::Transfer::Server", "Properties": {}},
+     "new transfer.CfnServer(this, 'T', { identityProviderType: 'SERVICE_MANAGED' });"),
+    ("CF-APPRUNNER-001", "OPS-018", {"Type": "AWS::AppRunner::Service", "Properties": {}},
+     "new apprunner.Service(this, 'S', { source: apprunner.Source.fromEcr({ repository }) });"),
+    ("CF-CF-005", "OPS-007", {"Type": "AWS::CloudFront::Distribution", "Properties": {"DistributionConfig": {
+         "Origins": [{"Id": "a", "DomainName": "a.example.com", "CustomOriginConfig": {"OriginProtocolPolicy": "https-only"}}],
+         "DefaultCacheBehavior": {"TargetOriginId": "a", "ViewerProtocolPolicy": "https-only"}}}}, "new cloudfront.Distribution(this, 'D', {});"),
+    ("CF-CF-006", "COST-011", {"Type": "AWS::CloudFront::Distribution", "Properties": {"DistributionConfig": {
+         "Origins": [{"Id": "a", "DomainName": "a.example.com", "CustomOriginConfig": {"OriginProtocolPolicy": "https-only"}}],
+         "DefaultCacheBehavior": {"TargetOriginId": "a", "ViewerProtocolPolicy": "https-only"}}}}, "new cloudfront.Distribution(this, 'D', {});"),
+    ("CF-CF-007", "SUST-006", {"Type": "AWS::CloudFront::Distribution", "Properties": {"DistributionConfig": {
+         "Origins": [{"Id": "a", "DomainName": "a.example.com", "CustomOriginConfig": {"OriginProtocolPolicy": "https-only"}}],
+         "DefaultCacheBehavior": {"TargetOriginId": "a", "ViewerProtocolPolicy": "https-only"}}}}, "new cloudfront.Distribution(this, 'D', {});"),
+    ("CF-CF-013", "PERF-006", {"Type": "AWS::CloudFront::Distribution", "Properties": {"DistributionConfig": {
+         "Origins": [{"Id": "a", "DomainName": "a.example.com", "CustomOriginConfig": {"OriginProtocolPolicy": "https-only"}}],
+         "DefaultCacheBehavior": {"TargetOriginId": "a", "ViewerProtocolPolicy": "https-only"}, "CacheBehaviors": [{"PathPattern": "*.js", "TargetOriginId": "a", "ViewerProtocolPolicy": "https-only", "CachePolicyId": "4135ea2d-6df8-44a3-9df3-4b5a84be39ad"}]}}}, "new cloudfront.Distribution(this, 'D', {});"),
 ]
 
 
@@ -266,6 +330,19 @@ def test_v2_reports_only_the_template_finding(
     assert rule_id not in kept
 
 
+def test_v2_on_the_minimal_cdk_fixture_reports_each_problem_once() -> None:
+    """CDK rules and template checks on one real CDK app, as V2 merges them."""
+    repo = Path(__file__).parent / "fixtures" / "minimal-cdk"
+    template = repo / "cdk.out" / "MinimalStack.template.json"
+    static = [f for rule in RULE_BY_ID.values() for f in rule.run(repo, "typescript")]
+    kept = drop_static_covered_by_cf(static + run_cf_rules_from_paths([template], repo_path=repo))
+    reported = {f.id for f in kept}
+    for cf_id in reported:
+        assert not set(CF_COVERS_STATIC.get(cf_id, ())) & reported, f"{cf_id} and its CDK rule both report"
+    keys = [(f.id, f.file, f.line, f.evidence) for f in kept]
+    assert len(keys) == len(set(keys)), "one finding reported twice"
+
+
 def test_every_pair_is_in_the_map() -> None:
     for cf_id, rule_id, _resource, _source in PAIRS:
         assert rule_id in CF_COVERS_STATIC[cf_id]
@@ -293,6 +370,7 @@ KNOWN_SAME_CONTROL: list[tuple[str, str]] = [
     ("CF-CT-003", "OPS-001"),
     ("CF-TAG-001", "BP-001"),
     ("CF-NACL-001", "SEC-055"),
+    ("CF-ASG-006", "COST-002"),
 ]
 
 # Title words that do not name a control.

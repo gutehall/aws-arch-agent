@@ -4,7 +4,7 @@ This document provides a comprehensive list of all rules checked by AWS Arch Age
 
 ## Overview
 
-AWS Arch Agent checks **172 static analysis rules** plus additional CloudFormation template rules across all 6 AWS Well-Architected Framework pillars.
+AWS Arch Agent checks **172 static analysis rules** and **272 template checks** across all 6 AWS Well-Architected Framework pillars. 132 of the 172 CDK rules (77%) have a template check, so they also run for CloudFormation, Terraform and synthesised CDK. [COVERAGE.md](COVERAGE.md) gives the reason for each of the others.
 
 ## Static Analysis Rules (V1 & V2 Modes)
 
@@ -285,7 +285,17 @@ CloudFormation template rules run when the agent has access to template files. T
 - **RDS and Aurora settings** (`AWS::RDS::DBInstance`, `AWS::RDS::DBCluster`, their parameter groups; Terraform `aws_db_instance`, `aws_rds_cluster`, `aws_rds_cluster_instance`, `aws_db_parameter_group`, `aws_rds_cluster_parameter_group`). An Aurora member instance takes its engine settings from the cluster, so it is judged only for CF-RDS-007, CF-RDS-009 and CF-RDS-014. A database restored from a snapshot or a replica is not judged for its port or username. CF-RDS-006 (Medium): the linked parameter group does not set `rds.force_ssl` to 1 (PostgreSQL, SQL Server, Aurora PostgreSQL) or `require_secure_transport` to ON (MySQL, MariaDB, Aurora MySQL). No group, or a `default.*` group, does not enforce TLS, except on RDS for PostgreSQL 15 and later, whose defaults set `rds.force_ssl=1`. The major version comes from `EngineVersion` or the parameter group family; with neither, PostgreSQL is not judged, since AWS then picks the current default major. Oracle and Db2 set TLS in an option group, which is not read. A group the scan cannot read is not judged. CF-RDS-007 (Low, Security Hub RDS.6): `MonitoringInterval` unset or 0. CF-RDS-008 (Low, RDS.10 / RDS.12): IAM database authentication off, on MySQL, MariaDB, PostgreSQL and Aurora. CF-RDS-009 (Low, RDS.13): `AutoMinorVersionUpgrade: false`. CF-RDS-010 (Low, RDS.16 / RDS.17): `CopyTagsToSnapshot` not true. CF-RDS-011 (Low, RDS.9): no `EnableCloudwatchLogsExports`. CF-RDS-012 (Low, RDS.23): the engine's default port, set or by default. CF-RDS-013 (Low, RDS.24 / RDS.25): a literal default `MasterUsername` (`admin`, `postgres`, `root`, `sa`, ...); a username from a Secrets Manager reference is not read. CF-RDS-014 (Low): an x86 instance class on an engine with Graviton classes. In V2, CF-RDS-006, CF-RDS-007 and CF-RDS-014 replace SEC-021, OPS-009 and COST-010
 - **ALB / NLB** (`AWS::ElasticLoadBalancingV2::LoadBalancer`, `Listener`, `TargetGroup`; Terraform `aws_lb`, `aws_lb_listener`, `aws_lb_target_group` and the `aws_alb*` aliases): CF-ALB-001 (access logs off, Low, Security Hub ELB.5), CF-ALB-002 (HTTP listener whose default action does not redirect to HTTPS, Medium, ELB.1), CF-ALB-003 (HTTPS or TLS listener with a policy that allows TLS 1.0 or 1.1, Medium; no `SslPolicy` counts, because CloudFormation, CDK and Terraform then use `ELBSecurityPolicy-2016-08`), CF-ALB-004 (ALB keeps invalid HTTP headers, Low, ELB.4), CF-ALB-005 (no deletion protection, Low, ELB.6), CF-ALB-006 (ALB desync mitigation mode `monitor`, Low, ELB.12), CF-ALB-007 (target group with health checks off, or an HTTP/HTTPS target group with no `HealthCheckPath`, Low; Lambda targets are skipped). An attribute or policy set from a parameter is not judged. In V2, CF-ALB-002, CF-ALB-003 and CF-ALB-007 replace SEC-011, SEC-012 and REL-007
 - **Classic Load Balancer** (`AWS::ElasticLoadBalancing::LoadBalancer`, `aws_elb`): CF-CLB-001 (only HTTP or TCP listeners, Medium, ELB.3), CF-CLB-002 (an HTTPS or SSL listener with an IAM server certificate, not ACM, Low, ELB.2), CF-CLB-003 (access logs off, Low, ELB.5), CF-CLB-004 (cross-zone load balancing off, Low, ELB.9; off by default in CloudFormation, on by default in Terraform), CF-CLB-005 (connection draining off, Low, ELB.7)
-- **CloudTrail**: CF-CT-001 (log file validation), CF-CT-002 (multi-region), CF-CT-003 (KMS encryption)
+- **CloudTrail**: CF-CT-001 (log file validation), CF-CT-002 (multi-region), CF-CT-003 (KMS encryption), CF-CT-004 (Low, Security Hub CloudTrail.5: no `CloudWatchLogsLogGroupArn`, Terraform `cloud_watch_logs_group_arn`; a value from a parameter or variable counts as set), CF-CT-005 (Low: the template holds a trail and an S3 bucket marked sensitive, and no trail has a data event selector that reaches it. Sensitive means the word `sensitive`, `pii`, `phi`, `confidential` or `secret` in a literal bucket name, logical id, tag value, or tag key with a true value; `non-sensitive` and `pii-free` do not count. A selector for all buckets counts, and so does one that cannot be read, a value from a parameter or variable, an advanced selector with an exclusion, or a literal ARN when the bucket's name is not known. A bucket a trail delivers its logs to is not judged)
+- **CloudWatch alarms and dashboards** (`AWS::CloudWatch::Alarm`, `AWS::CloudWatch::CompositeAlarm`, `AWS::CloudWatch::Dashboard`; Terraform `aws_cloudwatch_metric_alarm`, `aws_cloudwatch_composite_alarm`, `aws_cloudwatch_dashboard`). All Low:
+  - CF-ALARM-001: one finding per stack, at the first RDS, DynamoDB, Lambda, ECS service, ALB or SQS resource, when no metric alarm refers to any of them through `Dimensions` or `Metrics`. Composite alarms do not count. A dimension from a parameter or variable counts for all resources, and so does a literal for a resource whose name is not known, or a metric of that service with no dimension naming another resource. CDK's own helper functions, and load balancers not known to be ALBs, do not count as resources. Not judged when the stack has a nested stack, a remote Terraform module, or a local one that defines an alarm. Not reported in dev.
+  - CF-ALARM-002: an alarm or composite alarm with no `AlarmActions`, and nothing in the template that reads it: a composite alarm, an EventBridge rule on alarm state, or another resource or module that refers to it. Any action counts, not only SNS: scaling, EC2, Systems Manager and Lambda actions are real ones, and the CDK rule accepts them too. A value from a parameter or variable is not judged.
+  - CF-DASH-001: a stack with more than `dashboards.min_resources` resources (default 20, see [CONFIG.md](CONFIG.md)) and no dashboard. Only resources the scan models count. Not judged when the stack has a nested stack, a remote Terraform module, or a local one that defines a dashboard. Not reported in dev.
+- **Account baseline resources a repo defines** (`AWS::GuardDuty::Detector`, `AWS::SecurityHub::Hub`, `AWS::Config::ConfigurationRecorder`, `AWS::Macie::Session`, `AWS::Budgets::Budget`; Terraform `aws_guardduty_detector`, `aws_guardduty_detector_feature`, `aws_securityhub_account`, `aws_config_configuration_recorder`, `aws_macie2_account`, `aws_budgets_budget`). These run only when the resource is in the template, and never report a missing service. A value from a parameter or variable is not judged.
+  - CF-GD-001 (Medium): `Enable` literally false (Security Hub GuardDuty.1), or S3 Protection (GuardDuty.10), EKS Audit Log Monitoring (GuardDuty.5) or Malware Protection for EC2 (GuardDuty.8) literally set off in `DataSources`, `Features` or a tied `aws_guardduty_detector_feature`. A feature left unset is not reported: it can be on by default for a new detector or an organization, and the template does not show it. A feature resource the scan cannot tie to a detector counts as on for all of them, and never as off. One that may turn the feature on wins over one that sets it off. Features are not judged when a child stack or module may define feature resources. Other features are not judged.
+  - CF-SH-001 (Low): `EnableDefaultStandards` literally false (Terraform `enable_default_standards`) and no `AWS::SecurityHub::Standard` or `aws_securityhub_standards_subscription` for AWS Foundational Security Best Practices. Unset turns that standard on by default, so it is not reported. A `StandardsArn` that is not a plain literal counts as that standard. Not judged when the template has a Security Hub configuration policy, or a child stack or module may define a standard. `AWS::SecurityHub::HubV2` enables no standards and is not read.
+  - CF-CFG-001 (Medium, Security Hub Config.1 in part): `RecordingGroup.AllSupported` literally false (Terraform `recording_group.all_supported`) with no `ResourceTypes`, `ExclusionByResourceTypes` or `RecordingStrategy`. `RecordingGroup` unset is not reported, nor is whether a list covers what the enabled controls need, whether the service-linked role is used, or whether the recorder is started.
+  - CF-MACIE-001 (Low, Security Hub Macie.1): `Status` literally `PAUSED` (Terraform `aws_macie2_account.status`).
+  - CF-BUDGET-001 (Low): no `NotificationsWithSubscribers` (Terraform `notification` block). Not judged for a dynamic block, or when the template has a budget action or a child stack or module may define one: an action has subscribers of its own.
 - **KMS**: CF-KMS-001 (key policy allows Principal `*` with no condition that limits the caller; `kms:CallerAccount` and `kms:ViaService` count as limits. The standard root key policy with Resource `*` is not reported)
 - **Resource policies**: CF-RP-001 (High): an Allow with Principal `*` or `{"AWS": "*"}` and no condition on `aws:SourceArn`, `aws:SourceAccount`, `aws:PrincipalOrgID`, `aws:SourceVpce` (or another caller key) on `AWS::SQS::QueuePolicy`, `AWS::SNS::TopicPolicy`, `AWS::S3::BucketPolicy`, `AWS::ECR::Repository` `RepositoryPolicyText`, `AWS::Events::EventBus` `Policy`, `AWS::Events::EventBusPolicy` (`Statement`, or the older `Principal` and `Condition`), `aws_cloudwatch_event_bus_policy` and `aws_cloudwatch_event_permission`; and `AWS::Lambda::Permission` with Principal `*` and no `SourceArn`, `SourceAccount` or `PrincipalOrgID` (a function URL with `FunctionUrlAuthType: AWS_IAM` is not reported). `aws:SourceIp` and `aws:SecureTransport` do not count as limits. Terraform: `aws_sqs_queue_policy`, `aws_sns_topic_policy`, `aws_s3_bucket_policy`, `aws_ecr_repository_policy`, `aws_lambda_permission`. The inline `policy` argument of `aws_sqs_queue` and `aws_sns_topic` is not read yet.
 - **IAM**: CF-IAM-001 (Allow with Action `*`), CF-IAM-002 (Allow with `<service>:*`), CF-IAM-003 (Allow with write actions on Resource `*`). Read on: managed and inline policies, roles, users, and groups. Terraform: `jsonencode(...)`, heredoc JSON, JSON strings, and `data.aws_iam_policy_document`. Read-only actions and actions without resource-level permissions (X-Ray, `cloudwatch:PutMetricData`, Lambda VPC network interfaces) are not reported by CF-IAM-003. A field set from a variable or intrinsic is not guessed. Allow statements with `NotAction` or `NotResource` are not analyzed yet. In V2, CF-IAM-001/002 replace SEC-001 and CF-IAM-003 replaces SEC-002.
@@ -298,11 +308,29 @@ CloudFormation template rules run when the agent has access to template files. T
 - **Cognito** (`AWS::Cognito::UserPool`, `aws_cognito_user_pool`): CF-COG-001 (`MfaConfiguration` unset or `OFF`, High; `OPTIONAL` is not reported), CF-COG-002 (password policy with `MinimumLength` below 12, or no character class required, Medium; no `PasswordPolicy` means the Cognito default of 8 characters), CF-COG-003 (`UserPoolAddOns.AdvancedSecurityMode` unset or `OFF`, Low; threat protection needs `UserPoolTier: PLUS`, and the recommendation says so when the pool is on another plan). In V2 they replace SEC-034, SEC-035 and SEC-036
 - **ECR** (`AWS::ECR::Repository`, `aws_ecr_repository` with `aws_ecr_lifecycle_policy`): CF-ECR-001 (`ImageScanningConfiguration.ScanOnPush` not true, Low; registry-level enhanced scanning replaces it, so exclude the rule id where that is on), CF-ECR-002 (`ImageTagMutability` unset, `MUTABLE` or `MUTABLE_WITH_EXCLUSION`, Low), CF-ECR-003 (no `LifecyclePolicy` or linked `aws_ecr_lifecycle_policy`, Low; a Terraform lifecycle policy the scan cannot tie to a repository counts for all of them). In V2 they replace SEC-028, SEC-029 and SEC-030
 - **ECS** (`AWS::ECS::TaskDefinition`, `aws_ecs_task_definition`): one finding per check per task definition, naming the containers. CF-ECS-001 (`Privileged` true, High), CF-ECS-002 (`ReadonlyRootFilesystem` not true, Low), CF-ECS-003 (`User` is `root` or `0`, with or without a group, Medium; `User` unset, so the image decides, Low). Terraform `container_definitions` is read from `jsonencode([...])`, a JSON string or a heredoc; `file()`, `templatefile()` and interpolated text are not read. Windows task definitions (`RuntimePlatform.OperatingSystemFamily`) are skipped for CF-ECS-002 and CF-ECS-003. In V2, CF-ECS-002 and CF-ECS-003 replace SEC-020 and SEC-058
+- **ECS network, secrets, logging and sizing** (`AWS::ECS::TaskDefinition`, `AWS::ECS::Service`, `AWS::ECS::Cluster`; Terraform `aws_ecs_task_definition`, `aws_ecs_service`, `aws_ecs_cluster`): CF-ECS-004 (High): `NetworkMode: host` with a container that has `Privileged` true or `User` root or `0`; an unset `User` is not reported. CF-ECS-005 (Medium, Security Hub ECS.2): `AssignPublicIp: ENABLED` on a service; task sets are not read. CF-ECS-006 (High, Security Hub ECS.3): `PidMode: host`. CF-ECS-007 (High, Security Hub ECS.8): a container `Environment` variable named like a secret, or named `AWS_ACCESS_KEY_ID`, `AWS_SECRET_ACCESS_KEY` or `ECS_ENGINE_AUTH_DATA`, with a literal value; a reference is not reported. CF-ECS-008 (Medium, Security Hub ECS.9): a container with no `LogConfiguration` or `LogDriver`. CF-ECS-009 (Low, Security Hub ECS.10): a Fargate service, by `LaunchType` or capacity provider, with `PlatformVersion` below 1.4.0; `1.0.0` is not judged because it is the latest Windows version and the service does not state its OS. CF-ECS-010 (Low, Security Hub ECS.12): a cluster with `containerInsights` unset or `disabled`; `enabled` and `enhanced` pass, and an account default is not read, so exclude the rule id where that is on. CF-ECS-011 (Low): a task with `FARGATE` in `RequiresCompatibilities` whose `Cpu` and `Memory` numbers are not a pair in the published Fargate table; other task definitions and values such as `1 vCPU` are not judged. In V2, CF-ECS-010 and CF-ECS-011 replace OPS-008 and PERF-007
 - **Public IPs**: CF-EC2-002 (`AWS::EC2::Subnet` / `aws_subnet` with `MapPublicIpOnLaunch` true, Medium; subnets that CDK `ec2.Vpc` creates, tagged `aws-cdk:subnet-type`, are not reported because CDK public subnets map public IPs by design), CF-EC2-003 (an instance or launch template network interface, or `aws_instance.associate_public_ip_address`, with `AssociatePublicIpAddress` true, Medium)
 - **CloudFront** (`AWS::CloudFront::Distribution`, `aws_cloudfront_distribution`): CF-CF-001 (a cache behavior with `ViewerProtocolPolicy: allow-all`, Medium), CF-CF-002 (`ViewerCertificate.MinimumProtocolVersion` below `TLSv1.2_2021`, Medium; unset with your own certificate means `TLSv1`; the default `*.cloudfront.net` certificate is not reported because its minimum cannot be set), CF-CF-003 (no `WebACLId`, Low), CF-CF-004 (an S3 origin, by `S3OriginConfig` or an `*.s3[.region].amazonaws.com` / Terraform `bucket_regional_domain_name` domain, without `OriginAccessControlId`: Medium with neither OAC nor OAI, Low with only a legacy Origin Access Identity; S3 website endpoints are skipped because they cannot use OAC)
+- **CloudFront settings** (`AWS::CloudFront::Distribution`, `aws_cloudfront_distribution`). A value from a parameter, a Terraform variable or a dynamic block is not judged, and one unknown value does not hide the others:
+  - CF-CF-005 (Low, Security Hub CloudFront.5): no `Logging`, no `RealtimeLogConfigArn` on any behavior, and no v2 standard logging delivery (`AWS::Logs::DeliverySource`, `aws_cloudwatch_log_delivery_source`) naming the distribution. A delivery source the scan cannot tie to a resource counts for all distributions. The control itself reads only legacy `Logging`; this check also accepts the newer options, and so reports less than the control.
+  - CF-CF-006 (Low): `PriceClass` unset, which means `PriceClass_All`, or literal `PriceClass_All`. A multi-tenant distribution is not judged: it has no price class.
+  - CF-CF-007 (Low): `Compress` not true on the default or an ordered behavior, reported once per distribution with the paths. `Compress` defaults to false. A behavior using the managed `CachingDisabled` policy, or a cache policy the scan cannot read, is not judged: compression does not work without caching, and an unread policy may be that one.
+  - CF-CF-008 (Low, Security Hub CloudFront.1): no `DefaultRootObject`, and the default behavior's target is an S3 origin, or an origin group of S3 origins. When the target cannot be tied, it reports only if every origin is an S3 origin. Not judged: a distribution whose default behavior goes to a custom origin, such as an API; an S3 website endpoint, which has its own index document; a default behavior with a viewer-request or origin-request function, which may rewrite the root URL.
+  - CF-CF-009 (Low, Security Hub CloudFront.4): no origin group with two or more origins. This reports a distribution with one origin too, and many have one on purpose, so read it as advice.
+  - CF-CF-010 (Medium, Security Hub CloudFront.9): a custom origin with `OriginProtocolPolicy: http-only`, or `match-viewer` behind a behavior with `ViewerProtocolPolicy: allow-all` that the scan can tie to the origin. An S3 origin (`S3OriginConfig`) and an S3 website endpoint, which supports only HTTP, are not judged.
+  - CF-CF-011 (Medium, Security Hub CloudFront.10): a custom origin whose `OriginSSLProtocols` includes `SSLv3`. An S3 origin is not judged.
+  - CF-CF-012 (Low, cost, Security Hub CloudFront.8): literal `SslSupportMethod: vip`. The control also fails on the default CloudFront certificate; this check does not report that.
+  - CF-CF-013 (Low): the managed `CachingDisabled` policy id (`4135ea2d-6df8-44a3-9df3-4b5a84be39ad`) as a literal on a `PathPattern` with a static-looking form (`*.js`, `*.css`, `*.png`, `/static/*`, `/assets/*` and similar). This is narrower than PERF-006: a template does not show which other paths are static, so other behaviors and the default behavior are not judged.
 - **WAF**: CF-WAF-001 (Low): an internet-facing Application Load Balancer or an API Gateway REST API stage that no `AWS::WAFv2::WebACLAssociation` / `aws_wafv2_web_acl_association` (or WAF Classic regional association) in this template points at. Network and Gateway Load Balancers and internal ALBs are not reported. An association the scan cannot tie to a resource counts for all of them
 - **Lambda**: CF-LAM-001 (no DLQ), CF-LAM-002 (X-Ray not enabled), CF-LAM-003 (deprecated runtime, High; deprecated within 6 months, Low; container images skipped; dates in `rules/lambda_runtimes.py`), CF-PERF-001 (ARM64 not used)
 - **Lambda access and limits** (`AWS::Lambda::Function`, `AWS::Lambda::Url`, `AWS::Lambda::EventSourceMapping`; Terraform `aws_lambda_function`, `aws_lambda_function_url`, `aws_lambda_event_source_mapping`): CF-LAM-004 (function URL with `AuthType: NONE`, High). CF-LAM-005 (High): an environment variable named like a secret (`DB_PASSWORD`, `API_KEY`, `GITHUB_TOKEN`) with a literal value. A reference, an ARN, a dynamic reference (`{{resolve:...}}`), a flag such as `true` or a number is not reported; the name rules are shared with CF-PAR-001 (`rules/secret_names.py`). CF-LAM-006 (Low): no `ReservedConcurrentExecutions`. CF-LAM-007 (Low): `Timeout` left at the 3 second default on a function an event source mapping polls for, or at 900 seconds on a function API Gateway invokes (read from an `AWS::Lambda::Permission` for `apigateway.amazonaws.com`). CF-LAM-008 (Medium, Security Hub Lambda.5): a VPC function whose subnets in this template are all in one AZ; a subnet the scan cannot place is not judged. In V2, CF-LAM-004..007 replace SEC-057, SEC-017, BP-002, REL-027 and REL-009
+- **S3 ACLs, replication and Bucket Keys** (`AWS::S3::Bucket`; Terraform `aws_s3_bucket` with its inline `acl` and `replication_configuration`, `aws_s3_bucket_ownership_controls`, `aws_s3_bucket_acl`, `aws_s3_bucket_replication_configuration`, `aws_s3_bucket_server_side_encryption_configuration`):
+  - CF-S3-008 (Medium, Security Hub S3.12): `OwnershipControls` literally `ObjectWriter` or `BucketOwnerPreferred`, or an explicit `AccessControl` other than `Private` (Terraform `acl`) with no ownership set. Unset ownership alone is not reported: new buckets have defaulted to `BucketOwnerEnforced` since April 2023. `LogDeliveryWrite` is not reported, since it grants the S3 log delivery group and not user access. A bucket that takes CloudFront standard logs is not reported, since those logs need ACLs. Terraform grants (`access_control_policy`, `grant`) are not read
+  - CF-S3-009 (High, Security Hub S3.2 and S3.3): a literal `AccessControl` of `PublicRead` or `PublicReadWrite` (Terraform `public-read`, `public-read-write`). Not reported with `BucketOwnerEnforced`, or when `BlockPublicAcls` or `IgnorePublicAcls` is true, since the ACL then has no effect: such a bucket reports CF-S3-008 if it has no enforced ownership. CF-S3-009 replaces CF-S3-008 on the same bucket. CF-S3-001 reads Block Public Access and not the ACL, so it may report the same bucket
+  - CF-S3-010 (Low, Security Hub S3.7): no `ReplicationConfiguration` on a bucket with the word `critical` in a literal name or tag value, a tag such as `Critical: true`, or any bucket in a prod stack. `non-critical`, `not critical` and free-text tags such as `Description` do not count. Not reported on a bucket that the template shows receiving replication or logs (`LoggingConfiguration` of another bucket, CloudFront, CloudTrail, `LogDeliveryWrite`). In a prod stack only, a bucket with `log`, `logs`, `logging`, `replica` or `replicas` as a word in its name is not reported either. Where the replica lives is not judged: same-Region replication counts
+  - CF-S3-011 (Low): an enabled replication rule with `Destination.Metrics` or `Destination.ReplicationTime` unset or not `Enabled`. Both are asked for: a rule with metrics but no replication time control reports. A whole `Destination` from `Fn::If` is not judged. A `Destination.Bucket` from a parameter still reports, since the settings are read from the rule
+  - CF-S3-012 (Low): a default encryption rule with `SSEAlgorithm` `aws:kms` and `BucketKeyEnabled` false or unset. `aws:kms:dsse` is not reported, since DSSE-KMS does not support Bucket Keys
+  - For these checks, a value from a parameter or variable is not judged, and a Terraform part the scan cannot tie to a bucket counts for all buckets. S3 event notifications (Security Hub S3.11) have no check: most buckets have no reason to notify. Transfer Acceleration stays advice (PERF-014).
 - **Storage and capacity**:
   - CF-S3-006 (an S3 bucket with no lifecycle rules, Low).
   - CF-S3-007 (a bucket whose lifecycle rules only expire objects, with no transition to a cheaper class and no Intelligent-Tiering configuration, Low). Terraform reads `aws_s3_bucket_lifecycle_configuration`, `aws_s3_bucket_intelligent_tiering_configuration` and the legacy inline `lifecycle_rule`.
@@ -324,6 +352,41 @@ CloudFormation template rules run when the agent has access to template files. T
 - **SNS**: CF-SNS-001 (no `KmsMasterKeyId`, Low: SNS still keeps its own disk encryption)
 - **EBS**: CF-EBS-001 (`AWS::EC2::Volume` or a launch template EBS block device without `Encrypted: true`, Medium; a volume from a snapshot takes the snapshot's setting and is not reported. Account-level EBS encryption by default is not visible to the scan)
 - **EFS** (`AWS::EFS::FileSystem`, `AWS::EFS::AccessPoint`; Terraform `aws_efs_file_system`, `aws_efs_backup_policy`, `aws_efs_access_point`): CF-EFS-001 (`Encrypted` not true, Medium), CF-EFS-002 (Low, Security Hub EFS.7: `BackupPolicy.Status` not `ENABLED`; unset on a One Zone file system is not reported, since backups then default to on), CF-EFS-003 (Low: no `LifecyclePolicies`), CF-EFS-004 (Medium, EFS.3: access point `RootDirectory.Path` is `/`, set or by default), CF-EFS-005 (Medium, EFS.4: access point with no `PosixUser`). Security Hub EFS.2, a file system in a backup plan, is CF-BAK-005. In V2, CF-EFS-002 and CF-EFS-003 replace REL-017 and REL-018
+- **SageMaker** (`AWS::SageMaker::NotebookInstance`, `AWS::SageMaker::EndpointConfig`; Terraform `aws_sagemaker_notebook_instance`, `aws_sagemaker_endpoint_configuration`). A value from a parameter, a Terraform variable or a dynamic block is not judged:
+  - CF-SAGE-001 (Medium, Security Hub SageMaker.1): notebook with `DirectInternetAccess` unset, which means `Enabled`, or literal `Enabled`.
+  - CF-SAGE-002 (Medium, Security Hub SageMaker.2): notebook with no `SubnetId`. A notebook with neither setting gets both findings.
+  - CF-SAGE-003 (Medium, Security Hub SageMaker.3): notebook with `RootAccess` unset, which means `Enabled`, or literal `Enabled`.
+  - CF-SAGE-004 (Low): notebook, or endpoint config with an instance variant, with no `KmsKeyId` (Terraform `kms_key_id`, and `kms_key_arn` on the endpoint config). An endpoint config with only serverless variants has no volume and is not judged. Training jobs are not template resources, so they are not read. An instance type with local storage cannot take a key, and the check does not know which types those are: it can report them, and the recommendation says so.
+  - CF-SAGE-005 (Low, Security Hub SageMaker.4): production variant with literal `InitialInstanceCount: 1`. A serverless variant and a shadow variant are not judged, and neither is an unset count. Not reported in dev or staging.
+- **FSx** (`AWS::FSx::FileSystem`; Terraform `aws_fsx_lustre_file_system`, `aws_fsx_windows_file_system`, `aws_fsx_ontap_file_system`, `aws_fsx_openzfs_file_system`). A `FileSystemType` from a parameter is not judged, nor is a per-type block or a value the scan cannot read. Scratch Lustre, including an unset `DeploymentType`, or a type the scan cannot read, is not judged at all: it takes no key and has no backups. Lustre linked to S3 (`ImportPath`, `ExportPath`, or an `AWS::FSx::DataRepositoryAssociation` / `aws_fsx_data_repository_association` the scan ties to it or cannot tie to any file system) has no backups, so CF-FSX-002 and CF-FSX-003 skip it. On a file system restored from `BackupId`, an unset value is not judged, because the template does not show what it starts with:
+  - CF-FSX-001 (Low): no `KmsKeyId`. FSx still encrypts with its service key, so this asks for a customer managed key, not for encryption.
+  - CF-FSX-002 (Low, Security Hub FSx.2 on Lustre, FSx.1 on OpenZFS, none on Windows): `CopyTagsToBackups` unset or false. ONTAP has no such setting. FSx.1 also asks for `CopyTagsToVolumes`, which is not read.
+  - CF-FSX-003 (Low): literal `AutomaticBackupRetentionDays: 0` on any type, or unset on persistent Lustre, where the default is 0. Unset on ONTAP, Windows and OpenZFS is not judged: CloudFormation documents a default of 30, and the Terraform provider's defaults differ.
+- **AppSync** (`AWS::AppSync::GraphQLApi`, `AWS::AppSync::ApiCache`; Terraform `aws_appsync_graphql_api`, `aws_appsync_api_cache`). A value from a parameter, a Terraform variable or a dynamic block is not judged:
+  - CF-APPSYNC-001 (Low, Security Hub AppSync.2): no `LogConfig`, or literal `FieldLogLevel: NONE`. `INFO` and `DEBUG` are not judged: the control's text fails only `NONE`, though it passes only `ERROR` and `ALL` by default.
+  - CF-APPSYNC-002 (Medium, Security Hub AppSync.5): literal `AuthenticationType: API_KEY` with no other kind in `AdditionalAuthenticationProviders`. An API that also takes another kind is not reported, which is narrower than the control.
+  - CF-APPSYNC-003 (Medium): no `AWS::WAFv2::WebACLAssociation` or `AWS::WAFRegional::WebACLAssociation` (Terraform `aws_wafv2_web_acl_association`, `aws_wafregional_web_acl_association`) in this scan points at the API. An association the scan cannot tie to an API, ALB or stage counts for all APIs. A `PRIVATE` or `MERGED` API is not judged. An association in another stack is not visible to the scan.
+  - CF-APPSYNC-004 (Low, advice): no `ApiCache` in this scan has an `ApiId` that points at the API. A cache the scan cannot tie to an API counts for all APIs. A `MERGED` API is not judged.
+- **Transfer Family** (`AWS::Transfer::Server`; Terraform `aws_transfer_server`):
+  - CF-TRANSFER-001 (Medium, Security Hub Transfer.2): literal `FTP` in `Protocols`. Unset means `SFTP` and is not reported, and `FTPS` is not `FTP`.
+  - CF-TRANSFER-002 (Low): no `LoggingRole` and no `StructuredLogDestinations`, or both empty. A value from a parameter or a variable counts as set. Security Hub Transfer.3 is about connectors, so it is not cited.
+  - CF-TRANSFER-003 (Low): literal `EndpointType: PUBLIC`, or Terraform `endpoint_type` unset with no `endpoint_details`, which the provider documents as `PUBLIC`. Unset in CloudFormation is not judged: no default is documented.
+- **Route 53** (`AWS::Route53::HostedZone`, `AWS::Route53::RecordSet`, `AWS::Route53::RecordSetGroup`, `AWS::Route53::DNSSEC`, `AWS::Route53::KeySigningKey`; Terraform `aws_route53_zone`, `aws_route53_record`, `aws_route53_query_log`, `aws_route53_hosted_zone_dnssec`, `aws_route53_key_signing_key`). A zone is public with no `VPCs` (Terraform no `vpc` block). A private zone, and an unknown `VPCs` or a dynamic `vpc` block, is not judged. A linked resource the scan cannot tie to a zone in this template counts for all zones.
+  - CF-R53-001 (Low, Security Hub Route53.2): public zone with no `QueryLoggingConfig` and no `aws_route53_query_log` pointing at it.
+  - CF-R53-002 (Low): public zone with no DNSSEC or key-signing key resource pointing at it. A key-signing key alone counts, and so does a `signing_status` of `NOT_SIGNING`: signing may be turned on outside the template.
+  - CF-R53-003 (Medium): a `PRIMARY` failover record or a weighted record, including weight 0, with no `HealthCheckId`. In a `RecordSetGroup` each entry of `RecordSets` is read. An alias record with `EvaluateTargetHealth` true is not reported. A `SECONDARY` record is not reported: with no health check Route 53 answers with it whenever the primary is unhealthy, which is a documented design. A routing value from a parameter, a variable or a dynamic block is not judged, and neither is `SetIdentifier` alone.
+- **ACM** (`AWS::CertificateManager::Certificate`; Terraform `aws_acm_certificate`). An imported certificate (Terraform `private_key` or `certificate_body`) is not judged. A private CA certificate (`CertificateAuthorityArn`) is judged only by CF-ACM-002.
+  - CF-ACM-001 (Low): literal `ValidationMethod: EMAIL`, or unset in CloudFormation, which documents email as the default. Terraform requires the argument, so unset there is not reported. `DomainValidationOptions` does not change it.
+  - CF-ACM-002 (Medium, Security Hub ACM.2): literal `KeyAlgorithm: RSA_1024`. `RSA_2048` and `EC_*` are not reported.
+  - CF-ACM-003 (Low): literal `CertificateTransparencyLoggingPreference: DISABLED` (Terraform `options` block).
+- **Global Accelerator** (`AWS::GlobalAccelerator::EndpointGroup`; Terraform `aws_globalaccelerator_endpoint_group`):
+  - CF-GA-001 (Low): none of `HealthCheckProtocol`, `HealthCheckPath` or `HealthCheckPort` set on a group with an EC2 instance or Elastic IP endpoint. AWS has defaults, so this is advice. A group with only load balancers, or endpoints the scan cannot read, is not judged: a load balancer's own health checks decide.
+- **App Runner** (`AWS::AppRunner::Service`; Terraform `aws_apprunner_service`):
+  - CF-APPRUNNER-001 (Low): `ObservabilityConfiguration` unset, or `ObservabilityEnabled` literally false. A value from a parameter, a variable or a dynamic block is not judged.
+- **Elastic Beanstalk** (`AWS::ElasticBeanstalk::Environment`, `AWS::ElasticBeanstalk::ConfigurationTemplate`; Terraform `aws_elastic_beanstalk_environment`, `aws_elastic_beanstalk_configuration_template`). Reads `OptionSettings` (Terraform `setting` blocks) over those of a configuration template in this scan that `TemplateName` (`template_name`) points at. An environment is not judged at all when its settings come from a parameter or a dynamic block, when an entry's namespace or name cannot be read, or when its template is outside the scan, cannot be read, or copies a `SourceConfiguration` or `EnvironmentId`. One option's unknown value leaves only that option unjudged. A value set in `.ebextensions` in the source bundle is not read, so an environment that sets one there is still reported:
+  - CF-BEANSTALK-001 (Low, Security Hub ElasticBeanstalk.1): `SystemType` in `aws:elasticbeanstalk:healthreporting:system` not `enhanced`. Unset is reported: the documented default is `basic`.
+  - CF-BEANSTALK-002 (Low, Security Hub ElasticBeanstalk.2): `ManagedActionsEnabled` in `aws:elasticbeanstalk:managedactions` unset, which means false, or false.
+  - CF-BEANSTALK-003 (Low, Security Hub ElasticBeanstalk.3): `StreamLogs` in `aws:elasticbeanstalk:cloudwatch:logs` unset, which means false, or false.
 - **Kinesis**: CF-KIN-001 (no `StreamEncryption`, Medium; Terraform `encryption_type` defaults to `NONE`)
 - **ElastiCache** (`AWS::ElastiCache::ReplicationGroup`): CF-EC-001 (not encrypted at rest, Medium; Redis OSS defaults to off, Valkey to on, so an unset value on Valkey is not reported), CF-EC-002 (`TransitEncryptionEnabled` not true, Medium), CF-EC-003 (Medium, Security Hub ElastiCache.3: `AutomaticFailoverEnabled` or `MultiAZEnabled` not true; not reported in dev or staging stacks; in V2 it replaces REL-016), CF-EC-006 (Medium, ElastiCache.6: Redis OSS below 6 with no `AuthToken`; an unset `EngineVersion` is not judged). On replication groups and `AWS::ElastiCache::CacheCluster` (`aws_elasticache_cluster`): CF-EC-004 (Low, ElastiCache.1: Redis OSS or Valkey with `SnapshotRetentionLimit` 0 or unset), CF-EC-005 (Low, ElastiCache.2: Redis OSS or Valkey with `AutoMinorVersionUpgrade: false`), CF-EC-007 (Low, ElastiCache.7: `CacheSubnetGroupName` unset or `default`). A Terraform cluster in a replication group takes these from the group, and the template does not show what an existing `PrimaryClusterId` already has, so neither is judged for them or for CF-EC-006
 - **OpenSearch** (`AWS::OpenSearchService::Domain`): CF-OS-001 (`EncryptionAtRestOptions.Enabled` not true, Medium), CF-OS-002 (`NodeToNodeEncryptionOptions.Enabled` not true, Medium); both are off by default
@@ -386,24 +449,48 @@ CloudFormation template rules run when the agent has access to template files. T
   - CF-SFN-002 (Low): `TracingConfiguration.Enabled` not true
   - CF-SFN-003 (Medium, Security Hub StepFunctions.1): no `LoggingConfiguration`, or `Level: OFF`
 - **EventBridge rule targets** (`AWS::Events::Rule` `Targets`, `aws_cloudwatch_event_target`): CF-EB-001 (Low): no `DeadLetterConfig`. CF-EB-002 (Low): no `RetryPolicy`, or `MaximumRetryAttempts` 0. A policy that sets only `MaximumEventAgeInSeconds` is not reported. Event bus policies open to anyone are CF-RP-001
+- **Athena workgroups** (`AWS::Athena::WorkGroup`, `aws_athena_workgroup`):
+  - CF-ATH-001 (Medium): no `ResultConfiguration.EncryptionConfiguration` in `WorkGroupConfiguration`. A value from a parameter or variable is not judged, and neither is a workgroup with the older `WorkGroupConfigurationUpdates`, Athena-managed query results, or a Spark engine. In V2 it replaces SEC-042
+  - CF-ATH-002 (Low): `EnforceWorkGroupConfiguration` literally false. Unset is not reported
+- **Glue jobs and security configurations** (`AWS::Glue::Job`, `AWS::Glue::SecurityConfiguration`; Terraform `aws_glue_job`, `aws_glue_security_configuration`):
+  - CF-GLUE-001 (Medium): a job with no `SecurityConfiguration`, or a security configuration with S3, CloudWatch or bookmark encryption disabled or unset. It reports on the security configuration, so a job that names one is not reported, whether or not the scan can find it. In V2 it replaces SEC-043
+  - CF-GLUE-002 (Low): a `glueetl` or `gluestreaming` job with no `--enable-metrics` in `DefaultArguments` or `NonOverridableArguments`. A map or job type from a parameter or variable is not judged, and neither is another job type, or a job with no `Command.Name` in CloudFormation. Arguments set when the job starts cannot be seen. In V2 it replaces OPS-015
+  - CF-GLUE-003 (Low): a `glueetl` job with `--job-bookmark-option` literally `job-bookmark-disable`. A template does not show whether a job is incremental, and bookmarks are off by default, so unset is not reported and the finding is advice. Other job types are not reported, because streaming jobs use checkpoints and Python shell jobs have no bookmarks. In V2 it replaces OPS-019 when it reports; a job with the option unset keeps OPS-019
+- **Firehose delivery streams** (`AWS::KinesisFirehose::DeliveryStream`, `aws_kinesis_firehose_delivery_stream`): CF-FH-001 (Medium, Security Hub DataFirehose.1): a direct-put stream, with `DeliveryStreamType` unset or `DirectPut`, and no `DeliveryStreamEncryptionConfigurationInput`, or `server_side_encryption` not enabled. A stream with a source takes its encryption from the source, so it is not judged, and neither is a value from a parameter or variable
+- **EMR clusters and security configurations** (`AWS::EMR::Cluster`, `AWS::EMR::SecurityConfiguration`; Terraform `aws_emr_cluster`, `aws_emr_security_configuration`):
+  - CF-EMR-001 (High, Security Hub EMR.1): `Instances.Ec2SubnetId` (Terraform `ec2_attributes.subnet_id`) names a subnet in this template with `MapPublicIpOnLaunch` (`map_public_ip_on_launch`) literally true. A template shows the subnet, not the node's address, so this is narrower than the control. A subnet from a parameter, a variable or outside the template is not judged, and neither is `Ec2SubnetIds`
+  - CF-EMR-002 (Medium, Security Hub EMR.3): a security configuration with `EncryptionConfiguration.EnableAtRestEncryption` false or unset, or a cluster with no `SecurityConfiguration`. That cluster has no encryption in transit either, and is reported once, here. A cluster that names a configuration is not judged on it: each configuration is judged on itself. A document the scan cannot parse, such as one from `file()` or a variable, is not judged
+  - CF-EMR-003 (Medium, Security Hub EMR.4): a security configuration with `EncryptionConfiguration.EnableInTransitEncryption` false or unset, with the same limits
+- **DMS replication instances and endpoints** (`AWS::DMS::ReplicationInstance`, `AWS::DMS::Endpoint`; Terraform `aws_dms_replication_instance`, `aws_dms_endpoint`):
+  - CF-DMS-001 (High, Security Hub DMS.1): `PubliclyAccessible` true. Unset also reports in CloudFormation, where the default is true, but not in Terraform, where the provider sends false
+  - CF-DMS-002 (Low, Security Hub DMS.6): `AutoMinorVersionUpgrade` false. Unset also reports in Terraform, where the provider sends false, but not in CloudFormation, where the default is true
+  - CF-DMS-003 (Medium, Security Hub DMS.9): `SslMode` none or unset on `aurora`, `aurora-postgresql`, `db2`, `docdb`, `mariadb`, `mysql`, `oracle`, `postgres` or `sqlserver`. Other engines are not judged, and neither is an engine from a parameter or variable. An unset mode is not judged when the endpoint has a Secrets Manager secret, a certificate, extra connection attributes or settings the scan cannot read
+  - CF-DMS-004 (Low, Security Hub DMS.13): `MultiAZ` false or unset on an instance in a prod stack. Other environments are not reported. For these DMS checks, a value from a parameter or variable is not judged
 - **Auto Scaling**: CF-SUST-001 (no Spot / mixed instances)
+- **Auto Scaling groups and launch configurations** (`AWS::AutoScaling::AutoScalingGroup`, `LaunchConfiguration`, `ScalingPolicy`, `ScheduledAction`; Terraform `aws_autoscaling_group`, `aws_launch_configuration`, `aws_autoscaling_policy`, `aws_autoscaling_schedule`, `aws_autoscaling_attachment`):
+  - CF-ASG-001 (Low, Security Hub AutoScaling.1): a group with `HealthCheckType` unset or without `ELB`, and a non-empty `TargetGroupARNs` or `LoadBalancerNames`, or an `aws_autoscaling_attachment` tied to it. A list from a parameter or variable is not judged, and neither is `TrafficSources` or an attachment that cannot be tied to the group
+  - CF-ASG-002 (Medium, Security Hub AutoScaling.2): a group known to be in one AZ: one literal `AvailabilityZones` entry, `VPCZoneIdentifier` with one literal subnet or one reference to a subnet, or several subnets in this template that are all in one AZ. A list from a parameter or variable, and a single entry that may hold several (a parameter, a variable, an import, a join, a function call, a comma-separated literal), are not judged. Skipped in dev and staging
+  - CF-ASG-003 (High, Security Hub AutoScaling.3): a launch configuration with `MetadataOptions.HttpTokens` unset or `optional`, read as CF-EC2-001 reads it. `HttpEndpoint: disabled` is not reported
+  - CF-ASG-004 (Medium, Security Hub AutoScaling.5): a launch configuration with `AssociatePublicIpAddress: true`. Unset depends on the subnet, so it is not reported
+  - CF-ASG-005 (Low, Security Hub AutoScaling.9): a group whose `LaunchConfigurationName` is a literal or a launch configuration in this template. A parameter or variable is not judged
+  - CF-ASG-006 (Low): a group with `MinSize` equal to `MaxSize`, above 0, and no scaling policy or scheduled action. One that cannot be tied to a group counts for all of them. A fixed fleet can be intended, so the finding is advice. In V2 COST-002 stays, because it reports ECS services with no Auto Scaling at all
 - **ECS**: CF-SUST-002 (Fargate without FARGATE_SPOT)
 - **EC2**: CF-EC2-001 (IMDSv2 not required on an instance or launch template: High when `HttpTokens: optional`, Medium when unset because the default then depends on the AMI), CF-PERF-004 (large instance right-sizing)
 - **Launch Template**: CF-SUST-003 (no Spot when no ASG in template)
-- **EKS**: CF-EKS-001 (control plane logging not enabled), CF-EKS-002 (API endpoint public to `0.0.0.0/0` or `::/0`; unset `EndpointPublicAccess` and `PublicAccessCidrs` count as public, the AWS default), CF-EKS-003 (no customer-managed KMS key for secrets: Medium below Kubernetes 1.28, Low from 1.28, where EKS already encrypts Kubernetes API data with an AWS-owned key)
+- **EKS**: CF-EKS-001 (control plane logging not enabled), CF-EKS-002 (API endpoint public to `0.0.0.0/0` or `::/0`; unset `EndpointPublicAccess` and `PublicAccessCidrs` count as public, the AWS default), CF-EKS-003 (no customer-managed KMS key for secrets: Medium below Kubernetes 1.28, Low from 1.28, where EKS already encrypts Kubernetes API data with an AWS-owned key), CF-EKS-004 (Medium, Security Hub EKS.2: `Version` past the end of standard support; dates in `rules/data/eks_versions.json`; a version newer than the list, unset or not literal is not judged)
 - **Template-level**: CF-PERF-002 (consider caching when API/Lambda, no CloudFront/ElastiCache), CF-COST-002 (NAT Gateway cost hint)
 
 ## By pillar (AWS Well-Architected 6 pillars)
 
 | Pillar | CF rule IDs |
 |--------|-------------|
-| Operational Excellence | CF-S3-004, CF-RDS-007, CF-RDS-010, CF-RDS-011, CF-CT-001, CF-CT-002, CF-FL-001, CF-EKS-001, CF-TGW-002, CF-CB-004, CF-CP-003, CF-OS-006, CF-RS-004, CF-DOCDB-003, CF-NEP-002, CF-SFN-002, CF-SFN-003, CF-EB-001 |
-| Security | CF-S3-001, CF-S3-002, CF-S3-005, CF-RDS-001, CF-RDS-004, CF-APIGW-003, CF-APIGW-004, CF-APIGW-007, CF-APIGW-009, CF-APIGW-V2-003, CF-LAM-004, CF-LAM-005, CF-RDS-006, CF-RDS-008, CF-RDS-009, CF-RDS-012, CF-RDS-013, CF-CT-003, CF-KMS-001, CF-RP-001, CF-EC2-001, CF-EKS-002, CF-EKS-003, CF-IAM-001, CF-IAM-002, CF-IAM-003, CF-IAM-004, CF-IAM-005, CF-IAM-006, CF-IAM-007, CF-IAM-008, CF-ALB-002, CF-ALB-003, CF-ALB-004, CF-ALB-006, CF-CLB-001, CF-CLB-002, CF-SG-001, CF-SG-002, CF-SG-003, CF-NACL-001, CF-TGW-001, CF-CW-002, CF-SQS-001, CF-DDB-002, CF-LAM-003, CF-SNS-001, CF-EBS-001, CF-EFS-001, CF-KIN-001, CF-EC-001, CF-EC-002, CF-OS-001, CF-OS-002, CF-RS-001, CF-DOCDB-001, CF-NEP-001, CF-MSK-001, CF-CF-001, CF-CF-002, CF-CF-003, CF-CF-004, CF-WAF-001, CF-EC2-002, CF-EC2-003, CF-PAR-001, CF-PAR-002, CF-ECR-001, CF-ECR-002, CF-ECR-003, CF-ECS-001, CF-ECS-002, CF-ECS-003, CF-SM-001, CF-COG-001, CF-COG-002, CF-COG-003, CF-CB-001, CF-CB-002, CF-CB-003, CF-CB-005, CF-CP-001, CF-KMS-002, CF-SSM-001, CF-OS-003, CF-OS-004, CF-OS-005, CF-MSK-002, CF-MSK-003, CF-RS-002, CF-RS-005, CF-RS-006, CF-RS-007, CF-NEP-005, CF-BAK-001, CF-EC-005, CF-EC-006, CF-EC-007, CF-EFS-004, CF-EFS-005 |
-| Reliability | CF-S3-003, CF-RDS-002, CF-RDS-003, CF-RDS-005, CF-LAM-001, CF-LAM-006, CF-LAM-007, CF-LAM-008, CF-APIGW-005, CF-APIGW-006, CF-APIGW-V2-004, CF-DDB-001, CF-SQS-002, CF-DEL-001, CF-NAT-001, CF-ALB-005, CF-ALB-007, CF-CLB-004, CF-CLB-005, CF-CP-002, CF-KMS-003, CF-OS-007, CF-KIN-002, CF-RS-003, CF-DOCDB-002, CF-DOCDB-004, CF-NEP-003, CF-NEP-004, CF-SFN-001, CF-EB-002, CF-SQS-003, CF-BAK-002, CF-BAK-003, CF-BAK-004, CF-BAK-005, CF-DDB-004, CF-DDB-005, CF-EC-003, CF-EC-004, CF-EFS-002 |
-| Performance Efficiency | CF-APIGW-008, CF-PERF-001, CF-PERF-002, CF-PERF-003, CF-PERF-004 |
-| Cost Optimization | CF-CW-001, CF-RDS-014, CF-COST-002, CF-EBS-002, CF-EIP-001, CF-TAG-001, CF-ENV-001, CF-ENV-002, CF-ENV-003, CF-ENV-004, CF-ENV-005, CF-ENV-006, CF-GEN-001, CF-S3-006, CF-S3-007, CF-DDB-003, CF-VPC-002, CF-VPC-003, CF-SSM-002, CF-EFS-003 |
-| Sustainability | CF-SUST-001, CF-SUST-002, CF-SUST-003 |
-| Observability (reported under Operational Excellence) | CF-ALB-001, CF-CLB-003, CF-LAM-002, CF-APIGW-001, CF-APIGW-002, CF-APIGW-V2-001, CF-APIGW-V2-002 |
+| Operational Excellence | CF-CFG-001, CF-ALARM-001, CF-ALARM-002, CF-DASH-001, CF-CT-004, CF-S3-004, CF-RDS-007, CF-RDS-010, CF-RDS-011, CF-CT-001, CF-CT-002, CF-FL-001, CF-EKS-001, CF-TGW-002, CF-CB-004, CF-CP-003, CF-OS-006, CF-RS-004, CF-DOCDB-003, CF-NEP-002, CF-SFN-002, CF-SFN-003, CF-EB-001, CF-ECS-008, CF-ECS-010, CF-ASG-005, CF-GLUE-002, CF-GLUE-003, CF-S3-011, CF-CF-005, CF-FSX-002 |
+| Security | CF-GD-001, CF-SH-001, CF-MACIE-001, CF-CT-005, CF-S3-001, CF-S3-002, CF-S3-005, CF-RDS-001, CF-RDS-004, CF-APIGW-003, CF-APIGW-004, CF-APIGW-007, CF-APIGW-009, CF-APIGW-V2-003, CF-LAM-004, CF-LAM-005, CF-RDS-006, CF-RDS-008, CF-RDS-009, CF-RDS-012, CF-RDS-013, CF-CT-003, CF-KMS-001, CF-RP-001, CF-EC2-001, CF-EKS-002, CF-EKS-003, CF-IAM-001, CF-IAM-002, CF-IAM-003, CF-IAM-004, CF-IAM-005, CF-IAM-006, CF-IAM-007, CF-IAM-008, CF-ALB-002, CF-ALB-003, CF-ALB-004, CF-ALB-006, CF-CLB-001, CF-CLB-002, CF-SG-001, CF-SG-002, CF-SG-003, CF-NACL-001, CF-TGW-001, CF-CW-002, CF-SQS-001, CF-DDB-002, CF-LAM-003, CF-SNS-001, CF-EBS-001, CF-EFS-001, CF-KIN-001, CF-EC-001, CF-EC-002, CF-OS-001, CF-OS-002, CF-RS-001, CF-DOCDB-001, CF-NEP-001, CF-MSK-001, CF-CF-001, CF-CF-002, CF-CF-003, CF-CF-004, CF-WAF-001, CF-EC2-002, CF-EC2-003, CF-PAR-001, CF-PAR-002, CF-ECR-001, CF-ECR-002, CF-ECR-003, CF-ECS-001, CF-ECS-002, CF-ECS-003, CF-SM-001, CF-COG-001, CF-COG-002, CF-COG-003, CF-CB-001, CF-CB-002, CF-CB-003, CF-CB-005, CF-CP-001, CF-KMS-002, CF-SSM-001, CF-OS-003, CF-OS-004, CF-OS-005, CF-MSK-002, CF-MSK-003, CF-RS-002, CF-RS-005, CF-RS-006, CF-RS-007, CF-NEP-005, CF-BAK-001, CF-EC-005, CF-EC-006, CF-EC-007, CF-EFS-004, CF-EFS-005, CF-ECS-004, CF-ECS-005, CF-ECS-006, CF-ECS-007, CF-ECS-009, CF-EKS-004, CF-ASG-003, CF-ASG-004, CF-ATH-001, CF-ATH-002, CF-GLUE-001, CF-FH-001, CF-EMR-001, CF-EMR-002, CF-EMR-003, CF-DMS-001, CF-DMS-002, CF-DMS-003, CF-S3-008, CF-S3-009, CF-CF-008, CF-CF-010, CF-CF-011, CF-SAGE-001, CF-SAGE-002, CF-SAGE-003, CF-SAGE-004, CF-FSX-001, CF-APPSYNC-001, CF-APPSYNC-002, CF-APPSYNC-003, CF-TRANSFER-001, CF-TRANSFER-002, CF-TRANSFER-003, CF-BEANSTALK-002, CF-R53-001, CF-R53-002, CF-ACM-002, CF-ACM-003 |
+| Reliability | CF-S3-003, CF-RDS-002, CF-RDS-003, CF-RDS-005, CF-LAM-001, CF-LAM-006, CF-LAM-007, CF-LAM-008, CF-APIGW-005, CF-APIGW-006, CF-APIGW-V2-004, CF-DDB-001, CF-SQS-002, CF-DEL-001, CF-NAT-001, CF-ALB-005, CF-ALB-007, CF-CLB-004, CF-CLB-005, CF-CP-002, CF-KMS-003, CF-OS-007, CF-KIN-002, CF-RS-003, CF-DOCDB-002, CF-DOCDB-004, CF-NEP-003, CF-NEP-004, CF-SFN-001, CF-EB-002, CF-SQS-003, CF-BAK-002, CF-BAK-003, CF-BAK-004, CF-BAK-005, CF-DDB-004, CF-DDB-005, CF-EC-003, CF-EC-004, CF-EFS-002, CF-ASG-001, CF-ASG-002, CF-DMS-004, CF-S3-010, CF-CF-009, CF-SAGE-005, CF-FSX-003, CF-R53-003, CF-ACM-001, CF-GA-001 |
+| Performance Efficiency | CF-APIGW-008, CF-PERF-001, CF-PERF-002, CF-PERF-003, CF-PERF-004, CF-ECS-011, CF-CF-013, CF-APPSYNC-004 |
+| Cost Optimization | CF-BUDGET-001, CF-CW-001, CF-RDS-014, CF-COST-002, CF-EBS-002, CF-EIP-001, CF-TAG-001, CF-ENV-001, CF-ENV-002, CF-ENV-003, CF-ENV-004, CF-ENV-005, CF-ENV-006, CF-GEN-001, CF-S3-006, CF-S3-007, CF-DDB-003, CF-VPC-002, CF-VPC-003, CF-SSM-002, CF-EFS-003, CF-ASG-006, CF-S3-012, CF-CF-006, CF-CF-012 |
+| Sustainability | CF-SUST-001, CF-SUST-002, CF-SUST-003, CF-CF-007 |
+| Observability (reported under Operational Excellence) | CF-ALB-001, CF-CLB-003, CF-LAM-002, CF-APIGW-001, CF-APIGW-002, CF-APIGW-V2-001, CF-APIGW-V2-002, CF-APPRUNNER-001, CF-BEANSTALK-001, CF-BEANSTALK-003 |
 | Best Practices | CF-VPC-001 |
 
 ## See also
@@ -446,6 +533,11 @@ Every rule has one or more themes, which cut across pillars: `finops`, `security
 
 | Rule | Themes |
 |------|--------|
+| CF-ACM-001 | resilience |
+| CF-ACM-002 | data-protection |
+| CF-ACM-003 | security-baseline |
+| CF-ALARM-001 | observability |
+| CF-ALARM-002 | observability |
 | CF-ALB-001 | observability |
 | CF-ALB-002 | data-protection, network-exposure |
 | CF-ALB-003 | data-protection, network-exposure |
@@ -466,11 +558,28 @@ Every rule has one or more themes, which cut across pillars: `finops`, `security
 | CF-APIGW-V2-002 | observability |
 | CF-APIGW-V2-003 | identity, network-exposure |
 | CF-APIGW-V2-004 | resilience |
+| CF-APPRUNNER-001 | observability |
+| CF-APPSYNC-001 | observability, security-baseline |
+| CF-APPSYNC-002 | identity |
+| CF-APPSYNC-003 | network-exposure |
+| CF-APPSYNC-004 | resilience |
+| CF-ASG-001 | resilience |
+| CF-ASG-002 | resilience |
+| CF-ASG-003 | security-baseline, identity |
+| CF-ASG-004 | network-exposure |
+| CF-ASG-005 | security-baseline |
+| CF-ASG-006 | finops |
+| CF-ATH-001 | data-protection |
+| CF-ATH-002 | data-protection |
 | CF-BAK-001 | data-protection |
 | CF-BAK-002 | resilience, data-protection |
 | CF-BAK-003 | resilience, data-protection |
 | CF-BAK-004 | data-protection, resilience |
 | CF-BAK-005 | resilience, data-protection |
+| CF-BEANSTALK-001 | observability |
+| CF-BEANSTALK-002 | security-baseline |
+| CF-BEANSTALK-003 | observability |
+| CF-BUDGET-001 | finops |
 | CF-CB-001 | data-protection, identity |
 | CF-CB-002 | data-protection, identity |
 | CF-CB-003 | security-baseline |
@@ -480,6 +589,16 @@ Every rule has one or more themes, which cut across pillars: `finops`, `security
 | CF-CF-002 | data-protection, network-exposure |
 | CF-CF-003 | network-exposure |
 | CF-CF-004 | network-exposure, identity |
+| CF-CF-005 | observability |
+| CF-CF-006 | finops |
+| CF-CF-007 | sustainability, finops |
+| CF-CF-008 | network-exposure |
+| CF-CF-009 | resilience |
+| CF-CF-010 | data-protection, network-exposure |
+| CF-CF-011 | data-protection, network-exposure |
+| CF-CF-012 | finops |
+| CF-CF-013 | resilience |
+| CF-CFG-001 | observability, security-baseline |
 | CF-CLB-001 | data-protection, network-exposure |
 | CF-CLB-002 | data-protection |
 | CF-CLB-003 | observability |
@@ -495,14 +614,21 @@ Every rule has one or more themes, which cut across pillars: `finops`, `security
 | CF-CT-001 | observability, security-baseline |
 | CF-CT-002 | observability |
 | CF-CT-003 | observability, data-protection |
+| CF-CT-004 | observability, security-baseline |
+| CF-CT-005 | observability, data-protection |
 | CF-CW-001 | finops, data-protection |
 | CF-CW-002 | data-protection |
+| CF-DASH-001 | observability |
 | CF-DDB-001 | resilience, data-protection |
 | CF-DDB-002 | data-protection |
 | CF-DDB-003 | finops, resilience |
 | CF-DDB-004 | resilience, data-protection |
 | CF-DDB-005 | resilience, data-protection |
 | CF-DEL-001 | data-protection, resilience |
+| CF-DMS-001 | network-exposure |
+| CF-DMS-002 | security-baseline |
+| CF-DMS-003 | data-protection |
+| CF-DMS-004 | resilience |
 | CF-DOCDB-001 | data-protection |
 | CF-DOCDB-002 | resilience |
 | CF-DOCDB-003 | observability |
@@ -527,6 +653,14 @@ Every rule has one or more themes, which cut across pillars: `finops`, `security
 | CF-ECS-001 | security-baseline |
 | CF-ECS-002 | security-baseline |
 | CF-ECS-003 | security-baseline |
+| CF-ECS-004 | security-baseline, network-exposure |
+| CF-ECS-005 | network-exposure |
+| CF-ECS-006 | security-baseline |
+| CF-ECS-007 | data-protection, identity |
+| CF-ECS-008 | observability |
+| CF-ECS-009 | security-baseline |
+| CF-ECS-010 | observability |
+| CF-ECS-011 | finops |
 | CF-EFS-001 | data-protection |
 | CF-EFS-002 | resilience, data-protection |
 | CF-EFS-003 | finops |
@@ -536,14 +670,27 @@ Every rule has one or more themes, which cut across pillars: `finops`, `security
 | CF-EKS-001 | observability |
 | CF-EKS-002 | network-exposure |
 | CF-EKS-003 | data-protection |
+| CF-EKS-004 | security-baseline |
+| CF-EMR-001 | network-exposure |
+| CF-EMR-002 | data-protection |
+| CF-EMR-003 | data-protection |
 | CF-ENV-001 | finops |
 | CF-ENV-002 | finops |
 | CF-ENV-003 | finops |
 | CF-ENV-004 | finops |
 | CF-ENV-005 | finops |
 | CF-ENV-006 | finops |
+| CF-FH-001 | data-protection |
 | CF-FL-001 | observability, network-exposure |
+| CF-FSX-001 | data-protection |
+| CF-FSX-002 | finops |
+| CF-FSX-003 | resilience |
+| CF-GA-001 | resilience |
+| CF-GD-001 | security-baseline |
 | CF-GEN-001 | finops, sustainability |
+| CF-GLUE-001 | data-protection |
+| CF-GLUE-002 | observability |
+| CF-GLUE-003 | resilience |
 | CF-IAM-001 | identity |
 | CF-IAM-002 | identity |
 | CF-IAM-003 | identity |
@@ -565,6 +712,7 @@ Every rule has one or more themes, which cut across pillars: `finops`, `security
 | CF-LAM-006 | resilience |
 | CF-LAM-007 | resilience |
 | CF-LAM-008 | resilience |
+| CF-MACIE-001 | data-protection, security-baseline |
 | CF-MSK-001 | data-protection |
 | CF-MSK-002 | identity |
 | CF-MSK-003 | network-exposure |
@@ -588,6 +736,9 @@ Every rule has one or more themes, which cut across pillars: `finops`, `security
 | CF-PERF-002 | resilience |
 | CF-PERF-003 | finops |
 | CF-PERF-004 | finops |
+| CF-R53-001 | observability, security-baseline |
+| CF-R53-002 | security-baseline |
+| CF-R53-003 | resilience |
 | CF-RDS-001 | data-protection |
 | CF-RDS-002 | resilience, data-protection |
 | CF-RDS-003 | resilience |
@@ -617,12 +768,23 @@ Every rule has one or more themes, which cut across pillars: `finops`, `security
 | CF-S3-005 | data-protection, network-exposure |
 | CF-S3-006 | finops, data-protection |
 | CF-S3-007 | finops |
+| CF-S3-008 | data-protection |
+| CF-S3-009 | network-exposure, data-protection |
+| CF-S3-010 | resilience, data-protection |
+| CF-S3-011 | observability, data-protection |
+| CF-S3-012 | finops |
+| CF-SAGE-001 | network-exposure |
+| CF-SAGE-002 | network-exposure |
+| CF-SAGE-003 | security-baseline, identity |
+| CF-SAGE-004 | data-protection |
+| CF-SAGE-005 | resilience |
 | CF-SFN-001 | resilience |
 | CF-SFN-002 | observability |
 | CF-SFN-003 | observability |
 | CF-SG-001 | network-exposure |
 | CF-SG-002 | network-exposure |
 | CF-SG-003 | network-exposure |
+| CF-SH-001 | security-baseline |
 | CF-SM-001 | data-protection, identity |
 | CF-SNS-001 | data-protection |
 | CF-SQS-001 | data-protection |
@@ -636,6 +798,9 @@ Every rule has one or more themes, which cut across pillars: `finops`, `security
 | CF-TAG-001 | finops |
 | CF-TGW-001 | network-exposure, identity |
 | CF-TGW-002 | observability, network-exposure |
+| CF-TRANSFER-001 | data-protection |
+| CF-TRANSFER-002 | observability, security-baseline |
+| CF-TRANSFER-003 | network-exposure |
 | CF-VPC-001 | network-exposure, finops |
 | CF-VPC-002 | finops |
 | CF-VPC-003 | finops |

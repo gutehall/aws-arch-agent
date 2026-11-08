@@ -23,7 +23,7 @@ from aws_arch_agent.rules.terraform_model import (
     variables_from_terraform,
 )
 from aws_arch_agent.rules.runner import filter_by_severity, run_all_rules
-from aws_arch_agent.rules import effort, environments, nonprod, regions, stack_cost, themes
+from aws_arch_agent.rules import cf_template, effort, environments, nonprod, regions, stack_cost, themes
 from aws_arch_agent.rules.tag_policy import TagPolicy, policy_checked, use_tag_policy
 from aws_arch_agent.report.markdown import insert_summary, render_markdown
 from aws_arch_agent.tools.llm import LLMClient
@@ -416,6 +416,7 @@ def analyze_v1(
     tag_policy: TagPolicy | None = None,
     environment_map: dict[str, str] | None = None,
     nonprod_max_size: str | None = None,
+    dashboards_min_resources: int | None = None,
     theme_filter: list[str] | None = None,
     group_by: str = "severity",
 ) -> tuple[str, RepoContext, list[Finding], list[str]]:
@@ -426,6 +427,7 @@ def analyze_v1(
         stack_cost.collect(),
         environments.use_environments(environment_map, repo_path),
         nonprod.use_max_size(nonprod_max_size),
+        cf_template.use_dashboard_min_resources(dashboards_min_resources),
     ):
         ctx, findings, warnings = _collect_findings(
             repo_path, max_files, rules_include, rules_exclude, severity_threshold, rules_org, iac,

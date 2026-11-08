@@ -17,7 +17,7 @@ from typing import Any, Iterator, List
 from aws_arch_agent.models import Finding
 from aws_arch_agent.pricing import current_region, snapshot_date
 from aws_arch_agent.rules import estimates
-from aws_arch_agent.rules.resource_model import Resource
+from aws_arch_agent.rules.resource_model import TF_MODULE_CALL, Resource
 from aws_arch_agent.tools.paths import to_repo_relative
 
 TOP_N = 5
@@ -72,8 +72,8 @@ def collect() -> Iterator[None]:
         _stacks = previous
 
 
-def _free(source_type: str) -> bool:
-    return bool(_FREE_CF.match(source_type) or _FREE_TF.match(source_type))
+def is_free(source_type: str) -> bool:
+    return bool(source_type == TF_MODULE_CALL or _FREE_CF.match(source_type) or _FREE_TF.match(source_type))
 
 
 def record(template_path: Path, resources: List[Resource]) -> None:
@@ -89,7 +89,7 @@ def record(template_path: Path, resources: List[Resource]) -> None:
         cost = estimates.resource_cost(res)
         if cost is not None:
             stack.priced.append((res, cost))
-        elif not _free(res.source_type):
+        elif not is_free(res.source_type):
             stack.not_priced[res.source_type] += 1
     _stacks[stack.path] = stack
 
