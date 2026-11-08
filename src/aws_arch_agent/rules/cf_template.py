@@ -336,6 +336,9 @@ _PER_RESOURCE_TYPES = frozenset({
     "route53_key_signing_key", "route53_query_log", "acm_certificate",
     "globalaccelerator_endpoint_group",
     "cloudwatch_alarm", "cloudwatch_composite_alarm", "cloudwatch_dashboard",
+    "guardduty_detector", "guardduty_detector_feature", "securityhub_hub", "securityhub_standard",
+    "securityhub_configuration_policy", "config_configuration_recorder", "macie_session",
+    "budgets_budget", "budgets_action",
 })
 # Parameter groups only feed CF-RDS-006; they have no checks of their own.
 
@@ -497,6 +500,8 @@ CHECK_PROPERTIES: dict[str, frozenset[str]] = {
                               "CF-ACM-003", "CF-GA-001")},
         # Template-level: _monitoring_findings skips what it cannot read.
         **{c: set() for c in ("CF-ALARM-001", "CF-ALARM-002", "CF-DASH-001", "CF-CT-005")},
+        # Template-level: _account_baseline_findings skips what it cannot read.
+        **{c: set() for c in ("CF-GD-001", "CF-SH-001", "CF-CFG-001", "CF-MACIE-001", "CF-BUDGET-001")},
         # Template-level: _backup_findings skips what it cannot read.
         **{c: set() for c in ("CF-BAK-001", "CF-BAK-002", "CF-BAK-003", "CF-BAK-004", "CF-BAK-005")},
         # Template-level: _ci_cd_findings skips what it cannot read.
@@ -531,6 +536,8 @@ _F, _SB, _ID, _DP, _NET, _RES, _OBS, _SUS = (
     "network-exposure", "resilience", "observability", "sustainability",
 )
 CF_THEMES: dict[str, tuple[str, ...]] = {
+    "CF-GD-001": (_SB,), "CF-SH-001": (_SB,), "CF-CFG-001": (_OBS, _SB), "CF-MACIE-001": (_DP, _SB),
+    "CF-BUDGET-001": (_F,),
     "CF-ALARM-001": (_OBS,), "CF-ALARM-002": (_OBS,), "CF-DASH-001": (_OBS,),
     "CF-CT-004": (_OBS, _SB), "CF-CT-005": (_OBS, _DP),
     "CF-R53-001": (_OBS, _SB), "CF-R53-002": (_SB,), "CF-R53-003": (_RES,),
@@ -3443,6 +3450,147 @@ def _monitoring_findings(resources: List[Resource], template_path: Path) -> List
                 "EventSelectors with DataResources of type AWS::S3::Object, or AdvancedEventSelectors for "
                 "those objects, on one trail. Data events are charged per event, so limit them to these "
                 "buckets. A trail in another stack may already hold them. In CDK: trail.addS3EventSelector().")
+    return out
+
+
+def _is_literal_false(value: Any) -> bool:
+    """True only when the template says false. Unset, an intrinsic and an expression are not."""
+    return value is False or (type(value) is str and value.lower() == "false")
+
+
+def _dig(value: Any, *keys: str) -> Any:
+    """The value at this path of nested dicts, or None when any step is missing."""
+    for key in keys:
+        value = value.get(key) if isinstance(value, dict) else None
+    return value
+
+
+# (Features name, what to call it, path under DataSources, Security Hub control)
+_GUARDDUTY_FEATURES: tuple[tuple[str, str, tuple[str, ...], str], ...] = (
+    ("S3_DATA_EVENTS", "S3 Protection", ("S3Logs", "Enable"), "GuardDuty.10"),
+    ("EKS_AUDIT_LOGS", "EKS Audit Log Monitoring", ("Kubernetes", "AuditLogs", "Enable"), "GuardDuty.5"),
+    ("EBS_MALWARE_PROTECTION", "Malware Protection for EC2",
+     ("MalwareProtection", "ScanEc2InstanceWithFindings", "EbsVolumes"), "GuardDuty.8"),
+)
+
+
+def _guardduty_features_off(detector: Resource, detectors: List[Resource], features: List[Resource]) -> list[str]:
+    """The features the template sets off on this detector, with their control. Unset is not off:
+    a feature may be on by default. Anything that may turn the same feature on wins, including a
+    Terraform feature resource the scan cannot tie to a detector. Such a resource never counts as off."""
+    sources, entries = detector.properties.get("DataSources"), detector.properties.get("Features", [])
+    if ("DataSources" in detector.unresolved or "Features" in detector.unresolved
+            or not isinstance(entries, list) or (isinstance(sources, dict) and _is_intrinsic(sources))):
+        return []
+    states = [(e.get("Name"), e.get("Status"), True) if isinstance(e, dict) else (None, None, True)
+              for e in entries]
+    for feature in features:
+        tied = detector.name in feature.references
+        if tied or not any(d.name in feature.references for d in detectors):
+            states.append((feature.properties.get("Name"), feature.properties.get("Status"), tied))
+    off: list[str] = []
+    for name, label, path, control in _GUARDDUTY_FEATURES:
+        legacy = _dig(sources, *path)
+        said_off = _is_literal_false(legacy)
+        may_be_on = legacy is not None and not said_off
+        for state_name, status, tied in states:
+            literal_name = state_name.upper() if type(state_name) is str else None
+            if literal_name not in (None, name):
+                continue
+            if type(status) is str and status.upper() == "DISABLED":
+                said_off = said_off or (tied and literal_name == name)
+            else:
+                may_be_on = True
+        if said_off and not may_be_on:
+            off.append(f"{label} (Security Hub {control})")
+    return off
+
+
+def _may_be_fsbp(standard: Resource) -> bool:
+    """False only when the standard's ARN is a literal that names another standard."""
+    arn = standard.properties.get("StandardsArn")
+    return type(arn) is not str or "aws-foundational-security-best-practices" in arn.lower()
+
+
+def _account_baseline_findings(resources: List[Resource], template_path: Path) -> List[Finding]:
+    """GuardDuty (CF-GD-001), Security Hub (CF-SH-001), AWS Config (CF-CFG-001), Macie (CF-MACIE-001)
+    and Budgets (CF-BUDGET-001) when the template defines them. They never report a missing service.
+    A value the scan cannot read is not judged."""
+    usable = [r for r in resources if not r.malformed]
+    out: List[Finding] = []
+
+    def add(res: Resource, check_id: str, title: str, severity: Severity, category: str,
+            recommendation: str) -> None:
+        out.append(Finding(
+            id=check_id, title=title, severity=severity, category=category,
+            file=res.file or str(template_path), line=res.line,
+            evidence=f"{res.name} ({res.source_type})", recommendation=recommendation,
+        ))
+
+    detectors = [r for r in usable if r.type == "guardduty_detector"]
+    # A malformed feature resource may turn a feature on, so nothing is judged from the features then.
+    features_readable = not any(r.malformed and r.type == "guardduty_detector_feature" for r in resources)
+    features_in_sight = not _may_be_out_of_sight(resources, ("aws_guardduty_detector_feature",))
+    features = [r for r in usable if r.type == "guardduty_detector_feature"]
+    for detector in detectors:
+        # One finding per detector: findings with the same id and evidence are merged.
+        if _is_literal_false(detector.properties.get("Enable")):
+            add(detector, "CF-GD-001", "GuardDuty detector is turned off", "Medium", "Security",
+                "Enable is false, so GuardDuty produces no findings in this account and Region (Security Hub "
+                "GuardDuty.1). Set Enable: true. In CDK: enable: true on the CfnDetector.")
+            continue
+        off = (_guardduty_features_off(detector, detectors, features)
+               if features_readable and features_in_sight else [])
+        if off:
+            add(detector, "CF-GD-001", "GuardDuty detector has protection features turned off", "Medium",
+                "Security",
+                f"The template turns these off: {', '.join(off)}. GuardDuty then misses threats in those "
+                "sources. Turn them on in Features with Status: ENABLED (Terraform "
+                "aws_guardduty_detector_feature). In CDK: features on the CfnDetector.")
+
+    standards = [r for r in resources if r.type == "securityhub_standard"]
+    policy = any(r.type == "securityhub_configuration_policy" for r in resources)
+    hubs = [r for r in usable if r.type == "securityhub_hub"]
+    if hubs and not policy and not any(_may_be_fsbp(s) for s in standards) and not _may_be_out_of_sight(
+            resources, ("aws_securityhub_standards_subscription", "aws_securityhub_configuration_policy")):
+        for hub in hubs:
+            if _is_literal_false(hub.properties.get("EnableDefaultStandards")):
+                add(hub, "CF-SH-001", "Security Hub hub leaves out the FSBP standard", "Low", "Security",
+                    "EnableDefaultStandards is false and no AWS::SecurityHub::Standard in this template (Terraform "
+                    "aws_securityhub_standards_subscription) turns on AWS Foundational Security Best Practices, "
+                    "so its controls are not evaluated. Add that standard, unless another stack or a central "
+                    "configuration policy turns it on. In CDK: securityhub.CfnStandard.")
+
+    for recorder in (r for r in usable if r.type == "config_configuration_recorder"):
+        group = recorder.properties.get("RecordingGroup")
+        if ("RecordingGroup" not in recorder.unresolved and isinstance(group, dict) and not _is_intrinsic(group)
+                and _is_literal_false(group.get("AllSupported"))
+                and not any(group.get(k) for k in ("ResourceTypes", "ExclusionByResourceTypes", "RecordingStrategy"))):
+            add(recorder, "CF-CFG-001", "Config recorder does not record all resources", "Medium",
+                "Operational Excellence",
+                "RecordingGroup.AllSupported is false and no resource types are listed, so AWS Config has "
+                "nothing to record and Security Hub controls lack the data they read (Security Hub Config.1, in "
+                "part). Set AllSupported: true, or list the types. In CDK: recordingGroup on the "
+                "CfnConfigurationRecorder.")
+
+    for session in (r for r in usable if r.type == "macie_session"):
+        status = session.properties.get("Status")
+        if type(status) is str and status.upper() == "PAUSED":
+            add(session, "CF-MACIE-001", "Macie session is paused", "Low", "Security",
+                "Status is PAUSED, so Macie runs no sensitive data discovery on S3 (Security Hub Macie.1). Set "
+                "Status: ENABLED. In CDK: status on the CfnSession.")
+
+    budgets = [r for r in usable if r.type == "budgets_budget"]
+    # A budget action has subscribers of its own, and the scan does not tie it to one budget.
+    if budgets and not any(r.type == "budgets_action" for r in resources) and not _may_be_out_of_sight(
+            resources, ("aws_budgets_budget_action",)):
+        for budget in budgets:
+            if ("NotificationsWithSubscribers" not in budget.unresolved
+                    and not budget.properties.get("NotificationsWithSubscribers")):
+                add(budget, "CF-BUDGET-001", "Budget sends no notifications", "Low", "Cost Optimization",
+                    "This AWS Budgets budget has no NotificationsWithSubscribers (Terraform notification), so "
+                    "nobody is told when spend passes it. Add a notification with a subscriber. In CDK: "
+                    "notificationsWithSubscribers on the CfnBudget.")
     return out
 
 
@@ -7026,6 +7174,9 @@ def _run_resource_checks(
 
     # --- DynamoDB, ElastiCache and EFS resilience and access ---
     findings.extend(_data_store_findings(resources, template_path))
+
+    # --- GuardDuty, Security Hub, AWS Config, Macie and Budgets a repo defines ---
+    findings.extend(_account_baseline_findings(resources, template_path))
 
     # --- ECS network, secrets, logging, platform, insights and sizing; EKS version ---
     findings.extend(_container_findings(resources, template_path))

@@ -131,6 +131,14 @@ CF_TYPE_TO_CANONICAL: dict[str, str] = {
     "AWS::CloudWatch::Alarm": "cloudwatch_alarm",
     "AWS::CloudWatch::CompositeAlarm": "cloudwatch_composite_alarm",
     "AWS::CloudWatch::Dashboard": "cloudwatch_dashboard",
+    "AWS::GuardDuty::Detector": "guardduty_detector",
+    "AWS::SecurityHub::Hub": "securityhub_hub",
+    "AWS::SecurityHub::Standard": "securityhub_standard",
+    "AWS::SecurityHub::ConfigurationPolicy": "securityhub_configuration_policy",
+    "AWS::Config::ConfigurationRecorder": "config_configuration_recorder",
+    "AWS::Macie::Session": "macie_session",
+    "AWS::Budgets::Budget": "budgets_budget",
+    "AWS::Budgets::BudgetsAction": "budgets_action",
     "AWS::GlobalAccelerator::EndpointGroup": "globalaccelerator_endpoint_group",
     "AWS::AppSync::GraphQLApi": "appsync_graphql_api",
     "AWS::AppSync::ApiCache": "appsync_api_cache",
@@ -154,7 +162,7 @@ TF_MODULE_CALL = "module"
 
 CANONICAL_TYPES: frozenset[str] = frozenset(CF_TYPE_TO_CANONICAL.values()) | {
     "events_target", "backup_vault_lock", "efs_backup_policy", "autoscaling_attachment",
-    "route53_query_log",
+    "route53_query_log", "guardduty_detector_feature",
 }
 
 

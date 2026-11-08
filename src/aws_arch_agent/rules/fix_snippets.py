@@ -167,6 +167,50 @@ ${name}ErrorsAlarm:
   Type: AWS::CloudWatch::Dashboard
   Properties:
     DashboardBody: '{"widgets": []}'""",
+    "CF-GD-001": """$name:
+  Type: AWS::GuardDuty::Detector
+  Properties:
+    Enable: true
+    Features:
+      - Name: S3_DATA_EVENTS
+        Status: ENABLED
+      - Name: EKS_AUDIT_LOGS
+        Status: ENABLED
+      - Name: EBS_MALWARE_PROTECTION
+        Status: ENABLED""",
+    "CF-SH-001": """FsbpStandard:
+  Type: AWS::SecurityHub::Standard
+  DependsOn: $name
+  Properties:
+    StandardsArn: !Sub arn:$${AWS::Partition}:securityhub:$${AWS::Region}::standards/aws-foundational-security-best-practices/v/1.0.0""",
+    "CF-CFG-001": """$name:
+  Type: AWS::Config::ConfigurationRecorder
+  Properties:
+    RoleARN: !Sub arn:$${AWS::Partition}:iam::$${AWS::AccountId}:role/aws-service-role/config.amazonaws.com/AWSServiceRoleForConfig
+    RecordingGroup:
+      AllSupported: true
+      IncludeGlobalResourceTypes: true""",
+    "CF-MACIE-001": """$name:
+  Type: AWS::Macie::Session
+  Properties:
+    Status: ENABLED""",
+    "CF-BUDGET-001": """$name:
+  Type: AWS::Budgets::Budget
+  Properties:
+    Budget:
+      BudgetType: COST
+      TimeUnit: MONTHLY
+      BudgetLimit:
+        Amount: 1000
+        Unit: USD
+    NotificationsWithSubscribers:
+      - Notification:
+          NotificationType: ACTUAL
+          ComparisonOperator: GREATER_THAN
+          Threshold: 80
+        Subscribers:
+          - SubscriptionType: EMAIL
+            Address: ops@example.com""",
     "CF-KMS-001": """$name:
   Type: AWS::KMS::Key
   Properties:
@@ -475,6 +519,59 @@ resource "aws_cloudwatch_metric_alarm" "${tf_name}_errors" {
     "CF-DASH-001": """resource "aws_cloudwatch_dashboard" "stack" {
   dashboard_name = "stack"
   dashboard_body = jsonencode({ widgets = [] })
+}""",
+    "CF-GD-001": """resource "aws_guardduty_detector" "$tf_name" {
+  enable = true
+}
+
+resource "aws_guardduty_detector_feature" "s3" {
+  detector_id = aws_guardduty_detector.$tf_name.id
+  name        = "S3_DATA_EVENTS"
+  status      = "ENABLED"
+}
+
+resource "aws_guardduty_detector_feature" "eks_audit" {
+  detector_id = aws_guardduty_detector.$tf_name.id
+  name        = "EKS_AUDIT_LOGS"
+  status      = "ENABLED"
+}
+
+resource "aws_guardduty_detector_feature" "malware" {
+  detector_id = aws_guardduty_detector.$tf_name.id
+  name        = "EBS_MALWARE_PROTECTION"
+  status      = "ENABLED"
+}""",
+    "CF-SH-001": """data "aws_region" "current" {}
+data "aws_partition" "current" {}
+
+resource "aws_securityhub_standards_subscription" "fsbp" {
+  depends_on    = [aws_securityhub_account.$tf_name]
+  standards_arn = "arn:$${data.aws_partition.current.partition}:securityhub:$${data.aws_region.current.name}::standards/aws-foundational-security-best-practices/v/1.0.0"
+}""",
+    "CF-CFG-001": """resource "aws_config_configuration_recorder" "$tf_name" {
+  role_arn = aws_iam_service_linked_role.config.arn
+
+  recording_group {
+    all_supported                 = true
+    include_global_resource_types = true
+  }
+}""",
+    "CF-MACIE-001": """resource "aws_macie2_account" "$tf_name" {
+  status = "ENABLED"
+}""",
+    "CF-BUDGET-001": """resource "aws_budgets_budget" "$tf_name" {
+  budget_type  = "COST"
+  limit_amount = "1000"
+  limit_unit   = "USD"
+  time_unit    = "MONTHLY"
+
+  notification {
+    comparison_operator        = "GREATER_THAN"
+    threshold                  = 80
+    threshold_type             = "PERCENTAGE"
+    notification_type          = "ACTUAL"
+    subscriber_email_addresses = ["ops@example.com"]
+  }
 }""",
     "CF-KMS-001": """data "aws_caller_identity" "current" {}
 data "aws_partition" "current" {}

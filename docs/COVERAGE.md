@@ -17,7 +17,6 @@ Which CDK rules have a template check, and which AWS Foundational Security Best 
 
 | Work | Adds template checks for |
 | -- | -- |
-| `account-baseline` | Account baseline resources a repo defines |
 
 ## CDK rules
 
@@ -50,8 +49,8 @@ Which CDK rules have a template check, and which AWS Foundational Security Best 
 | SEC-023 | KMS key rotation not enabled | `CF-KMS-002` | `covered` |  |
 | SEC-024 | WAF not enabled on ALB/API Gateway/CloudFront | `CF-CF-003`, `CF-WAF-001` | `covered` |  |
 | SEC-025 | ElastiCache not using encryption in-transit/at-rest | `CF-EC-001`, `CF-EC-002` | `covered` |  |
-| SEC-026 | Security Hub not enabled |  | `account` | Security Hub is an account service. account-baseline checks a hub the repo defines. |
-| SEC-027 | GuardDuty not enabled |  | `account` | GuardDuty is an account service. account-baseline checks a detector the repo defines. |
+| SEC-026 | Security Hub not enabled |  | `account` | Security Hub is an account service. `CF-SH-001` checks a hub the repo defines. |
+| SEC-027 | GuardDuty not enabled |  | `account` | GuardDuty is an account service. `CF-GD-001` checks a detector the repo defines. |
 | SEC-028 | ECR repository image scanning not enabled | `CF-ECR-001` | `covered` |  |
 | SEC-029 | ECR image tag immutability not configured | `CF-ECR-002` | `covered` |  |
 | SEC-030 | ECR repository lifecycle policy missing | `CF-ECR-003` | `covered` |  |
@@ -89,7 +88,7 @@ Which CDK rules have a template check, and which AWS Foundational Security Best 
 | SEC-062 | CloudWatch Logs not encrypted with KMS | `CF-CW-002` | `covered` |  |
 | SEC-063 | Backup vault encryption not configured | `CF-BAK-001` | `covered` |  |
 | SEC-064 | RDS instance may be publicly accessible | `CF-RDS-004` | `covered` |  |
-| SEC-065 | Amazon Macie not enabled for sensitive data discovery |  | `account` | Macie is an account service. account-baseline checks a session the repo defines. |
+| SEC-065 | Amazon Macie not enabled for sensitive data discovery |  | `account` | Macie is an account service. `CF-MACIE-001` checks a session the repo defines. |
 | SEC-066 | EC2 instance may not require IMDSv2 | `CF-EC2-001` | `covered` |  |
 | SEC-067 | IAM principal has full admin access | `CF-IAM-008` | `covered` |  |
 | SEC-068 | Lambda function uses a deprecated runtime | `CF-LAM-003` | `covered` |  |
@@ -137,7 +136,7 @@ Which CDK rules have a template check, and which AWS Foundational Security Best 
 | COST-011 | CloudFront using all edge locations (Price Class All) | `CF-CF-006` | `covered` |  |
 | COST-012 | Elastic IP allocated but may not be used | `CF-EIP-001` | `covered` |  |
 | COST-013 | S3 lifecycle policy not configured for cost optimization | `CF-S3-006` | `covered` |  |
-| COST-014 | AWS Budgets not configured |  | `account` | Budgets are account-level. account-baseline checks a budget the repo defines. |
+| COST-014 | AWS Budgets not configured |  | `account` | Budgets are account-level. `CF-BUDGET-001` checks a budget the repo defines. |
 | COST-015 | Cost allocation tags may not be configured | `CF-TAG-001` | `covered` |  |
 | COST-016 | Savings Plans opportunity for compute workloads |  | `account` | Savings Plans are bought for the account. |
 | COST-017 | Lambda memory/CPU may not be optimized |  | `advice` | Memory tuning needs invocation data. |
@@ -160,7 +159,7 @@ Which CDK rules have a template check, and which AWS Foundational Security Best 
 | OPS-011 | No SNS topics for alarm notifications | `CF-ALARM-002` | `covered` | Like the CDK rule, any alarm action passes, not only SNS. An alarm something else reads is not reported. |
 | OPS-012 | Step Functions not using X-Ray tracing | `CF-SFN-002` | `covered` |  |
 | OPS-013 | EventBridge rules not using DLQ | `CF-EB-001` | `covered` |  |
-| OPS-014 | AWS Config not enabled |  | `account` | AWS Config is an account service. account-baseline checks a recorder the repo defines. |
+| OPS-014 | AWS Config not enabled |  | `account` | AWS Config is an account service. `CF-CFG-001` checks a recorder the repo defines. |
 | OPS-015 | Glue job CloudWatch metrics not enabled | `CF-GLUE-002` | `covered` |  |
 | OPS-016 | Transit Gateway flow logs not enabled | `CF-TGW-002` | `covered` |  |
 | OPS-017 | CodePipeline notifications not configured | `CF-CP-003` | `covered` |  |
@@ -236,7 +235,7 @@ Controls a template can show. Account-level controls (for example S3.1, EC2.7 an
 | CodeBuild.3 | `CF-CB-005` | `AWS::CodeBuild::Project` |
 | CodeBuild.4 | `CF-CB-004` | `AWS::CodeBuild::Project` |
 | Cognito.1 | `CF-COG-003` | `AWS::Cognito::UserPool` |
-| Config.1 | `planned: account-baseline` | `AWS::Config::ConfigurationRecorder` |
+| Config.1 | `CF-CFG-001` | `AWS::Config::ConfigurationRecorder` |
 | DataFirehose.1 | `CF-FH-001` | `AWS::KinesisFirehose::DeliveryStream` |
 | DMS.1 | `CF-DMS-001` | `AWS::DMS::ReplicationInstance` |
 | DMS.6 | `CF-DMS-002` | `AWS::DMS::ReplicationInstance` |

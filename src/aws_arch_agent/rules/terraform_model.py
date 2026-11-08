@@ -118,6 +118,15 @@ TF_TYPE_TO_CANONICAL: dict[str, str] = {
     "aws_cloudwatch_metric_alarm": "cloudwatch_alarm",
     "aws_cloudwatch_composite_alarm": "cloudwatch_composite_alarm",
     "aws_cloudwatch_dashboard": "cloudwatch_dashboard",
+    "aws_guardduty_detector": "guardduty_detector",
+    "aws_guardduty_detector_feature": "guardduty_detector_feature",
+    "aws_securityhub_account": "securityhub_hub",
+    "aws_securityhub_standards_subscription": "securityhub_standard",
+    "aws_securityhub_configuration_policy": "securityhub_configuration_policy",
+    "aws_config_configuration_recorder": "config_configuration_recorder",
+    "aws_macie2_account": "macie_session",
+    "aws_budgets_budget": "budgets_budget",
+    "aws_budgets_budget_action": "budgets_action",
     "aws_globalaccelerator_endpoint_group": "globalaccelerator_endpoint_group",
     "aws_appsync_graphql_api": "appsync_graphql_api",
     "aws_appsync_api_cache": "appsync_api_cache",
@@ -2618,7 +2627,78 @@ def _eks(body: dict) -> dict:
     return props
 
 
+def _guardduty_detector(body: dict) -> dict:
+    """aws_guardduty_detector. Values stay as written, so one from a variable does not hide the
+    other features; the check only reads a literal."""
+    props: dict = {}
+    _set(props, "Enable", _ref(body, "enable"))
+    if _block_is_unknown(body, "datasources"):
+        props["DataSources"] = UNRESOLVED
+        return props
+    sources = _first_block(body, "datasources")
+    if sources:
+        audit_logs = _first_block(_first_block(sources, "kubernetes"), "audit_logs")
+        scan = _first_block(_first_block(sources, "malware_protection"), "scan_ec2_instance_with_findings")
+        props["DataSources"] = {
+            "S3Logs": {"Enable": _ref(_first_block(sources, "s3_logs"), "enable")},
+            "Kubernetes": {"AuditLogs": {"Enable": _ref(audit_logs, "enable")}},
+            "MalwareProtection": {"ScanEc2InstanceWithFindings": {
+                "EbsVolumes": _ref(_first_block(scan, "ebs_volumes"), "enable")}},
+        }
+    return props
+
+
+def _guardduty_detector_feature(body: dict) -> dict:
+    """aws_guardduty_detector_feature: Terraform sets a feature from a resource of its own."""
+    return {"Name": _ref(body, "name"), "Status": _ref(body, "status")}
+
+
+def _securityhub_account(body: dict) -> dict:
+    props: dict = {}
+    _set(props, "EnableDefaultStandards", _ref(body, "enable_default_standards"))
+    return props
+
+
+def _securityhub_standards_subscription(body: dict) -> dict:
+    return {"StandardsArn": _ref(body, "standards_arn")}
+
+
+def _config_recorder(body: dict) -> dict:
+    """aws_config_configuration_recorder. Only all_supported is compared; the rest is presence."""
+    if _block_is_unknown(body, "recording_group"):
+        return {"RecordingGroup": UNRESOLVED}
+    group = _first_block(body, "recording_group")
+    if not group:
+        return {}
+    props = {"AllSupported": _ref(group, "all_supported"), "ResourceTypes": _ref(group, "resource_types")}
+    for block, key in (("exclusion_by_resource_types", "ExclusionByResourceTypes"),
+                       ("recording_strategy", "RecordingStrategy")):
+        if _block_is_unknown(group, block) or _blocks(group, block):
+            props[key] = _OPAQUE
+    return {"RecordingGroup": props}
+
+
+def _macie2_account(body: dict) -> dict:
+    props: dict = {}
+    _set(props, "Status", _ref(body, "status"))
+    return props
+
+
+def _budgets_budget(body: dict) -> dict:
+    """aws_budgets_budget. A notification block holds what CloudFormation calls NotificationsWithSubscribers."""
+    if _block_is_unknown(body, "notification"):
+        return {"NotificationsWithSubscribers": UNRESOLVED}
+    return {"NotificationsWithSubscribers": _OPAQUE} if _blocks(body, "notification") else {}
+
+
 _ADAPTERS: dict[str, Callable[[dict], dict]] = {
+    "aws_guardduty_detector": _guardduty_detector,
+    "aws_guardduty_detector_feature": _guardduty_detector_feature,
+    "aws_securityhub_account": _securityhub_account,
+    "aws_securityhub_standards_subscription": _securityhub_standards_subscription,
+    "aws_config_configuration_recorder": _config_recorder,
+    "aws_macie2_account": _macie2_account,
+    "aws_budgets_budget": _budgets_budget,
     "aws_athena_workgroup": _athena_workgroup,
     "aws_glue_job": _glue_job,
     "aws_glue_security_configuration": _glue_security_configuration,

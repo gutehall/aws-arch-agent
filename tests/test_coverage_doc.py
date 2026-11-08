@@ -92,7 +92,6 @@ def test_partial_rows_match_the_partial_map() -> None:
 
 def test_planned_rows_name_planned_work() -> None:
     work = _planned_work()
-    assert work, "no planned work table"
     for rule_id, status, _c, slug in _rule_rows():
         if status == "planned":
             assert slug in work, f"{rule_id}: planned work {slug!r} is not in the Planned work table"
