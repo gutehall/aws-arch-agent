@@ -66,6 +66,9 @@ TF_TYPE_TO_CANONICAL: dict[str, str] = {
     "aws_ebs_volume": "ebs_volume",
     "aws_efs_file_system": "efs_file_system",
     "aws_kinesis_stream": "kinesis_stream",
+    "aws_kinesis_stream_consumer": "kinesis_stream_consumer",
+    "aws_kinesisanalyticsv2_application": "kinesis_analytics_application",
+    "aws_kinesis_firehose_delivery_stream": "firehose_delivery_stream",
     "aws_opensearch_domain": "opensearch_domain",
     "aws_redshift_cluster": "redshift_cluster",
     "aws_docdb_cluster": "docdb_cluster",
@@ -771,12 +774,14 @@ def _efs_file_system(body: dict) -> dict:
 
 def _kinesis_stream(body: dict) -> dict:
     """encryption_type defaults to NONE; KMS maps to StreamEncryption."""
+    props: dict = {}
     encryption = _v(body, "encryption_type", "NONE")
     if encryption is UNRESOLVED:
-        return {"StreamEncryption": UNRESOLVED}
-    if type(encryption) is str and encryption.upper() == "KMS":
-        return {"StreamEncryption": {"EncryptionType": "KMS", "KeyId": _ref(body, "kms_key_id")}}
-    return {}
+        props["StreamEncryption"] = UNRESOLVED
+    elif type(encryption) is str and encryption.upper() == "KMS":
+        props["StreamEncryption"] = {"EncryptionType": "KMS", "KeyId": _ref(body, "kms_key_id")}
+    _set(props, "RetentionPeriodHours", _v(body, "retention_period"))
+    return props
 
 
 def _opensearch_domain(body: dict) -> dict:
@@ -786,12 +791,45 @@ def _opensearch_domain(body: dict) -> dict:
         found = _first_block(body, block)
         if found:
             props[key] = {"Enabled": _v(found, "enabled")}
+    dynamic = _dynamic_names(body)
     cluster = _first_block(body, "cluster_config")
-    if cluster:
+    if "cluster_config" in dynamic:
+        props["ClusterConfig"] = UNRESOLVED
+    elif cluster:
         config: dict = {}
         _set(config, "InstanceType", _v(cluster, "instance_type"))
         _set(config, "DedicatedMasterType", _v(cluster, "dedicated_master_type"))
+        _set(config, "InstanceCount", _known(_v(cluster, "instance_count")))
+        _set(config, "ZoneAwarenessEnabled", _known(_v(cluster, "zone_awareness_enabled")))
         props["ClusterConfig"] = config
+    if "vpc_options" in dynamic:
+        props["VPCOptions"] = UNRESOLVED
+    elif _first_block(body, "vpc_options"):
+        props["VPCOptions"] = {"SubnetIds": _known(_ref(_first_block(body, "vpc_options"), "subnet_ids"))}
+    security = _first_block(body, "advanced_security_options")
+    if "advanced_security_options" in dynamic:
+        props["AdvancedSecurityOptions"] = UNRESOLVED
+    elif security:
+        props["AdvancedSecurityOptions"] = {"Enabled": _v(security, "enabled")}
+    endpoint = _first_block(body, "domain_endpoint_options")
+    if "domain_endpoint_options" in dynamic:
+        props["DomainEndpointOptions"] = UNRESOLVED
+    elif endpoint:
+        # In this block the provider defaults enforce_https to true.
+        options: dict = {"EnforceHTTPS": _known(_v(endpoint, "enforce_https", True))}
+        _set(options, "TLSSecurityPolicy", _known(_v(endpoint, "tls_security_policy")))
+        props["DomainEndpointOptions"] = options
+    if "log_publishing_options" in dynamic:
+        props["LogPublishingOptions"] = UNRESOLVED
+    else:
+        logs: dict = {}
+        for item in _blocks(body, "log_publishing_options"):
+            log_type = _v(item, "log_type")
+            if log_type is UNRESOLVED:
+                logs = UNRESOLVED
+                break
+            logs[log_type] = {"Enabled": _known(_v(item, "enabled", True))}
+        props["LogPublishingOptions"] = logs
     return props
 
 
@@ -812,6 +850,25 @@ def _storage_encrypted_cluster(body: dict) -> dict:
 
 
 def _msk_cluster(body: dict) -> dict:
+    props = _msk_encryption(body)
+    authentication = _first_block(body, "client_authentication")
+    if "client_authentication" in _dynamic_names(body) or {"sasl", "tls"} & _dynamic_names(authentication):
+        props["ClientAuthentication"] = UNRESOLVED
+    elif authentication:
+        sasl = _first_block(authentication, "sasl")
+        props["ClientAuthentication"] = {
+            "Unauthenticated": {"Enabled": _known(_v(authentication, "unauthenticated"))},
+            "Sasl": {"Iam": {"Enabled": _known(_v(sasl, "iam"))}, "Scram": {"Enabled": _known(_v(sasl, "scram"))}},
+            "Tls": {"Enabled": bool(_first_block(authentication, "tls"))},
+        }
+    connectivity = _first_block(_first_block(body, "broker_node_group_info"), "connectivity_info")
+    public = _v(_first_block(connectivity, "public_access"), "type")
+    if public is not None:
+        props["BrokerNodeGroupInfo"] = {"ConnectivityInfo": {"PublicAccess": {"Type": _known(public)}}}
+    return props
+
+
+def _msk_encryption(body: dict) -> dict:
     info = _first_block(body, "encryption_info")
     if "encryption_in_transit" in _dynamic_names(info):
         return {"EncryptionInfo": UNRESOLVED}
