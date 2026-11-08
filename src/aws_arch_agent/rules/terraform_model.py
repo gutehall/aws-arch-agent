@@ -85,6 +85,9 @@ TF_TYPE_TO_CANONICAL: dict[str, str] = {
     "aws_codepipeline": "codepipeline",
     "aws_codestarnotifications_notification_rule": "codestar_notification_rule",
     "aws_cloudwatch_event_rule": "events_rule",
+    "aws_cloudwatch_event_target": "events_target",
+    "aws_cloudwatch_event_permission": "event_bus_policy",
+    "aws_sfn_state_machine": "sfn_state_machine",
     "aws_api_gateway_method": "api_gateway_method",
     "aws_api_gateway_domain_name": "api_gateway_domain_name",
     "aws_api_gateway_usage_plan": "api_gateway_usage_plan",
@@ -113,6 +116,7 @@ TF_TYPE_TO_CANONICAL: dict[str, str] = {
     "aws_iam_role": "iam_role",
     # Resource policies (CF-RP-001). aws_s3_bucket_policy is also merged into its bucket.
     "aws_sqs_queue_policy": "resource_policy",
+    "aws_cloudwatch_event_bus_policy": "resource_policy",
     "aws_sns_topic_policy": "resource_policy",
     "aws_s3_bucket_policy": "resource_policy",
     "aws_ecr_repository_policy": "resource_policy",
@@ -1426,6 +1430,7 @@ def _sqs(body: dict) -> dict:
     props: dict = {}
     _set(props, "SqsManagedSseEnabled", _v(body, "sqs_managed_sse_enabled"))
     _set(props, "KmsMasterKeyId", _ref(body, "kms_master_key_id"))
+    _set(props, "VisibilityTimeout", _v(body, "visibility_timeout_seconds"))
     redrive = _ref(body, "redrive_policy")
     if isinstance(redrive, _Expr):  # e.g. jsonencode({...}): only its text is known
         redrive = {"deadLetterTargetArn": redrive} if "deadLetterTargetArn" in redrive else UNRESOLVED
@@ -1558,6 +1563,68 @@ def _event_rule(body: dict) -> dict:
     value = _ref(body, "event_pattern")
     props: dict = {}
     _set(props, "EventPattern", _OPAQUE if isinstance(value, _Expr) and "aws." not in value else value)
+    return props
+
+
+def _event_target(body: dict) -> dict:
+    """aws_cloudwatch_event_target in the shape of one entry in a rule's Targets."""
+    props: dict = {}
+    names = _dynamic_names(body)
+    dead_letter = _first_block(body, "dead_letter_config")
+    if "dead_letter_config" in names:
+        props["DeadLetterConfig"] = UNRESOLVED
+    elif dead_letter:
+        props["DeadLetterConfig"] = {"Arn": _ref(dead_letter, "arn")}
+    retry = _first_block(body, "retry_policy")
+    if "retry_policy" in names:
+        props["RetryPolicy"] = UNRESOLVED
+    elif retry:
+        props["RetryPolicy"] = {"MaximumRetryAttempts": _v(retry, "maximum_retry_attempts")}
+    return props
+
+
+def _event_permission(body: dict) -> dict:
+    """aws_cloudwatch_event_permission: the older Principal and Condition form of a bus policy."""
+    props: dict = {}
+    _set(props, "Principal", _v(body, "principal"))
+    _set(props, "Action", _v(body, "action"))
+    if "condition" in _dynamic_names(body):
+        props["Condition"] = UNRESOLVED
+    elif _first_block(body, "condition"):
+        props["Condition"] = _first_block(body, "condition")
+    return props
+
+
+def _state_machine_definition(value: Any) -> Any:
+    """definition (jsonencode, JSON string or heredoc) -> data. file() and templatefile() are
+    UNRESOLVED. An interpolation inside a JSON string does not change the states around it."""
+    if isinstance(value, _JsonEncode):
+        decoded = decode_jsonencode(value)
+    elif isinstance(value, str):
+        heredoc = _HEREDOC.fullmatch(value)
+        if isinstance(value, _Expr) and not heredoc:
+            return UNRESOLVED
+        decoded = _json_or_unresolved(heredoc.group(2) if heredoc else value)
+    else:
+        return UNRESOLVED
+    return decoded if isinstance(decoded, dict) else UNRESOLVED
+
+
+def _state_machine(body: dict) -> dict:
+    props: dict = {}
+    if body.get("definition") is not None:
+        props["Definition"] = _state_machine_definition(body["definition"])
+    names = _dynamic_names(body)
+    tracing = _first_block(body, "tracing_configuration")
+    if "tracing_configuration" in names:
+        props["TracingConfiguration"] = UNRESOLVED
+    elif tracing:
+        props["TracingConfiguration"] = {"Enabled": _v(tracing, "enabled")}
+    logging = _first_block(body, "logging_configuration")
+    if "logging_configuration" in names:
+        props["LoggingConfiguration"] = UNRESOLVED
+    elif logging:
+        props["LoggingConfiguration"] = {"Level": _v(logging, "level", "OFF")}
     return props
 
 
@@ -1747,6 +1814,9 @@ _ADAPTERS: dict[str, Callable[[dict], dict]] = {
     "aws_codepipeline": _codepipeline,
     "aws_codestarnotifications_notification_rule": _notification_rule,
     "aws_cloudwatch_event_rule": _event_rule,
+    "aws_cloudwatch_event_target": _event_target,
+    "aws_cloudwatch_event_permission": _event_permission,
+    "aws_sfn_state_machine": _state_machine,
     "aws_api_gateway_rest_api": _api_rest_api,
     "aws_api_gateway_method": _api_method,
     "aws_api_gateway_domain_name": _api_domain_name,
@@ -1785,6 +1855,7 @@ _ADAPTERS: dict[str, Callable[[dict], dict]] = {
     "aws_wafv2_web_acl_association": _waf_association,
     "aws_wafregional_web_acl_association": _waf_association,
     "aws_sqs_queue_policy": _resource_policy,
+    "aws_cloudwatch_event_bus_policy": _resource_policy,
     "aws_sns_topic_policy": _resource_policy,
     "aws_s3_bucket_policy": _resource_policy,
     "aws_ecr_repository_policy": _resource_policy,

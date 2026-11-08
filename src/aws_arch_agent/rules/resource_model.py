@@ -107,9 +107,13 @@ CF_TYPE_TO_CANONICAL: dict[str, str] = {
     "AWS::CodePipeline::Pipeline": "codepipeline",
     "AWS::CodeStarNotifications::NotificationRule": "codestar_notification_rule",
     "AWS::Events::Rule": "events_rule",
+    "AWS::Events::EventBus": "event_bus",
+    "AWS::Events::EventBusPolicy": "event_bus_policy",
+    "AWS::StepFunctions::StateMachine": "sfn_state_machine",
 }
 
-CANONICAL_TYPES: frozenset[str] = frozenset(CF_TYPE_TO_CANONICAL.values())
+# events_target is Terraform only: CloudFormation lists a rule's targets on the rule.
+CANONICAL_TYPES: frozenset[str] = frozenset(CF_TYPE_TO_CANONICAL.values()) | {"events_target"}
 
 
 @dataclass
