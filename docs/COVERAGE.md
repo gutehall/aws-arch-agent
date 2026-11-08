@@ -17,7 +17,6 @@ Which CDK rules have a template check, and which AWS Foundational Security Best 
 
 | Work | Adds template checks for |
 | -- | -- |
-| `ci-cd` | CodeBuild and CodePipeline |
 | `kms-ssm` | KMS key rotation and SSM parameters |
 | `search-streaming` | OpenSearch, MSK and Kinesis access and resilience |
 | `data-resilience` | DynamoDB, ElastiCache and EFS resilience |
@@ -38,7 +37,7 @@ Which CDK rules have a template check, and which AWS Foundational Security Best 
 
 ## CDK rules
 
-172 rules: 75 covered, 6 partial, 52 planned, 10 account, 5 cdk-only, 24 advice.
+172 rules: 80 covered, 6 partial, 47 planned, 10 account, 5 cdk-only, 24 advice.
 
 | Rule | Title | Template check | Status | Note |
 | -- | -- | -- | -- | -- |
@@ -93,8 +92,8 @@ Which CDK rules have a template check, and which AWS Foundational Security Best 
 | SEC-049 | AppSync API not protected by WAF |  | `planned: app-services` |  |
 | SEC-050 | FSx file system encryption not enabled |  | `planned: sagemaker-fsx` |  |
 | SEC-051 | Transfer Family server logging not enabled |  | `planned: app-services` |  |
-| SEC-052 | CodePipeline artifact encryption not enabled |  | `planned: ci-cd` |  |
-| SEC-053 | CodeBuild project using privileged mode |  | `planned: ci-cd` |  |
+| SEC-052 | CodePipeline artifact encryption not enabled | `CF-CP-001` | `covered` |  |
+| SEC-053 | CodeBuild project using privileged mode | `CF-CB-003` | `covered` |  |
 | SEC-054 | Security Group egress too permissive (0.0.0.0/0) | `CF-SG-003` | `covered` |  |
 | SEC-055 | Network ACLs not configured | `CF-NACL-001` | `partial` | CF-NACL-001 checks entries that open 22 or 3389; SEC-055 reports a VPC with no custom network ACL. |
 | SEC-056 | Stack termination protection not enabled |  | `cdk-only` | Termination protection is a stack setting, not in the template. |
@@ -130,7 +129,7 @@ Which CDK rules have a template check, and which AWS Foundational Security Best 
 | REL-018 | EFS lifecycle policy not configured |  | `planned: data-resilience` |  |
 | REL-019 | Kinesis stream retention period too short |  | `planned: search-streaming` |  |
 | REL-020 | Global Accelerator health checks not configured |  | `planned: dns-certs` |  |
-| REL-021 | CodePipeline missing manual approval for production |  | `planned: ci-cd` |  |
+| REL-021 | CodePipeline missing manual approval for production | `CF-CP-002` | `covered` |  |
 | REL-022 | ACM certificate validation method not specified |  | `planned: dns-certs` |  |
 | REL-023 | Blue-green deployment not configured for critical services |  | `advice` | Deployment strategy, not a resource property. |
 | REL-024 | SQS visibility timeout may need review |  | `planned: error-handling` |  |
@@ -180,10 +179,10 @@ Which CDK rules have a template check, and which AWS Foundational Security Best 
 | OPS-014 | AWS Config not enabled |  | `account` | AWS Config is an account service. account-baseline checks a recorder the repo defines. |
 | OPS-015 | Glue job CloudWatch metrics not enabled |  | `planned: analytics` |  |
 | OPS-016 | Transit Gateway flow logs not enabled | `CF-TGW-002` | `covered` |  |
-| OPS-017 | CodePipeline notifications not configured |  | `planned: ci-cd` |  |
+| OPS-017 | CodePipeline notifications not configured | `CF-CP-003` | `covered` |  |
 | OPS-018 | App Runner observability not configured |  | `planned: app-services` |  |
 | OPS-019 | Glue job bookmarks not enabled |  | `planned: analytics` |  |
-| OPS-020 | CodeBuild project logging not configured |  | `planned: ci-cd` |  |
+| OPS-020 | CodeBuild project logging not configured | `CF-CB-004` | `covered` |  |
 | OPS-021 | CloudWatch dashboards not configured |  | `planned: alarms` |  |
 | OPS-022 | Resource tagging strategy may be incomplete |  | `advice` | Tag choice. CF-TAG-001 checks a configured tag policy. |
 | OPS-023 | SSM Parameter Store not using advanced tier for high throughput |  | `planned: kms-ssm` |  |
@@ -248,11 +247,10 @@ Controls a template can show. Account-level controls (for example S3.1, EC2.7 an
 | CloudTrail.2 | `CF-CT-003` | `AWS::CloudTrail::Trail` |
 | CloudTrail.4 | `CF-CT-001` | `AWS::CloudTrail::Trail` |
 | CloudTrail.5 | `planned: alarms` | `AWS::CloudTrail::Trail` |
-| CodeBuild.1 | `planned: ci-cd` | `AWS::CodeBuild::Project` |
-| CodeBuild.2 | `planned: ci-cd` | `AWS::CodeBuild::Project` |
-| CodeBuild.3 | `planned: ci-cd` | `AWS::CodeBuild::Project` |
-| CodeBuild.4 | `planned: ci-cd` | `AWS::CodeBuild::Project` |
-| CodeBuild.5 | `planned: ci-cd` | `AWS::CodeBuild::Project` |
+| CodeBuild.1 | `CF-CB-002` | `AWS::CodeBuild::Project` |
+| CodeBuild.2 | `CF-CB-001` | `AWS::CodeBuild::Project` |
+| CodeBuild.3 | `CF-CB-005` | `AWS::CodeBuild::Project` |
+| CodeBuild.4 | `CF-CB-004` | `AWS::CodeBuild::Project` |
 | Cognito.1 | `CF-COG-003` | `AWS::Cognito::UserPool` |
 | Config.1 | `planned: account-baseline` | `AWS::Config::ConfigurationRecorder` |
 | DataFirehose.1 | `planned: analytics` | `AWS::KinesisFirehose::DeliveryStream` |

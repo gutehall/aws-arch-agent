@@ -99,6 +99,10 @@ CF_TYPE_TO_CANONICAL: dict[str, str] = {
     "AWS::Lambda::EventSourceMapping": "lambda_event_source_mapping",
     "AWS::Lambda::Alias": "lambda_alias",
     "AWS::Lambda::Version": "lambda_version",
+    "AWS::CodeBuild::Project": "codebuild_project",
+    "AWS::CodePipeline::Pipeline": "codepipeline",
+    "AWS::CodeStarNotifications::NotificationRule": "codestar_notification_rule",
+    "AWS::Events::Rule": "events_rule",
 }
 
 CANONICAL_TYPES: frozenset[str] = frozenset(CF_TYPE_TO_CANONICAL.values())
