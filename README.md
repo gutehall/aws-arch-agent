@@ -93,7 +93,7 @@ Releases and notes: [GitHub releases](https://github.com/gutehall/aws-arch-agent
 ## Modes
 
 - **V1** (default): static rules. No synth, finishes in seconds.
-- **V2** (`--mode v2`): runs `cdk synth`, then six LangGraph pillar reviewers check the CloudFormation output. Install with `pip install -e ".[v2]"`. Optional LLM via Ollama, OpenAI, or Anthropic, and optional RAG over your own docs:
+- **V2** (`--mode v2`): runs `cdk synth`, then six LangGraph pillar reviewers check the CloudFormation output. Install with `pip install -e ".[v2]"`. Optional LLM via Ollama or another self-hosted model, and optional RAG over your own docs:
 
 ```bash
 aws-arch-agent --repo . --mode v2 --rag ./docs/waf-snippets.md

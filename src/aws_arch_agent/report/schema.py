@@ -68,6 +68,20 @@ REPORT_SCHEMA: dict = {
                         "description": "How the estimate was worked out: quantities, unit "
                         "prices, region, price list date, and what it excludes.",
                     },
+                    "verdict": {
+                        "type": "object",
+                        "description": "The model's opinion of this finding. It labels the "
+                        "finding and changes nothing else: not the severity, the exit code, "
+                        "the baseline, or SARIF. Absent unless llm.status is ok.",
+                        "required": ["verdict", "why"],
+                        "properties": {
+                            "verdict": {
+                                "type": "string",
+                                "enum": ["confirm", "false_positive", "unsure"],
+                            },
+                            "why": {"type": "string"},
+                        },
+                    },
                 },
             },
         },
@@ -83,6 +97,46 @@ REPORT_SCHEMA: dict = {
                 "top_fixes": {"type": "array", "items": {"type": "object"}},
                 "pillars": {"type": "array", "items": {"type": "object"}},
                 "quick_wins": {"type": "array", "items": {"type": "object"}},
+            },
+        },
+        "llm": {
+            "type": "object",
+            "description": "What the verdict calls did. A connection failure is fallback, and "
+            "no finding then has a verdict.",
+            "properties": {
+                "status": {"type": "string", "enum": ["ok", "fallback", "skipped", "invalid"]},
+                "provider": {"type": ["string", "null"]},
+                "model": {"type": ["string", "null"]},
+                "reason": {"type": ["string", "null"]},
+            },
+        },
+        "hypotheses_llm": {
+            "type": "object",
+            "description": "What the hypothesis call did, apart from llm. Absent when no call "
+            "was made.",
+            "properties": {
+                "status": {"type": "string", "enum": ["ok", "fallback", "skipped", "invalid"]},
+                "provider": {"type": ["string", "null"]},
+                "model": {"type": ["string", "null"]},
+                "reason": {"type": ["string", "null"]},
+            },
+        },
+        "hypotheses": {
+            "type": "array",
+            "description": "Catalog rules the model named in files with no finding. Each cites "
+            "a catalog rule id and is unverified: no check confirmed it. They are not findings "
+            "and do not affect the exit code, the baseline, or SARIF. Absent when there are none.",
+            "items": {
+                "type": "object",
+                "required": ["rule_id", "title", "file", "line", "why", "unverified"],
+                "properties": {
+                    "rule_id": {"type": "string"},
+                    "title": {"type": "string"},
+                    "file": {"type": "string"},
+                    "line": {"type": "integer", "minimum": 1},
+                    "why": {"type": "string"},
+                    "unverified": {"const": True},
+                },
             },
         },
         "warnings": {

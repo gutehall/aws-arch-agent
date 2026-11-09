@@ -47,10 +47,6 @@ v2 = [
   "langgraph>=0.2.0",
   "langchain-core>=0.3.0",
 ]
-cloud = [
-  "openai>=1.40.0",
-  "anthropic>=0.34.0",
-]
 rag = [
   "sentence-transformers>=2.2.0",
 ]

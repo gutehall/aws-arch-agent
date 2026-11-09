@@ -25,6 +25,10 @@ class IamWildcardAction(Rule):
     category = "Security"
     severity = "High"
     themes = ("identity",)
+    recommendation = (
+        "Restrict IAM actions to the minimum required (least privilege). Avoid '*' where "
+        "possible."
+    )
 
     def run(self, repo_path: Path, language: str = "typescript") -> List[Finding]:
         hits = rg(repo_path, _WILDCARD_ACTION, glob=code_glob(language))
@@ -38,7 +42,7 @@ class IamWildcardAction(Rule):
                 file=f,
                 line=ln,
                 evidence=txt,
-                recommendation="Restrict IAM actions to the minimum required (least privilege). Avoid '*' where possible.",
+                recommendation=self.recommendation,
             ))
         return out
 
@@ -50,6 +54,9 @@ class IamWildcardResource(Rule):
     category = "Security"
     severity = "High"
     themes = ("identity",)
+    recommendation = (
+        "Restrict IAM resources to specific ARNs. Avoid '*' for resources where possible."
+    )
 
     def run(self, repo_path: Path, language: str = "typescript") -> List[Finding]:
         hits = rg(repo_path, _WILDCARD_RESOURCE, glob=code_glob(language))
@@ -63,7 +70,7 @@ class IamWildcardResource(Rule):
                 file=f,
                 line=ln,
                 evidence=txt,
-                recommendation="Restrict IAM resources to specific ARNs. Avoid '*' for resources where possible.",
+                recommendation=self.recommendation,
             ))
         return out
 
@@ -75,6 +82,12 @@ class IamAdministratorAccess(Rule):
     category = "Security"
     severity = "High"
     themes = ("identity",)
+    recommendation = (
+        "AdministratorAccess lets this principal do anything in the account, so a "
+        "leaked credential or a bug has no limit (Security Hub IAM.1). Grant only the "
+        "actions and resources it needs, for example with grant methods such as "
+        "bucket.grantRead(role)."
+    )
 
     def run(self, repo_path: Path, language: str = "typescript") -> List[Finding]:
         suggested = (
@@ -97,12 +110,7 @@ class IamAdministratorAccess(Rule):
                 file=f,
                 line=ln,
                 evidence=txt,
-                recommendation=(
-                    "AdministratorAccess lets this principal do anything in the account, so a "
-                    "leaked credential or a bug has no limit (Security Hub IAM.1). Grant only the "
-                    "actions and resources it needs, for example with grant methods such as "
-                    "bucket.grantRead(role)."
-                ),
+                recommendation=self.recommendation,
                 suggested_code=suggested,
             )
             for f, ln, txt in rg(repo_path, _ADMIN_POLICY, glob=code_glob(language))
@@ -116,6 +124,9 @@ class KmsKeyPolicyWildcard(Rule):
     category = "Security"
     severity = "High"
     themes = ("identity", "data-protection",)
+    recommendation = (
+        "Restrict KMS key policy to specific principals (IAM roles/users). Avoid Principal '*'."
+    )
 
     def run(self, repo_path: Path, language: str = "typescript") -> List[Finding]:
         kms = rg(repo_path, r"kms\.(Key|Alias)|aws_kms\.(Key|Alias)|KMS", glob=code_glob(language))
@@ -128,7 +139,7 @@ class KmsKeyPolicyWildcard(Rule):
             self,
             kms,
             wildcard,
-            "Restrict KMS key policy to specific principals (IAM roles/users). Avoid Principal '*'.",
+            self.recommendation,
         )
 
 
@@ -139,6 +150,10 @@ class SecretsManagerRotation(Rule):
     category = "Security"
     severity = "Medium"
     themes = ("data-protection",)
+    recommendation = (
+        "Enable automatic rotation for Secrets Manager secrets. In CDK: "
+        "secret.addRotationSchedule()"
+    )
 
     def run(self, repo_path: Path, language: str = "typescript") -> List[Finding]:
         secret_pat = r'new\s+secretsmanager\.Secret\(' if language == "typescript" else r'secretsmanager\.Secret\('
@@ -155,7 +170,7 @@ class SecretsManagerRotation(Rule):
                 file=f,
                 line=ln,
                 evidence=txt,
-                recommendation="Enable automatic rotation for Secrets Manager secrets. In CDK: secret.addRotationSchedule()",
+                recommendation=self.recommendation,
             ))
         return out
 
@@ -167,6 +182,10 @@ class HardcodedSecrets(Rule):
     category = "Security"
     severity = "High"
     themes = ("identity", "data-protection",)
+    recommendation = (
+        "Never hardcode secrets. Use AWS Secrets Manager, Systems Manager Parameter Store, or "
+        "environment variables."
+    )
 
     def run(self, repo_path: Path, language: str = "typescript") -> List[Finding]:
         # Look for common patterns of hardcoded secrets
@@ -191,7 +210,7 @@ class HardcodedSecrets(Rule):
                     file=f,
                     line=ln,
                     evidence=txt[:100] + "...",
-                    recommendation="Never hardcode secrets. Use AWS Secrets Manager, Systems Manager Parameter Store, or environment variables.",
+                    recommendation=self.recommendation,
                 ))
         return out[:5]  # Limit to 5 findings to avoid noise
 
@@ -203,6 +222,10 @@ class LambdaEnvSecrets(Rule):
     category = "Security"
     severity = "Medium"
     themes = ("data-protection",)
+    recommendation = (
+        "Avoid storing secrets in Lambda environment variables. Use Secrets Manager or Parameter "
+        "Store with proper IAM permissions."
+    )
 
     def run(self, repo_path: Path, language: str = "typescript") -> List[Finding]:
         env_secrets = rg(repo_path, r'environment\s*:\s*\{[^}]*(password|secret|key|token)[^}]*\}', glob=code_glob(language))
@@ -216,7 +239,7 @@ class LambdaEnvSecrets(Rule):
                 file=f,
                 line=ln,
                 evidence=txt[:100],
-                recommendation="Avoid storing secrets in Lambda environment variables. Use Secrets Manager or Parameter Store with proper IAM permissions.",
+                recommendation=self.recommendation,
             ))
         return out
 
@@ -228,6 +251,10 @@ class KmsKeyRotation(Rule):
     category = "Security"
     severity = "Low"
     themes = ("data-protection",)
+    recommendation = (
+        "Enable automatic key rotation for KMS customer-managed keys. In CDK: enableKeyRotation: "
+        "true"
+    )
 
     def run(self, repo_path: Path, language: str = "typescript") -> List[Finding]:
         kms_pat = r'new\s+kms\.Key\(' if language == "typescript" else r'kms\.Key\('
@@ -241,7 +268,7 @@ class KmsKeyRotation(Rule):
             self,
             keys,
             rotation,
-            "Enable automatic key rotation for KMS customer-managed keys. In CDK: enableKeyRotation: true",
+            self.recommendation,
         )
 
 
@@ -252,6 +279,9 @@ class SecurityHubNotEnabled(Rule):
     category = "Security"
     severity = "Low"
     themes = ("security-baseline",)
+    recommendation = (
+        "Consider enabling AWS Security Hub for centralized security and compliance monitoring"
+    )
 
     def run(self, repo_path: Path, language: str = "typescript") -> List[Finding]:
         securityhub = rg(repo_path, r'CfnHub|securityhub\.CfnHub', glob=code_glob(language))
@@ -264,7 +294,7 @@ class SecurityHubNotEnabled(Rule):
                 file=None,
                 line=None,
                 evidence=None,
-                recommendation="Consider enabling AWS Security Hub for centralized security and compliance monitoring",
+                recommendation=self.recommendation,
             )]
         return []
 
@@ -276,6 +306,7 @@ class GuardDutyNotEnabled(Rule):
     category = "Security"
     severity = "Low"
     themes = ("observability", "security-baseline",)
+    recommendation = "Consider enabling Amazon GuardDuty for intelligent threat detection"
 
     def run(self, repo_path: Path, language: str = "typescript") -> List[Finding]:
         guardduty = rg(repo_path, r'CfnDetector|guardduty\.CfnDetector', glob=code_glob(language))
@@ -288,7 +319,7 @@ class GuardDutyNotEnabled(Rule):
                 file=None,
                 line=None,
                 evidence=None,
-                recommendation="Consider enabling Amazon GuardDuty for intelligent threat detection",
+                recommendation=self.recommendation,
             )]
         return []
 
@@ -300,6 +331,10 @@ class SsmParameterEncryption(Rule):
     category = "Security"
     severity = "Medium"
     themes = ("data-protection",)
+    recommendation = (
+        "Use SecureString type for sensitive SSM parameters. In CDK: type: "
+        "ssm.ParameterType.SECURE_STRING"
+    )
 
     def run(self, repo_path: Path, language: str = "typescript") -> List[Finding]:
         ssm_pat = r'new\s+ssm\.(StringParameter|CfnParameter)\(' if language == "typescript" else r'ssm\.(StringParameter|CfnParameter)\('
@@ -316,7 +351,7 @@ class SsmParameterEncryption(Rule):
                 file=f,
                 line=ln,
                 evidence=txt,
-                recommendation="Use SecureString type for sensitive SSM parameters. In CDK: type: ssm.ParameterType.SECURE_STRING",
+                recommendation=self.recommendation,
             ))
         return out
 
@@ -328,6 +363,10 @@ class CognitoMfaMissing(Rule):
     category = "Security"
     severity = "High"
     themes = ("identity",)
+    recommendation = (
+        "Require MFA for Cognito User Pools to enhance security. In CDK: mfa: "
+        "cognito.Mfa.REQUIRED"
+    )
 
     def run(self, repo_path: Path, language: str = "typescript") -> List[Finding]:
         cognito_pat = r'new\s+cognito\.UserPool\(' if language == "typescript" else r'cognito\.UserPool\('
@@ -344,7 +383,7 @@ class CognitoMfaMissing(Rule):
                 file=f,
                 line=ln,
                 evidence=txt,
-                recommendation="Require MFA for Cognito User Pools to enhance security. In CDK: mfa: cognito.Mfa.REQUIRED",
+                recommendation=self.recommendation,
             ))
         return out
 
@@ -356,6 +395,10 @@ class CognitoPasswordPolicy(Rule):
     category = "Security"
     severity = "Medium"
     themes = ("identity",)
+    recommendation = (
+        "Configure strong password policy for Cognito (min 12 chars, require uppercase, "
+        "lowercase, numbers, symbols). In CDK: passwordPolicy property"
+    )
 
     def run(self, repo_path: Path, language: str = "typescript") -> List[Finding]:
         cognito_pat = r'new\s+cognito\.UserPool\(' if language == "typescript" else r'cognito\.UserPool\('
@@ -365,7 +408,7 @@ class CognitoPasswordPolicy(Rule):
             self,
             pools,
             policy,
-            "Configure strong password policy for Cognito (min 12 chars, require uppercase, lowercase, numbers, symbols). In CDK: passwordPolicy property",
+            self.recommendation,
         )
 
 
@@ -376,6 +419,10 @@ class CognitoAdvancedSecurity(Rule):
     category = "Security"
     severity = "Low"
     themes = ("identity",)
+    recommendation = (
+        "Enable advanced security features for Cognito (adaptive authentication, compromised "
+        "credentials check). In CDK: advancedSecurityMode: cognito.AdvancedSecurityMode.ENFORCED"
+    )
 
     def run(self, repo_path: Path, language: str = "typescript") -> List[Finding]:
         cognito_pat = r'new\s+cognito\.UserPool\(' if language == "typescript" else r'cognito\.UserPool\('
@@ -392,7 +439,7 @@ class CognitoAdvancedSecurity(Rule):
                 file=f,
                 line=ln,
                 evidence=txt,
-                recommendation="Enable advanced security features for Cognito (adaptive authentication, compromised credentials check). In CDK: advancedSecurityMode: cognito.AdvancedSecurityMode.ENFORCED",
+                recommendation=self.recommendation,
             ))
         return out
 
@@ -404,6 +451,10 @@ class StackTerminationProtection(Rule):
     category = "Security"
     severity = "Medium"
     themes = ("resilience", "data-protection",)
+    recommendation = (
+        "Enable termination protection for production stacks. In CDK Stack props: "
+        "terminationProtection: true"
+    )
 
     def run(self, repo_path: Path, language: str = "typescript") -> List[Finding]:
         stack_pat = r'class\s+\w+\s+extends\s+Stack|super\(scope.*Stack' if language == "typescript" else r'class.*Stack\)|Stack\(scope'
@@ -420,7 +471,7 @@ class StackTerminationProtection(Rule):
                 file=f,
                 line=ln,
                 evidence=txt,
-                recommendation="Enable termination protection for production stacks. In CDK Stack props: terminationProtection: true",
+                recommendation=self.recommendation,
             ))
         return out
 
@@ -432,6 +483,9 @@ class MacieNotEnabled(Rule):
     category = "Security"
     severity = "Low"
     themes = ("data-protection",)
+    recommendation = (
+        "Consider enabling Amazon Macie for automated discovery of sensitive data in S3 buckets."
+    )
 
     def run(self, repo_path: Path, language: str = "typescript") -> List[Finding]:
         s3_buckets = rg(repo_path, r'new\s+s3\.Bucket\(' if language == "typescript" else r's3\.Bucket\(', glob=code_glob(language))
@@ -446,7 +500,7 @@ class MacieNotEnabled(Rule):
                 file=None,
                 line=None,
                 evidence=None,
-                recommendation="Consider enabling Amazon Macie for automated discovery of sensitive data in S3 buckets.",
+                recommendation=self.recommendation,
             )]
         return out
 

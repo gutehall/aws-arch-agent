@@ -51,8 +51,8 @@ rules:
 
 - **format**: `markdown` (default) | `json` | `sarif` | `html`. `html` writes one self-contained page to open in a browser; set **out** to a `.html` path (the default is `report.md`).
 - **fail_on**: `high` | `medium` | `low` | `none` — exit code 1 if any finding at or above this severity
-- **no_llm**: skip LLM polish (V1) or agent reasoning (V2)
-- **llm_mode**: `full` (six pillar LLM calls in V2) or `compact` (single merged LLM call)
+- **no_llm**: make no LLM calls: no verdicts, no hypotheses
+- **llm_mode**: V2 only. `full` (one verdict call per pillar with findings) or `compact` (one verdict call). Either way, plus one hypothesis call
 - **out**: output file path
 - **tags**: required tag policy, checked on templates (CloudFormation, `cdk synth` output, Terraform). Off unless `tags.required` lists at least one key:
 
@@ -100,8 +100,8 @@ rules:
 - **rules.org**: if `true`, also run account-level absence rules `SEC-026`, `SEC-027`, `OPS-001`, `OPS-014`, and `COST-014`. Default is `false` because an app stack does not own those controls. Listing an id in **rules.include** runs that rule even when this is false. **rules.exclude** still skips it.
 - **rag.path**: path to a markdown doc for RAG context (V2 only). Pillar and merge prompts include retrieved snippets when set.
 - **rag.use_embeddings**: if `true`, use embedding-based retrieval (V2 only). Requires **rag.embedding_provider**.
-- **rag.embedding_provider**: `"sentence-transformers"` (local; install with `pip install -e ".[rag]"`) or `"openai"` (uses `OPENAI_API_KEY`).
-- **rag.embedding_model**: optional model name (e.g. `"all-MiniLM-L6-v2"` for sentence-transformers, `"text-embedding-3-small"` for OpenAI). Defaults apply if omitted.
+- **rag.embedding_provider**: `"sentence-transformers"` (local; install with `pip install -e ".[rag]"`). It is the only value accepted.
+- **rag.embedding_model**: optional model name (e.g. `"all-MiniLM-L6-v2"`). Defaults apply if omitted.
 
 ## Baseline / suppressions
 

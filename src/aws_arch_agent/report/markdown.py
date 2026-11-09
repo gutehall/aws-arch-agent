@@ -89,27 +89,10 @@ def cost_section(ctx: RepoContext) -> List[str]:
     return out
 
 
-def insert_summary(report: str, findings: List[Finding]) -> str:
-    """Put the rule-built summary into a report the LLM polished without it.
-
-    It goes before "## Executive Summary" when that heading survived polishing, otherwise
-    after the first heading, so its counts and savings are never rewritten.
-    """
-    block = "\n".join(markdown_lines(build_summary(findings)))
-    if not block:
-        return report
-    marker = "## Executive Summary"
-    if marker in report:
-        return report.replace(marker, block + "\n" + marker, 1)
-    head, sep, rest = report.partition("\n")
-    return f"{head}\n\n{block}\n{rest}" if sep else f"{report}\n\n{block}"
-
-
 def render_markdown(
     ctx: RepoContext,
     findings: List[Finding],
     warnings: List[str] | None = None,
-    include_summary: bool = True,
     group_by: str = "severity",
 ) -> str:
     """Build a full Markdown report (title, repo info, findings by severity, next actions)."""
@@ -128,8 +111,7 @@ def render_markdown(
         lines.append(f"- Prices: {prices}")
     lines.append(f"- Generated: {now}")
     lines.append("")
-    if include_summary:
-        lines.extend(markdown_lines(build_summary(findings)))
+    lines.extend(markdown_lines(build_summary(findings)))
     lines.append("## Executive Summary")
     lines.append("This is an automated first-pass review. Always validate findings manually.")
     lines.append("")
@@ -175,6 +157,11 @@ def render_markdown(
             if f.themes:
                 lines.append(f"- Themes: {', '.join(f.themes)}")
             lines.extend(f"- {line}" for line in estimate_lines(f))
+            if f.verdict:
+                # A code span: the scanned repo can steer this text, and a viewer would load
+                # an image or follow a link written in it.
+                why = f.verdict.why.replace("`", "'")
+                lines.append(f"- LLM verdict: **{f.verdict.label}** — `{why}`")
             if f.evidence:
                 lines.append("")
                 lines.append("**Evidence**")
@@ -191,6 +178,20 @@ def render_markdown(
                 lines.append(f.suggested_code.strip())
                 lines.append("```")
             lines.append("")
+        lines.append("")
+
+    if ctx.hypotheses:
+        lines.append("## Unverified hypotheses")
+        lines.append(
+            "The model named these catalog rules in files with no finding. No check confirmed them. "
+            "They are not findings and do not affect fail-on, the baseline, or SARIF."
+        )
+        lines.append("")
+        for h in ctx.hypotheses:
+            # Code spans: the scanned repo can steer this text, as with a verdict's why.
+            file = h.file.replace("`", "'")
+            why = h.why.replace("`", "'")
+            lines.append(f"- [{h.rule_id}] {h.title}: `{file}` (line {h.line}) — `{why}`")
         lines.append("")
 
     lines.append("## Suggested Next Actions")

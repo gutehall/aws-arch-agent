@@ -22,6 +22,10 @@ class ApiGatewayAuthMissing(Rule):
     category = "Security"
     severity = "High"
     themes = ("identity", "network-exposure",)
+    recommendation = (
+        "Configure API Gateway authentication (API keys, IAM, Cognito User Pools, or Lambda "
+        "authorizer). In CDK: defaultAuthorizer or authorizationType"
+    )
 
     def run(self, repo_path: Path, language: str = "typescript") -> List[Finding]:
         api_pat = r'new\s+(apigateway\.(RestApi|HttpApi)|RestApi|HttpApi)\(' if language == "typescript" else r'(apigateway\.(RestApi|HttpApi)|RestApi|HttpApi)\('
@@ -38,7 +42,7 @@ class ApiGatewayAuthMissing(Rule):
                 file=f,
                 line=ln,
                 evidence=txt,
-                recommendation="Configure API Gateway authentication (API keys, IAM, Cognito User Pools, or Lambda authorizer). In CDK: defaultAuthorizer or authorizationType",
+                recommendation=self.recommendation,
             ))
         return out
 
@@ -50,6 +54,10 @@ class ApiGatewayTlsVersion(Rule):
     category = "Security"
     severity = "Medium"
     themes = ("data-protection", "network-exposure",)
+    recommendation = (
+        "Enforce TLS 1.2+ for API Gateway custom domains. In CDK: securityPolicy: "
+        "apigateway.SecurityPolicy.TLS_1_2"
+    )
 
     def run(self, repo_path: Path, language: str = "typescript") -> List[Finding]:
         api_pat = r'new\s+(apigateway\.(RestApi|HttpApi|DomainName)|RestApi|HttpApi|DomainName)\(' if language == "typescript" else r'(apigateway\.(RestApi|HttpApi|DomainName)|RestApi|HttpApi|DomainName)\('
@@ -66,7 +74,7 @@ class ApiGatewayTlsVersion(Rule):
                 file=f,
                 line=ln,
                 evidence=txt,
-                recommendation="Enforce TLS 1.2+ for API Gateway custom domains. In CDK: securityPolicy: apigateway.SecurityPolicy.TLS_1_2",
+                recommendation=self.recommendation,
             ))
         return out
 
@@ -78,6 +86,10 @@ class AlbHttpsRedirect(Rule):
     category = "Security"
     severity = "High"
     themes = ("data-protection",)
+    recommendation = (
+        "Configure an HTTP to HTTPS redirect. An HTTPS listener alone does not redirect HTTP. "
+        "In CDK: ListenerAction.redirect({ protocol: 'HTTPS' })."
+    )
 
     def run(self, repo_path: Path, language: str = "typescript") -> List[Finding]:
         alb_pat = r'new\s+elbv2\.(ApplicationLoadBalancer|NetworkLoadBalancer)\(' if language == "typescript" else r'elbv2\.(ApplicationLoadBalancer|NetworkLoadBalancer)\('
@@ -91,8 +103,7 @@ class AlbHttpsRedirect(Rule):
             self,
             albs,
             redirect,
-            "Configure an HTTP to HTTPS redirect. An HTTPS listener alone does not redirect HTTP. "
-            "In CDK: ListenerAction.redirect({ protocol: 'HTTPS' }).",
+            self.recommendation,
         )
 
 
@@ -103,6 +114,10 @@ class AlbSslPolicy(Rule):
     category = "Security"
     severity = "Medium"
     themes = ("data-protection", "network-exposure",)
+    recommendation = (
+        "Use a TLS 1.2+ policy such as ELBSecurityPolicy-TLS13-1-2-2021-06. "
+        "In CDK: sslPolicy: elbv2.SslPolicy.RECOMMENDED_TLS."
+    )
 
     def run(self, repo_path: Path, language: str = "typescript") -> List[Finding]:
         alb_pat = r'new\s+elbv2\.ApplicationLoadBalancer\(' if language == "typescript" else r'elbv2\.ApplicationLoadBalancer\('
@@ -110,12 +125,8 @@ class AlbSslPolicy(Rule):
         albs = rg(repo_path, alb_pat, glob=glob)
         good = rg(repo_path, _GOOD_SSL, glob=glob)
         bad = rg(repo_path, _BAD_SSL, glob=glob)
-        recommendation = (
-            "Use a TLS 1.2+ policy such as ELBSecurityPolicy-TLS13-1-2-2021-06. "
-            "In CDK: sslPolicy: elbv2.SslPolicy.RECOMMENDED_TLS."
-        )
-        findings = findings_for_unmatched(self, albs, good + bad, recommendation)
-        findings.extend(findings_for_unmatched(self, bad, [], recommendation))
+        findings = findings_for_unmatched(self, albs, good + bad, self.recommendation)
+        findings.extend(findings_for_unmatched(self, bad, [], self.recommendation))
         return findings
 
 
@@ -126,6 +137,10 @@ class CloudFrontHttpsOnly(Rule):
     category = "Security"
     severity = "High"
     themes = ("data-protection", "network-exposure",)
+    recommendation = (
+        "Enforce HTTPS on CloudFront. In CDK: viewerProtocolPolicy: "
+        "cloudfront.ViewerProtocolPolicy.HTTPS_ONLY or REDIRECT_TO_HTTPS."
+    )
 
     def run(self, repo_path: Path, language: str = "typescript") -> List[Finding]:
         cf_pat = r'new\s+cloudfront\.(Distribution|CloudFrontWebDistribution)\(' if language == "typescript" else r'cloudfront\.(Distribution|CloudFrontWebDistribution)\('
@@ -139,8 +154,7 @@ class CloudFrontHttpsOnly(Rule):
             self,
             distros,
             https,
-            "Enforce HTTPS on CloudFront. In CDK: viewerProtocolPolicy: "
-            "cloudfront.ViewerProtocolPolicy.HTTPS_ONLY or REDIRECT_TO_HTTPS.",
+            self.recommendation,
         )
 
 
@@ -151,6 +165,10 @@ class CloudFrontLegacyTls(Rule):
     category = "Security"
     severity = "Medium"
     themes = ("data-protection", "network-exposure",)
+    recommendation = (
+        "Use TLS 1.2+ for CloudFront custom SSL certificates. In CDK: minimumProtocolVersion: "
+        "cloudfront.SecurityPolicyProtocol.TLS_V1_2_2021"
+    )
 
     def run(self, repo_path: Path, language: str = "typescript") -> List[Finding]:
         cf_pat = r'new\s+cloudfront\.(Distribution|CloudFrontWebDistribution)\(' if language == "typescript" else r'cloudfront\.(Distribution|CloudFrontWebDistribution)\('
@@ -167,7 +185,7 @@ class CloudFrontLegacyTls(Rule):
                 file=f,
                 line=ln,
                 evidence=txt,
-                recommendation="Use TLS 1.2+ for CloudFront custom SSL certificates. In CDK: minimumProtocolVersion: cloudfront.SecurityPolicyProtocol.TLS_V1_2_2021",
+                recommendation=self.recommendation,
             ))
         return out
 
@@ -179,6 +197,10 @@ class AppSyncLogging(Rule):
     category = "Security"
     severity = "Low"
     themes = ("observability", "security-baseline",)
+    recommendation = (
+        "Enable logging for AppSync APIs for audit and troubleshooting. In CDK: logConfig with "
+        "fieldLogLevel"
+    )
 
     def run(self, repo_path: Path, language: str = "typescript") -> List[Finding]:
         appsync_pat = r'new\s+appsync\.(GraphqlApi|CfnGraphQLApi)\(' if language == "typescript" else r'appsync\.(GraphqlApi|CfnGraphQLApi)\('
@@ -195,7 +217,7 @@ class AppSyncLogging(Rule):
                 file=f,
                 line=ln,
                 evidence=txt,
-                recommendation="Enable logging for AppSync APIs for audit and troubleshooting. In CDK: logConfig with fieldLogLevel",
+                recommendation=self.recommendation,
             ))
         return out
 
@@ -207,6 +229,9 @@ class AppSyncWaf(Rule):
     category = "Security"
     severity = "Low"
     themes = ("network-exposure",)
+    recommendation = (
+        "Consider AWS WAF for AppSync GraphQL APIs to protect against abuse and injection attacks"
+    )
 
     def run(self, repo_path: Path, language: str = "typescript") -> List[Finding]:
         appsync_pat = r'new\s+appsync\.(GraphqlApi|CfnGraphQLApi)\(' if language == "typescript" else r'appsync\.(GraphqlApi|CfnGraphQLApi)\('
@@ -223,7 +248,7 @@ class AppSyncWaf(Rule):
                 file=f,
                 line=ln,
                 evidence=txt,
-                recommendation="Consider AWS WAF for AppSync GraphQL APIs to protect against abuse and injection attacks",
+                recommendation=self.recommendation,
             ))
         return out
 

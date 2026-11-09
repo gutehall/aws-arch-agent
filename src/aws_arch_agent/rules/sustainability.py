@@ -13,6 +13,10 @@ class SpotNotConsidered(Rule):
     category = "Sustainability"
     severity = "Low"
     themes = ("sustainability", "finops",)
+    recommendation = (
+        "Consider Spot (or mixed OD+Spot) for fault-tolerant workloads to reduce cost and improve"
+        " sustainability."
+    )
 
     def run(self, repo_path: Path, language: str = "typescript") -> List[Finding]:
         ec2_ecs = rg(repo_path, r"Ec2Service|FargateService|ec2\.Instance|AutoScalingGroup", glob=code_glob(language))
@@ -27,7 +31,7 @@ class SpotNotConsidered(Rule):
                 file=f,
                 line=ln,
                 evidence=txt,
-                recommendation="Consider Spot (or mixed OD+Spot) for fault-tolerant workloads to reduce cost and improve sustainability.",
+                recommendation=self.recommendation,
             )]
         return []
 
@@ -38,6 +42,10 @@ class RightSizingHint(Rule):
     category = "Sustainability"
     severity = "Low"
     themes = ("sustainability", "finops",)
+    recommendation = (
+        "Review instance sizes and consider autoscaling to match load and improve resource "
+        "efficiency."
+    )
 
     def run(self, repo_path: Path, language: str = "typescript") -> List[Finding]:
         # Heuristic: fixed instance sizes without autoscaling
@@ -52,7 +60,7 @@ class RightSizingHint(Rule):
                 file=None,
                 line=None,
                 evidence=None,
-                recommendation="Review instance sizes and consider autoscaling to match load and improve resource efficiency.",
+                recommendation=self.recommendation,
             )]
         return []
 
@@ -63,6 +71,10 @@ class ScheduledScalingMissing(Rule):
     category = "Sustainability"
     severity = "Low"
     themes = ("sustainability",)
+    recommendation = (
+        "For predictable workload patterns, add scheduled scaling to reduce resources during "
+        "off-peak hours."
+    )
 
     def run(self, repo_path: Path, language: str = "typescript") -> List[Finding]:
         asg = rg(repo_path, r'AutoScalingGroup|addAutoScaling', glob=code_glob(language))
@@ -77,7 +89,7 @@ class ScheduledScalingMissing(Rule):
                 file=None,
                 line=None,
                 evidence=None,
-                recommendation="For predictable workload patterns, add scheduled scaling to reduce resources during off-peak hours.",
+                recommendation=self.recommendation,
             )]
         return out
 
@@ -88,6 +100,9 @@ class AsyncProcessingHint(Rule):
     category = "Sustainability"
     severity = "Low"
     themes = ("sustainability",)
+    recommendation = (
+        "Use SQS or EventBridge for async processing instead of polling to improve efficiency."
+    )
 
     def run(self, repo_path: Path, language: str = "typescript") -> List[Finding]:
         lambda_pat = r'new\s+lambda\.Function\(' if language == "typescript" else r'lambda_.Function\('
@@ -104,7 +119,7 @@ class AsyncProcessingHint(Rule):
                 file=None,
                 line=None,
                 evidence=None,
-                recommendation="Use SQS or EventBridge for async processing instead of polling to improve efficiency.",
+                recommendation=self.recommendation,
             )]
         return out
 
@@ -115,6 +130,9 @@ class ManagedServicesPreference(Rule):
     category = "Sustainability"
     severity = "Low"
     themes = ("sustainability",)
+    recommendation = (
+        "Prefer managed services (Lambda, RDS, Fargate) over EC2 for better resource efficiency."
+    )
 
     def run(self, repo_path: Path, language: str = "typescript") -> List[Finding]:
         ec2 = rg(repo_path, r'ec2\.Instance\(' if language == "typescript" else r'ec2\.Instance\(', glob=code_glob(language))
@@ -130,7 +148,7 @@ class ManagedServicesPreference(Rule):
                 file=None,
                 line=None,
                 evidence=None,
-                recommendation="Prefer managed services (Lambda, RDS, Fargate) over EC2 for better resource efficiency.",
+                recommendation=self.recommendation,
             )]
         return out
 
@@ -141,6 +159,10 @@ class CloudFrontCompression(Rule):
     category = "Sustainability"
     severity = "Low"
     themes = ("sustainability", "finops",)
+    recommendation = (
+        "Enable compression (gzip/brotli) on CloudFront to reduce data transfer and improve "
+        "sustainability."
+    )
 
     def run(self, repo_path: Path, language: str = "typescript") -> List[Finding]:
         cf_pat = r'new\s+cloudfront\.(Distribution|CloudFrontWebDistribution)\(' if language == "typescript" else r'cloudfront\.(Distribution|CloudFrontWebDistribution)\('
@@ -157,7 +179,7 @@ class CloudFrontCompression(Rule):
                 file=f,
                 line=ln,
                 evidence=txt,
-                recommendation="Enable compression (gzip/brotli) on CloudFront to reduce data transfer and improve sustainability.",
+                recommendation=self.recommendation,
             ))
         return out
 
@@ -168,6 +190,9 @@ class LatestGenInstances(Rule):
     category = "Sustainability"
     severity = "Low"
     themes = ("sustainability", "finops",)
+    recommendation = (
+        "Migrate to current-generation instances (t3, m6i, c6i, r6i) for better efficiency."
+    )
 
     def run(self, repo_path: Path, language: str = "typescript") -> List[Finding]:
         legacy = rg(repo_path, r't2\.|m3\.|m4\.|c3\.|c4\.|r3\.|r4\.', glob=code_glob(language))
@@ -181,6 +206,6 @@ class LatestGenInstances(Rule):
                 file=f,
                 line=ln,
                 evidence=txt,
-                recommendation="Migrate to current-generation instances (t3, m6i, c6i, r6i) for better efficiency.",
+                recommendation=self.recommendation,
             ))
         return out

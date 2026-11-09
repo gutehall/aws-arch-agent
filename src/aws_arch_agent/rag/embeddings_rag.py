@@ -1,4 +1,4 @@
-"""Embedding-based RAG (sentence-transformers or OpenAI) for better retrieval relevance."""
+"""Embedding-based RAG (local sentence-transformers) for better retrieval relevance."""
 from __future__ import annotations
 
 import logging
@@ -20,7 +20,7 @@ def _cosine_similarity(a: List[float], b: List[float]) -> float:
 
 
 class EmbeddingRAG:
-    """RAG that embeds chunks and query, then returns top-k by similarity. Uses sentence-transformers (local) or OpenAI."""
+    """RAG that embeds chunks and query, then returns top-k by similarity. Uses sentence-transformers, locally."""
 
     def __init__(
         self,
@@ -45,11 +45,6 @@ class EmbeddingRAG:
         """Embed document chunks once. Later retrieves only embed the query."""
         if not self.chunks or self._embeddings is not None:
             return
-        if self.provider == "openai":
-            embedded = self._get_embeddings_openai(self.chunks)
-            if len(embedded) == len(self.chunks):
-                self._embeddings = embedded
-            return
         self._get_embeddings_sentence_transformers()
 
     def _get_embeddings_sentence_transformers(self) -> List[List[float]]:
@@ -69,58 +64,26 @@ class EmbeddingRAG:
             self._embeddings = [list(row) for row in encoded]
         return self._embeddings
 
-    def _get_embeddings_openai(self, texts: List[str]) -> List[List[float]]:
-        import os
-        try:
-            from openai import OpenAI  # type: ignore
-        except ImportError:
-            logger.warning("openai not installed for embeddings")
-            return []
-        key = os.getenv("OPENAI_API_KEY")
-        if not key:
-            logger.warning("OPENAI_API_KEY not set for RAG embeddings")
-            return []
-        client = OpenAI(api_key=key)
-        model = self.model_name or "text-embedding-3-small"
-        out: List[List[float]] = []
-        # API accepts batch; 100 at a time is safe
-        for i in range(0, len(texts), 100):
-            batch = texts[i : i + 100]
-            resp = client.embeddings.create(model=model, input=batch)
-            for e in resp.data:
-                out.append(e.embedding)
-        return out
-
     def retrieve(self, query: str, k: int = 3) -> str:
         """Return up to k chunks that best match the query by embedding similarity."""
         if not self.chunks:
             return ""
         q_vec: List[float]
         chunk_embs: List[List[float]]
-        if self.provider == "openai":
-            self.ensure_chunk_embeddings()
-            chunk_embs = self._embeddings or []
-            if len(chunk_embs) != len(self.chunks):
-                return self._fallback_keyword(query, k)
-            query_emb = self._get_embeddings_openai([query])
-            if not query_emb:
-                return self._fallback_keyword(query, k)
-            q_vec = query_emb[0]
-        else:
-            chunk_embs = self._get_embeddings_sentence_transformers()
-            if not chunk_embs:
-                return self._fallback_keyword(query, k)
-            try:
-                from sentence_transformers import SentenceTransformer
-            except ImportError:
-                return self._fallback_keyword(query, k)
-            model = self._model
-            if model is None:
-                name = self.model_name or "all-MiniLM-L6-v2"
-                model = SentenceTransformer(name)
-                self._model = model
-            q = model.encode(query, convert_to_numpy=False)
-            q_vec = q.tolist() if hasattr(q, "tolist") else list(q)
+        chunk_embs = self._get_embeddings_sentence_transformers()
+        if not chunk_embs:
+            return self._fallback_keyword(query, k)
+        try:
+            from sentence_transformers import SentenceTransformer
+        except ImportError:
+            return self._fallback_keyword(query, k)
+        model = self._model
+        if model is None:
+            name = self.model_name or "all-MiniLM-L6-v2"
+            model = SentenceTransformer(name)
+            self._model = model
+        q = model.encode(query, convert_to_numpy=False)
+        q_vec = q.tolist() if hasattr(q, "tolist") else list(q)
 
         sims = [_cosine_similarity(q_vec, ce) for ce in chunk_embs]
         pairs = list(zip(sims, self.chunks))

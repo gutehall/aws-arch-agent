@@ -12,6 +12,9 @@ class LogRetentionNeverExpire(Rule):
     category = "Cost"
     severity = "Low"
     themes = ("finops", "data-protection",)
+    recommendation = (
+        "Set log retention to a reasonable level (e.g. 14/30/90 days) to control costs."
+    )
 
     def run(self, repo_path: Path, language: str = "typescript") -> List[Finding]:
         pattern = r'RetentionDays\.INFINITE|retention\s*:\s*logs\.RetentionDays\.INFINITE' if language == "typescript" else r'INFINITE|retention.*infinite'
@@ -26,7 +29,7 @@ class LogRetentionNeverExpire(Rule):
                 file=f,
                 line=ln,
                 evidence=txt,
-                recommendation="Set log retention to a reasonable level (e.g. 14/30/90 days) to control costs.",
+                recommendation=self.recommendation,
             ))
         return out
 
@@ -37,6 +40,10 @@ class MissingAutoscalingHint(Rule):
     category = "Cost"
     severity = "Low"
     themes = ("finops",)
+    recommendation = (
+        "Consider autoscaling policies (CPU/Memory/Queue depth) to reduce cost and improve "
+        "performance."
+    )
 
     def run(self, repo_path: Path, language: str = "typescript") -> List[Finding]:
         asg = rg(repo_path, r'AutoScalingGroup|add_auto_scaling|addAutoScaling', glob=code_glob(language))
@@ -53,7 +60,7 @@ class MissingAutoscalingHint(Rule):
                 file=f,
                 line=ln,
                 evidence=txt,
-                recommendation="Consider autoscaling policies (CPU/Memory/Queue depth) to reduce cost and improve performance.",
+                recommendation=self.recommendation,
             ))
         return out
 
@@ -64,6 +71,10 @@ class DynamoDbAutoscalingMissing(Rule):
     category = "Cost"
     severity = "Low"
     themes = ("finops",)
+    recommendation = (
+        "Enable autoscaling for DynamoDB provisioned capacity to optimize costs during "
+        "low-traffic periods. In CDK: table.autoScaleReadCapacity() / autoScaleWriteCapacity()"
+    )
 
     def run(self, repo_path: Path, language: str = "typescript") -> List[Finding]:
         # Check for provisioned capacity without autoscaling
@@ -82,7 +93,7 @@ class DynamoDbAutoscalingMissing(Rule):
                     file=f,
                     line=ln,
                     evidence=txt,
-                    recommendation="Enable autoscaling for DynamoDB provisioned capacity to optimize costs during low-traffic periods. In CDK: table.autoScaleReadCapacity() / autoScaleWriteCapacity()",
+                    recommendation=self.recommendation,
                 ))
         return out
 
@@ -93,6 +104,10 @@ class LambdaProvisionedConcurrency(Rule):
     category = "Cost"
     severity = "Low"
     themes = ("finops",)
+    recommendation = (
+        "Review Lambda provisioned concurrency settings. Use Application Auto Scaling to adjust "
+        "based on utilization to reduce costs."
+    )
 
     def run(self, repo_path: Path, language: str = "typescript") -> List[Finding]:
         provisioned = rg(repo_path, r'provisionedConcurrentExecutions|reservedConcurrentExecutions', glob=code_glob(language))
@@ -106,7 +121,7 @@ class LambdaProvisionedConcurrency(Rule):
                 file=f,
                 line=ln,
                 evidence=txt,
-                recommendation="Review Lambda provisioned concurrency settings. Use Application Auto Scaling to adjust based on utilization to reduce costs.",
+                recommendation=self.recommendation,
             ))
         return out
 
@@ -117,6 +132,10 @@ class RdsReservedInstances(Rule):
     category = "Cost"
     severity = "Low"
     themes = ("finops",)
+    recommendation = (
+        "For production RDS instances with steady-state usage, consider Reserved Instances for up"
+        " to 72% cost savings vs on-demand"
+    )
 
     def run(self, repo_path: Path, language: str = "typescript") -> List[Finding]:
         rds_pat = r'new\s+rds\.(DatabaseInstance|DatabaseCluster)\(' if language == "typescript" else r'rds\.(DatabaseInstance|DatabaseCluster)\('
@@ -131,7 +150,7 @@ class RdsReservedInstances(Rule):
                 file=None,
                 line=None,
                 evidence=None,
-                recommendation="For production RDS instances with steady-state usage, consider Reserved Instances for up to 72% cost savings vs on-demand",
+                recommendation=self.recommendation,
             )]
         return out
 
@@ -142,6 +161,10 @@ class NatGatewayCosts(Rule):
     category = "Cost"
     severity = "Low"
     themes = ("finops",)
+    recommendation = (
+        "NAT Gateways charge for data processing ($0.045/GB). Use VPC endpoints for S3, DynamoDB,"
+        " and other AWS services to reduce costs."
+    )
 
     def run(self, repo_path: Path, language: str = "typescript") -> List[Finding]:
         nat_pat = r'natGateways\s*:\s*[1-9]|NatProvider\.gateway' if language == "typescript" else r'nat_gateways\s*=\s*[1-9]'
@@ -158,7 +181,7 @@ class NatGatewayCosts(Rule):
                 file=f,
                 line=ln,
                 evidence=txt,
-                recommendation="NAT Gateways charge for data processing ($0.045/GB). Use VPC endpoints for S3, DynamoDB, and other AWS services to reduce costs.",
+                recommendation=self.recommendation,
             ))
         return out
 
@@ -169,6 +192,10 @@ class S3IntelligentTiering(Rule):
     category = "Cost"
     severity = "Low"
     themes = ("finops",)
+    recommendation = (
+        "Consider S3 Intelligent-Tiering for automatic cost optimization (moves objects between "
+        "access tiers based on usage)"
+    )
 
     def run(self, repo_path: Path, language: str = "typescript") -> List[Finding]:
         s3_pat = r'new\s+s3\.(Bucket|CfnBucket)\(' if language == "typescript" else r's3\.(Bucket|CfnBucket)\('
@@ -184,7 +211,7 @@ class S3IntelligentTiering(Rule):
                 file=None,
                 line=None,
                 evidence=None,
-                recommendation="Consider S3 Intelligent-Tiering for automatic cost optimization (moves objects between access tiers based on usage)",
+                recommendation=self.recommendation,
             )]
         return out
 
@@ -195,6 +222,10 @@ class EbsGp2ToGp3(Rule):
     category = "Cost"
     severity = "Low"
     themes = ("finops",)
+    recommendation = (
+        "Migrate EBS volumes from gp2 to gp3 for 20% cost savings and better performance. In CDK:"
+        " EbsDeviceVolumeType.GP3"
+    )
 
     def run(self, repo_path: Path, language: str = "typescript") -> List[Finding]:
         gp2 = rg(repo_path, r'EbsDeviceVolumeType\.GP2|gp2', glob=code_glob(language))
@@ -208,7 +239,7 @@ class EbsGp2ToGp3(Rule):
                 file=f,
                 line=ln,
                 evidence=txt,
-                recommendation="Migrate EBS volumes from gp2 to gp3 for 20% cost savings and better performance. In CDK: EbsDeviceVolumeType.GP3",
+                recommendation=self.recommendation,
             ))
         return out
 
@@ -219,6 +250,10 @@ class ElastiCacheReservedNodes(Rule):
     category = "Cost"
     severity = "Low"
     themes = ("finops",)
+    recommendation = (
+        "For predictable ElastiCache workloads, consider reserved nodes for up to 55% cost "
+        "savings vs on-demand"
+    )
 
     def run(self, repo_path: Path, language: str = "typescript") -> List[Finding]:
         elasticache = rg(repo_path, r'elasticache\.(CfnCacheCluster|CfnReplicationGroup)', glob=code_glob(language))
@@ -232,7 +267,7 @@ class ElastiCacheReservedNodes(Rule):
                 file=None,
                 line=None,
                 evidence=None,
-                recommendation="For predictable ElastiCache workloads, consider reserved nodes for up to 55% cost savings vs on-demand",
+                recommendation=self.recommendation,
             )]
         return out
 
@@ -243,6 +278,10 @@ class RdsGraviton(Rule):
     category = "Cost"
     severity = "Low"
     themes = ("finops",)
+    recommendation = (
+        "Consider Graviton-based RDS instances (r7g, m7g, t4g) for up to 35% better "
+        "price-performance"
+    )
 
     def run(self, repo_path: Path, language: str = "typescript") -> List[Finding]:
         rds_pat = r'new\s+rds\.(DatabaseInstance|DatabaseCluster)\(' if language == "typescript" else r'rds\.(DatabaseInstance|DatabaseCluster)\('
@@ -259,7 +298,7 @@ class RdsGraviton(Rule):
                 file=f,
                 line=ln,
                 evidence=txt,
-                recommendation="Consider Graviton-based RDS instances (r7g, m7g, t4g) for up to 35% better price-performance",
+                recommendation=self.recommendation,
             ))
         return out
 
@@ -270,6 +309,10 @@ class CloudFrontPriceClass(Rule):
     category = "Cost"
     severity = "Low"
     themes = ("finops",)
+    recommendation = (
+        "Consider CloudFront Price Class 100 or 200 instead of All to reduce costs if global edge"
+        " coverage is not required. In CDK: priceClass: cloudfront.PriceClass.PRICE_CLASS_100"
+    )
 
     def run(self, repo_path: Path, language: str = "typescript") -> List[Finding]:
         cf_pat = r'new\s+cloudfront\.(Distribution|CloudFrontWebDistribution)\(' if language == "typescript" else r'cloudfront\.(Distribution|CloudFrontWebDistribution)\('
@@ -286,7 +329,7 @@ class CloudFrontPriceClass(Rule):
                 file=f,
                 line=ln,
                 evidence=txt,
-                recommendation="Consider CloudFront Price Class 100 or 200 instead of All to reduce costs if global edge coverage is not required. In CDK: priceClass: cloudfront.PriceClass.PRICE_CLASS_100",
+                recommendation=self.recommendation,
             ))
         return out
 
@@ -297,6 +340,10 @@ class UnusedEips(Rule):
     category = "Cost"
     severity = "Low"
     themes = ("finops",)
+    recommendation = (
+        "Unattached Elastic IPs incur charges. Ensure EIPs are associated with running resources "
+        "or release them"
+    )
 
     def run(self, repo_path: Path, language: str = "typescript") -> List[Finding]:
         eip = rg(repo_path, r'new\s+ec2\.(CfnEIP|CfnEIPAssociation)\(', glob=code_glob(language))
@@ -310,7 +357,7 @@ class UnusedEips(Rule):
                 file=f,
                 line=ln,
                 evidence=txt,
-                recommendation="Unattached Elastic IPs incur charges. Ensure EIPs are associated with running resources or release them",
+                recommendation=self.recommendation,
             ))
         return out
 
@@ -321,6 +368,10 @@ class S3LifecycleMissing(Rule):
     category = "Cost"
     severity = "Low"
     themes = ("finops",)
+    recommendation = (
+        "Add S3 lifecycle policies to transition objects to cheaper storage classes (IA, Glacier)"
+        " or delete old versions. In CDK: bucket.addLifecycleRule()"
+    )
 
     def run(self, repo_path: Path, language: str = "typescript") -> List[Finding]:
         s3_pat = r'new\s+s3\.(Bucket|CfnBucket)\(' if language == "typescript" else r's3\.(Bucket|CfnBucket)\('
@@ -336,7 +387,7 @@ class S3LifecycleMissing(Rule):
                 file=None,
                 line=None,
                 evidence=None,
-                recommendation="Add S3 lifecycle policies to transition objects to cheaper storage classes (IA, Glacier) or delete old versions. In CDK: bucket.addLifecycleRule()",
+                recommendation=self.recommendation,
             )]
         return out
 
@@ -347,6 +398,10 @@ class AwsBudgetsMissing(Rule):
     category = "Cost"
     severity = "Low"
     themes = ("finops",)
+    recommendation = (
+        "Configure AWS Budgets for cost monitoring and alerts. Consider budget alerts at 80% and "
+        "100%."
+    )
 
     def run(self, repo_path: Path, language: str = "typescript") -> List[Finding]:
         budgets = rg(repo_path, r'budgets\.CfnBudget|CfnBudget', glob=code_glob(language))
@@ -359,7 +414,7 @@ class AwsBudgetsMissing(Rule):
                 file=None,
                 line=None,
                 evidence=None,
-                recommendation="Configure AWS Budgets for cost monitoring and alerts. Consider budget alerts at 80% and 100%.",
+                recommendation=self.recommendation,
             )]
         return []
 
@@ -370,6 +425,10 @@ class CostAllocationTags(Rule):
     category = "Cost"
     severity = "Low"
     themes = ("finops",)
+    recommendation = (
+        "Add cost allocation tags (CostCenter, Project, Environment) for AWS Cost Explorer and "
+        "billing reports."
+    )
 
     def run(self, repo_path: Path, language: str = "typescript") -> List[Finding]:
         tags = rg(repo_path, r'tags\s*:|tags\s*=', glob=code_glob(language))
@@ -384,7 +443,7 @@ class CostAllocationTags(Rule):
                 file=None,
                 line=None,
                 evidence=None,
-                recommendation="Add cost allocation tags (CostCenter, Project, Environment) for AWS Cost Explorer and billing reports.",
+                recommendation=self.recommendation,
             )]
         return out
 
@@ -395,6 +454,10 @@ class SavingsPlansOpportunity(Rule):
     category = "Cost"
     severity = "Low"
     themes = ("finops",)
+    recommendation = (
+        "For steady-state compute, consider Compute or EC2 Instance Savings Plans for up to 66% "
+        "savings."
+    )
 
     def run(self, repo_path: Path, language: str = "typescript") -> List[Finding]:
         compute = rg(repo_path, r'FargateService|Ec2Service|ec2\.Instance|lambda\.Function', glob=code_glob(language))
@@ -407,7 +470,7 @@ class SavingsPlansOpportunity(Rule):
                 file=None,
                 line=None,
                 evidence=None,
-                recommendation="For steady-state compute, consider Compute or EC2 Instance Savings Plans for up to 66% savings.",
+                recommendation=self.recommendation,
             )]
         return []
 
@@ -418,6 +481,10 @@ class LambdaPowerTuning(Rule):
     category = "Cost"
     severity = "Low"
     themes = ("finops",)
+    recommendation = (
+        "Use AWS Lambda Power Tuning to find optimal memory/CPU configuration for cost and "
+        "performance."
+    )
 
     def run(self, repo_path: Path, language: str = "typescript") -> List[Finding]:
         lambda_pat = r'new\s+(lambda\.Function|NodejsFunction|PythonFunction)\(' if language == "typescript" else r'(lambda_.Function|aws_lambda.Function)\('
@@ -433,7 +500,7 @@ class LambdaPowerTuning(Rule):
                 file=None,
                 line=None,
                 evidence=None,
-                recommendation="Use AWS Lambda Power Tuning to find optimal memory/CPU configuration for cost and performance.",
+                recommendation=self.recommendation,
             )]
         return out
 
@@ -444,6 +511,7 @@ class S3StorageLens(Rule):
     category = "Cost"
     severity = "Low"
     themes = ("finops",)
+    recommendation = "Enable S3 Storage Lens for storage optimization insights and cost analysis."
 
     def run(self, repo_path: Path, language: str = "typescript") -> List[Finding]:
         buckets = rg(repo_path, r'new\s+s3\.Bucket\(' if language == "typescript" else r's3\.Bucket\(', glob=code_glob(language))
@@ -458,6 +526,6 @@ class S3StorageLens(Rule):
                 file=None,
                 line=None,
                 evidence=None,
-                recommendation="Enable S3 Storage Lens for storage optimization insights and cost analysis.",
+                recommendation=self.recommendation,
             )]
         return out

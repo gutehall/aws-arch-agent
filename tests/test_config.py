@@ -93,6 +93,14 @@ def test_load_config_rag_embeddings(tmp_path: Path) -> None:
     assert cfg.rag_embedding_model == "all-MiniLM-L6-v2"
 
 
+def test_load_config_refuses_a_cloud_embedding_provider(tmp_path: Path) -> None:
+    (tmp_path / ".aws-arch-agent.json").write_text(
+        '{"rag": {"use_embeddings": true, "embedding_provider": "openai"}}', encoding="utf-8"
+    )
+    with pytest.raises(ConfigError, match="sentence-transformers"):
+        load_config(tmp_path)
+
+
 def test_yaml_string_false_stays_false(tmp_path: Path) -> None:
     """A quoted YAML false must not become True via bool("false")."""
     cfg_file = tmp_path / "aws-arch-agent.yaml"
