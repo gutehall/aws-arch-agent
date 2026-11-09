@@ -8,15 +8,15 @@ The agent covers all six AWS Well-Architected pillars. Static and CloudFormation
 |--------|---------|-------------|
 | `--repo`, `-r` | — | Path to repo (required unless `--templates` is set; then repo defaults to templates path) |
 | `--out`, `-o` | `report.md` | Output report path |
-| `--mode` | `v1` | `v1` (rules + LLM) or `v2` (multi-agent + synth) |
+| `--mode` | `v1` | `v1` (rules + optional [LLM review](#llm-review)) or `v2` (multi-agent + synth) |
 | `--iac` | `auto` | IaC source: `auto`, `cdk`, `cloudformation`, or `terraform`. `auto` detects it: CDK wins when `cdk.json` or a CDK package is present; otherwise CloudFormation templates (`AWSTemplateFormatVersion` or an `AWS::` resource) and Terraform (`*.tf`, `*.tf.json`) are detected, and both together are `mixed`. An explicit source with no matching files exits 1 (`cdk` needs `cdk.json`, a CDK package, `bin/*.ts`, or `app.py`). With `--mode v2`, `terraform` exits 1 and `cloudformation` without `--templates` (flag or config `templates`) exits 1 |
 | `--tf-plan` | — | `terraform show -json` output (a plan or a state). V1 Terraform scans only. Known planned values replace arguments that depend on `var`, `local`, or another expression, by resource address. Unknown values stay unresolved. Indexed instances (`count`, `for_each`), data sources, and child modules are not read. With one root module, the plan applies to it wherever the plan file is. With several, it applies to the one that holds the plan file. A missing or unreadable plan, or a plan that matches no root module, is a report warning (exit 2) and the scan runs without it. `--mode v2` with `--tf-plan` exits 1 |
 | `--max-files` | `400` | Cap on files walked. Rules search only these files |
 | `--config` | (auto-detect) | Path to config file |
 | `--format`, `-f` | `markdown` | `markdown`, `json`, `sarif`, or `html`. `html` writes one self-contained page (inline CSS and script, no external assets, dark theme) to open in a browser. Each finding links to AWS documentation. With `--enforce-baseline` it labels each finding Accepted or New. `--out` still defaults to `report.md`, so pass a `.html` path. An unknown format fails the run and writes no report |
 | `--fail-on` | `none` | Exit 1 if any finding at or above: `high`, `medium`, `low`, `none` |
-| `--no-llm` | `false` | Skip LLM polish / agent reasoning |
-| `--llm-mode` | `full` | V2 only: `full` (six pillar calls) or `compact` (single LLM call) |
+| `--no-llm` | `false` | Make no LLM calls: no verdicts, no hypotheses. See [LLM review](#llm-review) |
+| `--llm-mode` | `full` | V2 only: `full` (one verdict call per pillar with findings) or `compact` (one verdict call). Either way, plus one hypothesis call |
 | `--templates` | — | Path to CloudFormation templates (dir or file); V2 only, skips cdk synth |
 | `--no-synth` | `false` | Do not run cdk synth; V2 only (static only or with `--templates`) |
 | `--rag` | — | Path to RAG doc (V2 only) |
@@ -51,7 +51,7 @@ aws-arch-agent --repo . --iac terraform --tf-plan infra/plan.json --no-llm
 ## Modes
 
 - **V1** (default): static rules over CDK source, or `CF-*` checks over CloudFormation and Terraform. No synth, finishes in seconds.
-- **V2**: runs `cdk synth`, then a LangGraph pipeline with six pillar reviewers checks the CloudFormation output. Install with `pip install -e ".[v2]"`. `--llm-mode full` (default) makes six pillar calls plus a merge. `--llm-mode compact` makes one call.
+- **V2**: runs `cdk synth`, then a LangGraph pipeline with six pillar reviewers checks the CloudFormation output. Install with `pip install -e ".[v2]"`. `--llm-mode full` (default) makes one verdict call per pillar with findings. `--llm-mode compact` makes one. See [LLM review](#llm-review).
 
 ## LLM providers
 
@@ -59,10 +59,32 @@ LLM output is optional. `--no-llm` skips it.
 
 | Variable | Purpose |
 |----------|---------|
-| `LLM_PROVIDER` | `ollama`, `openai`, or `anthropic` |
-| `OLLAMA_HOST`, `OLLAMA_MODEL` | Local Ollama server and model (e.g. `llama3:8b`) |
-| `OPENAI_API_KEY`, `OPENAI_MODEL` | OpenAI. Needs `pip install -e ".[cloud]"` |
-| `ANTHROPIC_API_KEY`, `ANTHROPIC_MODEL` | Anthropic. Needs `pip install -e ".[cloud]"` |
+| `LLM_PROVIDER` | `ollama` (default) or `selfhosted`. Any other value makes no call and reports `fallback` |
+| `OLLAMA_HOST`, `OLLAMA_MODEL` | Ollama server and model (e.g. `llama3:8b`) |
+| `OLLAMA_NUM_CTX` | Ollama context size in tokens. Default `24576`, which fits the largest hypothesis prompt. Ollama silently cuts a longer prompt, so a smaller value uses less memory and can lose part of the prompt. A verdict batch has no total cap, so one with very long source lines can exceed the default. An OpenAI-compatible server sets its own context |
+| `LLM_BASE_URL`, `LLM_MODEL` | OpenAI-compatible server (vLLM, llama.cpp, LM Studio, LocalAI) and model. The URL ends before `/chat/completions`, e.g. `http://localhost:8000/v1` |
+
+Cloud LLM providers are not supported. Prompts include source code around each finding and go to the server these settings name, so point them at infrastructure you control. The tool does not check where that server runs, and it sends no API key.
+
+## LLM review
+
+Rules decide the findings. The model adds two things, and neither is a finding:
+
+| | Verdict | Hypothesis |
+|---|---------|------------|
+| What it is | A label on a finding: `confirmed`, `likely false positive`, or `unsure`, with a reason | A catalog rule the model thinks the scanner missed, in a file with no finding |
+| Checked by | The rule that produced the finding | Nothing. It is unverified |
+| Report | `LLM verdict:` on the finding | `## Unverified hypotheses`, outside the findings. On the HTML page, outside the severity tabs |
+| JSON | `verdict` on the finding | `hypotheses`, each with `"unverified": true` |
+| Status | `llm` | `hypotheses_llm` |
+
+Neither changes the severity, the findings list, the summary, the exit code, `--fail-on`, the baseline, or SARIF. A finding labelled `likely false positive` still fails the build.
+
+**Verdicts.** A label appears only when `llm.status` is `ok`. That needs every verdict batch to answer, so a connection failure (`fallback`) or a reply that is not JSON (`invalid`) labels nothing, and the findings match a `--no-llm` run. A verdict for an unknown finding id is dropped. V1 judges at most 100 findings, highest severity first.
+
+**Hypotheses.** One call after the rules, when the LLM is on and the verdict calls did not fail. The prompt has the rule catalog (ids and titles), the rule ids already reported, and up to 24,000 characters of IaC files with no finding. V2 adds the synth summary. A hypothesis must give `rule_id`, `file`, `line`, and `why`. It is dropped when the rule id is not in the catalog, the file or line was not in the prompt, or a finding is on that file and line. At most 20 are kept. The catalog is the whole catalog, so a hypothesis can name a rule that `rules.exclude` turned off.
+
+A failed hypothesis call has its own status and console line. It keeps the verdicts, and `llm.status` stays `ok`.
 
 ## HTML report
 

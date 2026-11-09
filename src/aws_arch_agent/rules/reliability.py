@@ -13,6 +13,7 @@ class RdsMultiAzMissing(Rule):
     category = "Reliability"
     severity = "Medium"
     themes = ("resilience",)
+    recommendation = "Consider Multi-AZ for higher availability (especially in production)."
 
     def run(self, repo_path: Path, language: str = "typescript") -> List[Finding]:
         rds_pat = r'new\s+rds\.(DatabaseInstance|DatabaseCluster)\(' if language == "typescript" else r'rds\.(DatabaseInstance|DatabaseCluster)\('
@@ -22,7 +23,7 @@ class RdsMultiAzMissing(Rule):
             self,
             rds,
             maz,
-            "Consider Multi-AZ for higher availability (especially in production).",
+            self.recommendation,
         )
 
 
@@ -32,6 +33,7 @@ class BackupRetentionMissing(Rule):
     category = "Reliability"
     severity = "Medium"
     themes = ("resilience", "data-protection",)
+    recommendation = "Set backupRetention per RPO/RTO (e.g. 7–35 days)."
 
     def run(self, repo_path: Path, language: str = "typescript") -> List[Finding]:
         rds_pat = r'new\s+rds\.(DatabaseInstance|DatabaseCluster)\(' if language == "typescript" else r'rds\.(DatabaseInstance|DatabaseCluster)\('
@@ -48,7 +50,7 @@ class BackupRetentionMissing(Rule):
                 file=f,
                 line=ln,
                 evidence=txt,
-                recommendation="Set backupRetention per RPO/RTO (e.g. 7–35 days).",
+                recommendation=self.recommendation,
             ))
         return out
 
@@ -59,6 +61,7 @@ class LambdaDlqMissing(Rule):
     category = "Reliability"
     severity = "Low"
     themes = ("resilience",)
+    recommendation = "Consider DLQ or onFailure destinations for better error handling."
 
     def run(self, repo_path: Path, language: str = "typescript") -> List[Finding]:
         # Updated to catch NodejsFunction, PythonFunction, DockerImageFunction, etc.
@@ -76,7 +79,7 @@ class LambdaDlqMissing(Rule):
                 file=f,
                 line=ln,
                 evidence=txt,
-                recommendation="Consider DLQ or onFailure destinations for better error handling.",
+                recommendation=self.recommendation,
             ))
         return out
 
@@ -87,6 +90,10 @@ class DynamoDbPitrMissing(Rule):
     category = "Reliability"
     severity = "Medium"
     themes = ("resilience", "data-protection",)
+    recommendation = (
+        "Enable point-in-time recovery (PITR) for DynamoDB tables to protect against accidental "
+        "deletes/updates. In CDK: pointInTimeRecovery: true"
+    )
 
     def run(self, repo_path: Path, language: str = "typescript") -> List[Finding]:
         ddb_pat = r'new\s+(dynamodb\.Table|Table)\(' if language == "typescript" else r'(dynamodb.Table|aws_dynamodb.Table)\('
@@ -103,7 +110,7 @@ class DynamoDbPitrMissing(Rule):
                 file=f,
                 line=ln,
                 evidence=txt,
-                recommendation="Enable point-in-time recovery (PITR) for DynamoDB tables to protect against accidental deletes/updates. In CDK: pointInTimeRecovery: true",
+                recommendation=self.recommendation,
             ))
         return out
 
@@ -114,6 +121,10 @@ class DynamoDbBackupMissing(Rule):
     category = "Reliability"
     severity = "Low"
     themes = ("resilience", "data-protection",)
+    recommendation = (
+        "Consider AWS Backup or point-in-time recovery for DynamoDB tables to meet RPO/RTO "
+        "requirements."
+    )
 
     def run(self, repo_path: Path, language: str = "typescript") -> List[Finding]:
         ddb_pat = r'new\s+(dynamodb\.Table|Table)\(' if language == "typescript" else r'(dynamodb.Table|aws_dynamodb.Table)\('
@@ -131,7 +142,7 @@ class DynamoDbBackupMissing(Rule):
                 file=f,
                 line=ln,
                 evidence=txt,
-                recommendation="Consider AWS Backup or point-in-time recovery for DynamoDB tables to meet RPO/RTO requirements.",
+                recommendation=self.recommendation,
             ))
         return out
 
@@ -142,6 +153,10 @@ class ApiGatewayThrottling(Rule):
     category = "Reliability"
     severity = "Medium"
     themes = ("resilience",)
+    recommendation = (
+        "Configure throttling limits for API Gateway to prevent overwhelming backend services. In"
+        " CDK: throttle with rateLimit and burstLimit"
+    )
 
     def run(self, repo_path: Path, language: str = "typescript") -> List[Finding]:
         api_pat = r'new\s+(apigateway\.(RestApi|HttpApi)|RestApi|HttpApi)\(' if language == "typescript" else r'(apigateway\.(RestApi|HttpApi)|RestApi|HttpApi)\('
@@ -151,7 +166,7 @@ class ApiGatewayThrottling(Rule):
             self,
             apis,
             throttle,
-            "Configure throttling limits for API Gateway to prevent overwhelming backend services. In CDK: throttle with rateLimit and burstLimit",
+            self.recommendation,
         )
 
 
@@ -161,6 +176,10 @@ class AlbHealthCheck(Rule):
     category = "Reliability"
     severity = "Medium"
     themes = ("resilience",)
+    recommendation = (
+        "Configure health checks for ALB/NLB target groups with appropriate path, interval, and "
+        "thresholds. In CDK: healthCheck property"
+    )
 
     def run(self, repo_path: Path, language: str = "typescript") -> List[Finding]:
         target_pat = r'new\s+elbv2\.(ApplicationTargetGroup|NetworkTargetGroup)\(' if language == "typescript" else r'elbv2\.(ApplicationTargetGroup|NetworkTargetGroup)\('
@@ -177,7 +196,7 @@ class AlbHealthCheck(Rule):
                 file=f,
                 line=ln,
                 evidence=txt,
-                recommendation="Configure health checks for ALB/NLB target groups with appropriate path, interval, and thresholds. In CDK: healthCheck property",
+                recommendation=self.recommendation,
             ))
         return out
 
@@ -188,6 +207,10 @@ class SqsDlqMissing(Rule):
     category = "Reliability"
     severity = "Medium"
     themes = ("resilience",)
+    recommendation = (
+        "Configure dead-letter queue for SQS to handle failed message processing. In CDK: "
+        "deadLetterQueue with maxReceiveCount"
+    )
 
     def run(self, repo_path: Path, language: str = "typescript") -> List[Finding]:
         sqs_pat = r'new\s+sqs\.Queue\(' if language == "typescript" else r'sqs\.Queue\('
@@ -201,7 +224,7 @@ class SqsDlqMissing(Rule):
             self,
             queues,
             dlq,
-            "Configure dead-letter queue for SQS to handle failed message processing. In CDK: deadLetterQueue with maxReceiveCount",
+            self.recommendation,
         )
 
 
@@ -211,6 +234,10 @@ class LambdaTimeout(Rule):
     category = "Reliability"
     severity = "Low"
     themes = ("resilience",)
+    recommendation = (
+        "Set appropriate Lambda timeout based on function workload (avoid default 3s or max 15min"
+        " unless needed). In CDK: timeout: Duration.seconds(30)"
+    )
 
     def run(self, repo_path: Path, language: str = "typescript") -> List[Finding]:
         lambda_pat = r'new\s+(lambda\.Function|NodejsFunction|PythonFunction|DockerImageFunction)\(' if language == "typescript" else r'(lambda_.Function|aws_lambda_python_alpha.PythonFunction|aws_lambda.Function)\('
@@ -224,7 +251,7 @@ class LambdaTimeout(Rule):
             self,
             lambdas,
             timeout,
-            "Set appropriate Lambda timeout based on function workload (avoid default 3s or max 15min unless needed). In CDK: timeout: Duration.seconds(30)",
+            self.recommendation,
         )
 
 
@@ -234,6 +261,10 @@ class LambdaVpcAccess(Rule):
     category = "Reliability"
     severity = "Medium"
     themes = ("resilience", "network-exposure",)
+    recommendation = (
+        "Lambda functions accessing RDS/ElastiCache should be in VPC for security and "
+        "connectivity. In CDK: vpc and vpcSubnets properties"
+    )
 
     def run(self, repo_path: Path, language: str = "typescript") -> List[Finding]:
         lambda_pat = r'new\s+(lambda\.Function|NodejsFunction|PythonFunction|DockerImageFunction)\(' if language == "typescript" else r'(lambda_.Function|aws_lambda_python_alpha.PythonFunction|aws_lambda.Function)\('
@@ -246,7 +277,7 @@ class LambdaVpcAccess(Rule):
             self,
             lambdas,
             vpc_config,
-            "Lambda functions accessing RDS/ElastiCache should be in VPC for security and connectivity. In CDK: vpc and vpcSubnets properties",
+            self.recommendation,
         )
 
 
@@ -256,6 +287,10 @@ class RdsReadReplicas(Rule):
     category = "Reliability"
     severity = "Low"
     themes = ("resilience",)
+    recommendation = (
+        "Consider RDS read replicas for read-heavy workloads to improve performance and "
+        "availability"
+    )
 
     def run(self, repo_path: Path, language: str = "typescript") -> List[Finding]:
         rds_pat = r'new\s+rds\.(DatabaseInstance|DatabaseCluster)\(' if language == "typescript" else r'rds\.(DatabaseInstance|DatabaseCluster)\('
@@ -272,7 +307,7 @@ class RdsReadReplicas(Rule):
                 file=f,
                 line=ln,
                 evidence=txt,
-                recommendation="Consider RDS read replicas for read-heavy workloads to improve performance and availability",
+                recommendation=self.recommendation,
             ))
         return out
 
@@ -283,6 +318,10 @@ class NatGatewaySingleAz(Rule):
     category = "Reliability"
     severity = "Medium"
     themes = ("resilience",)
+    recommendation = (
+        "Use NAT Gateways in multiple AZs for high availability. In CDK: natGateways: 2 or higher"
+        " (matches maxAzs)"
+    )
 
     def run(self, repo_path: Path, language: str = "typescript") -> List[Finding]:
         nat_pat = r'natGateways\s*:\s*1(?![0-9])|maxAzs\s*:\s*1(?![0-9])' if language == "typescript" else r'nat_gateways\s*=\s*1(?![0-9])'
@@ -297,7 +336,7 @@ class NatGatewaySingleAz(Rule):
                 file=f,
                 line=ln,
                 evidence=txt,
-                recommendation="Use NAT Gateways in multiple AZs for high availability. In CDK: natGateways: 2 or higher (matches maxAzs)",
+                recommendation=self.recommendation,
             ))
         return out
 
@@ -308,6 +347,10 @@ class BackupVaultMissing(Rule):
     category = "Reliability"
     severity = "Low"
     themes = ("resilience", "data-protection",)
+    recommendation = (
+        "Consider AWS Backup for centralized backup management across services (RDS, DynamoDB, "
+        "EFS, EC2)"
+    )
 
     def run(self, repo_path: Path, language: str = "typescript") -> List[Finding]:
         resources = rg(repo_path, r'DatabaseInstance|DynamoDB|EFS|EC2', glob=code_glob(language))
@@ -322,7 +365,7 @@ class BackupVaultMissing(Rule):
                 file=None,
                 line=None,
                 evidence=None,
-                recommendation="Consider AWS Backup for centralized backup management across services (RDS, DynamoDB, EFS, EC2)",
+                recommendation=self.recommendation,
             )]
         return out
 
@@ -333,6 +376,10 @@ class CrossRegionBackup(Rule):
     category = "Reliability"
     severity = "Low"
     themes = ("resilience", "data-protection",)
+    recommendation = (
+        "Consider cross-region backup replication for disaster recovery. In AWS Backup: configure"
+        " copy actions"
+    )
 
     def run(self, repo_path: Path, language: str = "typescript") -> List[Finding]:
         backup = rg(repo_path, r'backup\.BackupVault|backup\.BackupPlan', glob=code_glob(language))
@@ -348,7 +395,7 @@ class CrossRegionBackup(Rule):
                 file=f,
                 line=ln,
                 evidence=txt,
-                recommendation="Consider cross-region backup replication for disaster recovery. In AWS Backup: configure copy actions",
+                recommendation=self.recommendation,
             ))
         return out
 
@@ -359,6 +406,10 @@ class StepFunctionsRetry(Rule):
     category = "Reliability"
     severity = "Low"
     themes = ("resilience",)
+    recommendation = (
+        "Add retry and catch blocks to Step Functions for better error handling. In CDK: "
+        "addRetry() and addCatch()"
+    )
 
     def run(self, repo_path: Path, language: str = "typescript") -> List[Finding]:
         sfn_pat = r'new\s+sfn\.StateMachine\(' if language == "typescript" else r'sfn\.StateMachine\('
@@ -375,7 +426,7 @@ class StepFunctionsRetry(Rule):
                 file=f,
                 line=ln,
                 evidence=txt,
-                recommendation="Add retry and catch blocks to Step Functions for better error handling. In CDK: addRetry() and addCatch()",
+                recommendation=self.recommendation,
             ))
         return out
 
@@ -386,6 +437,10 @@ class ElastiCacheMultiAz(Rule):
     category = "Reliability"
     severity = "Medium"
     themes = ("resilience",)
+    recommendation = (
+        "Enable multi-AZ for ElastiCache for high availability. Set automaticFailoverEnabled to "
+        "true"
+    )
 
     def run(self, repo_path: Path, language: str = "typescript") -> List[Finding]:
         cache_pat = r'new\s+elasticache\.(CfnCacheCluster|CfnReplicationGroup)\(' if language == "typescript" else r'elasticache\.(CfnCacheCluster|CfnReplicationGroup)\('
@@ -402,7 +457,7 @@ class ElastiCacheMultiAz(Rule):
                 file=f,
                 line=ln,
                 evidence=txt,
-                recommendation="Enable multi-AZ for ElastiCache for high availability. Set automaticFailoverEnabled to true",
+                recommendation=self.recommendation,
             ))
         return out
 
@@ -413,6 +468,9 @@ class EfsBackupPolicy(Rule):
     category = "Reliability"
     severity = "Medium"
     themes = ("resilience", "data-protection",)
+    recommendation = (
+        "Enable automatic backups for EFS file systems. In CDK: enableAutomaticBackups: true"
+    )
 
     def run(self, repo_path: Path, language: str = "typescript") -> List[Finding]:
         efs_pat = r'new\s+efs\.FileSystem\(' if language == "typescript" else r'efs\.FileSystem\('
@@ -429,7 +487,7 @@ class EfsBackupPolicy(Rule):
                 file=f,
                 line=ln,
                 evidence=txt,
-                recommendation="Enable automatic backups for EFS file systems. In CDK: enableAutomaticBackups: true",
+                recommendation=self.recommendation,
             ))
         return out
 
@@ -440,6 +498,10 @@ class EfsLifecyclePolicy(Rule):
     category = "Reliability"
     severity = "Low"
     themes = ("finops",)
+    recommendation = (
+        "Configure lifecycle policy for EFS to transition infrequently accessed files to IA "
+        "storage class for cost savings"
+    )
 
     def run(self, repo_path: Path, language: str = "typescript") -> List[Finding]:
         efs_pat = r'new\s+efs\.FileSystem\(' if language == "typescript" else r'efs\.FileSystem\('
@@ -456,7 +518,7 @@ class EfsLifecyclePolicy(Rule):
                 file=f,
                 line=ln,
                 evidence=txt,
-                recommendation="Configure lifecycle policy for EFS to transition infrequently accessed files to IA storage class for cost savings",
+                recommendation=self.recommendation,
             ))
         return out
 
@@ -467,6 +529,10 @@ class KinesisRetention(Rule):
     category = "Reliability"
     severity = "Low"
     themes = ("resilience", "data-protection",)
+    recommendation = (
+        "Set appropriate retention period for Kinesis streams (default 24h may be too short). In "
+        "CDK: retentionPeriod: Duration.days(7)"
+    )
 
     def run(self, repo_path: Path, language: str = "typescript") -> List[Finding]:
         kinesis_pat = r'new\s+kinesis\.(Stream|CfnStream)\(' if language == "typescript" else r'kinesis\.(Stream|CfnStream)\('
@@ -483,7 +549,7 @@ class KinesisRetention(Rule):
                 file=f,
                 line=ln,
                 evidence=txt,
-                recommendation="Set appropriate retention period for Kinesis streams (default 24h may be too short). In CDK: retentionPeriod: Duration.days(7)",
+                recommendation=self.recommendation,
             ))
         return out
 
@@ -494,6 +560,9 @@ class GlobalAcceleratorHealthChecks(Rule):
     category = "Reliability"
     severity = "Medium"
     themes = ("resilience",)
+    recommendation = (
+        "Configure health checks for Global Accelerator endpoints for automatic failover"
+    )
 
     def run(self, repo_path: Path, language: str = "typescript") -> List[Finding]:
         ga_pat = r'new\s+globalaccelerator\.(Accelerator|CfnAccelerator)\(' if language == "typescript" else r'globalaccelerator\.(Accelerator|CfnAccelerator)\('
@@ -510,7 +579,7 @@ class GlobalAcceleratorHealthChecks(Rule):
                 file=f,
                 line=ln,
                 evidence=txt,
-                recommendation="Configure health checks for Global Accelerator endpoints for automatic failover",
+                recommendation=self.recommendation,
             ))
         return out
 
@@ -521,6 +590,10 @@ class CodePipelineApproval(Rule):
     category = "Reliability"
     severity = "Low"
     themes = ("resilience",)
+    recommendation = (
+        "Add manual approval stage before production deployments in CodePipeline. In CDK: new "
+        "ManualApprovalAction()"
+    )
 
     def run(self, repo_path: Path, language: str = "typescript") -> List[Finding]:
         pipeline_pat = r'new\s+codepipeline\.(Pipeline|CfnPipeline)\(' if language == "typescript" else r'codepipeline\.(Pipeline|CfnPipeline)\('
@@ -538,7 +611,7 @@ class CodePipelineApproval(Rule):
                 file=f,
                 line=ln,
                 evidence=txt,
-                recommendation="Add manual approval stage before production deployments in CodePipeline. In CDK: new ManualApprovalAction()",
+                recommendation=self.recommendation,
             ))
         return out
 
@@ -549,6 +622,10 @@ class AcmCertificateValidation(Rule):
     category = "Reliability"
     severity = "Low"
     themes = ("resilience",)
+    recommendation = (
+        "Specify DNS validation for ACM certificates for automatic renewal. In CDK: validation: "
+        "acm.CertificateValidation.fromDns()"
+    )
 
     def run(self, repo_path: Path, language: str = "typescript") -> List[Finding]:
         acm_pat = r'new\s+acm\.(Certificate|DnsValidatedCertificate)\(' if language == "typescript" else r'acm\.(Certificate|DnsValidatedCertificate)\('
@@ -565,7 +642,7 @@ class AcmCertificateValidation(Rule):
                 file=f,
                 line=ln,
                 evidence=txt,
-                recommendation="Specify DNS validation for ACM certificates for automatic renewal. In CDK: validation: acm.CertificateValidation.fromDns()",
+                recommendation=self.recommendation,
             ))
         return out
 
@@ -576,6 +653,10 @@ class BlueGreenDeploymentMissing(Rule):
     category = "Reliability"
     severity = "Low"
     themes = ("resilience",)
+    recommendation = (
+        "Consider blue-green deployment for zero-downtime releases. Use CodeDeploy deployment "
+        "controller for ECS."
+    )
 
     def run(self, repo_path: Path, language: str = "typescript") -> List[Finding]:
         ecs_pat = r'new\s+ecs\.(FargateService|Ec2Service)\(' if language == "typescript" else r'ecs\.(FargateService|Ec2Service)\('
@@ -592,7 +673,7 @@ class BlueGreenDeploymentMissing(Rule):
                 file=f,
                 line=ln,
                 evidence=txt,
-                recommendation="Consider blue-green deployment for zero-downtime releases. Use CodeDeploy deployment controller for ECS.",
+                recommendation=self.recommendation,
             ))
         return out
 
@@ -603,6 +684,10 @@ class SqsVisibilityTimeout(Rule):
     category = "Reliability"
     severity = "Low"
     themes = ("resilience",)
+    recommendation = (
+        "Set visibility timeout to at least 6x your Lambda timeout (if using Lambda). Prevents "
+        "duplicate processing."
+    )
 
     def run(self, repo_path: Path, language: str = "typescript") -> List[Finding]:
         sqs_pat = r'new\s+sqs\.Queue\(' if language == "typescript" else r'sqs\.Queue\('
@@ -619,7 +704,7 @@ class SqsVisibilityTimeout(Rule):
                 file=f,
                 line=ln,
                 evidence=txt,
-                recommendation="Set visibility timeout to at least 6x your Lambda timeout (if using Lambda). Prevents duplicate processing.",
+                recommendation=self.recommendation,
             ))
         return out
 
@@ -630,6 +715,10 @@ class DynamoDbGlobalTables(Rule):
     category = "Reliability"
     severity = "Low"
     themes = ("resilience",)
+    recommendation = (
+        "For multi-region workloads, consider DynamoDB global tables for active-active "
+        "replication."
+    )
 
     def run(self, repo_path: Path, language: str = "typescript") -> List[Finding]:
         ddb_pat = r'new\s+(dynamodb\.Table|Table)\(' if language == "typescript" else r'(dynamodb.Table|aws_dynamodb.Table)\('
@@ -645,7 +734,7 @@ class DynamoDbGlobalTables(Rule):
                 file=None,
                 line=None,
                 evidence=None,
-                recommendation="For multi-region workloads, consider DynamoDB global tables for active-active replication.",
+                recommendation=self.recommendation,
             )]
         return out
 
@@ -656,6 +745,9 @@ class S3ReplicationMissing(Rule):
     category = "Reliability"
     severity = "Low"
     themes = ("resilience", "data-protection",)
+    recommendation = (
+        "For critical data, configure S3 Cross-Region Replication (CRR) for disaster recovery."
+    )
 
     def run(self, repo_path: Path, language: str = "typescript") -> List[Finding]:
         bucket_pat = r'new\s+s3\.Bucket\(' if language == "typescript" else r's3\.Bucket\('
@@ -671,7 +763,7 @@ class S3ReplicationMissing(Rule):
                 file=None,
                 line=None,
                 evidence=None,
-                recommendation="For critical data, configure S3 Cross-Region Replication (CRR) for disaster recovery.",
+                recommendation=self.recommendation,
             )]
         return out
 
@@ -682,6 +774,10 @@ class LambdaReservedConcurrency(Rule):
     category = "Reliability"
     severity = "Low"
     themes = ("resilience",)
+    recommendation = (
+        "Consider reserved concurrency to prevent one function from consuming all account "
+        "concurrency."
+    )
 
     def run(self, repo_path: Path, language: str = "typescript") -> List[Finding]:
         lambda_pat = r'new\s+(lambda\.Function|NodejsFunction|PythonFunction)\(' if language == "typescript" else r'(lambda_.Function|aws_lambda.Function)\('
@@ -697,7 +793,7 @@ class LambdaReservedConcurrency(Rule):
                 file=None,
                 line=None,
                 evidence=None,
-                recommendation="Consider reserved concurrency to prevent one function from consuming all account concurrency.",
+                recommendation=self.recommendation,
             )]
         return out
 
@@ -708,6 +804,7 @@ class ApiGatewayRequestValidator(Rule):
     category = "Reliability"
     severity = "Low"
     themes = ("resilience", "security-baseline",)
+    recommendation = "Add request validators to API Gateway to reject malformed requests early."
 
     def run(self, repo_path: Path, language: str = "typescript") -> List[Finding]:
         api_pat = r'new\s+(apigateway\.RestApi|RestApi)\(' if language == "typescript" else r'(apigateway.RestApi|RestApi)\('
@@ -724,7 +821,7 @@ class ApiGatewayRequestValidator(Rule):
                 file=f,
                 line=ln,
                 evidence=txt,
-                recommendation="Add request validators to API Gateway to reject malformed requests early.",
+                recommendation=self.recommendation,
             ))
         return out
 
@@ -735,6 +832,10 @@ class EventBridgeRetryPolicy(Rule):
     category = "Reliability"
     severity = "Low"
     themes = ("resilience",)
+    recommendation = (
+        "Configure retry policy for EventBridge rules. Use maximumEventAge and "
+        "maximumRetryAttempts."
+    )
 
     def run(self, repo_path: Path, language: str = "typescript") -> List[Finding]:
         rule_pat = r'new\s+events\.Rule\(' if language == "typescript" else r'events\.Rule\('
@@ -751,7 +852,7 @@ class EventBridgeRetryPolicy(Rule):
                 file=f,
                 line=ln,
                 evidence=txt,
-                recommendation="Configure retry policy for EventBridge rules. Use maximumEventAge and maximumRetryAttempts.",
+                recommendation=self.recommendation,
             ))
         return out
 
@@ -762,6 +863,10 @@ class RdsDeletionProtection(Rule):
     category = "Reliability"
     severity = "Medium"
     themes = ("resilience", "data-protection",)
+    recommendation = (
+        "Enable deletion protection for production RDS instances. In CDK: deletionProtection: "
+        "true"
+    )
 
     def run(self, repo_path: Path, language: str = "typescript") -> List[Finding]:
         rds_pat = r'new\s+rds\.(DatabaseInstance|DatabaseCluster)\(' if language == "typescript" else r'rds\.(DatabaseInstance|DatabaseCluster)\('
@@ -778,7 +883,7 @@ class RdsDeletionProtection(Rule):
                 file=f,
                 line=ln,
                 evidence=txt,
-                recommendation="Enable deletion protection for production RDS instances. In CDK: deletionProtection: true",
+                recommendation=self.recommendation,
             ))
         return out
 
@@ -789,6 +894,9 @@ class S3VersioningMissing(Rule):
     category = "Reliability"
     severity = "Medium"
     themes = ("resilience", "data-protection",)
+    recommendation = (
+        "Enable S3 versioning for data protection and recovery. In CDK: versioned: true"
+    )
 
     def run(self, repo_path: Path, language: str = "typescript") -> List[Finding]:
         bucket_pat = r'new\s+s3\.Bucket\(' if language == "typescript" else r's3\.Bucket\('
@@ -809,6 +917,6 @@ class S3VersioningMissing(Rule):
                 file=f,
                 line=ln,
                 evidence=txt,
-                recommendation="Enable S3 versioning for data protection and recovery. In CDK: versioned: true",
+                recommendation=self.recommendation,
             ))
         return out

@@ -4,6 +4,7 @@ import os
 import subprocess
 import sys
 from pathlib import Path
+from unittest.mock import MagicMock
 
 from typer.testing import CliRunner
 
@@ -226,7 +227,9 @@ def test_explicit_flag_overrides_config_file(tmp_path: Path) -> None:
     )
     assert result.exit_code == 0, result.output or result.stderr
     text = out_file.read_text(encoding="utf-8")
-    assert text.lstrip().startswith("#")
+    first, _, rest = text.partition("\n")
+    assert first == "LLM: skipped (--no-llm)"  # no_llm still comes from the config file
+    assert rest.lstrip().startswith("#")
     assert not (tmp_path / "ignored.json").exists()
 
 
@@ -700,3 +703,112 @@ def test_cli_html_with_no_findings_writes_a_page(tmp_path: Path) -> None:
     assert page.startswith("<!DOCTYPE html>")
     assert "All (0)" in page
     assert '<p class="empty">No findings.</p>' in page
+
+
+def _fail_connection(monkeypatch) -> None:
+    monkeypatch.setenv("LLM_PROVIDER", "ollama")
+    monkeypatch.setattr(
+        "aws_arch_agent.tools.llm.requests.post",
+        lambda *_a, **_k: (_ for _ in ()).throw(ConnectionError("http://secret:1 refused")),
+    )
+
+
+def _forbid_calls(monkeypatch) -> None:
+    def boom(*_args, **_kwargs):
+        raise AssertionError("--no-llm must make no LLM call")
+
+    monkeypatch.setattr("aws_arch_agent.tools.llm.requests.post", boom)
+    monkeypatch.setattr("aws_arch_agent.tools.llm.LLMClient.polish", boom)
+
+
+def test_connection_failure_in_console_and_markdown(tmp_path: Path, monkeypatch) -> None:
+    _make_repo(tmp_path)
+    _fail_connection(monkeypatch)
+    out_file = tmp_path / "report.md"
+    result = runner.invoke(app, ["--repo", str(tmp_path), "--out", str(out_file)])
+    assert result.exit_code == 0, result.output
+    line = "LLM: fallback (Ollama request failed)"
+    assert line in result.output.splitlines()
+    assert "LLM: on" not in result.output
+    assert "responded" not in result.output
+    assert "secret" not in result.output
+    assert out_file.read_text(encoding="utf-8").splitlines()[0] == line
+
+
+def test_connection_failure_is_a_top_level_json_object(tmp_path: Path, monkeypatch) -> None:
+    _make_repo(tmp_path)
+    _fail_connection(monkeypatch)
+    out_file = tmp_path / "report.json"
+    result = runner.invoke(
+        app, ["--repo", str(tmp_path), "--format", "json", "--out", str(out_file)]
+    )
+    assert result.exit_code == 0, result.output
+    assert "LLM: fallback (Ollama request failed)" in result.output.splitlines()
+    data = json.loads(out_file.read_text(encoding="utf-8"))
+    assert data["llm"]["status"] == "fallback"
+    assert data["llm"]["reason"] == "Ollama request failed"
+    assert data["llm"]["provider"] == "ollama"
+    assert "text" not in data["llm"]
+    assert "llm" not in data["context"]
+    assert data["findings"]
+    assert all("llm" not in finding for finding in data["findings"])
+
+
+def test_answering_model_is_reported(tmp_path: Path, monkeypatch) -> None:
+    _make_repo(tmp_path)
+    monkeypatch.setenv("LLM_PROVIDER", "ollama")
+    monkeypatch.setenv("OLLAMA_MODEL", "llama3:8b")
+    reply = MagicMock()
+    reply.json.return_value = {"message": {"content": "[]"}}
+    monkeypatch.setattr("aws_arch_agent.tools.llm.requests.post", lambda *_a, **_k: reply)
+    out_file = tmp_path / "report.md"
+    result = runner.invoke(app, ["--repo", str(tmp_path), "--out", str(out_file)])
+    assert result.exit_code == 0, result.output
+    line = "LLM: ollama/llama3:8b responded"
+    assert line in result.output.splitlines()
+    assert out_file.read_text(encoding="utf-8").splitlines()[0] == line
+
+
+def test_no_llm_is_skipped_with_no_call(tmp_path: Path, monkeypatch) -> None:
+    _make_repo(tmp_path)
+    _forbid_calls(monkeypatch)
+    md_file, json_file = tmp_path / "report.md", tmp_path / "report.json"
+    line = "LLM: skipped (--no-llm)"
+    result = runner.invoke(app, ["--repo", str(tmp_path), "--no-llm", "--out", str(md_file)])
+    assert result.exit_code == 0, result.output
+    assert line in result.output.splitlines()
+    assert md_file.read_text(encoding="utf-8").splitlines()[0] == line
+    result = runner.invoke(
+        app, ["--repo", str(tmp_path), "--no-llm", "--format", "json", "--out", str(json_file)]
+    )
+    assert result.exit_code == 0, result.output
+    assert json.loads(json_file.read_text(encoding="utf-8"))["llm"] == {
+        "status": "skipped", "provider": None, "model": None, "reason": "--no-llm",
+    }
+
+
+def test_v2_connection_failure_reaches_console_and_markdown(tmp_path: Path, monkeypatch) -> None:
+    _make_repo(tmp_path)
+    _fail_connection(monkeypatch)
+    out_file = tmp_path / "report.md"
+    result = runner.invoke(
+        app, ["--repo", str(tmp_path), "--mode", "v2", "--no-synth", "--out", str(out_file)]
+    )
+    assert result.exit_code == 0, result.output
+    line = "LLM: fallback (Ollama request failed)"
+    assert line in result.output.splitlines()
+    assert out_file.read_text(encoding="utf-8").splitlines()[0] == line
+
+
+def test_v2_no_llm_is_skipped_with_no_call(tmp_path: Path, monkeypatch) -> None:
+    _make_repo(tmp_path)
+    _forbid_calls(monkeypatch)
+    out_file = tmp_path / "report.md"
+    result = runner.invoke(
+        app,
+        ["--repo", str(tmp_path), "--mode", "v2", "--no-llm", "--no-synth", "--out", str(out_file)],
+    )
+    assert result.exit_code == 0, result.output
+    line = "LLM: skipped (--no-llm)"
+    assert line in result.output.splitlines()
+    assert out_file.read_text(encoding="utf-8").splitlines()[0] == line

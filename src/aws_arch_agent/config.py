@@ -290,6 +290,11 @@ def load_config(
                     f"rag.embedding_provider must be a string, got {rag_embedding_provider!r}"
                 )
             rag_embedding_provider = rag_embedding_provider.strip().lower() or None
+            if rag_embedding_provider not in (None, "sentence-transformers"):
+                raise ConfigError(
+                    "rag.embedding_provider must be sentence-transformers, "
+                    f"got {rag_embedding_provider!r}"
+                )
         rag_embedding_model = file_rag.get("embedding_model") or None
         if rag_embedding_model is not None and not isinstance(rag_embedding_model, str):
             raise ConfigError(f"rag.embedding_model must be a string, got {rag_embedding_model!r}")

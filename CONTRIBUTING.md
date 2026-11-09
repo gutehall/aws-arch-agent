@@ -13,13 +13,9 @@ Thanks for your interest in contributing. This document covers local setup, runn
    pip install -e ".[dev]"
    ```
 
-2. **Optional: cloud LLM providers**
+2. **Optional: a self-hosted LLM**
 
-   ```bash
-   pip install -e ".[dev,cloud]"
-   ```
-
-   Then set `LLM_PROVIDER`, `OPENAI_API_KEY`, or `ANTHROPIC_API_KEY` as needed.
+   Run Ollama, or set `LLM_PROVIDER`, `LLM_BASE_URL`, and `LLM_MODEL` for an OpenAI-compatible server. Cloud LLM providers are not supported.
 
 3. **External tools**
 

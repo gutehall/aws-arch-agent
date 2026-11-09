@@ -3,10 +3,31 @@ from __future__ import annotations
 from pydantic import BaseModel, Field
 from typing import Literal, List, Dict, Any
 
+from aws_arch_agent.tools.llm import NO_CALL, LLMResult
+
 
 Severity = Literal["High", "Medium", "Low"]
 Effort = Literal["low", "medium", "high"]
 IacSource = Literal["cdk", "cloudformation", "terraform", "mixed"]
+VerdictValue = Literal["confirm", "false_positive", "unsure"]
+
+_VERDICT_LABELS: Dict[str, str] = {
+    "confirm": "confirmed",
+    "false_positive": "likely false positive",
+    "unsure": "unsure",
+}
+
+
+class Verdict(BaseModel):
+    """What the model said about one finding. It labels the finding and changes nothing else."""
+
+    verdict: VerdictValue
+    why: str
+
+    @property
+    def label(self) -> str:
+        """The words the Markdown and HTML reports show."""
+        return _VERDICT_LABELS[self.verdict]
 
 
 class Finding(BaseModel):
@@ -35,6 +56,20 @@ class Finding(BaseModel):
     # The rule's themes: finops, security-baseline, identity, data-protection,
     # network-exposure, resilience, observability, sustainability.
     themes: List[str] = Field(default_factory=list)
+    # The model's opinion. Excluded so JSON findings, SARIF, the baseline and fail-on cannot
+    # depend on it; the renderers that show it read it explicitly.
+    verdict: Verdict | None = Field(default=None, exclude=True)
+
+
+class Hypothesis(BaseModel):
+    """A catalog rule the model thinks the scanner missed. No check confirmed it; never a Finding."""
+
+    rule_id: str
+    title: str
+    file: str
+    line: int
+    why: str
+    unverified: Literal[True] = True
 
 
 class RepoContext(BaseModel):
@@ -46,3 +81,10 @@ class RepoContext(BaseModel):
     files_scanned: int = 0
     key_files: List[str] = Field(default_factory=list)
     notes: Dict[str, Any] = Field(default_factory=dict)
+    # Run-level LLM outcome. Excluded from `context`: the JSON report has its own `llm`.
+    llm: LLMResult = Field(default=NO_CALL, exclude=True)
+    # Excluded from `context` too: the JSON report has its own `hypotheses`.
+    hypotheses: List[Hypothesis] = Field(default_factory=list, exclude=True)
+    # Apart from `llm`, which is the verdict calls: a label shows only when `llm` is ok, and
+    # the larger hypothesis prompt failing must not take good verdicts with it.
+    hypothesis_llm: LLMResult = Field(default=NO_CALL, exclude=True)

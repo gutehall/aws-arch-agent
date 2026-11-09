@@ -75,6 +75,7 @@ def render_html(
             "themes": list(f.themes),
             "docs": doc_links(f),
             "baseline": None if flag is None else ("accepted" if flag else "new"),
+            "verdict": f.verdict,
         }
         for f, flag in ordered
     ]
@@ -92,6 +93,7 @@ def render_html(
         total=len(findings),
         warnings=list(warnings or []),
         findings=rows,
+        hypotheses=ctx.hypotheses,
         baseline=None if baselined is None else {
             "accepted": sum(1 for b in baselined if b),
             "new": sum(1 for b in baselined if not b),

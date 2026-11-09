@@ -1,22 +1,24 @@
 """V2 LangGraph multi-agent pipeline: collect, synth, six pillars, merge, report."""
 from __future__ import annotations
 
-import hashlib
-import json
 import logging
+import operator
 import subprocess
 from pathlib import Path
-from typing import Literal, TypedDict, List
+from typing import Annotated, Literal, TypedDict, List
 
-from aws_arch_agent.models import Finding, IacSource, RepoContext
+from aws_arch_agent.models import Finding, Hypothesis, IacSource, RepoContext, Verdict
+from aws_arch_agent.agent.hypotheses import find_hypotheses
+from aws_arch_agent.agent.verdicts import VerdictCache, apply_verdicts, judge_batch, make_batches
 from aws_arch_agent.agent.v1 import (
     _filter_rules,
     _languages_to_scan,
     detect_language,
+    iac_files,
     resolve_source,
 )
 from aws_arch_agent.tools.files import iter_files
-from aws_arch_agent.tools.llm import LLMClient
+from aws_arch_agent.tools.llm import NO_LLM, LLMClient, LLMResult, aggregate_results
 from aws_arch_agent.rules.fix_snippets import attach_fixes
 from aws_arch_agent.rules.registry import ALL_RULES
 from aws_arch_agent.rules.runner import filter_by_severity, run_all_rules
@@ -42,7 +44,15 @@ from langgraph.graph import StateGraph, END
 logger = logging.getLogger(__name__)
 
 LLMMode = Literal["full", "compact"]
-_pillar_cache: dict[str, str] = {}
+# Keyed on the verdict prompt. Holds only ok outcomes, so a failure is asked again next run.
+_pillar_cache: VerdictCache = {}
+
+
+def _first_verdict_wins(
+    left: dict[str, Verdict], right: dict[str, Verdict]
+) -> dict[str, Verdict]:
+    """Merge the pillars' verdicts; a finding judged twice keeps its first verdict."""
+    return {**right, **left}
 
 
 class State(TypedDict, total=False):
@@ -80,6 +90,14 @@ class State(TypedDict, total=False):
     sustainability_notes: str
     merged_notes: str
     final_report: str
+    # Pillars run in parallel, so every call's result is appended rather than overwritten.
+    llm_results: Annotated[List[LLMResult], operator.add]
+    verdicts: Annotated[dict[str, Verdict], _first_verdict_wins]
+    # Findings before the theme filter, which must not make a file with findings look quiet.
+    unfiltered_findings: Annotated[List[Finding], operator.add]
+    hypotheses: List[Hypothesis]
+    # Apart from llm_results: a label needs every verdict batch ok, and this call is not one.
+    hypothesis_result: LLMResult
 
 
 # Map pillar node names to finding categories (static rules use "Operational Excellence", not "Observability")
@@ -87,15 +105,6 @@ PILLAR_CATEGORIES: dict[str, list[str]] = {
     "Observability": ["Observability", "Operational Excellence"],
     "Cost": ["Cost", "Cost Optimization"],
 }
-
-
-def _findings_hash(findings: List[Finding], synth_summary: str, role: str) -> str:
-    payload = {
-        "role": role,
-        "synth": synth_summary[:2000],
-        "findings": [(f.id, f.file, f.line, f.evidence) for f in findings[:50]],
-    }
-    return hashlib.sha256(json.dumps(payload, sort_keys=True).encode()).hexdigest()
 
 
 def _build_rag(state: State) -> object | None:
@@ -143,40 +152,23 @@ def _summarize_role(
     findings: List[Finding],
     synth_summary: str,
     llm: LLMClient,
+    repo_path: Path,
     use_llm: bool = True,
     rag_block: str = "",
-) -> str:
+) -> tuple[str, LLMResult | None, dict[str, Verdict]]:
+    """Return the pillar notes, the LLM result (None when none was asked) and its verdicts."""
     categories = PILLAR_CATEGORIES.get(role, [role])
     rel = [f for f in findings if f.category.lower() in [c.lower() for c in categories]]
     if not rel:
-        return f"## {role}\n\nNo findings in this pillar.\n"
+        return f"## {role}\n\nNo findings in this pillar.\n", None, {}
     snippet = "\n".join([f"- [{x.id}] {x.title}: {x.recommendation}" for x in rel[:12]])
     if not use_llm:
-        return f"## {role}\n(skipped LLM)\n\n{snippet}\n\nSynth summary: {synth_summary[:500]}"
-    cache_key = _findings_hash(rel, synth_summary, role)
-    if cache_key in _pillar_cache:
-        return _pillar_cache[cache_key]
-    prompt = f"""Role: {role} reviewer
-
-You have:
-A) Static analysis findings (CDK code heuristics)
-B) A brief CloudFormation synth summary (may be missing if synth failed)
-
-Tasks:
-1) Top 3 risks
-2) 3 concrete remediation steps (CDK-oriented)
-3) 1-2 questions to validate assumptions
-
-Static findings:
-{snippet}
-
-CloudFormation synth summary:
-{synth_summary}
-{rag_block}
-"""
-    result = llm.polish(prompt, system=f"You are a senior AWS {role} reviewer. Return concise Markdown only.")
-    _pillar_cache[cache_key] = result
-    return result
+        notes = f"## {role}\n(skipped LLM)\n\n{snippet}\n\nSynth summary: {synth_summary[:500]}"
+        return notes, None, {}
+    verdicts, result = judge_batch(
+        llm, make_batches(rel)[0], repo_path, reference=rag_block, cache=_pillar_cache
+    )
+    return f"## {role}\n\n{snippet}\n", result, verdicts
 
 
 def _parts_under(path: Path, root: Path) -> tuple[str, ...]:
@@ -227,12 +219,13 @@ def node_collect(state: State) -> State:
     language = ctx.language
     with limit_to_files(repo_path, files):
         findings, warnings = run_all_rules(repo_path, rules, _languages_to_scan(language))
-    findings = filter_by_severity(findings, state.get("severity_threshold"))
-    findings = _in_themes(findings, state)
+    unfiltered = filter_by_severity(findings, state.get("severity_threshold"))
+    findings = _in_themes(unfiltered, state)
 
     return {
         "ctx": ctx,
         "raw_findings": findings,
+        "unfiltered_findings": unfiltered,
         "rule_warnings": warnings,
         "rag": _build_rag(state),
     }
@@ -287,9 +280,11 @@ def node_synth(state: State) -> State:
             if not any("cdk.out" in _parts_under(p, repo_path) for p in template_paths):
                 attach_fixes(cf_findings, "cloudformation")
             out_findings.extend(cf_findings)
-            out_findings = _in_themes(drop_static_covered_by_cf(out_findings), state)
+            unfiltered = drop_static_covered_by_cf(out_findings)
+            out_findings = _in_themes(unfiltered, state)
         except Exception as exc:
             cf_failed = True
+            unfiltered = []
             _note(warnings, f"CF template rules failed: {exc}")
         warnings.extend(cf_warnings)
         return {
@@ -298,6 +293,7 @@ def node_synth(state: State) -> State:
             "synth_stderr": "",
             "synth_summary": synth_summary,
             "raw_findings": out_findings,
+            "unfiltered_findings": unfiltered,
             "rule_warnings": warnings,
         }
 
@@ -369,9 +365,11 @@ def node_synth(state: State) -> State:
     try:
         cf_findings = run_cf_rules(cdk_out, repo_path=repo_path, warnings=cf_warnings)
         out_findings.extend(cf_findings)
-        out_findings = _in_themes(drop_static_covered_by_cf(out_findings), state)
+        unfiltered = drop_static_covered_by_cf(out_findings)
+        out_findings = _in_themes(unfiltered, state)
     except Exception as exc:
         cf_failed = True
+        unfiltered = []
         _note(warnings, f"CF template rules failed: {exc}")
     warnings.extend(cf_warnings)
     return {
@@ -380,6 +378,7 @@ def node_synth(state: State) -> State:
         "synth_stderr": err[-4000:],
         "synth_summary": synth_summary,
         "raw_findings": out_findings,
+        "unfiltered_findings": unfiltered,
         "rule_warnings": warnings,
     }
 
@@ -391,18 +390,31 @@ def _pillar_node(role: str, state_key: str):
         findings = state.get("raw_findings", [])
         synth_summary = state.get("synth_summary", "")
         rag_block = _rag_block(state, query=f"{role} AWS Well-Architected best practices")
+        result: LLMResult | None = None
+        verdicts: dict[str, Verdict] = {}
         if llm_mode == "compact":
             categories = PILLAR_CATEGORIES.get(role, [role])
             rel = [f for f in findings if f.category.lower() in [c.lower() for c in categories]]
             snippet = "\n".join([f"- [{x.id}] {x.title}" for x in rel[:8]]) or "No findings."
-            notes = f"## {role}\n\n{snippet}\n{rag_block}\n"
+            # With an LLM the block goes in the verdict prompt, and these notes reach the report.
+            notes = f"## {role}\n\n{snippet}\n{'' if use_llm else rag_block}\n"
         else:
             llm = LLMClient()
-            notes = _summarize_role(
-                role, findings, synth_summary, llm, use_llm=use_llm, rag_block=rag_block
+            notes, result, verdicts = _summarize_role(
+                role,
+                findings,
+                synth_summary,
+                llm,
+                Path(state["repo_path"]),
+                use_llm=use_llm,
+                rag_block=rag_block,
             )
         out: State = {}
         out[state_key] = notes  # type: ignore[literal-required]
+        if result is not None:
+            out["llm_results"] = [result]
+        if verdicts:
+            out["verdicts"] = verdicts
         return out
 
     return _node
@@ -416,29 +428,39 @@ node_performance_efficiency = _pillar_node("Performance Efficiency", "performanc
 node_sustainability = _pillar_node("Sustainability", "sustainability_notes")
 
 
+def _joined_notes(state: State) -> str:
+    return "\n".join(
+        [
+            state.get("observability_notes", ""),
+            state.get("security_notes", ""),
+            state.get("reliability_notes", ""),
+            state.get("performance_efficiency_notes", ""),
+            state.get("cost_notes", ""),
+            state.get("sustainability_notes", ""),
+        ]
+    )
+
+
 def node_merge(state: State) -> State:
     use_llm = state.get("use_llm", True)
     llm_mode = state.get("llm_mode", "full")
-    rag_block = _rag_block(state)
     findings = state.get("raw_findings", [])
     synth_summary = state.get("synth_summary", "")
 
-    if llm_mode == "compact" and use_llm:
-        snippet = "\n".join([f"- [{f.id}] {f.title} ({f.severity})" for f in findings[:30]])
-        prompt = f"""Produce a single architecture review with headings for all 6 AWS Well-Architected pillars.
-Be specific, avoid repetition, and keep it to ~350-550 words.
+    if use_llm:
+        out: State = {"merged_notes": _joined_notes(state)}
+        if llm_mode == "compact" and findings:
+            verdicts, result = judge_batch(
+                LLMClient(),
+                make_batches(findings)[0],
+                Path(state["repo_path"]),
+                reference=_rag_block(state),
+            )
+            out["llm_results"] = [result]
+            out["verdicts"] = verdicts
+        return out
 
-CloudFormation synthesis:
-{synth_summary}
-
-Findings:
-{snippet}
-{rag_block}
-"""
-        llm = LLMClient()
-        merged = llm.polish(prompt, system="You are the lead reviewer. Return Markdown only.")
-        return {"merged_notes": merged}
-
+    rag_block = _rag_block(state)
     prompt = f"""Merge these into a single coherent review section with headings (AWS Well-Architected 6 pillars).
 Be specific, avoid repetition, and keep it to ~350-550 words.
 
@@ -464,16 +486,33 @@ Be specific, avoid repetition, and keep it to ~350-550 words.
 {state.get("sustainability_notes","")}
 {rag_block}
 """
-    if not use_llm:
-        merged = prompt
-    else:
-        llm = LLMClient()
-        merged = llm.polish(prompt, system="You are the lead reviewer. Return Markdown only.")
-    return {"merged_notes": merged}
+    return {"merged_notes": prompt}
+
+
+def node_hypotheses(state: State) -> State:
+    """Ask about the files with no finding, counting the findings a theme filter removed."""
+    if not state.get("use_llm", True):
+        return {}
+    # A model that did not answer gets no second wait.
+    if aggregate_results(state.get("llm_results") or []).status not in ("ok", "skipped"):
+        return {}
+    repo_path = Path(state["repo_path"])
+    hypotheses, result = find_hypotheses(
+        LLMClient(),
+        [*state.get("raw_findings", []), *(state.get("unfiltered_findings") or [])],
+        repo_path,
+        iac_files(repo_path, state["ctx"].source, state.get("max_files", 400)),
+        synth_summary=state.get("synth_summary", ""),
+    )
+    out: State = {"hypotheses": hypotheses}
+    if result is not None:
+        out["hypothesis_result"] = result
+    return out
 
 
 def node_report(state: State) -> State:
     ctx = state["ctx"]
+    ctx.hypotheses = state.get("hypotheses") or []
     findings = state.get("raw_findings", [])
     warnings = state.get("rule_warnings") or []
     effort.annotate(findings)  # the summary's quick wins need it
@@ -486,6 +525,9 @@ def node_report(state: State) -> State:
     if cost is not None:
         ctx.notes["cost"] = cost
     ctx.notes["prices"] = regions.note()
+    # Any batch that did not answer means no labels at all, as in V1.
+    if aggregate_results(state.get("llm_results") or []).status == "ok":
+        apply_verdicts(findings, state.get("verdicts") or {})
     base_report = render_markdown(ctx, findings, warnings=warnings, group_by=state.get("group_by") or "severity")
     synth_block = state.get("synth_summary", "")
     if state.get("templates_path"):
@@ -513,7 +555,7 @@ def node_report(state: State) -> State:
 
 
 def build_graph():
-    """Build and compile the LangGraph StateGraph (collect -> synth -> 6 pillars -> merge -> report)."""
+    """Build and compile the LangGraph StateGraph (collect -> synth -> 6 pillars -> merge -> hypotheses -> report)."""
     g = StateGraph(State)
     g.add_node("collect", node_collect)
     g.add_node("synth", node_synth)
@@ -524,6 +566,7 @@ def build_graph():
     g.add_node("performance_efficiency", node_performance_efficiency)
     g.add_node("sustainability", node_sustainability)
     g.add_node("merge", node_merge)
+    g.add_node("hypotheses", node_hypotheses)
     g.add_node("report", node_report)
 
     g.set_entry_point("collect")
@@ -543,7 +586,8 @@ def build_graph():
     g.add_edge("performance_efficiency", "merge")
     g.add_edge("sustainability", "merge")
 
-    g.add_edge("merge", "report")
+    g.add_edge("merge", "hypotheses")
+    g.add_edge("hypotheses", "report")
     g.add_edge("report", END)
     return g.compile()
 
@@ -609,4 +653,6 @@ def analyze_v2(
     warnings = out.get("rule_warnings") or []
     if ctx is None:
         ctx = RepoContext(repo_path=str(repo_path), language="unknown")
+    ctx.llm = aggregate_results(out.get("llm_results") or []) if use_llm else NO_LLM
+    ctx.hypothesis_llm = aggregate_results([out["hypothesis_result"]] if "hypothesis_result" in out else [])
     return report, ctx, findings, warnings
