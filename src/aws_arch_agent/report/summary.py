@@ -7,6 +7,7 @@ reported. The pillar lines add up to the findings below them, counts and savings
 from __future__ import annotations
 
 from typing import Any, List
+import unicodedata
 
 from aws_arch_agent.models import Finding
 
@@ -22,6 +23,12 @@ def _cents(f: Finding) -> int:
 def _savings(findings: List[Finding]) -> float:
     """Summed in whole cents, so pillar and fix savings add up exactly to the total."""
     return sum(_cents(f) for f in findings) / 100
+
+
+def _span_text(text: str) -> str:
+    """Text that stays inside a one-backtick code span: one line, no backtick, no control character."""
+    kept = "".join(c for c in text if c.isspace() or unicodedata.category(c) != "Cc")
+    return " ".join(kept.replace("`", "'").split())
 
 
 def _location(f: Finding) -> str | None:
@@ -124,7 +131,8 @@ def fix_line(fix: dict[str, Any]) -> str:
         line += f", saves about {_usd(fix['monthly_savings_usd'])}/month (estimate)"
     line += f", {fix['effort']} effort)"
     if fix.get("first_location"):
-        line += f", e.g. {fix['first_location']}"
+        # A code span: the scanned repo names this file, and a viewer would render Markdown in it.
+        line += f", e.g. `{_span_text(fix['first_location'])}`"
     return line
 
 

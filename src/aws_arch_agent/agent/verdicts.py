@@ -23,6 +23,11 @@ MAX_VERDICT_BATCHES = 5
 SOURCE_RADIUS = 20  # lines either side of the finding, so about 40 in all
 MAX_SOURCE_LINE_CHARS = 400
 MAX_EVIDENCE_CHARS = 2000
+# The whole prompt. Ollama cuts a longer one silently, and the run would still report ok.
+# About 3 characters a token leaves room in DEFAULT_OLLAMA_NUM_CTX for the reply.
+MAX_PROMPT_CHARS = 48_000
+MAX_REFERENCE_CHARS = 6000
+MAX_LOCATION_CHARS = 300
 MAX_WHY_CHARS = 300
 NOT_JSON_REASON = "model reply was not JSON"
 
@@ -54,8 +59,11 @@ def make_batches(findings: List[Finding], size: int = BATCH_SIZE) -> list[list[F
     return [ordered[i:i + size] for i in range(0, len(ordered), size)]
 
 
-def source_window(finding: Finding, repo_path: Path) -> str | None:
-    """Numbered lines around the finding. None when it has no place in a file inside the repo."""
+def source_window(finding: Finding, repo_path: Path, max_chars: int | None = None) -> str | None:
+    """Numbered lines around the finding, narrower when max_chars is short.
+
+    None when it has no place in a file inside the repo, or its own line does not fit.
+    """
     if finding.file is None or finding.line is None:
         return None
     try:
@@ -68,42 +76,77 @@ def source_window(finding: Finding, repo_path: Path) -> str | None:
     lines = read_text_safe(path).split("\n")
     if not 1 <= finding.line <= len(lines):
         return None
-    first = max(finding.line - SOURCE_RADIUS, 1)
-    last = min(finding.line + SOURCE_RADIUS, len(lines))
-    window = []
-    for number in range(first, last + 1):
+
+    def row(number: int) -> str:
         text = lines[number - 1].rstrip("\r")[:MAX_SOURCE_LINE_CHARS]
-        window.append(f"{'>' if number == finding.line else ' '}{number:>6}| {text}")
-    return "\n".join(window)
+        return f"{'>' if number == finding.line else ' '}{number:>6}| {text}"
+
+    # Outward from the finding, stopping at the first line that does not fit, so no gaps.
+    limit = max_chars if max_chars is not None else float("inf")
+    kept = {finding.line: row(finding.line)}
+    used = len(kept[finding.line])
+    if used > limit:
+        return None
+    for offset in range(1, SOURCE_RADIUS + 1):
+        for number in (finding.line - offset, finding.line + offset):
+            if not 1 <= number <= len(lines):
+                continue
+            text = row(number)
+            if used + len(text) + 1 > limit:
+                return "\n".join(kept[n] for n in sorted(kept))
+            kept[number] = text
+            used += len(text) + 1
+    return "\n".join(kept[n] for n in sorted(kept))
 
 
-def _finding_block(finding: Finding, repo_path: Path) -> str:
+def _finding_head(finding: Finding) -> str:
     where = finding.file or "unknown"
     if finding.line is not None:
         where += f":{finding.line}"
-    evidence = (finding.evidence or "none")[:MAX_EVIDENCE_CHARS]
-    source = source_window(finding, repo_path)
+    where = where[:MAX_LOCATION_CHARS]
     return (
         f"finding_id: {finding_key(finding)}\n"
         f"Rule: {finding.id}\n"
         f"Severity: {finding.severity}\n"
         f"Location: {where}\n"
-        f"Evidence:\n{evidence}\n"
-        + (f"Source:\n{source}" if source else "Source: unavailable, judge on the evidence")
+        "Evidence:\n"
+    )
+
+
+_NO_SOURCE = "Source: unavailable, judge on the evidence"
+
+
+def _finding_block(finding: Finding, repo_path: Path, share: int) -> str:
+    """The finding, with at most `share` characters of evidence and source between them."""
+    evidence = (finding.evidence or "none")[:min(MAX_EVIDENCE_CHARS, max(share // 2, 0))]
+    source = source_window(finding, repo_path, max(share - len(evidence), 0))
+    return (
+        f"{_finding_head(finding)}{evidence}\n"
+        + (f"Source:\n{source}" if source else _NO_SOURCE)
     )
 
 
 def build_prompt(findings: List[Finding], repo_path: Path, reference: str = "") -> str:
-    """The prompt for one batch: its rule cards and findings, inside data markers."""
-    data = "\n\n".join(
-        [
-            "## Rule cards",
-            render_cards(cards_for_findings(findings)),
-            "## Findings",
-            *(_finding_block(f, repo_path) for f in findings),
-            *([reference.strip()] if reference.strip() else []),
-        ]
-    )
+    """The prompt for one batch, inside data markers, in at most MAX_PROMPT_CHARS.
+
+    Markers stay whole, and rule cards and locations have their own caps. Evidence and source
+    share what is left, so a long batch narrows its source windows around each finding and
+    every finding is still asked.
+    """
+    cards = render_cards(cards_for_findings(findings))
+    ref = reference.strip()[:MAX_REFERENCE_CHARS].strip()
+
+    def data_for(blocks: list[str]) -> str:
+        return "\n\n".join(["## Rule cards", cards, "## Findings", *blocks, *([ref] if ref else [])])
+
+    bare = [f"{_finding_head(f)}\n{_NO_SOURCE}" for f in findings]
+    spare = MAX_PROMPT_CHARS - len(_wrap(findings, data_for(bare)))
+    share = spare // max(len(findings), 1)
+    return _wrap(findings, data_for([_finding_block(f, repo_path, share) for f in findings]))
+
+
+def _wrap(findings: List[Finding], data: str) -> str:
+    """The instructions, the finding ids and the data markers around the data."""
     # Derived from the data, so the data cannot hold its own closing marker, and the same
     # batch still gives the same prompt for the cache.
     marker = hashlib.sha256(data.encode()).hexdigest()[:16]

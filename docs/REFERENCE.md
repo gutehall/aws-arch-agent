@@ -61,7 +61,7 @@ LLM output is optional. `--no-llm` skips it.
 |----------|---------|
 | `LLM_PROVIDER` | `ollama` (default) or `selfhosted`. Any other value makes no call and reports `fallback` |
 | `OLLAMA_HOST`, `OLLAMA_MODEL` | Ollama server and model (e.g. `llama3:8b`) |
-| `OLLAMA_NUM_CTX` | Ollama context size in tokens. Default `24576`, which fits the largest hypothesis prompt. Ollama silently cuts a longer prompt, so a smaller value uses less memory and can lose part of the prompt. A verdict batch has no total cap, so one with very long source lines can exceed the default. An OpenAI-compatible server sets its own context |
+| `OLLAMA_NUM_CTX` | Ollama context size in tokens. Default `24576`, which fits the largest verdict and hypothesis prompts. Ollama silently cuts a longer prompt, so a smaller value uses less memory and can lose part of the prompt. An OpenAI-compatible server sets its own context |
 | `LLM_BASE_URL`, `LLM_MODEL` | OpenAI-compatible server (vLLM, llama.cpp, LM Studio, LocalAI) and model. The URL ends before `/chat/completions`, e.g. `http://localhost:8000/v1` |
 
 Cloud LLM providers are not supported. Prompts include source code around each finding and go to the server these settings name, so point them at infrastructure you control. The tool does not check where that server runs, and it sends no API key.
@@ -80,9 +80,9 @@ Rules decide the findings. The model adds two things, and neither is a finding:
 
 Neither changes the severity, the findings list, the summary, the exit code, `--fail-on`, the baseline, or SARIF. A finding labelled `likely false positive` still fails the build.
 
-**Verdicts.** A label appears only when `llm.status` is `ok`. That needs every verdict batch to answer, so a connection failure (`fallback`) or a reply that is not JSON (`invalid`) labels nothing, and the findings match a `--no-llm` run. A verdict for an unknown finding id is dropped. V1 judges at most 100 findings, highest severity first.
+**Verdicts.** A label appears only when `llm.status` is `ok`. That needs every verdict batch to answer, so a connection failure (`fallback`) or a reply that is not JSON (`invalid`) labels nothing, and the findings match a `--no-llm` run. A verdict for an unknown finding id is dropped. V1 judges at most 100 findings, highest severity first. A verdict prompt holds at most 48,000 characters. When a batch is long, each finding gets less evidence and a narrower source window around its line, down to none.
 
-**Hypotheses.** One call after the rules, when the LLM is on and the verdict calls did not fail. The prompt has the rule catalog (ids and titles), the rule ids already reported, and up to 24,000 characters of IaC files with no finding. V2 adds the synth summary. A hypothesis must give `rule_id`, `file`, `line`, and `why`. It is dropped when the rule id is not in the catalog, the file or line was not in the prompt, or a finding is on that file and line. At most 20 are kept. The catalog is the whole catalog, so a hypothesis can name a rule that `rules.exclude` turned off.
+**Hypotheses.** One call after the rules, when the LLM is on and the verdict calls did not fail. The prompt has the rule catalog (ids and titles), the rule ids already reported, and up to 24,000 characters of IaC files with no finding. V2 adds the synth summary. A hypothesis must give `rule_id`, `file`, `line`, and `why`. It is dropped when the rule id is not in the catalog, the file or line was not in the prompt, or a finding is on that file and line. At most 20 are kept. The catalog leaves out what `rules.include`, `rules.exclude`, and `rules.org` turned off, so a hypothesis cannot name those rules. It is not limited by source, so it can name a rule that this kind of scan does not run: a CDK scan can cite a `CF-*` rule. A hypothesis is also dropped when its rule fired in `cdk.out`, because such a finding cannot be tied to one source file.
 
 A failed hypothesis call has its own status and console line. It keeps the verdicts, and `llm.status` stays `ok`.
 
