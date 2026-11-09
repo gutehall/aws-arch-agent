@@ -11,6 +11,8 @@ from aws_arch_agent.agent import v1, v2_graph
 from aws_arch_agent.agent.v1 import analyze_v1
 from aws_arch_agent.agent.v2_graph import _first_verdict_wins, analyze_v2
 from aws_arch_agent.agent.verdicts import (
+    BATCH_SIZE,
+    MAX_PROMPT_CHARS,
     MAX_VERDICT_BATCHES,
     VERDICT_SYSTEM,
     apply_verdicts,
@@ -19,6 +21,7 @@ from aws_arch_agent.agent.verdicts import (
     judge_batch,
     make_batches,
     parse_reply,
+    source_window,
 )
 from aws_arch_agent.baseline import merge_into_baseline
 from aws_arch_agent.cli import app
@@ -27,6 +30,7 @@ from aws_arch_agent.report.html import render_html
 from aws_arch_agent.report.json_report import render_json
 from aws_arch_agent.report.markdown import render_markdown
 from aws_arch_agent.report.sarif import render_sarif
+from aws_arch_agent.rules.cards import STATIC_CARDS
 from aws_arch_agent.tools.llm import LLMResult
 
 STACK = """// Action: "*" appears here only in a comment
@@ -588,7 +592,7 @@ def test_v2_use_llm_false_keeps_pillar_snippets_and_makes_no_call(tmp_path: Path
     report, ctx, findings, _w = analyze_v2(_repo(tmp_path), use_llm=False, skip_synth=True)
     assert fake.prompts == []
     assert "(skipped LLM)" in report
-    assert "Merge these into a single coherent review section" in report
+    assert "Merge these into" not in report
     assert "[SEC-001]" in report
     assert ctx.llm.status == "skipped"
     assert not any(f.verdict for f in findings)
@@ -648,3 +652,67 @@ def test_markdown_shows_why_as_inert_text() -> None:
     report = render_markdown(RepoContext(repo_path="/r"), [finding])
     expected = "see ![x](http://evil.test/a.png) and '[y](http://evil.test)' <b>now</b>"
     assert f"- LLM verdict: **confirmed** — `{expected}`\n" in report
+
+
+# The whole prompt is capped
+
+
+def _long_line_repo(root: Path, findings: int = 20) -> list[Finding]:
+    lines = "\n".join(f"line{n} " + "x" * 2000 for n in range(1, 101))
+    (root / "a.ts").write_text(lines, encoding="utf-8")
+    return [_finding(rule="SEC-001", file="a.ts", line=n * 4, evidence="e" * 5000) for n in range(1, findings + 1)]
+
+
+def test_a_batch_of_long_lines_stays_under_the_limit_and_asks_every_finding(tmp_path: Path) -> None:
+    findings = _long_line_repo(tmp_path)
+    prompt = build_prompt(findings, tmp_path, reference="r" * 50_000)
+    assert len(prompt) <= MAX_PROMPT_CHARS
+    assert _ids(prompt) == [finding_key(f) for f in findings]
+    assert all(f">{f.line:>6}| line{f.line} " in prompt for f in findings)
+
+
+def test_the_limit_holds_with_the_longest_rule_cards(tmp_path: Path) -> None:
+    cards = sorted(STATIC_CARDS.values(), key=lambda c: len(c.title) + len(c.recommendation), reverse=True)
+    lines = "\n".join("x" * 2000 for _ in range(100))
+    (tmp_path / "a.ts").write_text(lines, encoding="utf-8")
+    findings = [
+        _finding(rule=card.id, file="a.ts", line=n + 21, evidence="e" * 5000)
+        for n, card in enumerate(cards[:BATCH_SIZE])
+    ]
+    prompt = build_prompt(findings, tmp_path, reference="r" * 50_000)
+    assert len(prompt) <= MAX_PROMPT_CHARS
+    for card in cards[:BATCH_SIZE]:
+        assert f"Recommendation: {card.recommendation}" in prompt
+
+
+def test_the_markers_survive_the_cap(tmp_path: Path) -> None:
+    prompt = build_prompt(_long_line_repo(tmp_path), tmp_path)
+    marker = re.search(r"<<<DATA_(\w+)>>>", prompt).group(1)
+    assert prompt.rstrip().endswith(f"<<<END_DATA_{marker}>>>")
+    assert prompt.count(f"<<<DATA_{marker}>>>") == 2
+
+
+def test_a_short_batch_keeps_its_whole_window(tmp_path: Path) -> None:
+    (tmp_path / "a.ts").write_text("\n".join(f"l{n}" for n in range(1, 101)), encoding="utf-8")
+    prompt = build_prompt([_finding(file="a.ts", line=50)], tmp_path)
+    assert f"{30:>7}| l30" in prompt and f"{70:>7}| l70" in prompt
+    assert f"{29:>7}| l29" not in prompt and f"{71:>7}| l71" not in prompt
+
+
+def test_a_narrow_window_is_centred_and_has_no_gaps(tmp_path: Path) -> None:
+    (tmp_path / "a.ts").write_text("\n".join("y" * 10 for _ in range(100)), encoding="utf-8")
+    window = source_window(_finding(file="a.ts", line=50), tmp_path, max_chars=100)
+    numbers = [int(re.search(r"(\d+)\|", row).group(1)) for row in window.split("\n")]
+    assert numbers == list(range(numbers[0], numbers[-1] + 1))
+    assert 50 in numbers and len(window) <= 100
+    assert numbers[-1] - 50 - (50 - numbers[0]) in (0, 1, -1)
+
+
+def test_a_window_too_small_for_the_finding_line_is_no_source(tmp_path: Path) -> None:
+    (tmp_path / "a.ts").write_text("y" * 200, encoding="utf-8")
+    assert source_window(_finding(file="a.ts", line=1), tmp_path, max_chars=50) is None
+
+
+def test_the_same_long_batch_gives_the_same_prompt(tmp_path: Path) -> None:
+    findings = _long_line_repo(tmp_path)
+    assert build_prompt(findings, tmp_path) == build_prompt(findings, tmp_path)

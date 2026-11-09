@@ -80,7 +80,8 @@ def catalog_titles() -> dict[str, str]:
     return {card.id: card.title for card in STATIC_CARDS.values()} | CF_TITLES
 
 
-def compact_catalog() -> str:
-    """Every static and template rule, one `<id>: <title>` line each, sorted by id."""
-    titles = catalog_titles()
+def compact_catalog(titles: dict[str, str] | None = None) -> str:
+    """The given rules, or every static and template rule: one `<id>: <title>` line each, sorted by id."""
+    if titles is None:
+        titles = catalog_titles()
     return "\n".join(f"{rule_id}: {titles[rule_id]}" for rule_id in sorted(titles))

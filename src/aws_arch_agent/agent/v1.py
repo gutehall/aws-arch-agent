@@ -14,6 +14,7 @@ from aws_arch_agent.rules.cf_template import (
     run_resource_checks,
     terraform_variable_findings,
 )
+from aws_arch_agent.rules.cards import catalog_titles
 from aws_arch_agent.rules.fix_snippets import attach_fixes
 from aws_arch_agent.rules.terraform_model import (
     TerraformError,
@@ -288,6 +289,24 @@ def _filter_rules(
     return out
 
 
+def active_titles(
+    rules_include: list[str] | None = None,
+    rules_exclude: list[str] | None = None,
+    rules_org: bool = False,
+) -> dict[str, str]:
+    """The catalog this scan has on, static and CF-* alike, with the meaning of _filter_rules."""
+    titles = catalog_titles()
+    if rules_include is not None:
+        allowed = set(rules_include)
+        titles = {k: v for k, v in titles.items() if k in allowed}
+    elif not rules_org:
+        titles = {k: v for k, v in titles.items() if k not in ORG_RULE_IDS}
+    if rules_exclude is not None:
+        blocked = set(rules_exclude)
+        titles = {k: v for k, v in titles.items() if k not in blocked}
+    return titles
+
+
 # Sources scanned with the CF-* checks instead of the CDK regex pass.
 TEMPLATE_SOURCES = frozenset({"cloudformation", "mixed"})
 TERRAFORM_SOURCES = frozenset({"terraform", "mixed"})
@@ -466,12 +485,15 @@ def analyze_v1(
         cf_template.use_dashboard_min_resources(dashboards_min_resources),
     ):
         ctx, findings, warnings = _collect_findings(
-            repo_path, max_files, rules_include, rules_exclude, severity_threshold, rules_org, iac,
+            repo_path, max_files, rules_include, rules_exclude, None, rules_org, iac,
             tf_plan,
         )
+        # Before the threshold and any theme filter: hiding a finding must not make its file
+        # look as if no rule fired there.
+        rule_findings = findings
+        findings = filter_by_severity(findings, severity_threshold)
         if tag_policy is not None:
             ctx.notes["tag_policy"] = "checked" if policy_checked() else "not checked"
-        rule_findings = findings  # a theme filter must not make a file with findings look quiet
         if theme_filter:
             findings = themes.select(findings, theme_filter)
             ctx.notes["themes"] = list(theme_filter)
@@ -482,7 +504,8 @@ def analyze_v1(
 
     if use_llm:
         ctx.llm = _judge(findings, repo_path)
-        _hypothesize(ctx, rule_findings, repo_path, max_files)
+        titles = active_titles(rules_include, rules_exclude, rules_org)
+        _hypothesize(ctx, rule_findings, repo_path, max_files, titles)
     else:
         ctx.llm = NO_LLM
     return render_markdown(ctx, findings, warnings=warnings, group_by=group_by), ctx, findings, warnings
@@ -505,12 +528,18 @@ def _judge(findings: list[Finding], repo_path: Path) -> LLMResult:
     return run
 
 
-def _hypothesize(ctx: RepoContext, findings: list[Finding], repo_path: Path, max_files: int) -> None:
+def _hypothesize(
+    ctx: RepoContext,
+    findings: list[Finding],
+    repo_path: Path,
+    max_files: int,
+    titles: dict[str, str] | None = None,
+) -> None:
     """Ask about the files with no finding. The outcome goes in ctx.hypothesis_llm, not ctx.llm."""
     if ctx.llm.status not in ("ok", "skipped"):  # a model that did not answer gets no second wait
         return
     ctx.hypotheses, result = find_hypotheses(
-        LLMClient(), findings, repo_path, iac_files(repo_path, ctx.source, max_files)
+        LLMClient(), findings, repo_path, iac_files(repo_path, ctx.source, max_files), titles=titles
     )
     ctx.hypothesis_llm = aggregate_results([result] if result else [])
 

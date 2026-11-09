@@ -1,9 +1,16 @@
 """Markdown report renderer for context and findings."""
 from __future__ import annotations
 from datetime import datetime
+import re
 from typing import List, Dict
 from aws_arch_agent.models import Finding, RepoContext
-from aws_arch_agent.report.summary import build_summary, markdown_lines
+from aws_arch_agent.report.summary import _span_text, build_summary, markdown_lines
+
+
+def _fence(text: str) -> str:
+    """A code fence the text cannot close: longer than its longest backtick run, at least three."""
+    longest = max((len(run) for run in re.findall(r"`+", text)), default=0)
+    return "`" * max(3, longest + 1)
 
 
 def _group(findings: List[Finding]) -> Dict[str, List[Finding]]:
@@ -66,15 +73,15 @@ def cost_section(ctx: RepoContext) -> List[str]:
     for stack in cost["stacks"]:
         name = str(stack["name"]).replace("|", "\\|")
         region = stack.get("region") or cost["region"]
-        out.append(f"| `{name}` | {region} | {stack['resources_priced']} | {_usd(stack['monthly_usd'])} |")
+        out.append(f"| `{_span_text(name)}` | {region} | {stack['resources_priced']} | {_usd(stack['monthly_usd'])} |")
     priced = sum(s["resources_priced"] for s in cost["stacks"])
     out.append(f"| **Total** | | {priced} | **{_usd(cost['total_monthly_usd'])}** |")
     out.append("")
     if cost.get("top_resources"):
         out.append(f"Top {len(cost['top_resources'])} resources by estimated cost:")
         for i, r in enumerate(cost["top_resources"], 1):
-            where = f"`{r['file']}`" + (f" (line {r['line']})" if r.get("line") else "")
-            out.append(f"{i}. `{r['name']}` ({r['type']}) in {where}: {_usd(r['monthly_usd'])}/month. {r['basis']}")
+            where = f"`{_span_text(r['file'])}`" + (f" (line {r['line']})" if r.get("line") else "")
+            out.append(f"{i}. `{_span_text(r['name'])}` ({r['type']}) in {where}: {_usd(r['monthly_usd'])}/month. {r['basis']}")
         out.append("")
     if cost.get("savings_findings"):
         out.append(
@@ -102,7 +109,7 @@ def render_markdown(
     lines: List[str] = []
     lines.append("# AWS Architecture Review Report")
     lines.append("")
-    lines.append(f"- Repo: `{ctx.repo_path}`")
+    lines.append(f"- Repo: `{_span_text(ctx.repo_path)}`")
     lines.append(f"- Source: **{ctx.source}**")
     lines.append(f"- Language: **{ctx.language}**")
     lines.append(f"- Files scanned: **{ctx.files_scanned}**")
@@ -143,7 +150,7 @@ def render_markdown(
         for f in items:
             loc = ""
             if f.file:
-                loc = f"File: `{f.file}`"
+                loc = f"File: `{_span_text(f.file)}`"
                 if f.line:
                     loc += f" (line {f.line})"
             lines.append(f"### [{f.id}] {f.title}")
@@ -160,23 +167,25 @@ def render_markdown(
             if f.verdict:
                 # A code span: the scanned repo can steer this text, and a viewer would load
                 # an image or follow a link written in it.
-                why = f.verdict.why.replace("`", "'")
-                lines.append(f"- LLM verdict: **{f.verdict.label}** — `{why}`")
+                lines.append(f"- LLM verdict: **{f.verdict.label}** — `{_span_text(f.verdict.why)}`")
             if f.evidence:
+                fence = _fence(f.evidence)
                 lines.append("")
                 lines.append("**Evidence**")
-                lines.append("```")
+                lines.append(fence)
                 lines.append(f.evidence)
-                lines.append("```")
+                lines.append(fence)
             lines.append("")
             lines.append("**Recommendation**")
             lines.append(f.recommendation.strip())
             if f.suggested_code:
                 lines.append("")
                 lines.append("**Suggested Code**")
-                lines.append("```")
-                lines.append(f.suggested_code.strip())
-                lines.append("```")
+                code = f.suggested_code.strip()
+                fence = _fence(code)
+                lines.append(fence)
+                lines.append(code)
+                lines.append(fence)
             lines.append("")
         lines.append("")
 
@@ -189,9 +198,9 @@ def render_markdown(
         lines.append("")
         for h in ctx.hypotheses:
             # Code spans: the scanned repo can steer this text, as with a verdict's why.
-            file = h.file.replace("`", "'")
-            why = h.why.replace("`", "'")
-            lines.append(f"- [{h.rule_id}] {h.title}: `{file}` (line {h.line}) — `{why}`")
+            lines.append(
+                f"- [{h.rule_id}] {h.title}: `{_span_text(h.file)}` (line {h.line}) — `{_span_text(h.why)}`"
+            )
         lines.append("")
 
     lines.append("## Suggested Next Actions")

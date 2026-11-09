@@ -16,7 +16,7 @@ LLM_TIMEOUT_S = 120
 MAX_REPLY_TOKENS = 4096
 # Ollama silently cuts a prompt longer than its context, and its default is far below the
 # hypothesis prompt: about 49k characters of catalog and source, plus room for the reply.
-# A verdict batch has no total cap, so one with very long source lines can still exceed this.
+# Verdict prompts are capped to fit: see MAX_PROMPT_CHARS in agent/verdicts.py.
 DEFAULT_OLLAMA_NUM_CTX = 24576
 
 LLMStatus = Literal["ok", "fallback", "skipped", "invalid"]
