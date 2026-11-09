@@ -13,6 +13,7 @@ from aws_arch_agent.agent.verdicts import VerdictCache, apply_verdicts, judge_ba
 from aws_arch_agent.agent.v1 import (
     _filter_rules,
     _languages_to_scan,
+    active_titles,
     detect_language,
     iac_files,
     resolve_source,
@@ -93,7 +94,8 @@ class State(TypedDict, total=False):
     # Pillars run in parallel, so every call's result is appended rather than overwritten.
     llm_results: Annotated[List[LLMResult], operator.add]
     verdicts: Annotated[dict[str, Verdict], _first_verdict_wins]
-    # Findings before the theme filter, which must not make a file with findings look quiet.
+    # Findings before the severity threshold and theme filter, which must not make a file
+    # with findings look as if no rule fired there.
     unfiltered_findings: Annotated[List[Finding], operator.add]
     hypotheses: List[Hypothesis]
     # Apart from llm_results: a label needs every verdict batch ok, and this call is not one.
@@ -179,6 +181,11 @@ def _parts_under(path: Path, root: Path) -> tuple[str, ...]:
         return path.parts
 
 
+def _shown(findings: List[Finding], state: State) -> List[Finding]:
+    """The findings the report shows: at or above severity_threshold, in the --theme themes."""
+    return _in_themes(filter_by_severity(findings, state.get("severity_threshold")), state)
+
+
 def _in_themes(findings: List[Finding], state: State) -> List[Finding]:
     """Keep only findings in the --theme themes, before the pillar notes and the LLM see
     them, so a finops scan reports and reasons about finops findings alone."""
@@ -219,8 +226,8 @@ def node_collect(state: State) -> State:
     language = ctx.language
     with limit_to_files(repo_path, files):
         findings, warnings = run_all_rules(repo_path, rules, _languages_to_scan(language))
-    unfiltered = filter_by_severity(findings, state.get("severity_threshold"))
-    findings = _in_themes(unfiltered, state)
+    unfiltered = findings
+    findings = _shown(findings, state)
 
     return {
         "ctx": ctx,
@@ -281,7 +288,7 @@ def node_synth(state: State) -> State:
                 attach_fixes(cf_findings, "cloudformation")
             out_findings.extend(cf_findings)
             unfiltered = drop_static_covered_by_cf(out_findings)
-            out_findings = _in_themes(unfiltered, state)
+            out_findings = _shown(unfiltered, state)
         except Exception as exc:
             cf_failed = True
             unfiltered = []
@@ -366,7 +373,7 @@ def node_synth(state: State) -> State:
         cf_findings = run_cf_rules(cdk_out, repo_path=repo_path, warnings=cf_warnings)
         out_findings.extend(cf_findings)
         unfiltered = drop_static_covered_by_cf(out_findings)
-        out_findings = _in_themes(unfiltered, state)
+        out_findings = _shown(unfiltered, state)
     except Exception as exc:
         cf_failed = True
         unfiltered = []
@@ -445,7 +452,6 @@ def node_merge(state: State) -> State:
     use_llm = state.get("use_llm", True)
     llm_mode = state.get("llm_mode", "full")
     findings = state.get("raw_findings", [])
-    synth_summary = state.get("synth_summary", "")
 
     if use_llm:
         out: State = {"merged_notes": _joined_notes(state)}
@@ -460,37 +466,13 @@ def node_merge(state: State) -> State:
             out["verdicts"] = verdicts
         return out
 
-    rag_block = _rag_block(state)
-    prompt = f"""Merge these into a single coherent review section with headings (AWS Well-Architected 6 pillars).
-Be specific, avoid repetition, and keep it to ~350-550 words.
-
-## CloudFormation synthesis
-{synth_summary}
-
-## 1. Operational Excellence (Observability)
-{state.get("observability_notes","")}
-
-## 2. Security
-{state.get("security_notes","")}
-
-## 3. Reliability
-{state.get("reliability_notes","")}
-
-## 4. Performance Efficiency
-{state.get("performance_efficiency_notes","")}
-
-## 5. Cost Optimization
-{state.get("cost_notes","")}
-
-## 6. Sustainability
-{state.get("sustainability_notes","")}
-{rag_block}
-"""
-    return {"merged_notes": prompt}
+    # In compact mode each pillar's notes already hold the block.
+    rag_block = "" if llm_mode == "compact" else _rag_block(state)
+    return {"merged_notes": _joined_notes(state) + rag_block}
 
 
 def node_hypotheses(state: State) -> State:
-    """Ask about the files with no finding, counting the findings a theme filter removed."""
+    """Ask about the files with no finding, counting the findings the filters removed."""
     if not state.get("use_llm", True):
         return {}
     # A model that did not answer gets no second wait.
@@ -503,6 +485,9 @@ def node_hypotheses(state: State) -> State:
         repo_path,
         iac_files(repo_path, state["ctx"].source, state.get("max_files", 400)),
         synth_summary=state.get("synth_summary", ""),
+        titles=active_titles(
+            state.get("rules_include"), state.get("rules_exclude"), bool(state.get("rules_org"))
+        ),
     )
     out: State = {"hypotheses": hypotheses}
     if result is not None:

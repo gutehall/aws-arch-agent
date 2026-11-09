@@ -68,7 +68,7 @@ def test_pillar_lines() -> None:
     assert md.index("## Summary") < md.index("## Executive Summary")
     assert "- Cost Optimization: 3 findings (3 Low), about $9.15/month possible savings (estimate)" in md
     assert "- Security: 4 findings (4 High)" in md
-    assert "1. [CF-SG-001] title CF-SG-001 (High, 2 resources, medium effort), e.g. t.yaml" in md
+    assert "1. [CF-SG-001] title CF-SG-001 (High, 2 resources, medium effort), e.g. `t.yaml" in md
     assert "**Quick wins** (low effort, with suggested code):" in md
 
 

@@ -15,11 +15,12 @@ from aws_arch_agent.agent.hypotheses import (
     HYPOTHESIS_SYSTEM,
     MAX_FILE_CHARS,
     MAX_SLICE_CHARS,
+    build_prompt,
     build_slice,
     find_hypotheses,
     parse_reply,
 )
-from aws_arch_agent.agent.v1 import analyze_v1, iac_files
+from aws_arch_agent.agent.v1 import ORG_RULE_IDS, active_titles, analyze_v1, iac_files
 from aws_arch_agent.agent.v2_graph import analyze_v2
 from aws_arch_agent.agent.verdicts import VERDICT_SYSTEM
 from aws_arch_agent.baseline import merge_into_baseline
@@ -29,6 +30,8 @@ from aws_arch_agent.report.html import render_html
 from aws_arch_agent.report.json_report import render_json
 from aws_arch_agent.report.markdown import render_markdown
 from aws_arch_agent.report.sarif import render_sarif
+from aws_arch_agent.rules.cards import catalog_titles, compact_catalog
+from aws_arch_agent.rules.cf_template import run_cf_rules
 from aws_arch_agent.tools.llm import LLMResult
 
 RULE = "SEC-001"
@@ -588,3 +591,260 @@ def test_the_docs_name_the_split(doc: str) -> None:
     assert "unverified" in text
     assert "catalog rule" in text
     assert "polish" not in text
+
+
+# The severity threshold hides findings from the report, not from the hypothesis call
+
+MEDIUM_ONLY = 'import * as cdk from "aws-cdk-lib";\nnew logs.LogGroup(this, "L");\n'
+
+
+@pytest.fixture
+def thresholded_repo(repo: Path) -> Path:
+    (repo / "lib" / "medium.ts").write_text(MEDIUM_ONLY, encoding="utf-8")
+    return repo
+
+
+@pytest.mark.parametrize("mode", ["v1", "v2"])
+def test_a_file_whose_findings_the_threshold_hid_is_not_in_the_prompt(
+    mode: str, thresholded_repo: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    fake = _use(monkeypatch, _answering([]))
+    _, _, findings, _ = _analyze(mode, thresholded_repo, severity_threshold="High")
+    assert not any(f.file == "lib/medium.ts" for f in findings)
+    prompt = fake.asked(HYPOTHESIS_SYSTEM)[0]
+    assert f"File: {QUIET_FILE}" in prompt
+    assert "File: lib/medium.ts" not in prompt
+    reported = re.search(r"already reported elsewhere in this repo: (.*)", prompt).group(1)
+    assert "SEC-062" in reported
+
+
+@pytest.mark.parametrize("mode", ["v1", "v2"])
+def test_a_hypothesis_on_a_line_the_threshold_hid_is_dropped(
+    mode: str, thresholded_repo: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    _use(monkeypatch, _answering([_item(file="lib/medium.ts", rule_id="SEC-062", line=2)]))
+    _, ctx, _, _ = _analyze(mode, thresholded_repo, severity_threshold="High")
+    assert ctx.hypotheses == []
+
+
+@pytest.mark.parametrize("mode", ["v1", "v2"])
+def test_the_threshold_still_decides_what_the_report_shows(
+    mode: str, thresholded_repo: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    _use(monkeypatch, _answering([]))
+    plain_report, ctx0, plain, _ = _analyze(mode, thresholded_repo, severity_threshold="High", use_llm=False)
+    report, ctx, judged, _ = _analyze(mode, thresholded_repo, severity_threshold="High")
+    assert plain and all(f.severity == "High" for f in plain)
+    assert [f.model_dump() for f in judged] == [f.model_dump() for f in plain]
+    assert "SEC-062" not in report and "SEC-062" not in plain_report
+    assert json.loads(render_json(ctx, judged))["summary"] == json.loads(render_json(ctx0, plain))["summary"]
+    assert render_sarif(ctx, judged) == render_sarif(ctx0, plain)
+    assert merge_into_baseline(set(), judged) == merge_into_baseline(set(), plain)
+    assert _should_fail("medium", judged) == _should_fail("medium", plain)
+
+
+def test_the_cli_threshold_keeps_hidden_files_out_of_the_prompt(
+    thresholded_repo: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    fake = _use(monkeypatch, _answering([]))
+    out = thresholded_repo / "out.md"
+    result = runner.invoke(app, ["--repo", str(thresholded_repo), "--out", str(out), "--config", str(_threshold_config(thresholded_repo))])
+    assert result.exit_code == 0, result.output
+    assert "File: lib/medium.ts" not in fake.asked(HYPOTHESIS_SYSTEM)[0]
+    assert "SEC-062" not in out.read_text(encoding="utf-8")
+
+
+def _threshold_config(root: Path) -> Path:
+    path = root / "arch-agent.json"
+    path.write_text(json.dumps({"severity_threshold": "high"}), encoding="utf-8")
+    return path
+
+
+# The catalog is the rules this scan has on
+
+ORG_RULE = "SEC-026"
+CF_RULE = "CF-S3-004"
+
+
+def test_compact_catalog_lists_only_the_titles_given() -> None:
+    assert compact_catalog({"B-1": "b", "A-1": "a"}) == "A-1: a\nB-1: b"
+    assert compact_catalog({}) == ""
+    assert compact_catalog() == compact_catalog(catalog_titles())
+
+
+def test_active_titles_mean_the_same_as_the_rule_filter() -> None:
+    every = catalog_titles()
+    assert set(active_titles()) == set(every) - ORG_RULE_IDS
+    assert set(active_titles(rules_org=True)) == set(every)
+    assert set(active_titles(rules_exclude=[RULE, CF_RULE])) == set(every) - ORG_RULE_IDS - {RULE, CF_RULE}
+    assert set(active_titles(rules_include=[ORG_RULE, CF_RULE])) == {ORG_RULE, CF_RULE}
+    assert set(active_titles(rules_include=[RULE, CF_RULE], rules_exclude=[CF_RULE])) == {RULE}
+    assert active_titles(rules_include=[]) == {}
+
+
+def test_a_rule_outside_the_titles_given_is_dropped_from_a_reply() -> None:
+    reply = json.dumps([_item(), _item(rule_id="COST-001", line=3)])
+    kept = parse_reply(reply, SHOWN, [], Path("/repo"), {"COST-001": "Cost title"})
+    assert [(h.rule_id, h.title) for h in kept] == [("COST-001", "Cost title")]
+
+
+def test_no_titles_means_the_whole_catalog_and_empty_means_none() -> None:
+    assert len(_parse([_item()])) == 1
+    assert parse_reply(json.dumps([_item()]), SHOWN, [], Path("/repo"), {}) == []
+
+
+def test_the_prompt_lists_only_the_titles_given() -> None:
+    prompt = build_prompt(["File: a.tf\n     1| x"], [], titles={"COST-001": "Cost title"})
+    assert "\nCOST-001: Cost title\n" in prompt
+    assert f"\n{RULE}: " not in prompt
+    assert f"\n{RULE}: " in build_prompt(["File: a.tf\n     1| x"], [])
+
+
+@pytest.mark.parametrize("mode", ["v1", "v2"])
+@pytest.mark.parametrize("excluded", [RULE, CF_RULE])
+def test_an_excluded_rule_is_not_offered_and_not_kept(
+    mode: str, excluded: str, repo: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    fake = _use(monkeypatch, _answering([_item(rule_id=excluded)]))
+    _, ctx, _, _ = _analyze(mode, repo, rules_exclude=[excluded])
+    assert f"\n{excluded}: " not in fake.asked(HYPOTHESIS_SYSTEM)[0]
+    assert ctx.hypotheses == []
+
+
+@pytest.mark.parametrize("mode", ["v1", "v2"])
+def test_include_limits_the_catalog_to_those_ids(
+    mode: str, repo: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    fake = _use(monkeypatch, _answering([_item(), _item(rule_id=ORG_RULE, line=3)]))
+    _, ctx, _, _ = _analyze(mode, repo, rules_include=[ORG_RULE])
+    prompt = fake.asked(HYPOTHESIS_SYSTEM)[0]
+    assert f"\n{ORG_RULE}: " in prompt
+    assert f"\n{RULE}: " not in prompt
+    assert [h.rule_id for h in ctx.hypotheses] == [ORG_RULE]
+
+
+@pytest.mark.parametrize("mode", ["v1", "v2"])
+@pytest.mark.parametrize("org, kept", [(False, []), (True, [ORG_RULE])])
+def test_an_org_rule_needs_rules_org(
+    mode: str, org: bool, kept: list[str], repo: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    _use(monkeypatch, _answering([_item(rule_id=ORG_RULE)]))
+    _, ctx, _, _ = _analyze(mode, repo, rules_org=org)
+    assert [h.rule_id for h in ctx.hypotheses] == kept
+
+
+# Synth output: a template finding cannot be tied to one source file
+
+SYNTH_TEMPLATE = json.dumps({"Resources": {"B": {"Type": "AWS::S3::Bucket", "Properties": {}}}})
+
+
+def test_a_template_finding_in_synth_output_points_at_cdk_out(tmp_path: Path) -> None:
+    (tmp_path / "cdk.out").mkdir()
+    (tmp_path / "cdk.out" / "Stack.template.json").write_text(SYNTH_TEMPLATE, encoding="utf-8")
+    found = run_cf_rules(tmp_path / "cdk.out", repo_path=tmp_path)
+    assert found
+    assert {f.file for f in found} == {"cdk.out/Stack.template.json"}
+
+
+def test_a_rule_that_fired_in_cdk_out_is_dropped_from_any_source_file() -> None:
+    synth = _finding(file="cdk.out/Stack.template.json", line=1, rule=CF_RULE)
+    assert _parse([_item(rule_id=CF_RULE)], findings=[synth]) == []
+    assert [h.rule_id for h in _parse([_item()], findings=[synth])] == [RULE]
+
+
+@pytest.mark.parametrize("file", ["lib/loud.ts", "not-cdk.out/a.json", "cdk.out.txt"])
+def test_a_rule_that_fired_outside_cdk_out_still_counts_for_other_files(file: str) -> None:
+    assert len(_parse([_item()], findings=[_finding(file=file, line=1)])) == 1
+
+
+# V2 theme filter on the two template paths
+
+HIDDEN_BY_THEME = ["sustainability"]
+
+
+def test_v2_templates_path_keeps_a_template_the_theme_hid_out_of_the_prompt(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    (tmp_path / "infra").mkdir()
+    (tmp_path / "infra" / "loud.yaml").write_text(TEMPLATE_LOUD, encoding="utf-8")
+    (tmp_path / "infra" / "quiet.yaml").write_text(TEMPLATE_QUIET, encoding="utf-8")
+    fake = _use(monkeypatch, _answering([]))
+    args = {"templates_path": str(tmp_path / "infra"), "iac": "cloudformation"}
+    _, _, plain, _ = analyze_v2(tmp_path, use_llm=False, **args)
+    assert any(f.file == "infra/loud.yaml" for f in plain)
+    _, _, findings, _ = analyze_v2(tmp_path, theme_filter=HIDDEN_BY_THEME, **args)
+    assert not any(f.file == "infra/loud.yaml" for f in findings)
+    prompt = fake.asked(HYPOTHESIS_SYSTEM)[0]
+    assert "File: infra/loud.yaml" not in prompt
+    assert "File: infra/quiet.yaml" in prompt
+
+
+def _fake_synth(repo_path: Path, language: str = "typescript") -> tuple[int, str, str]:
+    (repo_path / "cdk.out").mkdir(exist_ok=True)
+    (repo_path / "cdk.out" / "Stack.template.json").write_text(SYNTH_TEMPLATE, encoding="utf-8")
+    return 0, "", ""
+
+
+def test_v2_synth_path_counts_template_findings_the_theme_hid(
+    repo: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """iter_files skips cdk.out, so a template never reaches the slice. Its rule ids still count."""
+    fake = _use(monkeypatch, _answering([]))
+    monkeypatch.setattr(v2_graph, "run_cdk_synth", _fake_synth)
+    _, _, plain, _ = analyze_v2(repo, use_llm=False)
+    assert any(f.file == "cdk.out/Stack.template.json" and f.id == CF_RULE for f in plain)
+    _, _, findings, _ = analyze_v2(repo, theme_filter=HIDDEN_BY_THEME)
+    assert not any(f.id == CF_RULE for f in findings)
+    prompt = fake.asked(HYPOTHESIS_SYSTEM)[0]
+    assert "File: cdk.out" not in prompt
+    assert f"File: {QUIET_FILE}" in prompt
+    assert "File: lib/loud.ts" not in prompt
+    assert CF_RULE in re.search(r"already reported elsewhere in this repo: (.*)", prompt).group(1)
+
+
+def test_v2_synth_path_drops_a_rule_that_fired_in_a_template_the_theme_hid(
+    repo: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    _use(monkeypatch, _answering([_item(rule_id=CF_RULE), _item(rule_id="COST-001", line=3)]))
+    monkeypatch.setattr(v2_graph, "run_cdk_synth", _fake_synth)
+    _, ctx, _, _ = analyze_v2(repo, theme_filter=HIDDEN_BY_THEME)
+    assert [h.rule_id for h in ctx.hypotheses] == ["COST-001"]
+
+
+# Template findings the threshold hid still count as reported
+
+
+def test_v2_synth_path_counts_template_findings_the_threshold_hid(
+    repo: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    fake = _use(monkeypatch, _answering([]))
+    monkeypatch.setattr(v2_graph, "run_cdk_synth", _fake_synth)
+    _, _, plain, _ = analyze_v2(repo, use_llm=False)
+    hidden = {f.id for f in plain if f.file and "cdk.out" in f.file and f.severity != "High"}
+    assert hidden
+    _, _, shown, _ = analyze_v2(repo, severity_threshold="High")
+    assert not hidden.intersection(f.id for f in shown)
+    reported = re.search(r"already reported elsewhere in this repo: (.*)", fake.asked(HYPOTHESIS_SYSTEM)[0]).group(1)
+    assert all(rule in reported for rule in hidden)
+
+
+def test_v2_templates_path_keeps_a_template_the_threshold_hid_out_of_the_prompt(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    infra = tmp_path / "infra"
+    infra.mkdir()
+    (infra / "loud.yaml").write_text(
+        'AWSTemplateFormatVersion: "2010-09-09"\nResources:\n  Logs:\n    Type: AWS::Logs::LogGroup\n',
+        encoding="utf-8",
+    )
+    (infra / "quiet.yaml").write_text(
+        'AWSTemplateFormatVersion: "2010-09-09"\nDescription: nothing to check\nOutputs:\n  Name:\n    Value: x\n',
+        encoding="utf-8",
+    )
+    fake = _use(monkeypatch, _answering([]))
+    args = {"templates_path": str(infra), "iac": "cloudformation"}
+    _, _, shown, _ = analyze_v2(tmp_path, severity_threshold="High", **args)
+    assert not any(f.file == "infra/loud.yaml" for f in shown)
+    prompt = fake.asked(HYPOTHESIS_SYSTEM)[0]
+    assert "File: infra/loud.yaml" not in prompt
+    assert "File: infra/quiet.yaml" in prompt

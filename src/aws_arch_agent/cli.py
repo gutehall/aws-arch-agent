@@ -32,6 +32,7 @@ from aws_arch_agent.models import Finding, IacSource, RepoContext
 from aws_arch_agent.rules.themes import THEMES
 from aws_arch_agent.report.json_report import render_json
 from aws_arch_agent.report.html import render_html
+from aws_arch_agent.report.summary import _span_text
 from aws_arch_agent.report.sarif import render_sarif
 from aws_arch_agent.tools.files import iter_files
 
@@ -98,8 +99,8 @@ def _finding_location(finding: Finding) -> str:
     if not finding.file:
         return ""
     if finding.line is None:
-        return f" `{finding.file}`"
-    return f" `{finding.file}` line {finding.line}"
+        return f" `{_span_text(finding.file)}`"
+    return f" `{_span_text(finding.file)}` line {finding.line}"
 
 
 def _mark_baselined(

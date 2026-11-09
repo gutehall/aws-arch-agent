@@ -1,6 +1,10 @@
 """Tests for V2 LangGraph merge behavior and options."""
+import json
 from pathlib import Path
 from unittest.mock import patch
+
+import pytest
+from typer.testing import CliRunner
 
 from aws_arch_agent.agent import v2_graph
 from aws_arch_agent.agent.v2_graph import (
@@ -14,6 +18,9 @@ from aws_arch_agent.agent.v2_graph import (
     node_performance_efficiency,
     node_sustainability,
 )
+from aws_arch_agent.cli import app
+from aws_arch_agent.models import Finding
+from aws_arch_agent.rules.cf_template import CF_COVERS_STATIC
 from aws_arch_agent.tools.llm import LLMResult
 
 
@@ -89,7 +96,7 @@ def test_v2_rag_included_in_pillar_prompt(tmp_path: Path, monkeypatch) -> None:
             rag_path=str(rag_doc),
         )
     prompts = " ".join(str(c.kwargs.get("prompt", c.args[0] if c.args else "")) for c in mock_cls.return_value.polish.call_args_list)
-    assert "Reference (RAG)" in prompts or "least privilege" in prompts
+    assert "Reference (RAG)" in prompts
 
 
 def test_v2_builds_rag_once(tmp_path: Path) -> None:
@@ -151,6 +158,21 @@ def test_langgraph_merge_join_receives_all_pillar_notes() -> None:
     merged = merge_out["merged_notes"]
     for key in ("obs", "sec", "rel", "perf", "cost", "sus"):
         assert key in merged
+
+
+def test_no_llm_merge_is_the_joined_notes_and_never_a_prompt() -> None:
+    state = {"use_llm": False, "synth_summary": "s", "security_notes": "sec", "cost_notes": "cost"}
+    assert node_merge(state)["merged_notes"] == v2_graph._joined_notes(state)  # type: ignore[arg-type]
+
+
+def test_no_llm_merge_keeps_the_rag_block_after_the_notes() -> None:
+    class Rag:
+        def retrieve(self, _query: str, k: int = 3) -> str:
+            return "least privilege"
+
+    state = {"use_llm": False, "security_notes": "sec", "rag": Rag()}
+    merged = node_merge(state)["merged_notes"]  # type: ignore[arg-type]
+    assert merged == v2_graph._joined_notes(state) + "\n\n## Reference (RAG)\nleast privilege"  # type: ignore[arg-type]
 
 
 def test_pillar_nodes_run_without_error() -> None:
@@ -243,3 +265,121 @@ def test_v2_no_llm_is_skipped_with_no_call(tmp_path: Path) -> None:
         _, ctx, _, _ = analyze_v2(tmp_path, use_llm=False, skip_synth=True)
     mock_cls.return_value.polish.assert_not_called()
     assert ctx.llm.line == "LLM: skipped (--no-llm)"
+
+
+# severity_threshold covers template findings too
+
+MIXED_TEMPLATE = """AWSTemplateFormatVersion: "2010-09-09"
+Resources:
+  Bucket:
+    Type: AWS::S3::Bucket
+    Properties:
+      BucketEncryption:
+        ServerSideEncryptionConfiguration:
+          - ServerSideEncryptionByDefault:
+              SSEAlgorithm: none
+  Logs:
+    Type: AWS::Logs::LogGroup
+"""
+
+
+NO_HIGH_TEMPLATE = """AWSTemplateFormatVersion: "2010-09-09"
+Resources:
+  Logs:
+    Type: AWS::Logs::LogGroup
+"""
+
+
+def _template_repo(root: Path) -> str:
+    infra = root / "infra"
+    infra.mkdir()
+    (infra / "stack.yaml").write_text(MIXED_TEMPLATE, encoding="utf-8")
+    return str(infra)
+
+
+def _fake_synth(repo_path: Path, language: str = "typescript") -> tuple[int, str, str]:
+    out = repo_path / "cdk.out"
+    out.mkdir(exist_ok=True)
+    resources = {
+        "Bucket": {"Type": "AWS::S3::Bucket", "Properties": {"BucketEncryption": {
+            "ServerSideEncryptionConfiguration": [
+                {"ServerSideEncryptionByDefault": {"SSEAlgorithm": "none"}}
+            ]
+        }}},
+        "Logs": {"Type": "AWS::Logs::LogGroup"},
+    }
+    (out / "Stack.template.json").write_text(
+        json.dumps({"AWSTemplateFormatVersion": "2010-09-09", "Resources": resources}), encoding="utf-8"
+    )
+    return 0, "", ""
+
+
+def _synth_repo(root: Path, monkeypatch) -> None:
+    (root / "package.json").write_text("{}", encoding="utf-8")
+    (root / "lib").mkdir()
+    (root / "lib" / "stack.ts").write_text('new s3.Bucket(this, "B");\n', encoding="utf-8")
+    monkeypatch.setattr(v2_graph, "run_cdk_synth", _fake_synth)
+
+
+@pytest.mark.parametrize("threshold, allowed", [("High", {"High"}), ("Medium", {"High", "Medium"})])
+def test_templates_path_applies_the_threshold(tmp_path: Path, threshold: str, allowed: set[str]) -> None:
+    templates = _template_repo(tmp_path)
+    _r, _c, plain, _w = analyze_v2(tmp_path, use_llm=False, templates_path=templates)
+    assert {f.severity for f in plain} - allowed
+    report, _c, shown, _w = analyze_v2(
+        tmp_path, use_llm=False, templates_path=templates, severity_threshold=threshold
+    )
+    assert shown and {f.severity for f in shown} <= allowed
+    assert shown == [f for f in plain if f.severity in allowed]
+    for hidden in {f.id for f in plain} - {f.id for f in shown}:
+        assert f"[{hidden}]" not in report
+
+
+def test_synth_path_applies_the_threshold(tmp_path: Path, monkeypatch) -> None:
+    _synth_repo(tmp_path, monkeypatch)
+    _r, _c, plain, _w = analyze_v2(tmp_path, use_llm=False)
+    assert {f.severity for f in plain if f.file and "cdk.out" in f.file} - {"High"}
+    _r, _c, shown, _w = analyze_v2(tmp_path, use_llm=False, severity_threshold="High")
+    assert shown and {f.severity for f in shown} == {"High"}
+    assert shown == [f for f in plain if f.severity == "High"]
+
+
+def test_a_static_finding_a_hidden_template_finding_covers_stays_dropped(tmp_path: Path, monkeypatch) -> None:
+    """Coverage is decided before the threshold, so hiding the template finding cannot revive it."""
+    _synth_repo(tmp_path, monkeypatch)
+    covering = next(iter(CF_COVERS_STATIC))
+    covered = set(CF_COVERS_STATIC[covering])
+    template_finding = Finding(id=covering, title="t", severity="Low", category="Security",
+                               file="cdk.out/Stack.template.json", line=1, recommendation="r")
+    static_finding = Finding(id=next(iter(covered)), title="t", severity="High", category="Security",
+                             file="lib/stack.ts", line=1, recommendation="r")
+    monkeypatch.setattr(v2_graph, "run_all_rules", lambda *_a, **_k: ([static_finding], []))
+    monkeypatch.setattr(v2_graph, "run_cf_rules", lambda *_a, **_k: [template_finding])
+    _r, _c, shown, _w = analyze_v2(tmp_path, use_llm=False, severity_threshold="High")
+    assert shown == []
+
+
+def test_cli_fail_on_ignores_template_findings_the_threshold_hid(tmp_path: Path) -> None:
+    infra = tmp_path / "infra"
+    infra.mkdir()
+    (infra / "stack.yaml").write_text(NO_HIGH_TEMPLATE, encoding="utf-8")
+    out = tmp_path / "out.md"
+    args = ["--repo", str(tmp_path), "--mode", "v2", "--no-llm", "--templates", str(infra),
+            "--out", str(out), "--fail-on", "low"]
+    assert CliRunner().invoke(app, args).exit_code == 1
+    assert "- Severity: **Medium**" in out.read_text(encoding="utf-8")
+
+    config = tmp_path / "arch-agent.json"
+    config.write_text(json.dumps({"severity_threshold": "high"}), encoding="utf-8")
+    result = CliRunner().invoke(app, [*args, "--config", str(config)])
+    assert result.exit_code == 0, result.output
+    assert "- Severity: **Medium**" not in out.read_text(encoding="utf-8")
+
+
+def test_no_llm_compact_merge_does_not_repeat_the_rag_block() -> None:
+    class Rag:
+        def retrieve(self, _query: str, k: int = 3) -> str:
+            return "least privilege"
+
+    state = {"use_llm": False, "llm_mode": "compact", "security_notes": "sec", "rag": Rag()}
+    assert node_merge(state)["merged_notes"] == v2_graph._joined_notes(state)  # type: ignore[arg-type]

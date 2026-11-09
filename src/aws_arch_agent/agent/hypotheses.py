@@ -77,7 +77,12 @@ def build_slice(
     return blocks, shown
 
 
-def build_prompt(blocks: list[str], findings: List[Finding], synth_summary: str = "") -> str:
+def build_prompt(
+    blocks: list[str],
+    findings: List[Finding],
+    synth_summary: str = "",
+    titles: dict[str, str] | None = None,
+) -> str:
     """The prompt: the compact catalog, the ids already reported, and the slice, in data markers."""
     reported = ", ".join(sorted({f.id for f in findings})) or "none"
     data = "\n\n".join(
@@ -103,7 +108,7 @@ Reply with a JSON array and nothing else. One item per violation:
 Rule ids already reported elsewhere in this repo: {reported}
 
 ## Catalog
-{compact_catalog()}
+{compact_catalog(titles)}
 
 <<<DATA_{marker}>>>
 {data}
@@ -116,14 +121,18 @@ def parse_reply(
     shown: dict[str, int],
     findings: List[Finding],
     repo_path: Path,
+    titles: dict[str, str] | None = None,
 ) -> list[Hypothesis] | None:
     """The hypotheses that pass every check. None when the body is not the JSON we asked for."""
     data = load_json_reply(text)
     items = data.get("hypotheses") if isinstance(data, dict) else data
     if not isinstance(items, list):
         return None
-    titles = catalog_titles()
+    if titles is None:
+        titles = catalog_titles()
     taken = {(_repo_file(f.file, repo_path), f.line) for f in findings if f.file}
+    # A finding in synth output cannot be tied to one source file, so any of them may hold it.
+    synthesized = {f.id for f in findings if f.file and "cdk.out" in Path(f.file).parts}
     kept: list[Hypothesis] = []
     for item in items:
         if not isinstance(item, dict):
@@ -135,6 +144,7 @@ def parse_reply(
         if (
             not isinstance(rule_id, str)
             or rule_id not in titles
+            or rule_id in synthesized
             or file not in shown
             or not isinstance(line, int)
             or isinstance(line, bool)
@@ -156,17 +166,18 @@ def find_hypotheses(
     repo_path: Path,
     files: Iterable[Path],
     synth_summary: str = "",
+    titles: dict[str, str] | None = None,
 ) -> tuple[list[Hypothesis], LLMResult | None]:
     """One call, retried once on an unusable reply. A None result means no file to ask about."""
     blocks, shown = build_slice(files, repo_path, findings)
     if not blocks:
         return [], None
-    prompt = build_prompt(blocks, findings, synth_summary)
+    prompt = build_prompt(blocks, findings, synth_summary, titles)
     result: LLMResult | None = None
     for _ in range(2):
         result = llm.polish(prompt, system=HYPOTHESIS_SYSTEM)
         if result.status == "ok":
-            hypotheses = parse_reply(result.text, shown, findings, repo_path)
+            hypotheses = parse_reply(result.text, shown, findings, repo_path, titles)
             if hypotheses is not None:
                 return hypotheses, result
             result = replace(result, text=prompt, status="invalid", reason=NOT_JSON_REASON)
