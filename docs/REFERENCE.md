@@ -61,7 +61,7 @@ LLM output is optional. `--no-llm` skips it.
 |----------|---------|
 | `LLM_PROVIDER` | `ollama` (default) or `selfhosted`. Any other value makes no call and reports `fallback` |
 | `OLLAMA_HOST`, `OLLAMA_MODEL` | Ollama server and model (e.g. `llama3:8b`) |
-| `OLLAMA_NUM_CTX` | Ollama context size in tokens. Default `24576`, which fits the largest prompt. Ollama silently cuts a longer prompt, so a smaller value uses less memory and can lose part of the prompt. An OpenAI-compatible server sets its own context |
+| `OLLAMA_NUM_CTX` | Ollama context size in tokens. Default `24576`, which fits the largest hypothesis prompt. Ollama silently cuts a longer prompt, so a smaller value uses less memory and can lose part of the prompt. A verdict batch has no total cap, so one with very long source lines can exceed the default. An OpenAI-compatible server sets its own context |
 | `LLM_BASE_URL`, `LLM_MODEL` | OpenAI-compatible server (vLLM, llama.cpp, LM Studio, LocalAI) and model. The URL ends before `/chat/completions`, e.g. `http://localhost:8000/v1` |
 
 Cloud LLM providers are not supported. Prompts include source code around each finding and go to the server these settings name, so point them at infrastructure you control. The tool does not check where that server runs, and it sends no API key.

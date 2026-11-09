@@ -52,7 +52,7 @@ rules:
 - **format**: `markdown` (default) | `json` | `sarif` | `html`. `html` writes one self-contained page to open in a browser; set **out** to a `.html` path (the default is `report.md`).
 - **fail_on**: `high` | `medium` | `low` | `none` — exit code 1 if any finding at or above this severity
 - **no_llm**: make no LLM calls: no verdicts, no hypotheses
-- **llm_mode**: `full` (six pillar LLM calls in V2) or `compact` (single merged LLM call)
+- **llm_mode**: V2 only. `full` (one verdict call per pillar with findings) or `compact` (one verdict call). Either way, plus one hypothesis call
 - **out**: output file path
 - **tags**: required tag policy, checked on templates (CloudFormation, `cdk synth` output, Terraform). Off unless `tags.required` lists at least one key:
 
