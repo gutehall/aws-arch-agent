@@ -75,7 +75,12 @@ def render_cards(cards: Iterable[RuleCard]) -> str:
     )
 
 
+def catalog_titles() -> dict[str, str]:
+    """Every static and template rule's title, by id."""
+    return {card.id: card.title for card in STATIC_CARDS.values()} | CF_TITLES
+
+
 def compact_catalog() -> str:
     """Every static and template rule, one `<id>: <title>` line each, sorted by id."""
-    titles = {card.id: card.title for card in STATIC_CARDS.values()} | CF_TITLES
+    titles = catalog_titles()
     return "\n".join(f"{rule_id}: {titles[rule_id]}" for rule_id in sorted(titles))

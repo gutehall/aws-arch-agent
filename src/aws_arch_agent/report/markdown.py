@@ -180,6 +180,20 @@ def render_markdown(
             lines.append("")
         lines.append("")
 
+    if ctx.hypotheses:
+        lines.append("## Unverified hypotheses")
+        lines.append(
+            "The model named these catalog rules in files with no finding. No check confirmed them. "
+            "They are not findings and do not affect fail-on, the baseline, or SARIF."
+        )
+        lines.append("")
+        for h in ctx.hypotheses:
+            # Code spans: the scanned repo can steer this text, as with a verdict's why.
+            file = h.file.replace("`", "'")
+            why = h.why.replace("`", "'")
+            lines.append(f"- [{h.rule_id}] {h.title}: `{file}` (line {h.line}) — `{why}`")
+        lines.append("")
+
     lines.append("## Suggested Next Actions")
     lines.append("1. Address High findings first (security/perms/network).")
     lines.append("2. Run `cdk synth` and verify outputs (V2 can automate this).")

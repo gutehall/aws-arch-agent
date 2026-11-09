@@ -33,6 +33,7 @@ from aws_arch_agent.agent.verdicts import (
     make_batches,
 )
 from aws_arch_agent.models import Verdict
+from aws_arch_agent.agent.hypotheses import find_hypotheses
 from aws_arch_agent.tools.llm import NO_LLM, LLMClient, LLMResult, aggregate_results
 from aws_arch_agent.tools.files import iter_files, read_text_safe
 from aws_arch_agent.tools.cdk_synth import list_templates_from_path
@@ -227,6 +228,34 @@ def resolve_source(repo_path: Path, iac: str, files: list[Path] | None = None) -
     if not found:
         raise IacError(f"--iac {choice}: no {label} files found in {repo_path}")
     return choice  # type: ignore[return-value]
+
+
+_CDK_IMPORT = re.compile(r"aws-cdk|aws_cdk|from ['\"]constructs['\"]")
+_TEST_DIRS = frozenset({"test", "tests", "__tests__"})
+
+
+def _is_cdk_source(path: Path, repo_path: Path) -> bool:
+    """App code that imports CDK. Tests and type stubs are not infrastructure."""
+    name = path.name.lower()
+    if path.suffix.lower() not in {".ts", ".js", ".py"} or name.endswith(".d.ts"):
+        return False
+    if ".test." in name or ".spec." in name or name.startswith("test_"):
+        return False
+    if _TEST_DIRS.intersection(path.relative_to(repo_path).parts[:-1]):
+        return False
+    return bool(_CDK_IMPORT.search(read_text_safe(path)))
+
+
+def iac_files(repo_path: Path, source: IacSource, max_files: int = 400) -> list[Path]:
+    """The infrastructure code of this source among the files walked (--max-files)."""
+    files = iter_files(repo_path, max_files=max_files)
+    if source == "cdk":
+        return [p for p in files if _is_cdk_source(p, repo_path)]
+    return [
+        p for p in files
+        if (source in TEMPLATE_SOURCES and is_cf_template(p))
+        or (source in TERRAFORM_SOURCES and is_terraform_file(p))
+    ]
 
 
 def _languages_to_scan(language: str) -> list[str]:
@@ -442,6 +471,7 @@ def analyze_v1(
         )
         if tag_policy is not None:
             ctx.notes["tag_policy"] = "checked" if policy_checked() else "not checked"
+        rule_findings = findings  # a theme filter must not make a file with findings look quiet
         if theme_filter:
             findings = themes.select(findings, theme_filter)
             ctx.notes["themes"] = list(theme_filter)
@@ -452,6 +482,7 @@ def analyze_v1(
 
     if use_llm:
         ctx.llm = _judge(findings, repo_path)
+        _hypothesize(ctx, rule_findings, repo_path, max_files)
     else:
         ctx.llm = NO_LLM
     return render_markdown(ctx, findings, warnings=warnings, group_by=group_by), ctx, findings, warnings
@@ -472,6 +503,16 @@ def _judge(findings: list[Finding], repo_path: Path) -> LLMResult:
     if run.status == "ok":
         apply_verdicts(findings, verdicts)
     return run
+
+
+def _hypothesize(ctx: RepoContext, findings: list[Finding], repo_path: Path, max_files: int) -> None:
+    """Ask about the files with no finding. The outcome goes in ctx.hypothesis_llm, not ctx.llm."""
+    if ctx.llm.status not in ("ok", "skipped"):  # a model that did not answer gets no second wait
+        return
+    ctx.hypotheses, result = find_hypotheses(
+        LLMClient(), findings, repo_path, iac_files(repo_path, ctx.source, max_files)
+    )
+    ctx.hypothesis_llm = aggregate_results([result] if result else [])
 
 
 def collect_ctx_findings(

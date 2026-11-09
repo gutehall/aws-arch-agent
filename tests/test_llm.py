@@ -6,7 +6,13 @@ from unittest.mock import MagicMock, patch
 import pytest
 import requests
 
-from aws_arch_agent.tools.llm import NO_LLM, LLMClient, LLMResult, aggregate_results
+from aws_arch_agent.tools.llm import (
+    DEFAULT_OLLAMA_NUM_CTX,
+    NO_LLM,
+    LLMClient,
+    LLMResult,
+    aggregate_results,
+)
 
 
 def test_ollama_fallback_on_failure() -> None:
@@ -173,3 +179,26 @@ def test_to_dict_leaves_the_text_out() -> None:
         "model": "llama3:8b",
         "reason": "Ollama request failed",
     }
+
+
+def _sent_num_ctx(client: LLMClient) -> int:
+    reply = _ollama_reply({"message": {"content": "ok"}})
+    with patch("aws_arch_agent.tools.llm.requests.post", return_value=reply) as post:
+        client.polish("prompt", "system")
+    return post.call_args.kwargs["json"]["options"]["num_ctx"]
+
+
+def test_ollama_context_fits_the_largest_prompt_by_default(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.delenv("OLLAMA_NUM_CTX", raising=False)
+    assert _sent_num_ctx(_client(monkeypatch, "ollama")) == DEFAULT_OLLAMA_NUM_CTX
+
+
+def test_ollama_context_can_be_set(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv("OLLAMA_NUM_CTX", "8192")
+    assert _sent_num_ctx(_client(monkeypatch, "ollama")) == 8192
+
+
+@pytest.mark.parametrize("value", ["0", "-1", "lots", "1.5"])
+def test_a_bad_ollama_context_falls_back_to_the_default(monkeypatch: pytest.MonkeyPatch, value: str) -> None:
+    monkeypatch.setenv("OLLAMA_NUM_CTX", value)
+    assert _sent_num_ctx(_client(monkeypatch, "ollama")) == DEFAULT_OLLAMA_NUM_CTX

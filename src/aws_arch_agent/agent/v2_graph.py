@@ -7,12 +7,14 @@ import subprocess
 from pathlib import Path
 from typing import Annotated, Literal, TypedDict, List
 
-from aws_arch_agent.models import Finding, IacSource, RepoContext, Verdict
+from aws_arch_agent.models import Finding, Hypothesis, IacSource, RepoContext, Verdict
+from aws_arch_agent.agent.hypotheses import find_hypotheses
 from aws_arch_agent.agent.verdicts import VerdictCache, apply_verdicts, judge_batch, make_batches
 from aws_arch_agent.agent.v1 import (
     _filter_rules,
     _languages_to_scan,
     detect_language,
+    iac_files,
     resolve_source,
 )
 from aws_arch_agent.tools.files import iter_files
@@ -91,6 +93,11 @@ class State(TypedDict, total=False):
     # Pillars run in parallel, so every call's result is appended rather than overwritten.
     llm_results: Annotated[List[LLMResult], operator.add]
     verdicts: Annotated[dict[str, Verdict], _first_verdict_wins]
+    # Findings before the theme filter, which must not make a file with findings look quiet.
+    unfiltered_findings: Annotated[List[Finding], operator.add]
+    hypotheses: List[Hypothesis]
+    # Apart from llm_results: a label needs every verdict batch ok, and this call is not one.
+    hypothesis_result: LLMResult
 
 
 # Map pillar node names to finding categories (static rules use "Operational Excellence", not "Observability")
@@ -212,12 +219,13 @@ def node_collect(state: State) -> State:
     language = ctx.language
     with limit_to_files(repo_path, files):
         findings, warnings = run_all_rules(repo_path, rules, _languages_to_scan(language))
-    findings = filter_by_severity(findings, state.get("severity_threshold"))
-    findings = _in_themes(findings, state)
+    unfiltered = filter_by_severity(findings, state.get("severity_threshold"))
+    findings = _in_themes(unfiltered, state)
 
     return {
         "ctx": ctx,
         "raw_findings": findings,
+        "unfiltered_findings": unfiltered,
         "rule_warnings": warnings,
         "rag": _build_rag(state),
     }
@@ -272,9 +280,11 @@ def node_synth(state: State) -> State:
             if not any("cdk.out" in _parts_under(p, repo_path) for p in template_paths):
                 attach_fixes(cf_findings, "cloudformation")
             out_findings.extend(cf_findings)
-            out_findings = _in_themes(drop_static_covered_by_cf(out_findings), state)
+            unfiltered = drop_static_covered_by_cf(out_findings)
+            out_findings = _in_themes(unfiltered, state)
         except Exception as exc:
             cf_failed = True
+            unfiltered = []
             _note(warnings, f"CF template rules failed: {exc}")
         warnings.extend(cf_warnings)
         return {
@@ -283,6 +293,7 @@ def node_synth(state: State) -> State:
             "synth_stderr": "",
             "synth_summary": synth_summary,
             "raw_findings": out_findings,
+            "unfiltered_findings": unfiltered,
             "rule_warnings": warnings,
         }
 
@@ -354,9 +365,11 @@ def node_synth(state: State) -> State:
     try:
         cf_findings = run_cf_rules(cdk_out, repo_path=repo_path, warnings=cf_warnings)
         out_findings.extend(cf_findings)
-        out_findings = _in_themes(drop_static_covered_by_cf(out_findings), state)
+        unfiltered = drop_static_covered_by_cf(out_findings)
+        out_findings = _in_themes(unfiltered, state)
     except Exception as exc:
         cf_failed = True
+        unfiltered = []
         _note(warnings, f"CF template rules failed: {exc}")
     warnings.extend(cf_warnings)
     return {
@@ -365,6 +378,7 @@ def node_synth(state: State) -> State:
         "synth_stderr": err[-4000:],
         "synth_summary": synth_summary,
         "raw_findings": out_findings,
+        "unfiltered_findings": unfiltered,
         "rule_warnings": warnings,
     }
 
@@ -475,8 +489,30 @@ Be specific, avoid repetition, and keep it to ~350-550 words.
     return {"merged_notes": prompt}
 
 
+def node_hypotheses(state: State) -> State:
+    """Ask about the files with no finding, counting the findings a theme filter removed."""
+    if not state.get("use_llm", True):
+        return {}
+    # A model that did not answer gets no second wait.
+    if aggregate_results(state.get("llm_results") or []).status not in ("ok", "skipped"):
+        return {}
+    repo_path = Path(state["repo_path"])
+    hypotheses, result = find_hypotheses(
+        LLMClient(),
+        [*state.get("raw_findings", []), *(state.get("unfiltered_findings") or [])],
+        repo_path,
+        iac_files(repo_path, state["ctx"].source, state.get("max_files", 400)),
+        synth_summary=state.get("synth_summary", ""),
+    )
+    out: State = {"hypotheses": hypotheses}
+    if result is not None:
+        out["hypothesis_result"] = result
+    return out
+
+
 def node_report(state: State) -> State:
     ctx = state["ctx"]
+    ctx.hypotheses = state.get("hypotheses") or []
     findings = state.get("raw_findings", [])
     warnings = state.get("rule_warnings") or []
     effort.annotate(findings)  # the summary's quick wins need it
@@ -519,7 +555,7 @@ def node_report(state: State) -> State:
 
 
 def build_graph():
-    """Build and compile the LangGraph StateGraph (collect -> synth -> 6 pillars -> merge -> report)."""
+    """Build and compile the LangGraph StateGraph (collect -> synth -> 6 pillars -> merge -> hypotheses -> report)."""
     g = StateGraph(State)
     g.add_node("collect", node_collect)
     g.add_node("synth", node_synth)
@@ -530,6 +566,7 @@ def build_graph():
     g.add_node("performance_efficiency", node_performance_efficiency)
     g.add_node("sustainability", node_sustainability)
     g.add_node("merge", node_merge)
+    g.add_node("hypotheses", node_hypotheses)
     g.add_node("report", node_report)
 
     g.set_entry_point("collect")
@@ -549,7 +586,8 @@ def build_graph():
     g.add_edge("performance_efficiency", "merge")
     g.add_edge("sustainability", "merge")
 
-    g.add_edge("merge", "report")
+    g.add_edge("merge", "hypotheses")
+    g.add_edge("hypotheses", "report")
     g.add_edge("report", END)
     return g.compile()
 
@@ -616,4 +654,5 @@ def analyze_v2(
     if ctx is None:
         ctx = RepoContext(repo_path=str(repo_path), language="unknown")
     ctx.llm = aggregate_results(out.get("llm_results") or []) if use_llm else NO_LLM
+    ctx.hypothesis_llm = aggregate_results([out["hypothesis_result"]] if "hypothesis_result" in out else [])
     return report, ctx, findings, warnings

@@ -28,7 +28,7 @@ from aws_arch_agent.config import (
     SeverityThreshold,
     load_config,
 )
-from aws_arch_agent.models import Finding, IacSource
+from aws_arch_agent.models import Finding, IacSource, RepoContext
 from aws_arch_agent.rules.themes import THEMES
 from aws_arch_agent.report.json_report import render_json
 from aws_arch_agent.report.html import render_html
@@ -76,6 +76,16 @@ def _verdict_line(findings: list[Finding]) -> str | None:
     """How many findings the model judged, so a capped or partial run says so. None if none."""
     judged = sum(1 for f in findings if f.verdict is not None)
     return f"Verdicts: {judged} of {len(findings)} findings judged" if judged else None
+
+
+def _hypothesis_line(ctx: RepoContext) -> str | None:
+    """What the hypothesis call did. None when no call was made."""
+    result = ctx.hypothesis_llm
+    if result.status == "skipped":
+        return None
+    if result.status == "ok":
+        return f"Hypotheses: {len(ctx.hypotheses)} unverified"
+    return f"Hypotheses: {result.status} ({result.reason})"
 
 
 def _resolve_baseline_path(repo_path: Path, baseline: str | None) -> Path:
@@ -160,7 +170,7 @@ def analyze(
     fail_on: str = typer.Option(
         "none", "--fail-on", help="Exit non-zero if any finding has this severity or higher (high|medium|low|none)"
     ),
-    no_llm: bool = typer.Option(False, "--no-llm", help="Skip LLM polish / agent reasoning"),
+    no_llm: bool = typer.Option(False, "--no-llm", help="Make no LLM calls: no verdicts, no hypotheses"),
     llm_mode: str = typer.Option("full", "--llm-mode", help="V2 LLM strategy: full (6 pillar calls) or compact (single call)"),
     templates: str | None = typer.Option(None, "--templates", help="Path to CloudFormation templates (dir or file); V2 only, skips cdk synth"),
     no_synth: bool = typer.Option(False, "--no-synth", help="Do not run cdk synth; V2 only (static analysis or use with --templates)"),
@@ -341,6 +351,15 @@ def analyze(
     if verdict_line:
         llm_lines.append(verdict_line)
         console.print(verdict_line, markup=False, soft_wrap=True)
+    hypothesis_line = _hypothesis_line(ctx_report)
+    if hypothesis_line:
+        llm_lines.append(hypothesis_line)
+        console.print(
+            hypothesis_line,
+            style=None if ctx_report.hypothesis_llm.status == "ok" else "yellow",
+            markup=False,
+            soft_wrap=True,
+        )
 
     if ctx_report.notes.get("tag_policy") == "not checked":
         console.print(

@@ -14,6 +14,9 @@ logger = logging.getLogger(__name__)
 LLM_TIMEOUT_S = 120
 # Room for a full batch of verdicts, so the reply is not cut off into invalid JSON.
 MAX_REPLY_TOKENS = 4096
+# Ollama silently cuts a prompt longer than its context, and its default is far below our
+# largest prompt: about 49k characters of catalog and source, plus room for the reply.
+DEFAULT_OLLAMA_NUM_CTX = 24576
 
 LLMStatus = Literal["ok", "fallback", "skipped", "invalid"]
 
@@ -67,6 +70,7 @@ class LLMClient:
         self.provider = os.getenv("LLM_PROVIDER", "ollama").lower()
         self.ollama_host = os.getenv("OLLAMA_HOST", "http://localhost:11434")
         self.ollama_model = os.getenv("OLLAMA_MODEL", "llama3:8b")
+        self.ollama_num_ctx = _ollama_num_ctx()
         self.selfhosted_url = os.getenv("LLM_BASE_URL", "")
         self.selfhosted_model = os.getenv("LLM_MODEL", "")
 
@@ -91,6 +95,7 @@ class LLMClient:
                 {"role": "system", "content": system},
                 {"role": "user", "content": prompt},
             ],
+            "options": {"num_ctx": self.ollama_num_ctx},
             "stream": False,
         }
         try:
@@ -130,6 +135,17 @@ class LLMClient:
             return LLMResult(
                 prompt, "fallback", "selfhosted", model, "Self-hosted LLM request failed"
             )
+
+
+def _ollama_num_ctx() -> int:
+    """OLLAMA_NUM_CTX when it is a positive whole number, otherwise the default."""
+    raw = os.getenv("OLLAMA_NUM_CTX", "").strip()
+    if not raw:
+        return DEFAULT_OLLAMA_NUM_CTX
+    if raw.isdecimal() and int(raw) > 0:
+        return int(raw)
+    logger.warning("Ignoring OLLAMA_NUM_CTX=%r: not a positive whole number", raw)
+    return DEFAULT_OLLAMA_NUM_CTX
 
 
 def _from_reply(reply: Any, prompt: str, provider: str, model: str, label: str) -> LLMResult:

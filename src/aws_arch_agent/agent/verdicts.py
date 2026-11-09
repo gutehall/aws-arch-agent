@@ -132,14 +132,19 @@ def _sanitize_why(why: Any) -> str | None:
     return " ".join(printable.split())[:MAX_WHY_CHARS].strip() or None
 
 
-def parse_reply(text: str, allowed_ids: set[str]) -> dict[str, Verdict] | None:
-    """Usable verdicts from a reply, by finding_key. None when the body is not the JSON we asked for."""
+def load_json_reply(text: str) -> Any:
+    """The reply's JSON, with or without a code fence. None when the body is not JSON."""
     body = text.strip()
     fenced = _FENCE.match(body)
     try:
-        data = json.loads(fenced.group(1) if fenced else body)
+        return json.loads(fenced.group(1) if fenced else body)
     except (ValueError, RecursionError):
         return None
+
+
+def parse_reply(text: str, allowed_ids: set[str]) -> dict[str, Verdict] | None:
+    """Usable verdicts from a reply, by finding_key. None when the body is not the JSON we asked for."""
+    data = load_json_reply(text)
     items = data.get("verdicts") if isinstance(data, dict) else data
     if not isinstance(items, list):
         return None

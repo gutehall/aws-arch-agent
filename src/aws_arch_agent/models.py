@@ -61,6 +61,17 @@ class Finding(BaseModel):
     verdict: Verdict | None = Field(default=None, exclude=True)
 
 
+class Hypothesis(BaseModel):
+    """A catalog rule the model thinks the scanner missed. No check confirmed it; never a Finding."""
+
+    rule_id: str
+    title: str
+    file: str
+    line: int
+    why: str
+    unverified: Literal[True] = True
+
+
 class RepoContext(BaseModel):
     """Context about the scanned repo (path, language, file count, optional notes)."""
 
@@ -72,3 +83,8 @@ class RepoContext(BaseModel):
     notes: Dict[str, Any] = Field(default_factory=dict)
     # Run-level LLM outcome. Excluded from `context`: the JSON report has its own `llm`.
     llm: LLMResult = Field(default=NO_CALL, exclude=True)
+    # Excluded from `context` too: the JSON report has its own `hypotheses`.
+    hypotheses: List[Hypothesis] = Field(default_factory=list, exclude=True)
+    # Apart from `llm`, which is the verdict calls: a label shows only when `llm` is ok, and
+    # the larger hypothesis prompt failing must not take good verdicts with it.
+    hypothesis_llm: LLMResult = Field(default=NO_CALL, exclude=True)

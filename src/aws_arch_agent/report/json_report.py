@@ -26,6 +26,10 @@ def render_json(
         "llm": ctx.llm.to_dict(),
         "findings": [_finding_dict(f) for f in findings],
     }
+    if ctx.hypotheses:
+        data["hypotheses"] = [h.model_dump() for h in ctx.hypotheses]
+    if ctx.hypothesis_llm.status != "skipped":
+        data["hypotheses_llm"] = ctx.hypothesis_llm.to_dict()
     if warnings:
         data["warnings"] = warnings
     return json.dumps(data, indent=2)
