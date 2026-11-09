@@ -27,6 +27,7 @@ MAX_EVIDENCE_CHARS = 2000
 # About 3 characters a token leaves room in DEFAULT_OLLAMA_NUM_CTX for the reply.
 MAX_PROMPT_CHARS = 48_000
 MAX_REFERENCE_CHARS = 6000
+MAX_LOCATION_CHARS = 300
 MAX_WHY_CHARS = 300
 NOT_JSON_REASON = "model reply was not JSON"
 
@@ -102,6 +103,7 @@ def _finding_head(finding: Finding) -> str:
     where = finding.file or "unknown"
     if finding.line is not None:
         where += f":{finding.line}"
+    where = where[:MAX_LOCATION_CHARS]
     return (
         f"finding_id: {finding_key(finding)}\n"
         f"Rule: {finding.id}\n"
@@ -127,8 +129,9 @@ def _finding_block(finding: Finding, repo_path: Path, share: int) -> str:
 def build_prompt(findings: List[Finding], repo_path: Path, reference: str = "") -> str:
     """The prompt for one batch, inside data markers, in at most MAX_PROMPT_CHARS.
 
-    Rule cards and markers stay whole. Evidence and source share what is left, so a long
-    batch narrows its source windows around each finding and every finding is still asked.
+    Markers stay whole, and rule cards and locations have their own caps. Evidence and source
+    share what is left, so a long batch narrows its source windows around each finding and
+    every finding is still asked.
     """
     cards = render_cards(cards_for_findings(findings))
     ref = reference.strip()[:MAX_REFERENCE_CHARS].strip()

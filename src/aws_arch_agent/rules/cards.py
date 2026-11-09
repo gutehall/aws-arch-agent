@@ -25,6 +25,9 @@ class RuleCard:
     recommendation: str
 
 
+MAX_CARD_TITLE_CHARS = 200
+MAX_CARD_RECOMMENDATION_CHARS = 800
+
 STATIC_CARDS: dict[str, RuleCard] = {
     rule.id: RuleCard(
         id=rule.id,
@@ -65,12 +68,16 @@ def cards_for_findings(findings: Iterable[Finding]) -> list[RuleCard]:
 
 
 def render_cards(cards: Iterable[RuleCard]) -> str:
-    """The cards as text, one block per card, for a verdict prompt."""
+    """The cards as text, one block per card, for a verdict prompt.
+
+    Capped so a template finding's own text cannot outgrow the prompt limit. The caps are far
+    above any rule's written text.
+    """
     return "\n\n".join(
-        f"{card.id}: {card.title}\n"
+        f"{card.id}: {card.title[:MAX_CARD_TITLE_CHARS]}\n"
         f"Severity: {card.severity}\n"
         f"Category: {card.category}\n"
-        f"Recommendation: {card.recommendation}"
+        f"Recommendation: {card.recommendation[:MAX_CARD_RECOMMENDATION_CHARS]}"
         for card in cards
     )
 

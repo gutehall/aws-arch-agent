@@ -466,7 +466,9 @@ def node_merge(state: State) -> State:
             out["verdicts"] = verdicts
         return out
 
-    return {"merged_notes": _joined_notes(state) + _rag_block(state)}
+    # In compact mode each pillar's notes already hold the block.
+    rag_block = "" if llm_mode == "compact" else _rag_block(state)
+    return {"merged_notes": _joined_notes(state) + rag_block}
 
 
 def node_hypotheses(state: State) -> State:

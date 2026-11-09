@@ -110,3 +110,9 @@ def test_ordinary_paths_and_evidence_render_as_before() -> None:
     report = _render(_finding(file="lib/my-stack_1.ts", evidence="Action: `*`"))
     assert "- File: `lib/my-stack_1.ts` (line 2)\n" in report
     assert "**Evidence**\n```\nAction: `*`\n```\n" in report
+
+
+def test_a_warning_stays_on_its_line_and_in_its_span() -> None:
+    report = render_markdown(RepoContext(repo_path="/repo"), [], warnings=["bad `file\n## Injected"])
+    assert "- `bad 'file ## Injected`\n" in report
+    assert "\n## Injected" not in report

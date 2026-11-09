@@ -294,7 +294,10 @@ def active_titles(
     rules_exclude: list[str] | None = None,
     rules_org: bool = False,
 ) -> dict[str, str]:
-    """The catalog this scan has on, static and CF-* alike, with the meaning of _filter_rules."""
+    """The catalog less what the config turned off, with the meaning of _filter_rules.
+
+    It is not limited by source: a CDK scan still offers CF-* ids it does not run.
+    """
     titles = catalog_titles()
     if rules_include is not None:
         allowed = set(rules_include)

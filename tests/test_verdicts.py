@@ -716,3 +716,24 @@ def test_a_window_too_small_for_the_finding_line_is_no_source(tmp_path: Path) ->
 def test_the_same_long_batch_gives_the_same_prompt(tmp_path: Path) -> None:
     findings = _long_line_repo(tmp_path)
     assert build_prompt(findings, tmp_path) == build_prompt(findings, tmp_path)
+
+
+def test_the_limit_holds_when_template_findings_bring_long_text(tmp_path: Path) -> None:
+    (tmp_path / "a.ts").write_text("\n".join("x" * 2000 for _ in range(100)), encoding="utf-8")
+    findings = [
+        Finding(id=f"CF-LONG-{n:03}", title="t" * 5000, severity="High", category="Security",
+                file=f"a.ts{'/' * 5000}", line=n + 1, evidence="e" * 5000, recommendation="r" * 5000)
+        for n in range(BATCH_SIZE)
+    ]
+    prompt = build_prompt(findings, tmp_path, reference="r" * 50_000)
+    assert len(prompt) <= MAX_PROMPT_CHARS
+    assert _ids(prompt) == [finding_key(f) for f in findings]
+
+
+def test_the_longest_written_card_text_is_not_capped(tmp_path: Path) -> None:
+    title, recommendation = "t" * 106, "r" * 427
+    finding = Finding(id="CF-X-001", title=title, severity="High", category="Security",
+                      file="a.ts", line=1, recommendation=recommendation)
+    prompt = build_prompt([finding], tmp_path)
+    assert f"CF-X-001: {title}\n" in prompt
+    assert f"Recommendation: {recommendation}\n" in prompt

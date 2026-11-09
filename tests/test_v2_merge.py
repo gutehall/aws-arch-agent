@@ -374,3 +374,12 @@ def test_cli_fail_on_ignores_template_findings_the_threshold_hid(tmp_path: Path)
     result = CliRunner().invoke(app, [*args, "--config", str(config)])
     assert result.exit_code == 0, result.output
     assert "- Severity: **Medium**" not in out.read_text(encoding="utf-8")
+
+
+def test_no_llm_compact_merge_does_not_repeat_the_rag_block() -> None:
+    class Rag:
+        def retrieve(self, _query: str, k: int = 3) -> str:
+            return "least privilege"
+
+    state = {"use_llm": False, "llm_mode": "compact", "security_notes": "sec", "rag": Rag()}
+    assert node_merge(state)["merged_notes"] == v2_graph._joined_notes(state)  # type: ignore[arg-type]

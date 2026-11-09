@@ -129,7 +129,8 @@ def render_markdown(
         lines.append("Some rules failed during analysis; results may be incomplete.")
         lines.append("")
         for w in warnings:
-            lines.append(f"- {w}")
+            # A code span: warnings can name files from the scanned repo.
+            lines.append(f"- `{_span_text(w)}`")
         lines.append("")
 
     sections: List[tuple[str, List[Finding]]]
