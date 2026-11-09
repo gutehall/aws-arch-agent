@@ -14,10 +14,7 @@ RAG is optional. With no path, the prompts have no reference block.
 
 Collect builds one instance. Pillars and merge reuse it. They do not reload the file or re-embed the chunks.
 
-The default is keyword overlap. Set `rag.use_embeddings` and `rag.embedding_provider` for vectors:
-
-- `sentence-transformers` (install with `pip install -e ".[rag]"`). Chunk vectors stay on the instance.
-- `openai` (`OPENAI_API_KEY`). Chunk vectors are cached the same way. Each retrieve embeds only the query.
+The default is keyword overlap. Set `rag.use_embeddings` and `rag.embedding_provider` to `sentence-transformers` for vectors (install with `pip install -e ".[rag]"`). It runs locally. Chunk vectors stay on the instance, and each retrieve embeds only the query.
 
 A failed load or retrieve is a warning. The scan continues. The config examples point at [waf-snippets.md](waf-snippets.md).
 

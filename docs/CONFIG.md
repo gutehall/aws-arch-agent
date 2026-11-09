@@ -100,8 +100,8 @@ rules:
 - **rules.org**: if `true`, also run account-level absence rules `SEC-026`, `SEC-027`, `OPS-001`, `OPS-014`, and `COST-014`. Default is `false` because an app stack does not own those controls. Listing an id in **rules.include** runs that rule even when this is false. **rules.exclude** still skips it.
 - **rag.path**: path to a markdown doc for RAG context (V2 only). Pillar and merge prompts include retrieved snippets when set.
 - **rag.use_embeddings**: if `true`, use embedding-based retrieval (V2 only). Requires **rag.embedding_provider**.
-- **rag.embedding_provider**: `"sentence-transformers"` (local; install with `pip install -e ".[rag]"`) or `"openai"` (uses `OPENAI_API_KEY`).
-- **rag.embedding_model**: optional model name (e.g. `"all-MiniLM-L6-v2"` for sentence-transformers, `"text-embedding-3-small"` for OpenAI). Defaults apply if omitted.
+- **rag.embedding_provider**: `"sentence-transformers"` (local; install with `pip install -e ".[rag]"`). It is the only value accepted.
+- **rag.embedding_model**: optional model name (e.g. `"all-MiniLM-L6-v2"`). Defaults apply if omitted.
 
 ## Baseline / suppressions
 

@@ -1,4 +1,4 @@
-"""LLM client for Ollama, OpenAI, and Anthropic (polish/review prompts)."""
+"""LLM client for self-hosted models only: Ollama or an OpenAI-compatible server."""
 from __future__ import annotations
 
 from dataclasses import dataclass, replace
@@ -10,8 +10,10 @@ import requests
 
 logger = logging.getLogger(__name__)
 
-# Same bound as the Ollama request. A stalled cloud call must not use the SDK default.
+# The same bound on every request, so a stalled model cannot hang a scan.
 LLM_TIMEOUT_S = 120
+# Room for a full batch of verdicts, so the reply is not cut off into invalid JSON.
+MAX_REPLY_TOKENS = 4096
 
 LLMStatus = Literal["ok", "fallback", "skipped", "invalid"]
 
@@ -59,22 +61,26 @@ def aggregate_results(results: Iterable[LLMResult]) -> LLMResult:
 
 
 class LLMClient:
-    """Calls configured LLM provider (Ollama, OpenAI, or Anthropic) to polish or generate markdown."""
+    """Calls the configured self-hosted model. There is no cloud provider, by design."""
 
     def __init__(self) -> None:
         self.provider = os.getenv("LLM_PROVIDER", "ollama").lower()
         self.ollama_host = os.getenv("OLLAMA_HOST", "http://localhost:11434")
         self.ollama_model = os.getenv("OLLAMA_MODEL", "llama3:8b")
-        self.openai_model = os.getenv("OPENAI_MODEL", "gpt-4o-mini")
-        self.anthropic_model = os.getenv("ANTHROPIC_MODEL", "claude-3-5-sonnet-latest")
+        self.selfhosted_url = os.getenv("LLM_BASE_URL", "")
+        self.selfhosted_model = os.getenv("LLM_MODEL", "")
 
     def polish(self, markdown: str, system: str) -> LLMResult:
         """Send content to LLM with system prompt; a failure returns the original as its text."""
-        if self.provider == "openai":
-            return self._openai(markdown, system)
-        if self.provider == "anthropic":
-            return self._anthropic(markdown, system)
-        return self._ollama(markdown, system)
+        if self.provider == "ollama":
+            return self._ollama(markdown, system)
+        if self.provider == "selfhosted":
+            return self._selfhosted(markdown, system)
+        # No fall-through: a leftover setting must not send the prompt somewhere unexpected.
+        logger.warning("Unsupported LLM_PROVIDER: %s", self.provider)
+        return LLMResult(
+            markdown, "fallback", reason="unsupported LLM_PROVIDER, use ollama or selfhosted"
+        )
 
     def _ollama(self, prompt: str, system: str) -> LLMResult:
         model = self.ollama_model
@@ -97,56 +103,33 @@ class LLMClient:
             logger.warning("Ollama request failed: %s", e)
             return LLMResult(prompt, "fallback", "ollama", model, "Ollama request failed")
 
-    def _openai(self, prompt: str, system: str) -> LLMResult:
-        model = self.openai_model
-        # Optional dependency
+    def _selfhosted(self, prompt: str, system: str) -> LLMResult:
+        """vLLM, llama.cpp, LM Studio, LocalAI: anything serving /chat/completions."""
+        model = self.selfhosted_model
+        if not self.selfhosted_url:
+            return LLMResult(prompt, "fallback", "selfhosted", model, "LLM_BASE_URL not set")
+        if not model:
+            return LLMResult(prompt, "fallback", "selfhosted", None, "LLM_MODEL not set")
+        url = f"{self.selfhosted_url.rstrip('/')}/chat/completions"
+        payload = {
+            "model": model,
+            "messages": [
+                {"role": "system", "content": system},
+                {"role": "user", "content": prompt},
+            ],
+            "max_tokens": MAX_REPLY_TOKENS,
+            "stream": False,
+        }
         try:
-            from openai import OpenAI  # type: ignore
-        except ImportError as e:
-            logger.debug("OpenAI package not installed: %s", e)
-            return LLMResult(prompt, "fallback", "openai", model, "OpenAI SDK not installed")
-        api_key = os.getenv("OPENAI_API_KEY")
-        if not api_key:
-            logger.warning("OPENAI_API_KEY not set; skipping LLM polish")
-            return LLMResult(prompt, "fallback", "openai", model, "OPENAI_API_KEY not set")
-        try:
-            client = OpenAI(api_key=api_key, timeout=LLM_TIMEOUT_S)
-            resp = client.chat.completions.create(
-                model=model,
-                messages=[
-                    {"role": "system", "content": system},
-                    {"role": "user", "content": prompt},
-                ],
-            )
-            return _from_reply(resp.choices[0].message.content, prompt, "openai", model, "OpenAI")
+            r = requests.post(url, json=payload, timeout=LLM_TIMEOUT_S)
+            r.raise_for_status()
+            reply = r.json()["choices"][0]["message"]["content"]
+            return _from_reply(reply, prompt, "selfhosted", model, "Self-hosted LLM")
         except Exception as e:
-            logger.warning("OpenAI request failed: %s", e)
-            return LLMResult(prompt, "fallback", "openai", model, "OpenAI request failed")
-
-    def _anthropic(self, prompt: str, system: str) -> LLMResult:
-        model = self.anthropic_model
-        try:
-            import anthropic  # type: ignore
-        except ImportError as e:
-            logger.debug("Anthropic package not installed: %s", e)
-            return LLMResult(prompt, "fallback", "anthropic", model, "Anthropic SDK not installed")
-        api_key = os.getenv("ANTHROPIC_API_KEY")
-        if not api_key:
-            logger.warning("ANTHROPIC_API_KEY not set; skipping LLM polish")
-            return LLMResult(prompt, "fallback", "anthropic", model, "ANTHROPIC_API_KEY not set")
-        try:
-            client = anthropic.Anthropic(api_key=api_key, timeout=LLM_TIMEOUT_S)
-            msg = client.messages.create(
-                model=model,
-                system=system,
-                max_tokens=4096,  # 20 verdicts must not be cut into invalid JSON
-                messages=[{"role": "user", "content": prompt}],
+            logger.warning("Self-hosted LLM request failed: %s", e)
+            return LLMResult(
+                prompt, "fallback", "selfhosted", model, "Self-hosted LLM request failed"
             )
-            reply = "".join([b.text for b in msg.content if hasattr(b, "text")])
-            return _from_reply(reply, prompt, "anthropic", model, "Anthropic")
-        except Exception as e:
-            logger.warning("Anthropic request failed: %s", e)
-            return LLMResult(prompt, "fallback", "anthropic", model, "Anthropic request failed")
 
 
 def _from_reply(reply: Any, prompt: str, provider: str, model: str, label: str) -> LLMResult:

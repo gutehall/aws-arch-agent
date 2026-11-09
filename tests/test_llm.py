@@ -1,4 +1,6 @@
 """Tests for LLM client fallback behavior."""
+import re
+from pathlib import Path
 from unittest.mock import MagicMock, patch
 
 import pytest
@@ -18,51 +20,6 @@ def test_ollama_fallback_on_failure() -> None:
     assert result.line == "LLM: fallback (Ollama request failed)"
 
 
-def test_openai_client_receives_timeout() -> None:
-    client = LLMClient()
-    mock_openai = MagicMock()
-    choice = MagicMock()
-    choice.message.content = "polished"
-    mock_openai.return_value.chat.completions.create.return_value.choices = [choice]
-    with patch.dict("os.environ", {"OPENAI_API_KEY": "sk-test"}):
-        with patch.dict("sys.modules", {"openai": MagicMock(OpenAI=mock_openai)}):
-            assert client._openai("prompt", "system").text == "polished"
-    assert mock_openai.call_args.kwargs["timeout"] == 120
-
-
-def test_anthropic_client_receives_timeout() -> None:
-    client = LLMClient()
-    mock_mod = MagicMock()
-    mock_mod.Anthropic.return_value.messages.create.return_value.content = []
-    with patch.dict("os.environ", {"ANTHROPIC_API_KEY": "sk-ant"}):
-        with patch.dict("sys.modules", {"anthropic": mock_mod}):
-            client._anthropic("prompt", "system")
-    assert mock_mod.Anthropic.call_args.kwargs["timeout"] == 120
-
-
-def test_anthropic_leaves_room_for_a_full_verdict_batch() -> None:
-    client = LLMClient()
-    mock_mod = MagicMock()
-    mock_mod.Anthropic.return_value.messages.create.return_value.content = []
-    with patch.dict("os.environ", {"ANTHROPIC_API_KEY": "sk-ant"}):
-        with patch.dict("sys.modules", {"anthropic": mock_mod}):
-            client._anthropic("prompt", "system")
-    assert mock_mod.Anthropic.return_value.messages.create.call_args.kwargs["max_tokens"] == 4096
-
-
-def test_openai_fallback_on_api_error() -> None:
-    client = LLMClient()
-    client.provider = "openai"
-    mock_openai = MagicMock()
-    mock_openai.return_value.chat.completions.create.side_effect = RuntimeError("api error")
-    with patch.dict("os.environ", {"OPENAI_API_KEY": "sk-test"}):
-        with patch.dict("sys.modules", {"openai": MagicMock(OpenAI=mock_openai)}):
-            result = client._openai("prompt", "system")
-    assert result.text == "prompt"
-    assert result.status == "fallback"
-    assert result.reason == "OpenAI request failed"
-
-
 def _ollama_reply(body: dict) -> MagicMock:
     response = MagicMock()
     response.json.return_value = body
@@ -72,10 +29,8 @@ def _ollama_reply(body: dict) -> MagicMock:
 def _client(monkeypatch: pytest.MonkeyPatch, provider: str) -> LLMClient:
     monkeypatch.setenv("LLM_PROVIDER", provider)
     monkeypatch.setenv("OLLAMA_MODEL", "llama3:8b")
-    monkeypatch.setenv("OPENAI_MODEL", "gpt-x")
-    monkeypatch.setenv("ANTHROPIC_MODEL", "claude-x")
-    monkeypatch.delenv("OPENAI_API_KEY", raising=False)
-    monkeypatch.delenv("ANTHROPIC_API_KEY", raising=False)
+    monkeypatch.setenv("LLM_BASE_URL", "http://models.internal:8000/v1/")
+    monkeypatch.setenv("LLM_MODEL", "qwen")
     return LLMClient()
 
 
@@ -90,13 +45,24 @@ def test_ollama_success_reports_provider_and_model(monkeypatch: pytest.MonkeyPat
     assert result.line == "LLM: ollama/llama3:8b responded"
 
 
-def test_unknown_provider_falls_through_and_reports_ollama(monkeypatch: pytest.MonkeyPatch) -> None:
-    client = _client(monkeypatch, "mystery")
-    reply = _ollama_reply({"message": {"content": "polished"}})
-    with patch("aws_arch_agent.tools.llm.requests.post", return_value=reply):
+@pytest.mark.parametrize("provider", ["openai", "anthropic", "mystery"])
+def test_other_providers_are_refused_without_a_call(
+    monkeypatch: pytest.MonkeyPatch, provider: str
+) -> None:
+    client = _client(monkeypatch, provider)
+    with patch("aws_arch_agent.tools.llm.requests.post") as post:
         result = client.polish("prompt", "system")
-    assert result.provider == "ollama"
-    assert result.status == "ok"
+    post.assert_not_called()
+    assert (result.status, result.text) == ("fallback", "prompt")
+    assert result.line == "LLM: fallback (unsupported LLM_PROVIDER, use ollama or selfhosted)"
+
+
+def test_no_cloud_sdk_in_the_source_or_the_dependencies() -> None:
+    root = Path(__file__).resolve().parents[1]
+    importing = re.compile(r"^\s*(?:from|import)\s+(?:openai|anthropic)\b", re.MULTILINE)
+    assert [p for p in (root / "src").rglob("*.py") if importing.search(p.read_text())] == []
+    pyproject = (root / "pyproject.toml").read_text()
+    assert '"openai' not in pyproject and '"anthropic' not in pyproject
 
 
 def test_failure_reason_holds_no_exception_text(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -125,58 +91,52 @@ def test_ollama_empty_reply_is_invalid(monkeypatch: pytest.MonkeyPatch, body: di
     assert result.line == "LLM: invalid (Ollama returned an empty reply)"
 
 
-@pytest.mark.parametrize("provider, module, reason", [
-    ("openai", "openai", "OpenAI SDK not installed"),
-    ("anthropic", "anthropic", "Anthropic SDK not installed"),
+def _selfhosted_reply(content: object) -> MagicMock:
+    return _ollama_reply({"choices": [{"message": {"content": content}}]})
+
+
+def test_selfhosted_success_reports_provider_and_model(monkeypatch: pytest.MonkeyPatch) -> None:
+    client = _client(monkeypatch, "selfhosted")
+    with patch(
+        "aws_arch_agent.tools.llm.requests.post", return_value=_selfhosted_reply("answer")
+    ) as post:
+        result = client.polish("prompt", "system")
+    assert (result.text, result.status) == ("answer", "ok")
+    assert result.line == "LLM: selfhosted/qwen responded"
+    assert post.call_args.args[0] == "http://models.internal:8000/v1/chat/completions"
+    assert post.call_args.kwargs["timeout"] == 120
+    payload = post.call_args.kwargs["json"]
+    assert payload["model"] == "qwen"
+    assert payload["max_tokens"] == 4096
+    assert payload["messages"][1] == {"role": "user", "content": "prompt"}
+
+
+@pytest.mark.parametrize("variable, reason", [
+    ("LLM_BASE_URL", "LLM_BASE_URL not set"),
+    ("LLM_MODEL", "LLM_MODEL not set"),
 ])
-def test_missing_sdk_is_fallback(
-    monkeypatch: pytest.MonkeyPatch, provider: str, module: str, reason: str
+def test_selfhosted_settings_are_required(
+    monkeypatch: pytest.MonkeyPatch, variable: str, reason: str
 ) -> None:
-    client = _client(monkeypatch, provider)
-    with patch.dict("sys.modules", {module: None}):  # None makes the import raise ImportError
-        result = client.polish("prompt", "system")
-    assert (result.status, result.reason, result.text) == ("fallback", reason, "prompt")
-    assert result.provider == provider
-
-
-@pytest.mark.parametrize("provider, reason", [
-    ("openai", "OPENAI_API_KEY not set"),
-    ("anthropic", "ANTHROPIC_API_KEY not set"),
-])
-def test_missing_key_is_fallback(
-    monkeypatch: pytest.MonkeyPatch, provider: str, reason: str
-) -> None:
-    client = _client(monkeypatch, provider)
-    with patch.dict("sys.modules", {provider: MagicMock()}):
-        result = client.polish("prompt", "system")
+    monkeypatch.setenv("LLM_PROVIDER", "selfhosted")
+    monkeypatch.setenv("LLM_BASE_URL", "http://models.internal:8000/v1")
+    monkeypatch.setenv("LLM_MODEL", "qwen")
+    monkeypatch.delenv(variable)
+    with patch("aws_arch_agent.tools.llm.requests.post") as post:
+        result = LLMClient().polish("prompt", "system")
+    post.assert_not_called()
     assert (result.status, result.reason, result.text) == ("fallback", reason, "prompt")
 
 
-def test_openai_empty_reply_is_invalid(monkeypatch: pytest.MonkeyPatch) -> None:
-    client = _client(monkeypatch, "openai")
-    monkeypatch.setenv("OPENAI_API_KEY", "sk-test")
-    mock_openai = MagicMock()
-    choice = MagicMock()
-    choice.message.content = None
-    mock_openai.return_value.chat.completions.create.return_value.choices = [choice]
-    with patch.dict("sys.modules", {"openai": MagicMock(OpenAI=mock_openai)}):
-        result = client.polish("prompt", "system")
-    assert (result.status, result.text) == ("invalid", "prompt")
-    assert result.reason == "OpenAI returned an empty reply"
-
-
-def test_anthropic_empty_reply_and_request_failure(monkeypatch: pytest.MonkeyPatch) -> None:
-    client = _client(monkeypatch, "anthropic")
-    monkeypatch.setenv("ANTHROPIC_API_KEY", "sk-ant")
-    mock_mod = MagicMock()
-    mock_mod.Anthropic.return_value.messages.create.return_value.content = []
-    with patch.dict("sys.modules", {"anthropic": mock_mod}):
-        empty = client.polish("prompt", "system")
-        mock_mod.Anthropic.return_value.messages.create.side_effect = RuntimeError("boom")
+def test_selfhosted_failure_and_empty_reply(monkeypatch: pytest.MonkeyPatch) -> None:
+    client = _client(monkeypatch, "selfhosted")
+    with patch("aws_arch_agent.tools.llm.requests.post", side_effect=ConnectionError("down")):
         failed = client.polish("prompt", "system")
+    assert (failed.status, failed.reason) == ("fallback", "Self-hosted LLM request failed")
+    with patch("aws_arch_agent.tools.llm.requests.post", return_value=_selfhosted_reply(None)):
+        empty = client.polish("prompt", "system")
     assert (empty.status, empty.text) == ("invalid", "prompt")
-    assert empty.reason == "Anthropic returned an empty reply"
-    assert (failed.status, failed.reason) == ("fallback", "Anthropic request failed")
+    assert empty.reason == "Self-hosted LLM returned an empty reply"
 
 
 OK = LLMResult("a", "ok", "ollama", "llama3:8b")

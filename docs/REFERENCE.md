@@ -59,10 +59,11 @@ LLM output is optional. `--no-llm` skips it.
 
 | Variable | Purpose |
 |----------|---------|
-| `LLM_PROVIDER` | `ollama`, `openai`, or `anthropic` |
-| `OLLAMA_HOST`, `OLLAMA_MODEL` | Local Ollama server and model (e.g. `llama3:8b`) |
-| `OPENAI_API_KEY`, `OPENAI_MODEL` | OpenAI. Needs `pip install -e ".[cloud]"` |
-| `ANTHROPIC_API_KEY`, `ANTHROPIC_MODEL` | Anthropic. Needs `pip install -e ".[cloud]"` |
+| `LLM_PROVIDER` | `ollama` (default) or `selfhosted`. Any other value makes no call and reports `fallback` |
+| `OLLAMA_HOST`, `OLLAMA_MODEL` | Ollama server and model (e.g. `llama3:8b`) |
+| `LLM_BASE_URL`, `LLM_MODEL` | OpenAI-compatible server (vLLM, llama.cpp, LM Studio, LocalAI) and model. The URL ends before `/chat/completions`, e.g. `http://localhost:8000/v1` |
+
+Cloud LLM providers are not supported. Prompts include source code around each finding and go to the server these settings name, so point them at infrastructure you control. The tool does not check where that server runs, and it sends no API key.
 
 ## HTML report
 
