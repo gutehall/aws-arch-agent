@@ -91,7 +91,7 @@ def render_html(
         severities=SEVERITIES,
         counts=counts,
         theme_counts=theme_counts(findings),
-        answers=well_architected.html_rows(well_architected.answers(findings)),
+        answers=well_architected.html_rows(well_architected.answers(findings, ctx.rules_run)),
         total=len(findings),
         warnings=list(warnings or []),
         findings=rows,

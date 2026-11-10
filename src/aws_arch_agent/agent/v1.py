@@ -502,6 +502,14 @@ def analyze_v1(
         if theme_filter:
             findings = themes.select(findings, theme_filter)
             ctx.notes["themes"] = list(theme_filter)
+        on_templates = ctx.source in TEMPLATE_SOURCES or ctx.source in TERRAFORM_SOURCES
+        ctx.rules_run = well_architected.rules_run(
+            active_titles(rules_include, rules_exclude, rules_org),
+            cdk=not on_templates,
+            templates=on_templates,
+            theme_filter=theme_filter,
+            severity_threshold=severity_threshold,
+        )
         cost = stack_cost.summary(findings, repo_path)
         if cost is not None:
             ctx.notes["cost"] = cost

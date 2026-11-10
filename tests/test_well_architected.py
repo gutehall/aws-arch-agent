@@ -7,13 +7,14 @@ import pytest
 
 from aws_arch_agent.agent.v1 import analyze_v1
 from aws_arch_agent.agent.v2_graph import analyze_v2
-from aws_arch_agent.models import Finding, RepoContext
+from aws_arch_agent.models import Finding, RepoContext, Verdict
 from aws_arch_agent.report.html import render_html
 from aws_arch_agent.report.json_report import render_json
 from aws_arch_agent.report.markdown import render_markdown
 from aws_arch_agent.rules import wa_map, well_architected
 from aws_arch_agent.rules.cf_template import CF_THEMES, CF_TITLES
 from aws_arch_agent.rules.registry import ALL_RULES
+from aws_arch_agent.rules.themes import themes_of
 from aws_arch_agent.rules.well_architected import (
     answers,
     best_practices_of,
@@ -24,6 +25,8 @@ from aws_arch_agent.rules.well_architected import (
 
 RULES_DIR = Path(__file__).resolve().parents[1] / "src" / "aws_arch_agent" / "rules"
 ALL_BEST_PRACTICES = {bp.id for q in questions() for bp in q.best_practices}
+CFN_TEMPLATE = {"Resources": {"Data": {"Type": "AWS::S3::Bucket", "Properties": {}}}}
+TF_MAIN = 'resource "aws_s3_bucket" "data" {\n  bucket = "data"\n}\n'
 
 
 def _rule_ids() -> set[str]:
@@ -106,6 +109,12 @@ def test_annotate_sets_question_on_findings() -> None:
     assert f.best_practices == ["SEC09-BP02"]
 
 
+def _unchecked(question: str) -> list[str]:
+    covered = {bp for bps in wa_map.RULE_BEST_PRACTICES.values() for bp in bps}
+    q = next(q for q in questions() if q.id == question)
+    return [bp.id for bp in q.best_practices if bp.id not in covered]
+
+
 def test_answers_one_per_question_from_findings() -> None:
     items = answers([_finding("CF-S3-005"), _finding("CF-S3-005"), _finding("CF-RDS-001")])
     assert [a.question.id for a in items] == [q.id for q in questions()]
@@ -116,31 +125,73 @@ def test_answers_one_per_question_from_findings() -> None:
     assert by_id["SEC 9"].reason() == "2 findings"
     # SEC 4: every best practice has a rule and no finding: met.
     assert by_id["SEC 4"].met and by_id["SEC 4"].reason() == ""
-    # SEC 8: one finding and a best practice not checked yet.
-    left = sorted(wa_map.NOT_CHECKED & {f"SEC08-BP0{n}" for n in range(1, 5)})
-    if left:
-        assert by_id["SEC 8"].reason() == f"1 finding; {len(left)} of 4 best practices not checked yet"
-    else:
-        assert by_id["SEC 8"].reason() == "1 finding"
-    # OPS 1: nothing checks it, so it is not met even with no findings.
+    # SEC 8: one finding, plus whatever no rule checks yet.
+    left = _unchecked("SEC 8")
+    assert list(by_id["SEC 8"].not_checked) == left
+    expected = "1 finding" + (f"; {len(left)} of 4 best practices not checked" if left else "")
+    assert by_id["SEC 8"].reason() == expected
+    # Nothing checks OPS 1, so it is not met even with no findings.
+    assert _unchecked("OPS 1")
     assert not by_id["OPS 1"].met and not by_id["OPS 1"].findings
 
 
-def test_a_question_with_no_best_practice_left_unchecked_is_met(monkeypatch) -> None:
-    monkeypatch.setattr(well_architected, "NOT_CHECKED", frozenset())
-    assert all(a.met for a in answers([]))
-    assert not {a.question.id: a for a in answers([_finding("SEC-001")])}["SEC 3"].met
+def test_unchecked_best_practices_follow_the_mapping_not_the_list(monkeypatch) -> None:
+    """A best practice missing from both tables is still not checked."""
+    monkeypatch.setattr(wa_map, "NOT_CHECKED", frozenset())
+    assert not {a.question.id: a for a in answers([])}["OPS 1"].met
+
+
+def test_rules_that_did_not_run_check_nothing() -> None:
+    # Only CDK rules ran: SEC 4 is met only if CDK rules alone cover all of it.
+    cdk_ids = [r.id for r in ALL_RULES]
+    cdk_bps = {bp for rid in cdk_ids for bp in best_practices_of(rid)}
+    sec4 = next(q for q in questions() if q.id == "SEC 4")
+    by_id = {a.question.id: a for a in answers([], cdk_ids)}
+    assert by_id["SEC 4"].met == all(bp.id in cdk_bps for bp in sec4.best_practices)
+    # No rule ran: nothing is met, and every best practice is not checked.
+    for a in answers([], []):
+        assert not a.met
+        assert len(a.not_checked) == len(a.question.best_practices)
+
+
+def test_rules_run_follows_source_config_theme_and_severity() -> None:
+    active = ["SEC-001", "CF-S3-001", "CF-CW-001"]
+    assert well_architected.rules_run(active, cdk=True, templates=False) == ["SEC-001"]
+    assert well_architected.rules_run(active, cdk=False, templates=True) == [
+        "CF-S3-001", "CF-CW-001"]
+    finops = well_architected.rules_run(active, cdk=True, templates=True, theme_filter=["finops"])
+    assert finops == [rid for rid in active if "finops" in themes_of(rid)]
+    assert well_architected.rules_run(active, cdk=True, templates=True,
+                                      severity_threshold="high") == []
+    assert well_architected.rules_run(active, cdk=True, templates=True,
+                                      severity_threshold="low") == active
+
+
+def test_a_filtered_scan_answers_nothing_met(tmp_path: Path) -> None:
+    (tmp_path / "stack.template.json").write_text(json.dumps(CFN_TEMPLATE), encoding="utf-8")
+    report, ctx, _f, _w = analyze_v1(tmp_path, use_llm=False, severity_threshold="high")
+    assert ctx.rules_run == []
+    assert "0 of 57 questions met." in report
+
+
+def test_verdicts_do_not_change_the_answers() -> None:
+    plain = _finding("CF-RDS-001")
+    judged = _finding("CF-RDS-001")
+    judged.verdict = Verdict(verdict="false_positive", why="test")
+    assert [a.to_dict() for a in answers([plain])] == [a.to_dict() for a in answers([judged])]
 
 
 def test_markdown_has_one_line_per_question_with_findings_under_it() -> None:
-    report = render_markdown(_ctx(), [_finding("CF-S3-005"), _finding("CF-S3-005")])
+    findings = [_finding("CF-S3-005"), _finding("CF-S3-005")]
+    report = render_markdown(_ctx(), findings)
     section = report.split("## Well-Architected answers", 1)[1].split("\n## ", 1)[0]
     lines = [ln for ln in section.splitlines() if ln.startswith("- **")]
     assert len(lines) == 57
     assert "- **SEC 9** How do you protect your data in transit? — **not met** (2 findings)" in lines
     assert "- **SEC 4** How do you detect and investigate security events? — **met**" in lines
     assert "  - [CF-S3-005] title of CF-S3-005 ×2" in section
-    assert "1 of 57 questions met." in section  # SEC 4; SEC 9 has findings
+    met = sum(1 for a in answers(findings) if a.met)
+    assert f"{met} of 57 questions met." in section
 
 
 def test_json_report_has_answers() -> None:
@@ -153,21 +204,21 @@ def test_json_report_has_answers() -> None:
         "title": "How do you protect your data at rest?",
         "status": "not met",
         "findings": ["CF-RDS-001"],
-        "not_checked": sorted(wa_map.NOT_CHECKED & {"SEC08-BP01", "SEC08-BP02", "SEC08-BP03",
-                                                    "SEC08-BP04"}),
+        "not_checked": _unchecked("SEC 8"),
     }
-    assert data["findings"][0]["question"] is None  # not annotated: the scan pipeline sets it
+    assert data["findings"][0]["question"] == "SEC 8"
+    assert data["findings"][0]["best_practices"] == ["SEC08-BP02"]
 
 
-def test_html_report_has_answers() -> None:
-    page = render_html(_ctx(), [_finding("CF-RDS-001")])
-    assert "Well-Architected answers" in page
-    assert page.count("<li><b>") >= 57
-    assert "[CF-RDS-001] title of CF-RDS-001" in page
-
-
-CFN_TEMPLATE = {"Resources": {"Data": {"Type": "AWS::S3::Bucket", "Properties": {}}}}
-TF_MAIN = 'resource "aws_s3_bucket" "data" {\n  bucket = "data"\n}\n'
+def test_html_report_has_answers_escaped() -> None:
+    f = _finding("CF-RDS-001")
+    f.title = "<script>alert(1)</script>"
+    page = render_html(_ctx(), [f])
+    section = page.split('<section class="answers"', 1)[1].split("</section>", 1)[0]
+    assert "Well-Architected answers" in section
+    assert section.count("<li><b>") == 57
+    assert "[CF-RDS-001] &lt;script&gt;alert(1)&lt;/script&gt;" in section
+    assert "<script>alert" not in section
 
 
 @pytest.mark.parametrize("source", ["cloudformation", "terraform"])
@@ -192,10 +243,12 @@ def test_v2_writes_the_answers_from_findings_without_asking(tmp_path: Path, monk
     (tmp_path / "package.json").write_text("{}", encoding="utf-8")
     (tmp_path / "lib").mkdir()
     (tmp_path / "lib" / "stack.ts").write_text('new s3.Bucket(this, "B");', encoding="utf-8")
-    report, _ctx_out, findings, _warnings = analyze_v2(tmp_path, use_llm=False, skip_synth=True)
+    report, ctx, findings, _warnings = analyze_v2(tmp_path, use_llm=False, skip_synth=True)
+    # No synth: the template checks did not run, so they check nothing here.
+    assert ctx.rules_run and not any(rid.startswith("CF-") for rid in ctx.rules_run)
     assert "## Well-Architected answers" in report
     section = report.split("## Well-Architected answers", 1)[1].split("\n## ", 1)[0]
     assert len([ln for ln in section.splitlines() if ln.startswith("- **")]) == 57
-    for a in answers(findings):
+    for a in answers(findings, ctx.rules_run):
         assert f"- **{a.question.id}** {a.question.title} — **{a.status}**" in section
     assert all(f.question == question_of(f.id) for f in findings)

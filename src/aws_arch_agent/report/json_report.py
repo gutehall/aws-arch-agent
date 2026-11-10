@@ -21,10 +21,11 @@ def render_json(
     warnings: list[str] | None = None,
 ) -> str:
     """Serialize context and findings to JSON (Pydantic model_dump)."""
+    well_architected.annotate(findings)  # each finding's question matches the answers
     data = {
         "context": ctx.model_dump(),
         "summary": build_summary(findings),
-        "answers": [a.to_dict() for a in well_architected.answers(findings)],
+        "answers": [a.to_dict() for a in well_architected.answers(findings, ctx.rules_run)],
         "llm": ctx.llm.to_dict(),
         "findings": [_finding_dict(f) for f in findings],
     }

@@ -92,3 +92,7 @@ class RepoContext(BaseModel):
     # Apart from `llm`, which is the verdict calls: a label shows only when `llm` is ok, and
     # the larger hypothesis prompt failing must not take good verdicts with it.
     hypothesis_llm: LLMResult = Field(default=NO_CALL, exclude=True)
+    # The rule ids whose findings this report can show: the ones that ran, less what a theme
+    # or severity filter hides. The Well-Architected answers count a best practice as
+    # checked only when one of these covers it. None means every rule.
+    rules_run: List[str] | None = Field(default=None, exclude=True)

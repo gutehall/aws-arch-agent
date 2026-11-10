@@ -116,7 +116,7 @@
 
   <section class="answers" aria-label="Well-Architected answers">
     <h2>Well-Architected answers</h2>
-    <p class="meta">{{ answers | selectattr("met") | list | length }} of {{ answers | length }} questions met. Each answer is computed from the findings; a question with a best practice no rule checks yet is not met.</p>
+    <p class="meta">{{ answers | selectattr("met") | list | length }} of {{ answers | length }} questions met. Each answer is computed from the findings; a question with a best practice this scan did not check is not met.</p>
     <ul>
       {% for a in answers %}
       <li><b>{{ a.id }}</b> {{ a.title }} — <b>{{ a.status }}</b>{% if a.reason %} ({{ a.reason }}){% endif %}{% if a.findings %}

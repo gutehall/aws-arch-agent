@@ -156,9 +156,9 @@ Markdown reports open with a **Summary** built from the findings alone, so it is
 
 After the summary, every report answers all 57 questions of the current Well-Architected Framework: one line per question, **met** or **not met**, with the findings under it. It appears in Markdown and HTML, and as `answers` in JSON. The answer is computed from the findings alone. Nobody is asked anything, and in V2 the LLM does not change it.
 
-- A question is **met** when every one of its best practices has a rule and no finding falls under it.
-- Otherwise it is **not met**, and the line says why: how many findings, and how many of its best practices no rule checks yet. A missing control is a finding, so a missing control means not met.
-- A severity, theme, or rule filter removes findings before the answers are computed, so a filtered scan answers from what is left.
+- A question is **met** when every one of its best practices is checked by a rule that ran in this scan, and no finding falls under it.
+- Otherwise it is **not met**, and the line says why: how many findings, and how many of its best practices this scan did not check. A missing control is a finding, so a missing control means not met.
+- A best practice is not checked when no rule checks it yet, or when its rules did not run: CDK source rules on a CloudFormation or Terraform scan, template checks on a CDK scan without synth or `--templates`, or rules turned off by `rules.include`, `rules.exclude`, or `rules.org`. `--theme` keeps only the rules in those themes. A `severity_threshold` above Low can hide any finding, so with one nothing is met.
 
 The questions and best practices are in `aws_arch_agent/rules/data/well_architected.json` (from the framework's [appendix](https://docs.aws.amazon.com/wellarchitected/latest/framework/appendix.html)). `aws_arch_agent/rules/wa_map.py` says which best practices each rule checks, one question per rule; CDK, CloudFormation, and Terraform scans read the same table. Each finding carries `question` (for example `SEC 8`) and `best_practices` (for example `SEC08-BP02`). `NOT_CHECKED` in the same file lists the best practices no rule checks yet; `tests/test_well_architected.py` fails when a best practice is in neither table, so CI fails on a best practice with no rule.
 
