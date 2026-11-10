@@ -807,5 +807,23 @@
     "negative_py": "iam_client.update_access_key(UserName=user, AccessKeyId=key, Status='Inactive')",
     "positive_ts": "new ec2.SecurityGroup(this, 'WebSg', { vpc, vpcSubnets: { subnetType: ec2.SubnetType.PRIVATE_ISOLATED } });",
     "positive_py": "s3.Bucket(self, 'Data')"
+  },
+  "REPO-009": {
+    "negative_ts": "new codebuild.PipelineProject(this, 'Build', { buildSpec: codebuild.BuildSpec.fromObject({ phases: { build: { commands: ['npm ci', 'npm audit --audit-level=high'] } } }) });",
+    "negative_py": "pipelines.ShellStep('Synth', commands=['pip install -r requirements.txt', 'pip-audit -r requirements.txt'])",
+    "positive_ts": "new s3.Bucket(this, 'Data');",
+    "positive_py": "pipelines.ShellStep('Synth', commands=['pip install -r requirements.txt', 'pip-audit || true'])"
+  },
+  "REPO-010": {
+    "negative_ts": "new ecr.Repository(this, 'Repo', { imageScanOnPush: true });",
+    "negative_py": "_lambda.Function(self, 'Fn', runtime=runtime, handler='index.handler', code=code)\ncr.AwsCustomResource(self, 'Inspector', on_create=cr.AwsSdkCall(service='Inspector2', action='enable', parameters={'resourceTypes': ['LAMBDA', 'LAMBDA_CODE']}))",
+    "positive_ts": "new lambda.Function(this, 'Fn', { runtime, handler: 'index.handler', code });",
+    "positive_py": "ecr.Repository(self, 'Repo')"
+  },
+  "REPO-011": {
+    "negative_ts": "new codeartifact.CfnRepository(this, 'Npm', { domainName: 'corp', repositoryName: 'npm-store' });",
+    "negative_py": "codeartifact.CfnRepository(self, 'Pypi', domain_name='corp', repository_name='pypi-store')",
+    "positive_ts": "new s3.Bucket(this, 'Data');",
+    "positive_py": "s3.Bucket(self, 'Data')"
   }
 }

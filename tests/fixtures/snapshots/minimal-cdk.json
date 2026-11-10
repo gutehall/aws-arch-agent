@@ -26,5 +26,19 @@
     "file": null,
     "line": null,
     "evidence": "Environments named in IaC paths, tfvars and parameter files, CDK stack ids and cdk.json context: none; two or more expected"
+  },
+  {
+    "id": "REPO-009",
+    "severity": "Medium",
+    "file": null,
+    "line": null,
+    "evidence": "Searched the repo for a build to run a dependency scan (a CI config, or a CodeBuild buildspec or pipeline in the IaC); found none"
+  },
+  {
+    "id": "REPO-011",
+    "severity": "Low",
+    "file": null,
+    "line": null,
+    "evidence": "Has a package manifest (package.json); searched for AWS CodeArtifact in the IaC, aws codeartifact login in a build, and a private registry in .npmrc, .yarnrc, pip.conf, a requirements index-url, a poetry or uv source, Maven or Gradle repositories, or GOPROXY; found none"
   }
 ]

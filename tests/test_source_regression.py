@@ -103,8 +103,15 @@ def test_workflow_yaml_does_not_switch_a_cdk_repo(tmp_path: Path) -> None:
     source, rows, _warnings = _scan(repo)
     assert source == "cdk"
     snapshot = json.loads((SNAPSHOTS / "minimal-cdk.json").read_text(encoding="utf-8"))
-    # The workflow is a CI pipeline, so only REPO-002 goes away.
-    assert rows == [r for r in snapshot if r["id"] != "REPO-002"]
+    # The workflow is a CI pipeline, so REPO-002 goes away. REPO-009 still fires (neither
+    # build scans dependencies), but its evidence now names the builds it searched.
+    assert [r for r in rows if r["id"] != "REPO-009"] == [
+        r for r in snapshot if r["id"] not in ("REPO-002", "REPO-009")
+    ]
+    (scan,) = [r for r in rows if r["id"] == "REPO-009"]
+    assert scan["evidence"].startswith(
+        "Searched the build configs (.github/workflows/deploy.yml, buildspec.yml)"
+    )
 
 
 def test_cloudformation_fixture_runs_template_checks_without_synth(

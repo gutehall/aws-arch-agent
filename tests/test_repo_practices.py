@@ -63,7 +63,8 @@ def test_repo_without_the_controls_fails_ops5(tmp_path: Path, source: str) -> No
     _bare_repo(tmp_path, source)
     report, ctx, findings = _scan(tmp_path)
     assert ctx.source == source
-    repo = [f for f in findings if f.id.startswith("REPO-")]
+    # The SEC 11 repo rules (REPO-009 to REPO-011) also fire on a bare repo; not OPS 5.
+    repo = [f for f in findings if f.id in REPO_IDS]
     assert sorted(f.id for f in repo) == list(REPO_IDS)  # once each, whatever the passes
     for f in repo:
         assert f.question == "OPS 5"
@@ -79,7 +80,7 @@ def test_repo_with_the_controls_passes(tmp_path: Path, source: str) -> None:
     _add_controls(tmp_path, source)
     _report, ctx, findings = _scan(tmp_path)
     assert ctx.source == source
-    assert not [f.id for f in findings if f.id.startswith("REPO-")]
+    assert not [f.id for f in findings if f.id in REPO_IDS]  # SEC 11 ones are not OPS 5
 
 
 @pytest.mark.parametrize(
@@ -144,7 +145,7 @@ def test_v2_reports_the_repo_rules(tmp_path: Path) -> None:
     _bare_repo(tmp_path, "cdk")
     _report, ctx, findings, _w = analyze_v2(tmp_path, use_llm=False, skip_synth=True)
     repo = sorted(f.id for f in findings if f.id.startswith("REPO-"))
-    assert repo == list(REPO_IDS)
+    assert repo == [*REPO_IDS, "REPO-009", "REPO-011"]  # SEC 11: no build, a package.json
     assert set(REPO_IDS) <= set(ctx.rules_run)
 
 

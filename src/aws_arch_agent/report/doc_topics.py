@@ -1688,6 +1688,29 @@ TOPICS: dict[str, tuple[str, str, str, str]] = {
         "Well-Architected SEC10-BP06: Pre-deploy tools",
         "/wellarchitected/latest/security-pillar/sec_incident_response_pre_deploy_tools.html",
     ),
+    "dependency_scan": (
+        "Integrating Amazon Inspector scans into your CI/CD pipeline",
+        "/inspector/latest/user/scanning-cicd.html",
+        "Well-Architected SEC11-BP02: Automate testing throughout the development and release "
+        "lifecycle",
+        "/wellarchitected/latest/security-pillar/"
+        "sec_appsec_automate_testing_throughout_lifecycle.html",
+    ),
+    "artifact_scan": (
+        "Amazon ECR: Scan images for software vulnerabilities",
+        "/AmazonECR/latest/userguide/image-scanning.html",
+        "Well-Architected SEC11-BP02: Automate testing throughout the development and release "
+        "lifecycle",
+        "/wellarchitected/latest/security-pillar/"
+        "sec_appsec_automate_testing_throughout_lifecycle.html",
+    ),
+    "central_packages": (
+        "What is AWS CodeArtifact?",
+        "/codeartifact/latest/ug/welcome.html",
+        "Well-Architected SEC11-BP05: Centralize services for packages and dependencies",
+        "/wellarchitected/latest/security-pillar/"
+        "sec_appsec_centralize_services_for_packages_and_dependencies.html",
+    ),
     "security_hub_fsbp": (
         "Security Hub: AWS Foundational Security Best Practices standard",
         "/securityhub/latest/userguide/fsbp-standard.html",
@@ -1833,6 +1856,9 @@ RULE_TOPICS: dict[str, str] = {
     "REPO-006": "root_user",
     "REPO-007": "forensic_capture",
     "REPO-008": "containment",
+    "REPO-009": "dependency_scan",
+    "REPO-010": "artifact_scan",
+    "REPO-011": "central_packages",
     "PERF-001": "graviton_ec2",
     "PERF-002": "caching",
     "PERF-003": "ddb_capacity",

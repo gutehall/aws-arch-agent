@@ -70,7 +70,7 @@ from aws_arch_agent.rules.sustainability import (
 )
 
 ALL_RULES = [
-    # Security (76 rules: these 71, and REPO-004 to REPO-008 in REPO_RULES below)
+    # Security (79 rules: these 71, and REPO-004 to REPO-011 in REPO_RULES below)
     IamWildcardAction(),
     IamWildcardResource(),
     OpenSshToWorld(),
@@ -225,7 +225,7 @@ ALL_RULES = [
     S3ReplicationMetrics(),
     Ec2PatchBaselineMissing(),
     AlarmEscalationMissing(),
-    *REPO_RULES,  # repo-level: tests, pipeline, environments, guardrails, incidents
+    *REPO_RULES,  # repo-level: tests, pipeline, guardrails, incidents, app security
     # Performance Efficiency (19 rules)
     GravitonNotUsed(),
     CachingHint(),

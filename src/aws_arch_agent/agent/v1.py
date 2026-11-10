@@ -452,7 +452,7 @@ def _collect_findings(
             )
             findings.extend(found)
             warnings.extend(warned)
-        # The repo-level checks (tests, pipeline, accounts, incident response) read the tree.
+        # The repo-level checks (tests, pipeline, accounts, incidents, app security) read the tree.
         repo_rules = _filter_rules(REPO_RULES, rules_include, rules_exclude, org=rules_org)
         found, warned = run_all_rules(repo_path, repo_rules, ["typescript"])
         findings.extend(found)

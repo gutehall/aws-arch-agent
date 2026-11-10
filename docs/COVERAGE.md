@@ -15,7 +15,7 @@ Which CDK rules have a template check, and which AWS Foundational Security Best 
 
 ## CDK rules
 
-185 rules: 130 covered, 7 partial, 10 account, 5 cdk-only, 25 advice, 8 repo.
+188 rules: 130 covered, 7 partial, 10 account, 5 cdk-only, 25 advice, 11 repo.
 
 | Rule | Title | Template check | Status | Note |
 | -- | -- | -- | -- | -- |
@@ -204,6 +204,9 @@ Which CDK rules have a template check, and which AWS Foundational Security Best 
 | REPO-006 | Account baseline does not check root MFA or root access keys |  | `repo` | When the IaC defines an account, looks for the Config rules for root MFA and root access keys, a conformance pack, the Security Hub CIS or FSBP standard, or an SCP that denies the root user. |
 | REPO-007 | No forensic capture is automated for security findings |  | `repo` | Looks for an EventBridge rule on GuardDuty, Security Hub, Inspector or Macie findings and an EBS snapshot or SSM capture runbook, or Amazon Detective. Org-level: off unless `rules.org`. |
 | REPO-008 | No containment control is deployed |  | `repo` | Looks for a quarantine or isolation security group, an SSM containment runbook, or credential revocation automation. Org-level: off unless `rules.org`. |
+| REPO-009 | The build does not scan dependencies |  | `repo` | Looks in the CI configs, CodeBuild buildspecs inline in the IaC, and the package.json scripts they run for a dependency scan (npm audit, pip-audit, osv-scanner, snyk, trivy, Amazon Inspector) that can fail the build. |
+| REPO-010 | Container or function artifacts are not scanned before deploy |  | `repo` | When the repo builds images or deploys Lambda functions, looks for ECR scan on push or registry scanning, Amazon Inspector for ECR or Lambda, or a CI scan. |
+| REPO-011 | Packages are not pulled through a central repository |  | `repo` | When the repo has a package manifest, looks for CodeArtifact, `aws codeartifact login`, or a private registry in .npmrc, pip.conf, poetry, Maven or Gradle. |
 
 ## FSBP controls
 
