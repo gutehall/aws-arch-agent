@@ -1,5 +1,6 @@
 """Repo-level checks: tests, a pipeline, environments (OPS 5), account guardrails (SEC 1),
-incident response (SEC 10), application security (SEC 11), service quotas (REL 1).
+incident response (SEC 10), application security (SEC 11), service quotas (REL 1),
+VPC address plan (REL 2).
 
 REPO-006 (the account root user) answers SEC01-BP02 in SEC 1, though it was added with the
 SEC 2 checks.
@@ -97,9 +98,22 @@ Service quotas (REL 1), which are per account and Region:
   NAT gateways per Availability Zone (quota 5) are not checked: the zone of a NAT gateway
   comes from a subnet reference or from maxAzs and the environment, which a text scan does
   not resolve, and a stack rarely needs more than one per zone.
+
+Network address plan (REL 2):
+
+- REPO-014 overlapping VPC CIDRs: the literal IPv4 CIDRs of VPCs across the repo
+  (CloudFormation AWS::EC2::VPC and AWS::EC2::VPCCidrBlock CidrBlock; Terraform aws_vpc
+  and aws_vpc_ipv4_cidr_block_association cidr_block, and the cidr of a
+  terraform-aws-modules/vpc module; CDK ec2.IpAddresses.cidr(), cidr on ec2.Vpc, and
+  cidrBlock on CfnVPC and CfnVPCCidrBlock). Any two declarations whose ranges overlap fire,
+  in one file or across stacks and modules, naming both. Files for different environments
+  (rules/environments.py words in the path, such as dev and prod) are not compared: those
+  networks are not connected. A compiled .js next to its .ts source counts once, and
+  cdk.out is not walked. CIDRs from variables, parameters, tfvars or IPAM are not seen.
 """
 from __future__ import annotations
 
+import ipaddress
 import json
 import os
 import re
@@ -110,7 +124,7 @@ from typing import ClassVar, List
 from aws_arch_agent.models import Finding, Severity
 from aws_arch_agent.rules.base import Rule
 from aws_arch_agent.rules.environments import from_words
-from aws_arch_agent.tools.cfn_yaml import is_cf_template
+from aws_arch_agent.tools.cfn_yaml import is_cf_template, parse_template_text
 from aws_arch_agent.tools.files import read_text_safe
 
 SKIP_DIRS = frozenset({
@@ -1360,10 +1374,155 @@ class FailoverHeadroomMissing(_RepoRule):
         return findings
 
 
+# VPC CIDR declarations REPO-014 compares (REL 2).
+_TF_VPC_BLOCK = re.compile(
+    r"\bresource\s+\"(aws_vpc|aws_vpc_ipv4_cidr_block_association)\"\s+\"([^\"]+)\"\s*\{"
+)
+_TF_VPC_MODULE = re.compile(r"\bmodule\s+\"([^\"]+)\"\s*\{")
+_TF_VPC_MODULE_SOURCE = re.compile(r"\bsource\s*=\s*\"[^\"]*terraform-aws-modules/vpc\b")
+_TF_CIDR = re.compile(r"^\s*cidr_block\s*=\s*\"([^\"]+)\"", re.MULTILINE)
+_TF_MODULE_CIDR = re.compile(r"^\s*cidr\s*=\s*\"([^\"]+)\"", re.MULTILINE)
+_CDK_IP_ADDRESSES = re.compile(r"\bIpAddresses\.cidr\(\s*['\"]([^'\"]+)['\"]")
+_CDK_VPC_CALL = re.compile(r"(?<![\w.])(?:ec2\.)?Vpc\(")
+_CDK_VPC_CIDR = re.compile(r"(?<![\w.])cidr\s*[:=]\s*['\"]([^'\"]+)['\"]")
+_CDK_CFN_VPC_CALL = re.compile(r"\bCfnVPC(?:CidrBlock)?\(")
+_CDK_CFN_CIDR = re.compile(r"\b(?:cidrBlock|cidr_block)\s*[:=]\s*['\"]([^'\"]+)['\"]")
+_CF_VPC_TYPES = ("AWS::EC2::VPC", "AWS::EC2::VPCCidrBlock")
+
+
+def _braced(text: str, open_brace: int, opener: str = "{", closer: str = "}") -> str:
+    """The text between the bracket at open_brace and its match (or the end of text)."""
+    depth = 0
+    for i in range(open_brace, len(text)):
+        if text[i] == opener:
+            depth += 1
+        elif text[i] == closer:
+            depth -= 1
+            if depth == 0:
+                return text[open_brace + 1:i]
+    return text[open_brace + 1:]
+
+
+def _line_of(text: str, offset: int) -> int:
+    return text.count("\n", 0, max(offset, 0)) + 1
+
+
+def _cf_vpc_cidrs(rel: str, text: str) -> List[tuple[str, int, str, str]]:
+    try:
+        doc = parse_template_text(Path(rel), text)
+    except Exception:  # noqa: BLE001 - not a readable template, nothing to compare
+        return []
+    resources = doc.get("Resources") if isinstance(doc, dict) else None
+    out: List[tuple[str, int, str, str]] = []
+    for name, body in (resources.items() if isinstance(resources, dict) else ()):
+        if not isinstance(body, dict) or body.get("Type") not in _CF_VPC_TYPES:
+            continue
+        props = body.get("Properties")
+        cidr = props.get("CidrBlock") if isinstance(props, dict) else None
+        if type(cidr) is str:
+            at = text.find(str(name))
+            out.append((cidr, _line_of(text, text.find(cidr, max(at, 0))), str(name), rel))
+    return out
+
+
+def _tf_vpc_cidrs(rel: str, text: str) -> List[tuple[str, int, str, str]]:
+    out: List[tuple[str, int, str, str]] = []
+    for block in _TF_VPC_BLOCK.finditer(text):
+        body = _braced(text, block.end() - 1)
+        cidr = _TF_CIDR.search(body)
+        if cidr:
+            out.append((cidr.group(1), _line_of(text, block.start()),
+                        f"{block.group(1)}.{block.group(2)}", rel))
+    for block in _TF_VPC_MODULE.finditer(text):
+        body = _braced(text, block.end() - 1)
+        cidr = _TF_MODULE_CIDR.search(body)
+        if cidr and _TF_VPC_MODULE_SOURCE.search(body):
+            out.append((cidr.group(1), _line_of(text, block.start()),
+                        f"module.{block.group(1)}", rel))
+    return out
+
+
+def _cdk_vpc_cidrs(rel: str, text: str) -> List[tuple[str, int, str, str]]:
+    out: List[tuple[str, int, str, str]] = []
+    for match in _CDK_IP_ADDRESSES.finditer(text):
+        out.append((match.group(1), _line_of(text, match.start()), "IpAddresses.cidr", rel))
+    for pattern, key, label in ((_CDK_VPC_CALL, _CDK_VPC_CIDR, "Vpc cidr"),
+                                (_CDK_CFN_VPC_CALL, _CDK_CFN_CIDR, "CfnVPC cidrBlock")):
+        for call in pattern.finditer(text):
+            args = _braced(text, call.end() - 1, "(", ")")
+            for match in key.finditer(args):
+                out.append((match.group(1), _line_of(text, call.start()), label, rel))
+    return out
+
+
+def vpc_cidrs(repo_path: Path) -> List[tuple[ipaddress.IPv4Network, int, str, str]]:
+    """Literal IPv4 VPC CIDRs the IaC declares: (network, line, what declares it, file).
+
+    A compiled .js next to its .ts source is the same declaration and is skipped.
+    """
+    texts = list(iac_texts(repo_path))
+    names = {rel for rel, _text in texts}
+    out: List[tuple[ipaddress.IPv4Network, int, str, str]] = []
+    for rel, text in texts:
+        suffix = Path(rel).suffix.lower()
+        if suffix == ".js" and rel[:-3] + ".ts" in names:
+            continue
+        if suffix == ".tf":
+            found = _tf_vpc_cidrs(rel, text)
+        elif suffix in (".ts", ".js", ".py"):
+            found = _cdk_vpc_cidrs(rel, text)
+        elif "AWS::EC2::VPC" in text:
+            found = _cf_vpc_cidrs(rel, text)
+        else:
+            continue
+        for cidr, line, what, where in found:
+            try:
+                network = ipaddress.IPv4Network(cidr.strip(), strict=False)
+            except ValueError:
+                continue  # an IPv6 block, a token or a template string
+            out.append((network, line, what, where))
+    return out
+
+
+def _separate_environments(rel_a: str, rel_b: str) -> bool:
+    """True when two files are for different environments (dev and prod), which never
+    connect, so the same range in both is not an overlap."""
+    env_a, env_b = from_words(rel_a), from_words(rel_b)
+    return env_a is not None and env_b is not None and env_a != env_b
+
+
+class VpcCidrOverlap(_RepoRule):
+    id = "REPO-014"
+    title = "VPC CIDR ranges overlap"
+    category = "Reliability"
+    severity = "Medium"
+    themes = ("resilience",)
+    recommendation = (
+        "Give each VPC that may ever be connected (peering, a transit gateway, VPN or Direct "
+        "Connect) its own range from one address plan, for example from Amazon VPC IP Address "
+        "Manager (IPAM) pools. Overlapping ranges cannot be peered or routed to each other "
+        "without NAT, and fixing them later means re-addressing the VPC."
+    )
+
+    def run(self, repo_path: Path, language: str = "typescript") -> List[Finding]:
+        cidrs = vpc_cidrs(repo_path)
+        findings: List[Finding] = []
+        for i, (net_a, line_a, what_a, rel_a) in enumerate(cidrs):
+            for net_b, line_b, what_b, rel_b in cidrs[i + 1:]:
+                if not net_a.overlaps(net_b) or _separate_environments(rel_a, rel_b):
+                    continue
+                findings.append(self._finding(
+                    f"{net_a} ({what_a}, {rel_a}:{line_a}) overlaps {net_b} "
+                    f"({what_b}, {rel_b}:{line_b})",
+                    file=rel_b, line=line_b,
+                ))
+        return findings
+
+
 REPO_RULES: List[Rule] = [
     RepoTestsMissing(), RepoPipelineMissing(), SingleEnvironment(),
     OrgGuardrailsMissing(), AccountBaselineMissing(), RootUserUnchecked(),
     ForensicCaptureMissing(), ContainmentMissing(),
     DependencyScanMissing(), ArtifactScanMissing(), CentralPackageRepoMissing(),
-    QuotaAlarmMissing(), FailoverHeadroomMissing(),
+    QuotaAlarmMissing(), FailoverHeadroomMissing(), VpcCidrOverlap(),
 ]

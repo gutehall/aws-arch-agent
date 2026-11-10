@@ -837,5 +837,17 @@
     "negative_py": "_lambda.Function(self, 'Fn', reserved_concurrent_executions=450)",
     "positive_ts": "new lambda.Function(this, 'Fn', { reservedConcurrentExecutions: 500 });",
     "positive_py": "ec2.Vpc(self, 'Vpc', nat_gateways=3)"
+  },
+  "REL-032": {
+    "negative_ts": "new ec2.Vpc(this, 'Vpc', { maxAzs: 2, availabilityZones: ['eu-west-1a', 'eu-west-1b'] });",
+    "negative_py": "ec2.Vpc(self, 'Vpc', max_azs=3)",
+    "positive_ts": "new ec2.Vpc(this, 'Vpc', { availabilityZones: ['eu-west-1a'] });",
+    "positive_py": "ec2.Vpc(self, 'Vpc', max_azs=1)"
+  },
+  "REPO-014": {
+    "negative_ts": "new ec2.Vpc(this, 'A', { ipAddresses: ec2.IpAddresses.cidr('10.0.0.0/16') });\nnew ec2.Vpc(this, 'B', { ipAddresses: ec2.IpAddresses.cidr('10.1.0.0/16') });",
+    "negative_py": "ec2.Vpc(self, 'A', ip_addresses=ec2.IpAddresses.cidr('10.0.0.0/16'))",
+    "positive_ts": "new ec2.Vpc(this, 'A', { ipAddresses: ec2.IpAddresses.cidr('10.0.0.0/16') });\nnew ec2.Vpc(this, 'B', { ipAddresses: ec2.IpAddresses.cidr('10.0.128.0/17') });",
+    "positive_py": "ec2.CfnVPC(self, 'A', cidr_block='10.0.0.0/16')\nec2.Vpc(self, 'B', cidr='10.0.0.0/24')"
   }
 }

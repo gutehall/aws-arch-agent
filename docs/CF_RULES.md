@@ -4,7 +4,7 @@ This document provides a comprehensive list of all rules checked by AWS Arch Age
 
 ## Overview
 
-AWS Arch Agent checks **190 static analysis rules** and **277 template checks** across all 6 AWS Well-Architected Framework pillars. 137 of the 190 CDK rules (72%) have a template check, so they also run for CloudFormation, Terraform and synthesised CDK. [COVERAGE.md](COVERAGE.md) gives the reason for each of the others.
+AWS Arch Agent checks **192 static analysis rules** and **280 template checks** across all 6 AWS Well-Architected Framework pillars. 138 of the 192 CDK rules (72%) have a template check, so they also run for CloudFormation, Terraform and synthesised CDK. [COVERAGE.md](COVERAGE.md) gives the reason for each of the others.
 
 ## Static Analysis Rules (V1 & V2 Modes)
 
@@ -113,7 +113,7 @@ These rules run on your CDK TypeScript/Python code and execute in both V1 and V2
 - REPO-010: Container or function artifacts are not scanned before deploy
 - REPO-011: Packages are not pulled through a central repository
 
-### Reliability (33 rules)
+### Reliability (35 rules)
 
 **High Availability:**
 - REL-001: RDS instance missing multi-AZ
@@ -147,7 +147,7 @@ These rules run on your CDK TypeScript/Python code and execute in both V1 and V2
 - REL-021: CodePipeline missing manual approval for production
 - REL-022: ACM certificate validation method not specified
 
-**Additional Reliability (REL-023 to REL-031):**
+**Additional Reliability (REL-023 to REL-032):**
 - REL-023: Blue-green deployment not configured for critical services
 - REL-024: SQS visibility timeout may need review
 - REL-025: DynamoDB global tables not configured for multi-region
@@ -157,10 +157,14 @@ These rules run on your CDK TypeScript/Python code and execute in both V1 and V2
 - REL-029: EventBridge rule retry policy not configured
 - REL-030: RDS deletion protection not enabled
 - REL-031: S3 bucket versioning not enabled
+- REL-032: VPC uses one Availability Zone (`ec2.Vpc` with `maxAzs: 1` / `max_azs=1`, or one entry in `availabilityZones` / `availability_zones`)
 
 **Service quotas (repo-level, REL 1):**
 - REPO-012: No Service Quotas usage alarm for the services the stack uses (org-level: runs with `rules.org` or `rules.include`)
 - REPO-013: Limits the IaC sets leave no room for failover
+
+**Network address plan (repo-level, REL 2):**
+- REPO-014: VPC CIDR ranges overlap
 
 ### Operational Excellence (29 rules)
 
@@ -376,6 +380,10 @@ CloudFormation template rules run when the agent has access to template files. T
 - **Security groups** (`AWS::EC2::SecurityGroup`, `AWS::EC2::SecurityGroupIngress`, `AWS::EC2::SecurityGroupEgress`; Terraform `aws_security_group`, `aws_security_group_rule`, `aws_vpc_security_group_ingress_rule`, `aws_vpc_security_group_egress_rule`): CF-SG-001 (High, Security Hub EC2.13, EC2.14, EC2.19): ingress from `0.0.0.0/0` or `::/0` on SSH, RDP, a database port, or a high-risk port (20, 21, 23, 25, 110, 135, 143, 445, 1433, 1434, 3000, 4333, 5000, 5500, 5601, 8080, 8088, 8888, 9200, 9300). An unknown port counts. CF-SG-002 (High, Security Hub EC2.18): ingress from anywhere on every port (protocol `-1` or 0-65535), reported instead of CF-SG-001. CF-SG-003 (Low): egress to `0.0.0.0/0` or `::/0` on every port. A CloudFormation group created with no `SecurityGroupEgress` gets the AWS default rule, which allows all outbound traffic, so it is reported. A standalone `AWS::EC2::SecurityGroupEgress` is added after the group exists and does not remove that default. Terraform drops that default, so a group with no egress block is not. In V2, CF-SG-001 and CF-SG-002 replace SEC-003 and SEC-004, and CF-SG-003 replaces SEC-054
 - **Network ACLs**: CF-NACL-001 (Medium, Security Hub EC2.21): an inbound allow entry (`AWS::EC2::NetworkAclEntry`, Terraform `aws_network_acl_rule` or an `aws_network_acl` ingress block) from `0.0.0.0/0` or `::/0` that covers port 22 or 3389, or every port. Rule order is not read, so a lower-numbered deny entry may still block the traffic
 - **NAT gateway per AZ**: CF-NAT-001 (Medium): one NAT gateway that private subnets in more than one AZ route through. Routes come from `AWS::EC2::Route` (Terraform `aws_route` or `aws_route_table` route blocks) and subnets from the route table associations. A subnet whose AZ cannot be read is not counted. In V2 it replaces REL-012
+- **Network topology** (REL 2):
+  - CF-VPC-004 (Medium): a subnet tier of a VPC whose subnets are all in one Availability Zone. A subnet is public when it maps public IPs (`MapPublicIpOnLaunch`, Terraform `map_public_ip_on_launch`) or its route table has a route to an internet gateway in the template (`AWS::EC2::Route` `GatewayId`, Terraform `aws_route` or an `aws_route_table` route block, through `aws_route_table_association`); the other subnets are private. AZs are compared as written: a literal name or ID, or CDK's `Fn::Select` index into `Fn::GetAZs`. A VPC with a subnet whose AZ or public IP setting cannot be read is not judged, and a Terraform subnet whose VPC is not in the module is not grouped. Skipped in dev and staging. Answers REL02-BP03. In V2 it replaces REL-032.
+  - CF-VPC-005 (Low): the literal subnet CIDRs of a VPC take every address of its literal IPv4 CIDR blocks (`CidrBlock` on the VPC and on `AWS::EC2::VPCCidrBlock`; Terraform `aws_vpc` and `aws_vpc_ipv4_cidr_block_association` `cidr_block`), so no subnet can be added. A block from a parameter, a variable or IPAM is not judged. A default CDK `ec2.Vpc` splits its CIDR among its subnets and so fires. Answers REL02-BP03.
+  - CF-VPC-006 (Low): three or more VPC peering connections (`AWS::EC2::VPCPeeringConnection`, `aws_vpc_peering_connection`) and no transit gateway or Cloud WAN core network, or an attachment to one, in the template, a child stack or a module. Answers REL02-BP04.
 - **Transit Gateway** (`AWS::EC2::TransitGateway`, `aws_ec2_transit_gateway`): CF-TGW-001 (Medium, Security Hub EC2.23): `AutoAcceptSharedAttachments: enable`. CF-TGW-002 (Low): no `AWS::EC2::FlowLog` / `aws_flow_log` on the gateway. A transit gateway flow log the scan cannot tie to a gateway counts for all of them. In V2, CF-TGW-002 replaces OPS-016
 - **CloudWatch Logs**: CF-CW-001 (no retention), CF-CW-002 (no KMS)
 - **SQS**: CF-SQS-001 (encryption not configured), CF-SQS-002 (no redrive/DLQ), CF-SQS-003 (Medium): `VisibilityTimeout` (default 30) shorter than the `Timeout` (default 3) of a Lambda that an event source mapping connects to the queue. The check asks for no more than the timeout; the recommendation gives the AWS advice of 6 times it
@@ -516,7 +524,7 @@ CloudFormation template rules run when the agent has access to template files. T
 |--------|-------------|
 | Operational Excellence | CF-CFG-001, CF-ALARM-001, CF-ALARM-002, CF-ALARM-003, CF-DASH-001, CF-CT-004, CF-S3-004, CF-RDS-007, CF-RDS-010, CF-RDS-011, CF-CT-001, CF-CT-002, CF-FL-001, CF-EKS-001, CF-TGW-002, CF-CB-004, CF-CP-003, CF-OS-006, CF-RS-004, CF-DOCDB-003, CF-NEP-002, CF-SFN-002, CF-SFN-003, CF-EB-001, CF-ECS-008, CF-ECS-010, CF-ASG-005, CF-GLUE-002, CF-GLUE-003, CF-S3-011, CF-CF-005, CF-FSX-002, CF-PATCH-001 |
 | Security | CF-GD-001, CF-SH-001, CF-MACIE-001, CF-CT-005, CF-S3-001, CF-S3-002, CF-S3-005, CF-RDS-001, CF-RDS-004, CF-APIGW-003, CF-APIGW-004, CF-APIGW-007, CF-APIGW-009, CF-APIGW-V2-003, CF-LAM-004, CF-LAM-005, CF-RDS-006, CF-RDS-008, CF-RDS-009, CF-RDS-012, CF-RDS-013, CF-CT-003, CF-KMS-001, CF-RP-001, CF-EC2-001, CF-EKS-002, CF-EKS-003, CF-IAM-001, CF-IAM-002, CF-IAM-003, CF-IAM-004, CF-IAM-005, CF-IAM-006, CF-IAM-007, CF-IAM-008, CF-IAM-009, CF-IAM-010, CF-IAM-011, CF-ALB-002, CF-ALB-003, CF-ALB-004, CF-ALB-006, CF-CLB-001, CF-CLB-002, CF-SG-001, CF-SG-002, CF-SG-003, CF-NACL-001, CF-TGW-001, CF-CW-002, CF-SQS-001, CF-DDB-002, CF-LAM-003, CF-SNS-001, CF-EBS-001, CF-EFS-001, CF-KIN-001, CF-EC-001, CF-EC-002, CF-OS-001, CF-OS-002, CF-RS-001, CF-DOCDB-001, CF-NEP-001, CF-MSK-001, CF-CF-001, CF-CF-002, CF-CF-003, CF-CF-004, CF-WAF-001, CF-EC2-002, CF-EC2-003, CF-PAR-001, CF-PAR-002, CF-ECR-001, CF-ECR-002, CF-ECR-003, CF-ECS-001, CF-ECS-002, CF-ECS-003, CF-SM-001, CF-COG-001, CF-COG-002, CF-COG-003, CF-CB-001, CF-CB-002, CF-CB-003, CF-CB-005, CF-CP-001, CF-KMS-002, CF-SSM-001, CF-OS-003, CF-OS-004, CF-OS-005, CF-MSK-002, CF-MSK-003, CF-RS-002, CF-RS-005, CF-RS-006, CF-RS-007, CF-NEP-005, CF-BAK-001, CF-EC-005, CF-EC-006, CF-EC-007, CF-EFS-004, CF-EFS-005, CF-ECS-004, CF-ECS-005, CF-ECS-006, CF-ECS-007, CF-ECS-009, CF-EKS-004, CF-ASG-003, CF-ASG-004, CF-ATH-001, CF-ATH-002, CF-GLUE-001, CF-FH-001, CF-EMR-001, CF-EMR-002, CF-EMR-003, CF-DMS-001, CF-DMS-002, CF-DMS-003, CF-S3-008, CF-S3-009, CF-CF-008, CF-CF-010, CF-CF-011, CF-SAGE-001, CF-SAGE-002, CF-SAGE-003, CF-SAGE-004, CF-FSX-001, CF-APPSYNC-001, CF-APPSYNC-002, CF-APPSYNC-003, CF-TRANSFER-001, CF-TRANSFER-002, CF-TRANSFER-003, CF-BEANSTALK-002, CF-R53-001, CF-R53-002, CF-ACM-002, CF-ACM-003 |
-| Reliability | CF-S3-003, CF-RDS-002, CF-RDS-003, CF-RDS-005, CF-LAM-001, CF-LAM-006, CF-LAM-007, CF-LAM-008, CF-APIGW-005, CF-APIGW-006, CF-APIGW-V2-004, CF-DDB-001, CF-SQS-002, CF-DEL-001, CF-NAT-001, CF-ALB-005, CF-ALB-007, CF-CLB-004, CF-CLB-005, CF-CP-002, CF-KMS-003, CF-OS-007, CF-KIN-002, CF-RS-003, CF-DOCDB-002, CF-DOCDB-004, CF-NEP-003, CF-NEP-004, CF-SFN-001, CF-EB-002, CF-SQS-003, CF-BAK-002, CF-BAK-003, CF-BAK-004, CF-BAK-005, CF-DDB-004, CF-DDB-005, CF-EC-003, CF-EC-004, CF-EFS-002, CF-ASG-001, CF-ASG-002, CF-DMS-004, CF-S3-010, CF-CF-009, CF-SAGE-005, CF-FSX-003, CF-R53-003, CF-ACM-001, CF-GA-001 |
+| Reliability | CF-S3-003, CF-RDS-002, CF-RDS-003, CF-RDS-005, CF-LAM-001, CF-LAM-006, CF-LAM-007, CF-LAM-008, CF-APIGW-005, CF-APIGW-006, CF-APIGW-V2-004, CF-DDB-001, CF-SQS-002, CF-DEL-001, CF-NAT-001, CF-ALB-005, CF-ALB-007, CF-CLB-004, CF-CLB-005, CF-CP-002, CF-KMS-003, CF-OS-007, CF-KIN-002, CF-RS-003, CF-DOCDB-002, CF-DOCDB-004, CF-NEP-003, CF-NEP-004, CF-SFN-001, CF-EB-002, CF-SQS-003, CF-BAK-002, CF-BAK-003, CF-BAK-004, CF-BAK-005, CF-DDB-004, CF-DDB-005, CF-EC-003, CF-EC-004, CF-EFS-002, CF-ASG-001, CF-ASG-002, CF-DMS-004, CF-S3-010, CF-CF-009, CF-SAGE-005, CF-FSX-003, CF-R53-003, CF-ACM-001, CF-GA-001, CF-VPC-004, CF-VPC-005, CF-VPC-006 |
 | Performance Efficiency | CF-APIGW-008, CF-PERF-001, CF-PERF-002, CF-PERF-003, CF-PERF-004, CF-ECS-011, CF-CF-013, CF-APPSYNC-004 |
 | Cost Optimization | CF-BUDGET-001, CF-CW-001, CF-RDS-014, CF-COST-002, CF-EBS-002, CF-EIP-001, CF-TAG-001, CF-ENV-001, CF-ENV-002, CF-ENV-003, CF-ENV-004, CF-ENV-005, CF-ENV-006, CF-GEN-001, CF-S3-006, CF-S3-007, CF-DDB-003, CF-VPC-002, CF-VPC-003, CF-SSM-002, CF-EFS-003, CF-ASG-006, CF-S3-012, CF-CF-006, CF-CF-012 |
 | Sustainability | CF-SUST-001, CF-SUST-002, CF-SUST-003, CF-CF-007 |
@@ -838,6 +846,9 @@ Every rule has one or more themes, which cut across pillars: `finops`, `security
 | CF-VPC-001 | network-exposure, finops |
 | CF-VPC-002 | finops |
 | CF-VPC-003 | finops |
+| CF-VPC-004 | resilience |
+| CF-VPC-005 | resilience |
+| CF-VPC-006 | resilience |
 | CF-WAF-001 | network-exposure |
 | BP-001 | finops |
 | BP-002 | data-protection, identity |
@@ -938,6 +949,7 @@ Every rule has one or more themes, which cut across pillars: `finops`, `security
 | REL-029 | resilience |
 | REL-030 | resilience, data-protection |
 | REL-031 | resilience, data-protection |
+| REL-032 | resilience |
 | REPO-001 | resilience |
 | REPO-002 | resilience |
 | REPO-003 | resilience |
@@ -951,6 +963,7 @@ Every rule has one or more themes, which cut across pillars: `finops`, `security
 | REPO-011 | security-baseline |
 | REPO-012 | resilience |
 | REPO-013 | resilience |
+| REPO-014 | resilience |
 | SEC-001 | identity |
 | SEC-002 | identity |
 | SEC-003 | network-exposure |

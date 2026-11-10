@@ -1,5 +1,6 @@
 """CloudFormation template-based rules (S3, RDS, ALB, CloudTrail, KMS, Lambda, DynamoDB, etc.) run after cdk synth."""
 from __future__ import annotations
+import ipaddress
 import json
 import re
 from contextlib import contextmanager
@@ -128,6 +129,7 @@ CF_COVERS_STATIC: dict[str, tuple[str, ...]] = {
     "CF-SG-002": ("SEC-003", "SEC-004"),
     "CF-SG-003": ("SEC-054",),
     "CF-NAT-001": ("REL-012",),
+    "CF-VPC-004": ("REL-032",),
     "CF-TGW-002": ("OPS-016",),
     "CF-DDB-001": ("REL-004",),
     "CF-DDB-002": ("SEC-008",),
@@ -629,6 +631,7 @@ CF_THEMES: dict[str, tuple[str, ...]] = {
     "CF-SQS-001": (_DP,), "CF-SQS-002": (_RES,),
     "CF-SUST-001": (_SUS, _F), "CF-SUST-002": (_SUS, _F), "CF-SUST-003": (_SUS, _F),
     "CF-TAG-001": (_F,), "CF-VPC-001": (_NET, _F), "CF-VPC-002": (_F,), "CF-VPC-003": (_F,), "CF-WAF-001": (_NET,),
+    "CF-VPC-004": (_RES,), "CF-VPC-005": (_RES,), "CF-VPC-006": (_RES,),
 }
 
 # Title of each template check, for the rule catalog. A check with a computed title or
@@ -910,6 +913,9 @@ CF_TITLES: dict[str, str] = {
     "CF-VPC-001": "VPC has no VPC endpoints in this template",
     "CF-VPC-002": "S3 traffic goes through the NAT gateway",
     "CF-VPC-003": "DynamoDB traffic goes through the NAT gateway",
+    "CF-VPC-004": "A subnet tier uses one Availability Zone",
+    "CF-VPC-005": "Subnets leave no room in the VPC CIDR to grow",
+    "CF-VPC-006": "VPCs are peered in a mesh with no transit gateway",
     "CF-WAF-001": "Load balancer or API stage has no WAF web ACL in this template",
 }
 
@@ -4721,6 +4727,176 @@ def _tgw_flow_log_findings(
     return out
 
 
+_IGW_TYPES = ("AWS::EC2::InternetGateway", "aws_internet_gateway")
+_VPC_CIDR_TYPES = ("AWS::EC2::VPCCidrBlock", "aws_vpc_ipv4_cidr_block_association")
+_PEERING_TYPES = ("AWS::EC2::VPCPeeringConnection", "aws_vpc_peering_connection")
+# A transit gateway or a Cloud WAN core network, or an attachment to one defined elsewhere.
+_NETWORK_HUB_TYPES = (
+    "AWS::EC2::TransitGateway", "AWS::EC2::TransitGatewayAttachment",
+    "AWS::EC2::TransitGatewayVpcAttachment", "AWS::NetworkManager::CoreNetwork",
+    "AWS::NetworkManager::VpcAttachment",
+    "aws_ec2_transit_gateway", "aws_ec2_transit_gateway_vpc_attachment",
+    "aws_networkmanager_core_network", "aws_networkmanager_vpc_attachment",
+)
+_MESH_PEERINGS = 3
+_ONE_AZ_RECOMMENDATION = (
+    "Every subnet of this tier is in one Availability Zone, so if that zone fails the tier "
+    "has nowhere left to run. Add a subnet of the tier in at least one more AZ, and spread "
+    "the resources that use the tier across them. In CDK: maxAzs of 2 or more on ec2.Vpc, "
+    "or two or more availabilityZones."
+)
+_FULL_CIDR_RECOMMENDATION = (
+    "The subnets take every address of the VPC CIDR, so there is no room for a subnet in a "
+    "new Availability Zone or a new tier without re-addressing. Leave unallocated space when "
+    "you plan the subnets, or add a secondary CIDR block (AWS::EC2::VPCCidrBlock, Terraform "
+    "aws_vpc_ipv4_cidr_block_association). In CDK: a smaller cidrMask on the subnet "
+    "configuration, or reservedAzs."
+)
+_MESH_RECOMMENDATION = (
+    "Each pair of VPCs that talk needs its own peering connection and routes, and peering "
+    "is not transitive, so a mesh grows with the square of the VPCs. Connect them through "
+    "a transit gateway (AWS::EC2::TransitGateway, Terraform aws_ec2_transit_gateway) or an "
+    "AWS Cloud WAN core network instead. In CDK: ec2.CfnTransitGateway with "
+    "ec2.CfnTransitGatewayAttachment for each VPC."
+)
+
+
+def _ipv4_network(value: Any) -> ipaddress.IPv4Network | None:
+    """A literal IPv4 CIDR, or None for anything else."""
+    if type(value) is not str:
+        return None
+    try:
+        return ipaddress.IPv4Network(value.strip(), strict=False)
+    except ValueError:
+        return None
+
+
+def _az_label(subnet: Resource) -> str:
+    """How the evidence names a subnet's AZ: the literal name, or CDK's GetAZs index."""
+    value = subnet.properties.get("AvailabilityZone", subnet.properties.get("AvailabilityZoneId"))
+    if type(value) is str:
+        return value
+    select = value.get("Fn::Select") if isinstance(value, dict) else None
+    if isinstance(select, list) and select and type(select[0]) in (int, str):
+        return f"Availability Zone index {select[0]}"
+    return "one Availability Zone"
+
+
+def _subnets_by_vpc(
+    subnets: List[Resource], vpcs: List[Resource],
+) -> dict[str, tuple[str, List[Resource]]]:
+    """Subnets grouped by the VPC they belong to: key -> (label, subnets). A subnet in a VPC of
+    this template keys on it; a CloudFormation subnet whose VpcId is a parameter or an import
+    keys on that value. A Terraform subnet whose VPC is not in the module is left out."""
+    out: dict[str, tuple[str, List[Resource]]] = {}
+    for subnet in subnets:
+        vpc = next((v for v in vpcs if _points_at(subnet, "VpcId", v)), None)
+        if vpc is not None:
+            key, label = vpc.name, vpc.name
+        elif subnet.source_type.startswith("AWS::") and "VpcId" in subnet.properties:
+            key = json.dumps(subnet.properties["VpcId"], sort_keys=True, default=str)
+            label = f"VPC {key}"
+        else:
+            continue
+        out.setdefault(key, (label, []))[1].append(subnet)
+    return out
+
+
+def _public_subnet_names(resources: List[Resource], subnets: List[Resource]) -> set[str]:
+    """Subnets that map public IPs, or whose route table has a route to an internet gateway
+    of this template."""
+    igws = [r for r in resources if r.source_type in _IGW_TYPES and not r.malformed]
+    routes = [r for r in resources if r.type == "route" and not r.malformed]
+    tables = [r for r in resources if r.type == "route_table" and not r.malformed]
+    links = [r for r in resources if r.type == "route_table_association" and not r.malformed]
+    to_igw = [t for t in tables if any(
+        _points_at(t, "Routes", igw) or any(
+            _points_at(route, "GatewayId", igw) and _points_at(route, "RouteTableId", t)
+            for route in routes)
+        for igw in igws)]
+    public = {s.name for s in subnets if _is_true(s.properties.get("MapPublicIpOnLaunch"))}
+    for link in links:
+        if any(_points_at(link, "RouteTableId", t) for t in to_igw):
+            public |= {s.name for s in subnets if _points_at(link, "SubnetId", s)}
+    return public
+
+
+def _network_topology_findings(
+    resources: List[Resource], template_path: Path,
+    at: Callable[[Resource | None], tuple[str, int | None, str]],
+) -> List[Finding]:
+    """Network topology (REL 2).
+
+    CF-VPC-004: a tier (public or private) of a VPC whose subnets are all in one AZ. A subnet
+    is public when it maps public IPs or its route table routes to an internet gateway in this
+    template; the rest are private. A VPC with a subnet whose AZ, or whether it maps public
+    IPs, cannot be read is not judged.
+    CF-VPC-005: the literal subnet CIDRs of a VPC take all of its literal IPv4 CIDR blocks.
+    CF-VPC-006: three or more VPC peering connections and no transit gateway or Cloud WAN
+    core network, here or in a child stack or module.
+    """
+    out: List[Finding] = []
+
+    def add(res: Resource, check_id: str, severity: Severity, evidence: str,
+            recommendation: str) -> None:
+        file, line, _ = at(res)
+        out.append(Finding(
+            id=check_id, title=CF_TITLES[check_id], severity=severity, category="Reliability",
+            file=file, line=line, evidence=evidence, recommendation=recommendation,
+        ))
+
+    vpcs = [r for r in resources if r.type == "vpc" and not r.malformed]
+    subnets = [r for r in resources if r.type == "subnet" and not r.malformed]
+    grouped = _subnets_by_vpc(subnets, vpcs)
+    public = _public_subnet_names(resources, subnets)
+    for label, members in grouped.values():
+        if any(_az_key(s) is None or (
+                s.name not in public and ("MapPublicIpOnLaunch" in s.unresolved
+                                          or _unread(s.properties.get("MapPublicIpOnLaunch"))))
+               for s in members):
+            continue
+        for tier in ("public", "private"):
+            in_tier = [s for s in members if (s.name in public) == (tier == "public")]
+            if not in_tier or len({_az_key(s) for s in in_tier}) != 1:
+                continue
+            names = ", ".join(s.name for s in in_tier)
+            add(in_tier[0], "CF-VPC-004", "Medium",
+                f"{label}: {tier} subnets {names} are all in {_az_label(in_tier[0])}",
+                _ONE_AZ_RECOMMENDATION)
+
+    blocks_for = [r for r in resources if r.source_type in _VPC_CIDR_TYPES and not r.malformed]
+    ipv4_blocks = [r for r in blocks_for if "CidrBlock" in r.properties
+                   or "CidrBlock" in r.unresolved or "Ipv4IpamPoolId" in r.properties]
+    unlinked = any(not any(_points_at(b, "VpcId", v) for v in vpcs) for b in ipv4_blocks)
+    for vpc in vpcs if not unlinked else []:
+        blocks = [vpc] + [b for b in ipv4_blocks if _points_at(b, "VpcId", vpc)]
+        read = [_ipv4_network(b.properties.get("CidrBlock")) for b in blocks]
+        networks = [n for n in read if n is not None]
+        if len(networks) != len(read):
+            continue  # a block from a parameter, a variable or IPAM
+        mine = grouped.get(vpc.name, ("", []))[1]
+        used = [n for n in (_ipv4_network(s.properties.get("CidrBlock")) for s in mine) if n]
+        full = bool(used) and all(
+            sum(n.num_addresses for n in ipaddress.collapse_addresses(
+                [u for u in used if u.subnet_of(network)])) >= network.num_addresses
+            for network in networks)
+        if full:
+            shown = ", ".join(str(n) for n in networks)
+            add(vpc, "CF-VPC-005", "Low",
+                f"{vpc.name} ({vpc.source_type}): subnets use all of {shown}",
+                _FULL_CIDR_RECOMMENDATION)
+
+    peerings = [r for r in resources if r.source_type in _PEERING_TYPES]
+    if (len(peerings) >= _MESH_PEERINGS
+            and not any(r.source_type in _NETWORK_HUB_TYPES for r in resources)
+            and not _may_be_out_of_sight(resources, _NETWORK_HUB_TYPES)):
+        add(peerings[0], "CF-VPC-006", "Low",
+            f"{len(peerings)} VPC peering connections and no transit gateway or Cloud WAN "
+            f"core network ({', '.join(p.name for p in peerings)})",
+            _MESH_RECOMMENDATION)
+    return out
+
+
 def _gateway_endpoint_findings(
     resources: List[Resource], template_path: Path,
     at: Callable[[Resource | None], tuple[str, int | None, str]],
@@ -7745,6 +7921,9 @@ def _run_resource_checks(
     # --- Network: one NAT gateway for several AZs, transit gateways without flow logs ---
     findings.extend(_nat_single_az_findings(resources, template_path, _at))
     findings.extend(_tgw_flow_log_findings(resources, template_path, _at))
+
+    # --- Network topology: tiers in one AZ, full VPC CIDRs, peering meshes (REL 2) ---
+    findings.extend(_network_topology_findings(resources, template_path, _at))
 
     # --- Launch template Spot (template-level: LTs without Spot when no ASG) ---
     if launch_templates_without_spot > 0 and asg_count == 0:

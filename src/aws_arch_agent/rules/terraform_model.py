@@ -906,6 +906,15 @@ def _subnet(body: dict) -> dict:
     _set(props, "MapPublicIpOnLaunch", _v(body, "map_public_ip_on_launch"))
     _set(props, "AvailabilityZone", _v(body, "availability_zone"))
     _set(props, "AvailabilityZoneId", _v(body, "availability_zone_id"))
+    _set(props, "CidrBlock", _v(body, "cidr_block"))  # CF-VPC-005
+    return props
+
+
+def _vpc_cidr(body: dict) -> dict:
+    """aws_vpc and aws_vpc_ipv4_cidr_block_association: the IPv4 CIDR CF-VPC-005 reads."""
+    props: dict = {}
+    _set(props, "CidrBlock", _v(body, "cidr_block"))
+    _set(props, "Ipv4IpamPoolId", _ref(body, "ipv4_ipam_pool_id"))
     return props
 
 
@@ -2773,6 +2782,8 @@ _ADAPTERS: dict[str, Callable[[dict], dict]] = {
     "aws_rds_cluster_parameter_group": _db_parameter_group,
     "aws_instance": _instance,
     "aws_subnet": _subnet,
+    "aws_vpc": _vpc_cidr,
+    "aws_vpc_ipv4_cidr_block_association": _vpc_cidr,
     "aws_launch_template": _launch_template,
     "aws_security_group": _security_group,
     "aws_lb": _lb,

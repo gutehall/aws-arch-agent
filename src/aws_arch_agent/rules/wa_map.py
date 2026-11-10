@@ -118,6 +118,7 @@ RULE_BEST_PRACTICES: dict[str, tuple[str, ...]] = {
     "REL-029": ("REL05-BP03",),
     "REL-030": ("REL09-BP01",),
     "REL-031": ("REL09-BP01",),
+    "REL-032": ("REL02-BP03",),
     # CDK source rules: Cost
     "COST-001": ("COST04-BP05",),
     "COST-002": ("COST09-BP03",),
@@ -186,6 +187,7 @@ RULE_BEST_PRACTICES: dict[str, tuple[str, ...]] = {
     "REPO-011": ("SEC11-BP05",),
     "REPO-012": ("REL01-BP04",),
     "REPO-013": ("REL01-BP06",),
+    "REPO-014": ("REL02-BP05",),
     # CDK source rules: Performance Efficiency
     "PERF-001": ("PERF02-BP01",),
     "PERF-002": ("PERF03-BP05",),
@@ -491,6 +493,9 @@ RULE_BEST_PRACTICES: dict[str, tuple[str, ...]] = {
     "CF-VPC-001": ("SEC05-BP02",),
     "CF-VPC-002": ("COST08-BP03",),
     "CF-VPC-003": ("COST08-BP03",),
+    "CF-VPC-004": ("REL02-BP03",),
+    "CF-VPC-005": ("REL02-BP03",),
+    "CF-VPC-006": ("REL02-BP04",),
     "CF-WAF-001": ("SEC05-BP03",),
 }
 
@@ -517,7 +522,7 @@ NOT_CHECKED: frozenset[str] = frozenset({
     "SEC10-BP01", "SEC10-BP02", "SEC10-BP04", "SEC10-BP05", "SEC10-BP07", "SEC10-BP08",
     "SEC11-BP01", "SEC11-BP03", "SEC11-BP04", "SEC11-BP06", "SEC11-BP08",
     "REL01-BP02", "REL01-BP03", "REL01-BP05",
-    "REL02-BP01", "REL02-BP02", "REL02-BP03", "REL02-BP04", "REL02-BP05",
+    "REL02-BP01", "REL02-BP02",
     "REL03-BP01", "REL03-BP02",
     "REL04-BP01", "REL04-BP03",
     "REL05-BP01", "REL05-BP06", "REL05-BP07",

@@ -1,9 +1,11 @@
 from __future__ import annotations
+import re
 from pathlib import Path
 from typing import List
 from aws_arch_agent.models import Finding
 from aws_arch_agent.rules.base import Rule, cdk_bool_prop, code_glob
 from aws_arch_agent.rules.scope import findings_for_unmatched
+from aws_arch_agent.tools.files import read_text_safe
 from aws_arch_agent.tools.rg import rg
 
 
@@ -919,4 +921,65 @@ class S3VersioningMissing(Rule):
                 evidence=txt,
                 recommendation=self.recommendation,
             ))
+        return out
+
+
+# ec2.Vpc( / new Vpc( in TypeScript and Python.
+_VPC_CALL = re.compile(r"(?<![\w.])(?:ec2\.)?Vpc\(")
+_ONE_MAX_AZ = re.compile(r"\b(?:maxAzs|max_azs)\s*[:=]\s*1(?![\d.])")
+# availabilityZones: ['eu-west-1a'] with one entry (a trailing comma is allowed).
+_ONE_LISTED_AZ = re.compile(
+    r"\b(?:availabilityZones|availability_zones)\s*[:=]\s*\[\s*[^\],\s][^\],]*?\s*,?\s*\]"
+)
+
+
+def _call_args(text: str, open_paren: int) -> str:
+    """The text between the parenthesis at open_paren and its match (or the end of text)."""
+    depth = 0
+    for i in range(open_paren, len(text)):
+        if text[i] == "(":
+            depth += 1
+        elif text[i] == ")":
+            depth -= 1
+            if depth == 0:
+                return text[open_paren + 1:i]
+    return text[open_paren + 1:]
+
+
+class VpcSingleAz(Rule):
+    id = "REL-032"
+    title = "VPC uses one Availability Zone"
+    category = "Reliability"
+    severity = "Medium"
+    themes = ("resilience",)
+    recommendation = (
+        "This VPC puts each subnet tier in one Availability Zone, so if that zone fails the "
+        "workload has nowhere left to run. Use maxAzs of 2 or more, or list two or more "
+        "availabilityZones, and spread the resources across them."
+    )
+
+    def run(self, repo_path: Path, language: str = "typescript") -> List[Finding]:
+        out: List[Finding] = []
+        seen: list[str] = []
+        for f, _ln, _txt in rg(repo_path, r"Vpc\(", glob=code_glob(language)):
+            if f in seen:
+                continue
+            seen.append(f)
+            text = read_text_safe(repo_path / f)
+            for call in _VPC_CALL.finditer(text):
+                args = _call_args(text, call.end() - 1)
+                if not (_ONE_MAX_AZ.search(args) or _ONE_LISTED_AZ.search(args)):
+                    continue
+                start = text.rfind("\n", 0, call.start()) + 1
+                end = text.find("\n", call.start())
+                out.append(Finding(
+                    id=self.id,
+                    title=self.title,
+                    severity="Medium",
+                    category=self.category,
+                    file=f,
+                    line=text.count("\n", 0, call.start()) + 1,
+                    evidence=text[start:end if end != -1 else None].strip(),
+                    recommendation=self.recommendation,
+                ))
         return out

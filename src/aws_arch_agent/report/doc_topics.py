@@ -1166,6 +1166,37 @@ TOPICS: dict[str, tuple[str, str, str, str]] = {
         "Well-Architected COST08-BP02: Select components to optimize data transfer cost",
         "/wellarchitected/latest/cost-optimization-pillar/cost_data_transfer_optimized_components.html",
     ),
+    "subnet_azs": (
+        "Subnets for your VPC",
+        "/vpc/latest/userguide/configure-subnets.html",
+        "Well-Architected REL02-BP03: Ensure IP subnet allocation accounts for expansion and "
+        "availability",
+        "/wellarchitected/latest/reliability-pillar/"
+        "rel_planning_network_topology_ip_subnet_allocation.html",
+    ),
+    "vpc_cidr_room": (
+        "VPC CIDR blocks",
+        "/vpc/latest/userguide/vpc-cidr-blocks.html",
+        "Well-Architected REL02-BP03: Ensure IP subnet allocation accounts for expansion and "
+        "availability",
+        "/wellarchitected/latest/reliability-pillar/"
+        "rel_planning_network_topology_ip_subnet_allocation.html",
+    ),
+    "hub_and_spoke": (
+        "What is AWS Transit Gateway for Amazon VPC?",
+        "/vpc/latest/tgw/what-is-transit-gateway.html",
+        "Well-Architected REL02-BP04: Prefer hub-and-spoke topologies over many-to-many mesh",
+        "/wellarchitected/latest/reliability-pillar/"
+        "rel_planning_network_topology_prefer_hub_and_spoke.html",
+    ),
+    "vpc_ip_plan": (
+        "What is IPAM?",
+        "/vpc/latest/ipam/what-it-is-ipam.html",
+        "Well-Architected REL02-BP05: Enforce non-overlapping private IP address ranges in all "
+        "private address spaces where they are connected",
+        "/wellarchitected/latest/reliability-pillar/"
+        "rel_planning_network_topology_non_overlap_ip.html",
+    ),
     "nat_multi_az": (
         "NAT gateways: one per Availability Zone",
         "/vpc/latest/userguide/nat-gateway-basics.html",
@@ -1875,6 +1906,7 @@ RULE_TOPICS: dict[str, str] = {
     "REPO-011": "central_packages",
     "REPO-012": "quota_alarms",
     "REPO-013": "quota_headroom",
+    "REPO-014": "vpc_ip_plan",
     "PERF-001": "graviton_ec2",
     "PERF-002": "caching",
     "PERF-003": "ddb_capacity",
@@ -1906,6 +1938,7 @@ RULE_TOPICS: dict[str, str] = {
     "REL-010": "lambda_vpc",
     "REL-011": "rds_replicas",
     "REL-012": "nat_multi_az",
+    "REL-032": "subnet_azs",
     "REL-013": "backup_vault",
     "REL-014": "backup_cross_region",
     "REL-015": "sfn_errors",
@@ -2279,5 +2312,8 @@ RULE_TOPICS: dict[str, str] = {
     "CF-VPC-001": "vpc_endpoints",
     "CF-VPC-002": "vpc_endpoints",
     "CF-VPC-003": "vpc_endpoints",
+    "CF-VPC-004": "subnet_azs",
+    "CF-VPC-005": "vpc_cidr_room",
+    "CF-VPC-006": "hub_and_spoke",
     "CF-WAF-001": "waf",
 }

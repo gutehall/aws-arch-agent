@@ -149,6 +149,12 @@ PAIRS: list[tuple[str, str, dict, str]] = [
         "SecurityGroupEgress": [{"IpProtocol": "-1", "CidrIp": "0.0.0.0/0"}],
     }}, "new ec2.SecurityGroup(this, 'Sg', { vpc, allowAllOutbound: true });"),
     ("CF-NAT-001", "REL-012", _ONE_NAT_TWO_AZS, "new ec2.Vpc(this, 'Vpc', { natGateways: 1 });"),
+    ("CF-VPC-004", "REL-032", {
+        "Vpc": {"Type": "AWS::EC2::VPC", "Properties": {"CidrBlock": "10.0.0.0/16"}},
+        "Subnet": {"Type": "AWS::EC2::Subnet", "Properties": {
+            "VpcId": {"Ref": "Vpc"}, "CidrBlock": "10.0.0.0/24",
+            "AvailabilityZone": {"Fn::Select": [0, {"Fn::GetAZs": ""}]}}},
+    }, "new ec2.Vpc(this, 'Vpc', { maxAzs: 1 });"),
     ("CF-TGW-002", "OPS-016", {"Type": "AWS::EC2::TransitGateway", "Properties": {}},
      "new ec2.CfnTransitGateway(this, 'Tgw', {});"),
     ("CF-ALB-002", "SEC-011", {"Type": "AWS::ElasticLoadBalancingV2::Listener", "Properties": {

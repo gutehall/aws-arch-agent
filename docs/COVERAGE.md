@@ -15,7 +15,7 @@ Which CDK rules have a template check, and which AWS Foundational Security Best 
 
 ## CDK rules
 
-190 rules: 130 covered, 7 partial, 10 account, 5 cdk-only, 25 advice, 13 repo.
+192 rules: 131 covered, 7 partial, 10 account, 5 cdk-only, 25 advice, 14 repo.
 
 | Rule | Title | Template check | Status | Note |
 | -- | -- | -- | -- | -- |
@@ -121,6 +121,7 @@ Which CDK rules have a template check, and which AWS Foundational Security Best 
 | REL-029 | EventBridge rule retry policy not configured | `CF-EB-002` | `covered` |  |
 | REL-030 | RDS deletion protection not enabled | `CF-RDS-005` | `covered` |  |
 | REL-031 | S3 bucket versioning not enabled | `CF-S3-003` | `covered` |  |
+| REL-032 | VPC uses one Availability Zone | `CF-VPC-004` | `covered` | The template check reads each subnet tier (public, private) of the synthesised VPC. |
 | COST-001 | Log retention may be infinite (cost risk) | `CF-CW-001` | `covered` |  |
 | COST-002 | Compute resources may miss autoscaling | `CF-ASG-006` | `partial` | CF-ASG-006 checks Auto Scaling groups of fixed size; COST-002 reports ECS services in code with no Auto Scaling at all. |
 | COST-003 | DynamoDB provisioned capacity may miss autoscaling | `CF-DDB-003` | `covered` |  |
@@ -209,6 +210,7 @@ Which CDK rules have a template check, and which AWS Foundational Security Best 
 | REPO-011 | Packages are not pulled through a central repository |  | `repo` | When the repo has a package manifest, looks for CodeArtifact, `aws codeartifact login`, or a private registry in .npmrc, pip.conf, poetry, Maven or Gradle. |
 | REPO-012 | No Service Quotas usage alarm for the services the stack uses |  | `repo` | When the IaC uses Lambda, Elastic IPs, NAT gateways or load balancers, looks for a CloudWatch alarm on the AWS/Usage namespace, SERVICE_QUOTA metric math, Quota Monitor for AWS, or Trusted Advisor service limit events. Org-level: off unless `rules.org`. |
 | REPO-013 | Limits the IaC sets leave no room for failover |  | `repo` | Sums literal Lambda reserved concurrency and Elastic IPs (with CDK NAT gateways) across the repo against the default quotas; over half fires. |
+| REPO-014 | VPC CIDR ranges overlap |  | `repo` | Compares the literal VPC CIDRs of CloudFormation, Terraform and CDK across the repo; files for different environments (dev and prod) are not compared. |
 
 ## FSBP controls
 
