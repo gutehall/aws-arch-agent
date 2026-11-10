@@ -179,6 +179,8 @@ RULE_BEST_PRACTICES: dict[str, tuple[str, ...]] = {
     # The root user is SEC01-BP02 (Secure account root user and properties), so REPO-006
     # answers SEC 1 though it sits with the SEC 2 identity checks.
     "REPO-006": ("SEC01-BP02",),
+    "REPO-007": ("SEC10-BP03",),
+    "REPO-008": ("SEC10-BP06",),
     # CDK source rules: Performance Efficiency
     "PERF-001": ("PERF02-BP01",),
     "PERF-002": ("PERF03-BP05",),
@@ -507,8 +509,7 @@ NOT_CHECKED: frozenset[str] = frozenset({
     "SEC06-BP03", "SEC06-BP05",
     "SEC07-BP01", "SEC07-BP02", "SEC07-BP04",
     "SEC08-BP03",
-    "SEC10-BP01", "SEC10-BP02", "SEC10-BP03", "SEC10-BP04", "SEC10-BP05", "SEC10-BP06",
-    "SEC10-BP07", "SEC10-BP08",
+    "SEC10-BP01", "SEC10-BP02", "SEC10-BP04", "SEC10-BP05", "SEC10-BP07", "SEC10-BP08",
     "SEC11-BP01", "SEC11-BP02", "SEC11-BP03", "SEC11-BP04", "SEC11-BP05", "SEC11-BP06",
     "SEC11-BP08",
     "REL01-BP02", "REL01-BP03", "REL01-BP04", "REL01-BP05", "REL01-BP06",

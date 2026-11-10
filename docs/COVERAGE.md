@@ -15,7 +15,7 @@ Which CDK rules have a template check, and which AWS Foundational Security Best 
 
 ## CDK rules
 
-183 rules: 130 covered, 7 partial, 10 account, 5 cdk-only, 25 advice, 6 repo.
+185 rules: 130 covered, 7 partial, 10 account, 5 cdk-only, 25 advice, 8 repo.
 
 | Rule | Title | Template check | Status | Note |
 | -- | -- | -- | -- | -- |
@@ -202,6 +202,8 @@ Which CDK rules have a template check, and which AWS Foundational Security Best 
 | REPO-004 | No organization guardrails in the scanned IaC |  | `repo` | Looks for SCPs, Control Tower controls, an organization trail, or Organizations accounts and OUs. Org-level: off unless `rules.org`. |
 | REPO-005 | Account is defined without a security baseline |  | `repo` | When the IaC defines an account, looks for CloudTrail, Config, GuardDuty, Security Hub and IAM Access Analyzer. |
 | REPO-006 | Account baseline does not check root MFA or root access keys |  | `repo` | When the IaC defines an account, looks for the Config rules for root MFA and root access keys, a conformance pack, the Security Hub CIS or FSBP standard, or an SCP that denies the root user. |
+| REPO-007 | No forensic capture is automated for security findings |  | `repo` | Looks for an EventBridge rule on GuardDuty, Security Hub, Inspector or Macie findings and an EBS snapshot or SSM capture runbook, or Amazon Detective. Org-level: off unless `rules.org`. |
+| REPO-008 | No containment control is deployed |  | `repo` | Looks for a quarantine or isolation security group, an SSM containment runbook, or credential revocation automation. Org-level: off unless `rules.org`. |
 
 ## FSBP controls
 

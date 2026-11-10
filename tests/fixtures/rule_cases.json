@@ -795,5 +795,17 @@
     "negative_py": "organizations.CfnAccount(self, 'Workload', account_name='workload', email=email)\nsecurityhub.CfnHub(self, 'Hub')",
     "positive_ts": "new organizations.CfnAccount(this, 'Workload', { accountName: 'workload', email });",
     "positive_py": "organizations.CfnAccount(self, 'Workload', account_name='workload', email=email)"
+  },
+  "REPO-007": {
+    "negative_ts": "new events.Rule(this, 'OnFinding', { eventPattern: { source: ['aws.guardduty'] }, targets: [new targets.SfnStateMachine(capture)] });\nconst snap = new tasks.CallAwsService(this, 'Snap', { service: 'ec2', action: 'createSnapshot', iamResources: ['*'] });",
+    "negative_py": "detective.CfnGraph(self, 'Graph')",
+    "positive_ts": "new events.Rule(this, 'OnFinding', { eventPattern: { source: ['aws.guardduty'] }, targets: [new targets.SnsTopic(topic)] });",
+    "positive_py": "s3.Bucket(self, 'Data')"
+  },
+  "REPO-008": {
+    "negative_ts": "new ec2.SecurityGroup(this, 'QuarantineSg', { vpc, allowAllOutbound: false });",
+    "negative_py": "iam_client.update_access_key(UserName=user, AccessKeyId=key, Status='Inactive')",
+    "positive_ts": "new ec2.SecurityGroup(this, 'WebSg', { vpc, vpcSubnets: { subnetType: ec2.SubnetType.PRIVATE_ISOLATED } });",
+    "positive_py": "s3.Bucket(self, 'Data')"
   }
 }

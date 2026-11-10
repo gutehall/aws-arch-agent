@@ -1676,6 +1676,18 @@ TOPICS: dict[str, tuple[str, str, str, str]] = {
         "Well-Architected SEC01-BP06: Automate deployment of standard security controls",
         "/wellarchitected/latest/security-pillar/sec_securely_operate_automate_security_controls.html",
     ),
+    "forensic_capture": (
+        "Processing GuardDuty findings with Amazon EventBridge",
+        "/guardduty/latest/ug/guardduty_findings_eventbridge.html",
+        "Well-Architected SEC10-BP03: Prepare forensic capabilities",
+        "/wellarchitected/latest/security-pillar/sec_incident_response_prepare_forensic.html",
+    ),
+    "containment": (
+        "Revoke IAM role temporary security credentials",
+        "/IAM/latest/UserGuide/id_roles_use_revoke-sessions.html",
+        "Well-Architected SEC10-BP06: Pre-deploy tools",
+        "/wellarchitected/latest/security-pillar/sec_incident_response_pre_deploy_tools.html",
+    ),
     "security_hub_fsbp": (
         "Security Hub: AWS Foundational Security Best Practices standard",
         "/securityhub/latest/userguide/fsbp-standard.html",
@@ -1819,6 +1831,8 @@ RULE_TOPICS: dict[str, str] = {
     "REPO-004": "org_guardrails",
     "REPO-005": "account_baseline",
     "REPO-006": "root_user",
+    "REPO-007": "forensic_capture",
+    "REPO-008": "containment",
     "PERF-001": "graviton_ec2",
     "PERF-002": "caching",
     "PERF-003": "ddb_capacity",

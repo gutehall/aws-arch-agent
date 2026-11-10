@@ -1,4 +1,5 @@
-"""Repo-level checks: tests, a pipeline, environments (OPS 5), account guardrails (SEC 1).
+"""Repo-level checks: tests, a pipeline, environments (OPS 5), account guardrails (SEC 1),
+incident response (SEC 10).
 
 REPO-006 (the account root user) answers SEC01-BP02 in SEC 1, though it was added with the
 SEC 2 checks.
@@ -38,7 +39,23 @@ Heuristics, kept simple on purpose:
   as they include both), or an SCP that denies the root user (aws:PrincipalArn
   arn:aws:iam::*:root). No account defined, no finding.
 
-REPO-004 to REPO-006 match text in IaC files (CDK TypeScript/JavaScript/Python,
+- REPO-007 forensics (org-level): an EventBridge rule (AWS::Events::Rule,
+  aws_cloudwatch_event_rule, events.Rule, events.CfnRule) whose file names a security finding
+  source (aws.guardduty, aws.securityhub, aws.inspector2, aws.macie, "GuardDuty Finding",
+  "Security Hub Findings - Imported"), and a capture action anywhere in the IaC or code:
+  CreateSnapshot(s), createSnapshot(s) or create_snapshot(s), or the SSM documents
+  AWS-CreateSnapshot, AWS-CreateImage, AWSSupport-CollectEC2* or
+  AWSSupport-ContainEC2Instance. The rule and the
+  capture are not linked target by target: a Lambda that snapshots for backups counts.
+  Amazon Detective (a behavior graph) passes on its own.
+- REPO-008 containment (org-level): a security group whose logical id, name, description or
+  tags (within a few hundred characters of the declaration) say quarantine, isolation,
+  isolate, forensic or containment; or an SSM document or code that contains or revokes:
+  AWSSupport-ContainEC2Instance, AWS-DisablePublicAccessForSecurityGroup, an AWS*-Revoke*
+  runbook, AWSRevokeOlderSessions or an aws:TokenIssueTime deny, DeleteLoginProfile, or
+  UpdateAccessKey with Inactive in the same file.
+
+REPO-004 to REPO-008 match text in IaC files (CDK TypeScript/JavaScript/Python,
 CloudFormation JSON/YAML, Terraform), less test files. A resource built from a variable
 type, or in a module the repo does not hold, is not seen.
 """
@@ -529,7 +546,134 @@ class RootUserUnchecked(_RepoRule):
         )]
 
 
+_EVENT_RULE = re.compile(
+    r"AWS::Events::Rule\b|resource\s+\"aws_cloudwatch_event_rule\"|\bevents\.(?:Cfn)?Rule\("
+)
+_FINDING_SOURCE = re.compile(
+    r"\baws\.(?:guardduty|securityhub|inspector2|macie)\b"
+    r"|GuardDuty Finding|Security Hub Findings - Imported"
+)
+_CAPTURE = re.compile(
+    r"\b[Cc]reateSnapshots?(?:Command)?\b|\bcreate_snapshots?\b"
+    r"|\bAWS-Create(?:Snapshot|Image)\b|\bAWSSupport-CollectEC2\w*"
+    r"|\bAWSSupport-ContainEC2Instance\b"
+)
+_DETECTIVE = re.compile(
+    r"AWS::Detective::Graph\b|resource\s+\"aws_detective_graph\"|\bdetective\.CfnGraph\("
+)
+
+
+def forensic_controls(repo_path: Path) -> dict[str, str]:
+    """Forensic pieces the IaC and code declare, and the first file with each:
+    "finding rule", "capture", "detective"."""
+    found: dict[str, str] = {}
+    for rel, text in iac_texts(repo_path):
+        if _EVENT_RULE.search(text) and _FINDING_SOURCE.search(text):
+            found.setdefault("finding rule", rel)
+        if _CAPTURE.search(text):
+            found.setdefault("capture", rel)
+        if _DETECTIVE.search(text):
+            found.setdefault("detective", rel)
+    return found
+
+
+class ForensicCaptureMissing(_RepoRule):
+    id = "REPO-007"
+    title = "No forensic capture is automated for security findings"
+    category = "Security"
+    severity = "Medium"
+    themes = ("security-baseline",)
+    recommendation = (
+        "Automate forensic capture: an EventBridge rule on GuardDuty or Security Hub findings "
+        "that starts a Step Functions or SSM Automation workflow to snapshot the instance's EBS "
+        "volumes (AWS-CreateSnapshot) and move it to an isolation security group "
+        "(AWSSupport-ContainEC2Instance). Turn on Amazon Detective to investigate findings."
+    )
+
+    def run(self, repo_path: Path, language: str = "typescript") -> List[Finding]:
+        found = forensic_controls(repo_path)
+        if "detective" in found or {"finding rule", "capture"} <= found.keys():
+            return []
+        rule = found.get("finding rule")
+        seen = f"a finding rule ({rule}) but no capture action" if rule else "none"
+        return [self._finding(
+            "Searched the IaC and code for an EventBridge rule on GuardDuty, Security Hub, "
+            "Inspector or Macie findings together with an EBS snapshot or SSM capture "
+            f"runbook, and for Amazon Detective; found {seen}"
+        )]
+
+
+_SECURITY_GROUP = re.compile(
+    r"AWS::EC2::SecurityGroup\b|resource\s+\"aws_security_group\""
+    r"|\bec2\.(?:Cfn)?SecurityGroup\("
+)
+_ISOLATION_WORD = re.compile(
+    r"quarantin|(?<!private_)isolat(?:e|ion)|forensic|containment", re.IGNORECASE
+)
+# A CloudFormation logical id comes before the type; CDK and Terraform names come after.
+_SG_BEFORE, _SG_AFTER = 120, 400
+_CONTAIN_RUNBOOK = re.compile(
+    r"\bAWSSupport-ContainEC2Instance\b|\bAWS-DisablePublicAccessForSecurityGroup\b"
+    r"|\bAWS[\w-]*-Revoke\w*"
+)
+_REVOKE_SESSIONS = re.compile(r"\bAWSRevokeOlderSessions\b|\baws:TokenIssueTime\b")
+_DELETE_LOGIN = re.compile(
+    r"\bDeleteLoginProfile(?:Command)?\b|\bdelete_login_profile\b|\bdeleteLoginProfile\b"
+)
+_UPDATE_KEY = re.compile(
+    r"\bUpdateAccessKey(?:Command)?\b|\bupdate_access_key\b|\bupdateAccessKey\b"
+)
+
+
+def _isolation_group(text: str) -> bool:
+    for match in _SECURITY_GROUP.finditer(text):
+        start = max(0, match.start() - _SG_BEFORE)
+        if _ISOLATION_WORD.search(text, start, match.end() + _SG_AFTER):
+            return True
+    return False
+
+
+def containment_controls(repo_path: Path) -> dict[str, str]:
+    """Containment controls the IaC and code declare, and the first file with each."""
+    found: dict[str, str] = {}
+    for rel, text in iac_texts(repo_path):
+        if _isolation_group(text):
+            found.setdefault("isolation security group", rel)
+        if _CONTAIN_RUNBOOK.search(text):
+            found.setdefault("containment runbook", rel)
+        if (
+            _REVOKE_SESSIONS.search(text) or _DELETE_LOGIN.search(text)
+            or (_UPDATE_KEY.search(text) and "Inactive" in text)
+        ):
+            found.setdefault("credential revocation", rel)
+    return found
+
+
+class ContainmentMissing(_RepoRule):
+    id = "REPO-008"
+    title = "No containment control is deployed"
+    category = "Security"
+    severity = "Medium"
+    themes = ("security-baseline",)
+    recommendation = (
+        "Pre-deploy containment: a quarantine security group with no rules to move a "
+        "compromised instance into, the AWSSupport-ContainEC2Instance runbook, and an "
+        "automation that revokes credentials (deactivate access keys with UpdateAccessKey, "
+        "or attach AWSRevokeOlderSessions to a role)."
+    )
+
+    def run(self, repo_path: Path, language: str = "typescript") -> List[Finding]:
+        if containment_controls(repo_path):
+            return []
+        return [self._finding(
+            "Searched the IaC and code for a quarantine or isolation security group, an SSM "
+            "containment runbook, and credential revocation (UpdateAccessKey to Inactive, "
+            "AWSRevokeOlderSessions, DeleteLoginProfile); found none"
+        )]
+
+
 REPO_RULES: List[Rule] = [
     RepoTestsMissing(), RepoPipelineMissing(), SingleEnvironment(),
     OrgGuardrailsMissing(), AccountBaselineMissing(), RootUserUnchecked(),
+    ForensicCaptureMissing(), ContainmentMissing(),
 ]
