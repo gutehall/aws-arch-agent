@@ -56,6 +56,10 @@ class Finding(BaseModel):
     # The rule's themes: finops, security-baseline, identity, data-protection,
     # network-exposure, resilience, observability, sustainability.
     themes: List[str] = Field(default_factory=list)
+    # The Well-Architected question the rule answers (SEC 8) and the best practices it
+    # checks (SEC08-BP02). Set from rules/wa_map.py.
+    question: str | None = None
+    best_practices: List[str] = Field(default_factory=list)
     # The model's opinion. Excluded so JSON findings, SARIF, the baseline and fail-on cannot
     # depend on it; the renderers that show it read it explicitly.
     verdict: Verdict | None = Field(default=None, exclude=True)
@@ -88,3 +92,7 @@ class RepoContext(BaseModel):
     # Apart from `llm`, which is the verdict calls: a label shows only when `llm` is ok, and
     # the larger hypothesis prompt failing must not take good verdicts with it.
     hypothesis_llm: LLMResult = Field(default=NO_CALL, exclude=True)
+    # The rule ids whose findings this report can show: the ones that ran, less what a theme
+    # or severity filter hides. The Well-Architected answers count a best practice as
+    # checked only when one of these covers it. None means every rule.
+    rules_run: List[str] | None = Field(default=None, exclude=True)

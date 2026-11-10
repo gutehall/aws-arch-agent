@@ -88,7 +88,7 @@ A failed hypothesis call has its own status and console line. It keeps the verdi
 
 ## HTML report
 
-`--format html` writes one file to open in a browser. CSS and script are inline and nothing external loads, so it works offline and as a CI artifact. The page has a dark theme, severity counts, All/High/Medium/Low tabs, and each finding's file and line, evidence, recommendation, and suggested code. Each finding links to the AWS docs page for its control (for example S3 default bucket encryption, not the S3 start page) and to the Well-Architected best practice it supports (for example SEC08-BP02 Enforce encryption at rest). The map is `aws_arch_agent/report/doc_topics.py`; `python scripts/check_doc_links.py` checks that every page still exists. A finding with no entry there gets a service start page when its title names a service, and always the pillar overview. The HTML report has no summary section; the summary is in Markdown and JSON. These links are the only external URLs on the page, and they load only when clicked. Evidence and code from the scanned repo are escaped. With `--enforce-baseline`, each finding is labeled Accepted or New.
+`--format html` writes one file to open in a browser. CSS and script are inline and nothing external loads, so it works offline and as a CI artifact. The page has a dark theme, severity counts, All/High/Medium/Low tabs, and each finding's file and line, evidence, recommendation, and suggested code. Each finding links to the AWS docs page for its control (for example S3 default bucket encryption, not the S3 start page) and to the Well-Architected best practice it supports (for example SEC08-BP02 Enforce encryption at rest). The map is `aws_arch_agent/report/doc_topics.py`; `python scripts/check_doc_links.py` checks that every page still exists. A finding with no entry there gets a service start page when its title names a service, and always the pillar overview. The HTML report has no summary section; the summary is in Markdown and JSON. It does list the [Well-Architected answers](#well-architected-answers). These links are the only external URLs on the page, and they load only when clicked. Evidence and code from the scanned repo are escaped. With `--enforce-baseline`, each finding is labeled Accepted or New.
 
 ## Config file (JSON or YAML)
 
@@ -151,6 +151,16 @@ Markdown reports open with a **Summary** built from the findings alone, so it is
 - **Top fixes**: the five most important fixes. A fix is one rule, covering every resource it reported. They are ranked by severity, then estimated monthly saving, then how many resources the fix covers, then rule id.
 - **By pillar**: one line per finding category with its count by severity and possible savings, for example "Cost Optimization: 7 findings (7 Low), about $120.00/month possible savings (estimate)". The lines add up to the findings below, counts and savings alike.
 - **Quick wins**: fixes with suggested code and low effort.
+
+## Well-Architected answers
+
+After the summary, every report answers all 57 questions of the current Well-Architected Framework: one line per question, **met** or **not met**, with the findings under it. It appears in Markdown and HTML, and as `answers` in JSON. The answer is computed from the findings alone. Nobody is asked anything, and in V2 the LLM does not change it.
+
+- A question is **met** when every one of its best practices is checked by a rule that ran in this scan, and no finding falls under it.
+- Otherwise it is **not met**, and the line says why: how many findings, and how many of its best practices this scan did not check. A missing control is a finding, so a missing control means not met.
+- A best practice is not checked when no rule checks it yet, or when its rules did not run: CDK source rules on a CloudFormation or Terraform scan, template checks on a CDK scan without synth or `--templates`, or rules turned off by `rules.include`, `rules.exclude`, or `rules.org`. `--theme` keeps only the rules in those themes. A `severity_threshold` above Low can hide any finding, so with one nothing is met.
+
+The questions and best practices are in `aws_arch_agent/rules/data/well_architected.json` (from the framework's [appendix](https://docs.aws.amazon.com/wellarchitected/latest/framework/appendix.html)). `aws_arch_agent/rules/wa_map.py` says which best practices each rule checks, one question per rule; CDK, CloudFormation, and Terraform scans read the same table. Each finding carries `question` (for example `SEC 8`) and `best_practices` (for example `SEC08-BP02`). `NOT_CHECKED` in the same file lists the best practices no rule checks yet; `tests/test_well_architected.py` fails when a best practice is in neither table, so CI fails on a best practice with no rule.
 
 Each finding has an `effort` field. `low` means one property, changed in place (versioning, log retention, tracing, gp2 to gp3, NoEcho, a tag). `high` means the fix replaces the resource or changes its design (encrypting an existing database or volume, NAT traffic, a public EKS endpoint). Everything else is `medium`. The map is `aws_arch_agent/rules/effort.py`.
 

@@ -13,6 +13,7 @@ from aws_arch_agent.models import Finding, RepoContext
 from aws_arch_agent.report.docs import doc_links
 from aws_arch_agent.report.markdown import estimate_lines, price_line
 from aws_arch_agent.report.summary import theme_counts
+from aws_arch_agent.rules import well_architected
 
 SEVERITIES = ("High", "Medium", "Low")
 _SEVERITY_RANK = {s: i for i, s in enumerate(SEVERITIES)}
@@ -90,6 +91,7 @@ def render_html(
         severities=SEVERITIES,
         counts=counts,
         theme_counts=theme_counts(findings),
+        answers=well_architected.html_rows(well_architected.answers(findings, ctx.rules_run)),
         total=len(findings),
         warnings=list(warnings or []),
         findings=rows,

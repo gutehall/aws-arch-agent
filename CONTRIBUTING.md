@@ -51,6 +51,7 @@ aws-arch-agent --repo . --no-llm --fail-on high --enforce-baseline
 - Ensure tests pass and `ruff check src tests` and `mypy src` succeed.
 - Update docs (README, REFERENCE, CONFIG, or this file) if you change behavior or CLI.
 - For new rules or pillars, add tests under `tests/` and consider documenting in `docs/`.
+- Map every new rule to the Well-Architected best practices it checks in `src/aws_arch_agent/rules/wa_map.py` (one question per rule). When it covers a best practice listed in `NOT_CHECKED`, remove it from that list in the same change; `tests/test_well_architected.py` enforces both.
 
 ## Releases
 
