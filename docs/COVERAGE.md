@@ -11,11 +11,11 @@ Which CDK rules have a template check, and which AWS Foundational Security Best 
 | `account` | Needs a live account. A scan of templates cannot see it. |
 | `cdk-only` | Reads the CDK code itself, not a resource property. |
 | `advice` | No property to read. The answer depends on traffic, usage or design. |
-| `repo` | Reads the repository tree (tests, CI config, environments), not IaC. Runs for every source. |
+| `repo` | Reads the repository tree (tests, CI config, environments, account guardrails), not one IaC file. Runs for every source. |
 
 ## CDK rules
 
-177 rules: 127 covered, 7 partial, 10 account, 5 cdk-only, 25 advice, 3 repo.
+179 rules: 127 covered, 7 partial, 10 account, 5 cdk-only, 25 advice, 5 repo.
 
 | Rule | Title | Template check | Status | Note |
 | -- | -- | -- | -- | -- |
@@ -196,6 +196,8 @@ Which CDK rules have a template check, and which AWS Foundational Security Best 
 | REPO-001 | Repo has no automated tests |  | `repo` | Looks for test directories and test file names. |
 | REPO-002 | No CI workflow or pipeline builds the workload |  | `repo` | Looks for CI config files or a CodePipeline in the IaC. |
 | REPO-003 | Only one environment is defined |  | `repo` | Looks for environment names in IaC paths, CDK stack ids and cdk.json context. |
+| REPO-004 | No organization guardrails in the scanned IaC |  | `repo` | Looks for SCPs, Control Tower controls, an organization trail, or Organizations accounts and OUs. Org-level: off unless `rules.org`. |
+| REPO-005 | Account is defined without a security baseline |  | `repo` | When the IaC defines an account, looks for CloudTrail, Config, GuardDuty, Security Hub and IAM Access Analyzer. |
 
 ## FSBP controls
 

@@ -759,5 +759,17 @@
   "REPO-003": {
     "positive_ts": "new s3.Bucket(this, 'Data');",
     "positive_py": "s3.Bucket(self, 'Data')"
+  },
+  "REPO-004": {
+    "negative_ts": "new organizations.CfnPolicy(this, 'DenyLeave', { name: 'deny-leave', type: 'SERVICE_CONTROL_POLICY', content });",
+    "negative_py": "cloudtrail.Trail(self, 'OrgTrail', is_organization_trail=True)",
+    "positive_ts": "new s3.Bucket(this, 'Data');",
+    "positive_py": "s3.Bucket(self, 'Data')"
+  },
+  "REPO-005": {
+    "negative_ts": "new s3.Bucket(this, 'Data');",
+    "negative_py": "s3.Bucket(self, 'Data')",
+    "positive_ts": "new organizations.CfnAccount(this, 'Workload', { accountName: 'workload', email });",
+    "positive_py": "organizations.CfnAccount(self, 'Workload', account_name='workload', email=email)"
   }
 }

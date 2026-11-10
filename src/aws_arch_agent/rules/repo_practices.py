@@ -1,4 +1,4 @@
-"""Repo-level checks: tests, a build pipeline, and more than one environment (OPS 5).
+"""Repo-level checks: tests, a pipeline, environments (OPS 5), account guardrails (SEC 1).
 
 These rules read the repository tree, not one IaC file, so they run the same for CDK,
 CloudFormation, and Terraform scans. They walk the whole repo (test directories included,
@@ -18,6 +18,20 @@ Heuristics, kept simple on purpose:
   their synonyms) in the paths of IaC files (Terraform, tfvars, CloudFormation templates,
   parameter files), in CDK stack and stage ids, and in cdk.json context keys. Two distinct
   environments pass. Environments built in a loop or from a variable are not seen.
+- REPO-004 organization guardrails (an org-level rule, off unless rules.org or
+  rules.include): the IaC declares an SCP (AWS::Organizations::Policy,
+  aws_organizations_policy, organizations.CfnPolicy, with SERVICE_CONTROL_POLICY named in
+  the file or no other policy type named), a Control Tower control or landing zone, an
+  organization trail (IsOrganizationTrail / is_organization_trail / isOrganizationTrail
+  true), or Organizations accounts or OUs.
+- REPO-005 account baseline: when the IaC defines an account (Organizations account,
+  Control Tower Account Factory provisioned product, or an AFT aft-account-request module),
+  it must also declare a CloudTrail trail, a Config recorder, a GuardDuty detector, a
+  Security Hub hub and an IAM Access Analyzer. No account defined, no finding.
+
+REPO-004 and REPO-005 match text in IaC files (CDK TypeScript/JavaScript/Python,
+CloudFormation JSON/YAML, Terraform), less test files. A resource built from a variable
+type, or in a module the repo does not hold, is not seen.
 """
 from __future__ import annotations
 
@@ -126,14 +140,16 @@ class _RepoRule(Rule):
     severity: Severity
     exclude_globs: ClassVar[tuple[str, ...]] = _BUILD_GLOBS
 
-    def _finding(self, evidence: str, file: str | None = None) -> Finding:
+    def _finding(
+        self, evidence: str, file: str | None = None, line: int | None = None
+    ) -> Finding:
         return Finding(
             id=self.id,
             title=self.title,
             severity=self.severity,
             category=self.category,
             file=file,
-            line=None,
+            line=line,
             evidence=evidence,
             recommendation=self.recommendation,
         )
@@ -266,4 +282,157 @@ class SingleEnvironment(_RepoRule):
         )]
 
 
-REPO_RULES: List[Rule] = [RepoTestsMissing(), RepoPipelineMissing(), SingleEnvironment()]
+def iac_texts(repo_path: Path) -> Iterator[tuple[str, str]]:
+    """(repo-relative path, text) of each IaC or code file outside tests."""
+    for path in walk(repo_path):
+        parts = _rel_parts(path, repo_path)
+        if path.suffix.lower() not in _IAC_TEXT_SUFFIXES or _in_test_dir(parts):
+            continue
+        if _TEST_NAME.search(path.name.lower()):
+            continue
+        yield "/".join(parts), read_text_safe(path)
+
+
+_ORG_POLICY = re.compile(
+    r"AWS::Organizations::Policy\b|resource\s+\"aws_organizations_policy\""
+    r"|organizations\.CfnPolicy\("
+)
+_OTHER_POLICY_TYPE = re.compile(
+    r"\b(?:TAG_POLICY|BACKUP_POLICY|AISERVICES_OPT_OUT_POLICY|CHATBOT_POLICY"
+    r"|RESOURCE_CONTROL_POLICY|DECLARATIVE_POLICY_EC2|SECURITYHUB_POLICY|INSPECTOR_POLICY)\b"
+)
+_CONTROL_TOWER = re.compile(
+    r"AWS::ControlTower::(?:EnabledControl|LandingZone)\b"
+    r"|resource\s+\"aws_controltower_(?:control|landing_zone)\""
+    r"|controltower\.Cfn(?:EnabledControl|LandingZone)\("
+)
+_ORG_TRAIL = re.compile(
+    r"\bIsOrganizationTrail[\"']?\s*:\s*[\"']?true\b"
+    r"|\bis_organization_trail\s*=\s*(?:true|True)\b"
+    r"|\bisOrganizationTrail\s*:\s*true\b"
+)
+_ORG_UNITS = re.compile(
+    r"AWS::Organizations::(?:Account|OrganizationalUnit)\b"
+    r"|resource\s+\"aws_organizations_(?:account|organizational_unit)\""
+    r"|organizations\.Cfn(?:Account|OrganizationalUnit)\("
+)
+
+
+def org_guardrails(repo_path: Path) -> dict[str, str]:
+    """Each kind of organization guardrail the IaC declares, and the first file with it."""
+    found: dict[str, str] = {}
+    for rel, text in iac_texts(repo_path):
+        if _ORG_POLICY.search(text) and (
+            "SERVICE_CONTROL_POLICY" in text or not _OTHER_POLICY_TYPE.search(text)
+        ):
+            found.setdefault("service control policy", rel)
+        if _CONTROL_TOWER.search(text):
+            found.setdefault("Control Tower control", rel)
+        if _ORG_TRAIL.search(text):
+            found.setdefault("organization trail", rel)
+        if _ORG_UNITS.search(text):
+            found.setdefault("Organizations account or OU", rel)
+    return found
+
+
+class OrgGuardrailsMissing(_RepoRule):
+    id = "REPO-004"
+    title = "No organization guardrails in the scanned IaC"
+    category = "Security"
+    severity = "Medium"
+    themes = ("security-baseline",)
+    recommendation = (
+        "Run workloads in separate accounts under AWS Organizations and set guardrails in "
+        "code: service control policies, Control Tower controls, and an organization trail."
+    )
+
+    def run(self, repo_path: Path, language: str = "typescript") -> List[Finding]:
+        if org_guardrails(repo_path):
+            return []
+        return [self._finding(
+            "Searched the IaC for a service control policy, a Control Tower control or "
+            "landing zone, an organization CloudTrail trail, and Organizations accounts or "
+            "OUs; found none"
+        )]
+
+
+_ACCOUNT = re.compile(
+    r"AWS::Organizations::Account\b|resource\s+\"aws_organizations_account\""
+    r"|organizations\.CfnAccount\(|aft-account-request"
+)
+_PROVISIONED_PRODUCT = re.compile(
+    r"AWS::ServiceCatalog::CloudFormationProvisionedProduct\b"
+    r"|resource\s+\"aws_servicecatalog_provisioned_product\""
+    r"|servicecatalog\.CfnCloudFormationProvisionedProduct\("
+)
+_ACCOUNT_FACTORY = "AWSControlTowerAccountFactory"
+BASELINE_SERVICES: tuple[tuple[str, re.Pattern[str]], ...] = (
+    ("CloudTrail trail", re.compile(
+        r"AWS::CloudTrail::Trail\b|resource\s+\"aws_cloudtrail\"|cloudtrail\.(?:Cfn)?Trail\("
+    )),
+    ("Config recorder", re.compile(
+        r"AWS::Config::ConfigurationRecorder\b"
+        r"|resource\s+\"aws_config_configuration_recorder\""
+        r"|config\.CfnConfigurationRecorder\("
+    )),
+    ("GuardDuty detector", re.compile(
+        r"AWS::GuardDuty::Detector\b|resource\s+\"aws_guardduty_detector\""
+        r"|guardduty\.CfnDetector\("
+    )),
+    ("Security Hub", re.compile(
+        r"AWS::SecurityHub::Hub(?:V2)?\b|resource\s+\"aws_securityhub_account\""
+        r"|securityhub\.CfnHub(?:V2)?\("
+    )),
+    ("IAM Access Analyzer", re.compile(
+        r"AWS::AccessAnalyzer::Analyzer\b|resource\s+\"aws_accessanalyzer_analyzer\""
+        r"|accessanalyzer\.CfnAnalyzer\("
+    )),
+)
+
+
+def _account_at(text: str) -> int | None:
+    """Offset of the first account definition in text, or None."""
+    match = _ACCOUNT.search(text)
+    if match:
+        return match.start()
+    if _PROVISIONED_PRODUCT.search(text) and _ACCOUNT_FACTORY in text:
+        return text.index(_ACCOUNT_FACTORY)
+    return None
+
+
+class AccountBaselineMissing(_RepoRule):
+    id = "REPO-005"
+    title = "Account is defined without a security baseline"
+    category = "Security"
+    severity = "Medium"
+    themes = ("security-baseline",)
+    recommendation = (
+        "Deploy a security baseline with every account the repo creates: a CloudTrail "
+        "trail, an AWS Config recorder, a GuardDuty detector, Security Hub and an IAM "
+        "Access Analyzer (or the Control Tower or AFT customizations that set them up)."
+    )
+
+    def run(self, repo_path: Path, language: str = "typescript") -> List[Finding]:
+        account: tuple[str, int] | None = None
+        missing = {name: pattern for name, pattern in BASELINE_SERVICES}
+        for rel, text in iac_texts(repo_path):
+            at = _account_at(text)
+            if account is None and at is not None:
+                account = (rel, text.count("\n", 0, at) + 1)
+            for name, pattern in list(missing.items()):
+                if pattern.search(text):
+                    del missing[name]
+        if account is None or not missing:
+            return []
+        rel, line = account
+        names = [name for name, _ in BASELINE_SERVICES if name in missing]
+        return [self._finding(
+            f"Defines an account ({rel}:{line}); no {', '.join(names)} in the IaC",
+            file=rel, line=line,
+        )]
+
+
+REPO_RULES: List[Rule] = [
+    RepoTestsMissing(), RepoPipelineMissing(), SingleEnvironment(),
+    OrgGuardrailsMissing(), AccountBaselineMissing(),
+]

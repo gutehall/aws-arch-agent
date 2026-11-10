@@ -269,7 +269,7 @@ def _languages_to_scan(language: str) -> list[str]:
 
 
 # Account controls an app stack does not own. Off unless rules.org or rules.include.
-ORG_RULE_IDS = frozenset({"SEC-026", "SEC-027", "OPS-001", "OPS-014", "COST-014"})
+ORG_RULE_IDS = frozenset({"SEC-026", "SEC-027", "OPS-001", "OPS-014", "COST-014", "REPO-004"})
 
 
 def _filter_rules(
@@ -450,7 +450,7 @@ def _collect_findings(
             )
             findings.extend(found)
             warnings.extend(warned)
-        # The repo-level checks (tests, pipeline, environments) read the tree, not the IaC.
+        # The repo-level checks (tests, pipeline, environments, accounts) read the tree.
         repo_rules = _filter_rules(REPO_RULES, rules_include, rules_exclude, org=rules_org)
         found, warned = run_all_rules(repo_path, repo_rules, ["typescript"])
         findings.extend(found)

@@ -4,13 +4,13 @@ This document provides a comprehensive list of all rules checked by AWS Arch Age
 
 ## Overview
 
-AWS Arch Agent checks **177 static analysis rules** and **274 template checks** across all 6 AWS Well-Architected Framework pillars. 134 of the 177 CDK rules (76%) have a template check, so they also run for CloudFormation, Terraform and synthesised CDK. [COVERAGE.md](COVERAGE.md) gives the reason for each of the others.
+AWS Arch Agent checks **179 static analysis rules** and **274 template checks** across all 6 AWS Well-Architected Framework pillars. 134 of the 179 CDK rules (75%) have a template check, so they also run for CloudFormation, Terraform and synthesised CDK. [COVERAGE.md](COVERAGE.md) gives the reason for each of the others.
 
 ## Static Analysis Rules (V1 & V2 Modes)
 
 These rules run on your CDK TypeScript/Python code and execute in both V1 and V2 modes.
 
-### Security (68 rules)
+### Security (70 rules)
 
 **Encryption & Data Protection:**
 - SEC-006: S3 bucket encryption missing
@@ -99,6 +99,10 @@ These rules run on your CDK TypeScript/Python code and execute in both V1 and V2
 - SEC-066: EC2 instance or launch template may not require IMDSv2
 - SEC-068: Lambda function uses a deprecated runtime (`lambda.Runtime.X`; High when deprecated, Low within 6 months)
 - SEC-067: IAM principal has full admin access (`ManagedPolicy.fromAwsManagedPolicyName('AdministratorAccess')` or its ARN)
+
+**Repo-level account guardrails** (read the IaC across the repo, so they run for CDK, CloudFormation and Terraform):
+- REPO-004: No organization guardrails in the scanned IaC (org-level: runs with `rules.org` or `rules.include`)
+- REPO-005: Account is defined without a security baseline
 
 ### Reliability (31 rules)
 
@@ -917,6 +921,8 @@ Every rule has one or more themes, which cut across pillars: `finops`, `security
 | REPO-001 | resilience |
 | REPO-002 | resilience |
 | REPO-003 | resilience |
+| REPO-004 | security-baseline |
+| REPO-005 | security-baseline |
 | SEC-001 | identity |
 | SEC-002 | identity |
 | SEC-003 | network-exposure |
