@@ -24,6 +24,7 @@ from aws_arch_agent.rules.fix_snippets import attach_fixes
 from aws_arch_agent.rules.registry import ALL_RULES
 from aws_arch_agent.rules.runner import filter_by_severity, run_all_rules
 from aws_arch_agent.rules import cf_template, effort, environments, nonprod, regions, stack_cost, themes
+from aws_arch_agent.rules import well_architected
 from aws_arch_agent.rules.tag_policy import TagPolicy, use_tag_policy
 from aws_arch_agent.report.markdown import render_markdown
 from aws_arch_agent.tools.cdk_synth import (
@@ -502,10 +503,20 @@ def node_report(state: State) -> State:
     warnings = state.get("rule_warnings") or []
     effort.annotate(findings)  # the summary's quick wins need it
     themes.annotate(findings)
+    well_architected.annotate(findings)
     wanted = state.get("theme_filter")
     if wanted:
         findings = themes.select(findings, wanted)
         ctx.notes["themes"] = list(wanted)
+    # The CDK source rules always run; the template checks only when synth or --templates did.
+    ctx.rules_run = well_architected.rules_run(
+        active_titles(state.get("rules_include"), state.get("rules_exclude"),
+                      bool(state.get("rules_org"))),
+        cdk=True,
+        templates=bool(state.get("synth_ok")),
+        theme_filter=wanted,
+        severity_threshold=state.get("severity_threshold"),
+    )
     cost = stack_cost.summary(findings, Path(state["repo_path"]))
     if cost is not None:
         ctx.notes["cost"] = cost

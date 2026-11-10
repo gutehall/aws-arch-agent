@@ -55,6 +55,20 @@ class Rule(ABC):
     recommendation: ClassVar[str] = ""
     exclude_globs: ClassVar[tuple[str, ...]] = DEFAULT_EXCLUDE_GLOBS
 
+    @property
+    def best_practices(self) -> tuple[str, ...]:
+        """The Well-Architected best-practice ids this rule checks (rules/wa_map.py)."""
+        from aws_arch_agent.rules.well_architected import best_practices_of
+
+        return best_practices_of(self.id)
+
+    @property
+    def question(self) -> str | None:
+        """The Well-Architected question this rule answers, such as SEC 8."""
+        from aws_arch_agent.rules.well_architected import question_of
+
+        return question_of(self.id)
+
     @abstractmethod
     def run(self, repo_path: Path, language: str = "typescript") -> List[Finding]:
         """Run rule against repo; return list of findings (possibly empty)."""

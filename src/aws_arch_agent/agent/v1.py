@@ -25,6 +25,7 @@ from aws_arch_agent.rules.terraform_model import (
 )
 from aws_arch_agent.rules.runner import filter_by_severity, run_all_rules
 from aws_arch_agent.rules import cf_template, effort, environments, nonprod, regions, stack_cost, themes
+from aws_arch_agent.rules import well_architected
 from aws_arch_agent.rules.tag_policy import TagPolicy, policy_checked, use_tag_policy
 from aws_arch_agent.report.markdown import render_markdown
 from aws_arch_agent.agent.verdicts import (
@@ -457,6 +458,7 @@ def _collect_findings(
     findings = filter_by_severity(findings, severity_threshold)
     effort.annotate(findings)
     themes.annotate(findings)
+    well_architected.annotate(findings)
     return ctx, findings, warnings
 
 
@@ -500,6 +502,14 @@ def analyze_v1(
         if theme_filter:
             findings = themes.select(findings, theme_filter)
             ctx.notes["themes"] = list(theme_filter)
+        on_templates = ctx.source in TEMPLATE_SOURCES or ctx.source in TERRAFORM_SOURCES
+        ctx.rules_run = well_architected.rules_run(
+            active_titles(rules_include, rules_exclude, rules_org),
+            cdk=not on_templates,
+            templates=on_templates,
+            theme_filter=theme_filter,
+            severity_threshold=severity_threshold,
+        )
         cost = stack_cost.summary(findings, repo_path)
         if cost is not None:
             ctx.notes["cost"] = cost
