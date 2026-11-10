@@ -868,6 +868,66 @@ _TERRAFORM["CF-IAM-008:aws_iam_role"] = _TF_IAM_ROLE.replace(
     "  # keep the other arguments as they are; drop AdministratorAccess from managed_policy_arns\n",
     1,
 )
+
+# IAM users for people, access keys, and user policies (CF-IAM-009 to CF-IAM-011).
+_CLOUDFORMATION["CF-IAM-009"] = """# Remove LoginProfile from $name; give people access through IAM Identity Center.
+${name}PermissionSet:
+  Type: AWS::SSO::PermissionSet
+  Properties:
+    InstanceArn: arn:aws:sso:::instance/ssoins-1234567890abcdef
+    Name: ReadOnly
+    ManagedPolicies:
+      - arn:aws:iam::aws:policy/ReadOnlyAccess"""
+_TERRAFORM["CF-IAM-009"] = """# Remove $tf_type.$tf_name; give people access through IAM Identity Center.
+data "aws_ssoadmin_instances" "this" {}
+
+resource "aws_ssoadmin_permission_set" "read_only" {
+  name         = "ReadOnly"
+  instance_arn = tolist(data.aws_ssoadmin_instances.this.arns)[0]
+}"""
+_CLOUDFORMATION["CF-IAM-010"] = """# Delete $name; let the workload assume a role with temporary credentials.
+${name}Role:
+  Type: AWS::IAM::Role
+  Properties:
+    AssumeRolePolicyDocument:
+      Version: "2012-10-17"
+      Statement:
+        - Effect: Allow
+          Principal:
+            Service: ec2.amazonaws.com
+          Action: sts:AssumeRole"""
+_TERRAFORM["CF-IAM-010"] = """# Delete $tf_type.$tf_name; let the workload assume a role with temporary credentials.
+resource "aws_iam_role" "workload" {
+  name = "workload"
+  assume_role_policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [{
+      Effect    = "Allow"
+      Principal = { Service = "ec2.amazonaws.com" }
+      Action    = "sts:AssumeRole"
+    }]
+  })
+}"""
+_CLOUDFORMATION["CF-IAM-011"] = """# Attach the policy to a group, not to the user ($name); add Groups: [!Ref ${name}Group].
+${name}Group:
+  Type: AWS::IAM::Group
+  Properties:
+    ManagedPolicyArns:
+      - arn:aws:iam::aws:policy/ReadOnlyAccess"""
+_TERRAFORM["CF-IAM-011"] = """# Attach the policy to a group, not to the user ($tf_type.$tf_name).
+resource "aws_iam_group" "readers" {
+  name = "readers"
+}
+
+resource "aws_iam_group_policy_attachment" "readers" {
+  group      = aws_iam_group.readers.name
+  policy_arn = "arn:aws:iam::aws:policy/ReadOnlyAccess"
+}
+
+resource "aws_iam_user_group_membership" "member" {
+  user   = "user-name"
+  groups = [aws_iam_group.readers.name]
+}"""
 _TF_IAM_ATTACHMENT = _TF_IAM_DOCUMENT + """
 resource "aws_iam_policy" "$tf_name" {
   policy = data.aws_iam_policy_document.$tf_name.json

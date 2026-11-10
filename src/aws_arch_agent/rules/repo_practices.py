@@ -1,5 +1,8 @@
 """Repo-level checks: tests, a pipeline, environments (OPS 5), account guardrails (SEC 1).
 
+REPO-006 (the account root user) answers SEC01-BP02 in SEC 1, though it was added with the
+SEC 2 checks.
+
 These rules read the repository tree, not one IaC file, so they run the same for CDK,
 CloudFormation, and Terraform scans. They walk the whole repo (test directories included,
 since tests are what REPO-001 looks for) and skip dependency and build output:
@@ -28,8 +31,14 @@ Heuristics, kept simple on purpose:
   Control Tower Account Factory provisioned product, or an AFT aft-account-request module),
   it must also declare a CloudTrail trail, a Config recorder, a GuardDuty detector, a
   Security Hub hub and an IAM Access Analyzer. No account defined, no finding.
+- REPO-006 root user: when the IaC defines an account (as for REPO-005), it must also check
+  root MFA and root access keys: the AWS Config managed rules ROOT_ACCOUNT_MFA_ENABLED (or
+  ROOT_ACCOUNT_HARDWARE_MFA_ENABLED) and IAM_ROOT_ACCESS_KEY_CHECK, a Config conformance
+  pack, Security Hub with the CIS or FSBP standard (a hub with default standards on counts,
+  as they include both), or an SCP that denies the root user (aws:PrincipalArn
+  arn:aws:iam::*:root). No account defined, no finding.
 
-REPO-004 and REPO-005 match text in IaC files (CDK TypeScript/JavaScript/Python,
+REPO-004 to REPO-006 match text in IaC files (CDK TypeScript/JavaScript/Python,
 CloudFormation JSON/YAML, Terraform), less test files. A resource built from a variable
 type, or in a module the repo does not hold, is not seen.
 """
@@ -432,7 +441,95 @@ class AccountBaselineMissing(_RepoRule):
         )]
 
 
+_ROOT_MFA_RULE = re.compile(r"\bROOT_ACCOUNT(?:_HARDWARE)?_MFA_ENABLED\b")
+_ROOT_KEY_RULE = re.compile(r"\bIAM_ROOT_ACCESS_KEY_CHECK\b")
+_CONFORMANCE_PACK = re.compile(
+    r"AWS::Config::(?:Organization)?ConformancePack\b"
+    r"|resource\s+\"aws_config_(?:organization_)?conformance_pack\""
+    r"|config\.Cfn(?:Organization)?ConformancePack\("
+)
+_ROOT_STANDARD = re.compile(
+    r"cis-aws-foundations-benchmark|aws-foundational-security-best-practices"
+)
+# A Security Hub hub turns on the default standards (FSBP and CIS) unless told not to.
+_HUB = re.compile(
+    r"AWS::SecurityHub::Hub\b|resource\s+\"aws_securityhub_account\"|securityhub\.CfnHub\("
+)
+_NO_DEFAULT_STANDARDS = re.compile(
+    r"\bEnableDefaultStandards[\"']?\s*:\s*[\"']?false\b"
+    r"|\benable_default_standards\s*=\s*(?:false|False)\b"
+    r"|\benableDefaultStandards\s*:\s*false\b"
+)
+_ROOT_PRINCIPAL = re.compile(r":iam::\*:root\b")
+
+
+def root_controls(repo_path: Path) -> tuple[tuple[str, int] | None, set[str]]:
+    """The first account definition (path, line), and the root controls the IaC declares:
+    "mfa rule", "key rule", "conformance pack", "security hub", "scp"."""
+    account: tuple[str, int] | None = None
+    found: set[str] = set()
+    scp = root_condition = False
+    for rel, text in iac_texts(repo_path):
+        at = _account_at(text)
+        if account is None and at is not None:
+            account = (rel, text.count("\n", 0, at) + 1)
+        if _ROOT_MFA_RULE.search(text):
+            found.add("mfa rule")
+        if _ROOT_KEY_RULE.search(text):
+            found.add("key rule")
+        if _CONFORMANCE_PACK.search(text):
+            found.add("conformance pack")
+        if _ROOT_STANDARD.search(text) or (
+            _HUB.search(text) and not _NO_DEFAULT_STANDARDS.search(text)
+        ):
+            found.add("security hub")
+        scp = scp or bool(_ORG_POLICY.search(text))
+        root_condition = root_condition or bool(
+            "aws:PrincipalArn" in text and _ROOT_PRINCIPAL.search(text)
+        )
+    if scp and root_condition:
+        found.add("scp")
+    return account, found
+
+
+class RootUserUnchecked(_RepoRule):
+    """SEC01-BP02 (Secure account root user and properties) is the Well-Architected best
+    practice for the root user, so this rule answers SEC 1, not SEC 2."""
+
+    id = "REPO-006"
+    title = "Account baseline does not check root MFA or root access keys"
+    category = "Security"
+    severity = "Medium"
+    themes = ("security-baseline", "identity")
+    recommendation = (
+        "Check the root user of every account the repo creates: add the AWS Config managed "
+        "rules ROOT_ACCOUNT_MFA_ENABLED and IAM_ROOT_ACCESS_KEY_CHECK (or a conformance pack "
+        "that has them), turn on the Security Hub CIS or FSBP standard, or deny the root user "
+        "with an SCP on aws:PrincipalArn arn:aws:iam::*:root. With AWS Organizations, "
+        "centralized root access management can remove root credentials from member accounts."
+    )
+
+    def run(self, repo_path: Path, language: str = "typescript") -> List[Finding]:
+        account, found = root_controls(repo_path)
+        if account is None or found - {"mfa rule", "key rule"} or {
+            "mfa rule", "key rule"
+        } <= found:
+            return []
+        rel, line = account
+        rules = [
+            name for key, name in (
+                ("mfa rule", "ROOT_ACCOUNT_MFA_ENABLED"), ("key rule", "IAM_ROOT_ACCESS_KEY_CHECK")
+            ) if key not in found
+        ]
+        return [self._finding(
+            f"Defines an account ({rel}:{line}); no Config rule {' or '.join(rules)}, "
+            "conformance pack, Security Hub CIS or FSBP standard, or SCP that denies the root "
+            "user in the IaC",
+            file=rel, line=line,
+        )]
+
+
 REPO_RULES: List[Rule] = [
     RepoTestsMissing(), RepoPipelineMissing(), SingleEnvironment(),
-    OrgGuardrailsMissing(), AccountBaselineMissing(),
+    OrgGuardrailsMissing(), AccountBaselineMissing(), RootUserUnchecked(),
 ]

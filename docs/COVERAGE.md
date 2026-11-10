@@ -15,7 +15,7 @@ Which CDK rules have a template check, and which AWS Foundational Security Best 
 
 ## CDK rules
 
-179 rules: 127 covered, 7 partial, 10 account, 5 cdk-only, 25 advice, 5 repo.
+183 rules: 130 covered, 7 partial, 10 account, 5 cdk-only, 25 advice, 6 repo.
 
 | Rule | Title | Template check | Status | Note |
 | -- | -- | -- | -- | -- |
@@ -87,6 +87,9 @@ Which CDK rules have a template check, and which AWS Foundational Security Best 
 | SEC-066 | EC2 instance may not require IMDSv2 | `CF-EC2-001` | `covered` |  |
 | SEC-067 | IAM principal has full admin access | `CF-IAM-008` | `covered` |  |
 | SEC-068 | Lambda function uses a deprecated runtime | `CF-LAM-003` | `covered` |  |
+| SEC-069 | IAM user has a console password | `CF-IAM-009` | `covered` |  |
+| SEC-070 | IAM access key is created in the code | `CF-IAM-010` | `covered` | The template check passes on a key with `Status: Inactive`. |
+| SEC-071 | IAM user has policies attached directly | `CF-IAM-011` | `covered` |  |
 | REL-001 | RDS may miss Multi-AZ | `CF-RDS-003` | `partial` | Checks DB instances only; REL-001 also flags DatabaseCluster. |
 | REL-002 | RDS may miss backup retention | `CF-RDS-002` | `covered` |  |
 | REL-003 | Lambda may miss DLQ / on-failure destination | `CF-LAM-001` | `covered` |  |
@@ -198,6 +201,7 @@ Which CDK rules have a template check, and which AWS Foundational Security Best 
 | REPO-003 | Only one environment is defined |  | `repo` | Looks for environment names in IaC paths, CDK stack ids and cdk.json context. |
 | REPO-004 | No organization guardrails in the scanned IaC |  | `repo` | Looks for SCPs, Control Tower controls, an organization trail, or Organizations accounts and OUs. Org-level: off unless `rules.org`. |
 | REPO-005 | Account is defined without a security baseline |  | `repo` | When the IaC defines an account, looks for CloudTrail, Config, GuardDuty, Security Hub and IAM Access Analyzer. |
+| REPO-006 | Account baseline does not check root MFA or root access keys |  | `repo` | When the IaC defines an account, looks for the Config rules for root MFA and root access keys, a conformance pack, the Security Hub CIS or FSBP standard, or an SCP that denies the root user. |
 
 ## FSBP controls
 

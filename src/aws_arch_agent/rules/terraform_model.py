@@ -189,6 +189,9 @@ TF_TYPE_TO_CANONICAL: dict[str, str] = {
     "aws_lambda_provisioned_concurrency_config": "lambda_alias",
     "aws_iam_user": "iam_user",
     "aws_iam_group": "iam_group",
+    # A console password and an access key for an IAM user (CF-IAM-009, CF-IAM-010).
+    "aws_iam_user_login_profile": "iam_user_login_profile",
+    "aws_iam_access_key": "iam_access_key",
 }
 
 # S3 settings split into their own resources (AWS provider v4+) -> bucket property.
@@ -1982,12 +1985,21 @@ def _lambda_permission(body: dict) -> dict:
 
 
 def _policy_attachment(body: dict) -> dict:
-    """aws_iam_*_policy_attachment: the attached ARN as a one-item ManagedPolicyArns."""
+    """aws_iam_*_policy_attachment: the attached ARN as a one-item ManagedPolicyArns, and
+    the users aws_iam_policy_attachment attaches it to."""
     arns = body.get("policy_arns")  # aws_iam_*_policy_attachments_exclusive
     if arns is None and body.get("policy_arn") is not None:
         arns = [body.get("policy_arn")]
     props: dict = {}
     _set(props, "ManagedPolicyArns", arns)
+    _set(props, "Users", _v(body, "users"))  # aws_iam_policy_attachment (CF-IAM-011)
+    return props
+
+
+def _iam_access_key(body: dict) -> dict:
+    """aws_iam_access_key: status is Active unless set to Inactive."""
+    props: dict = {}
+    _set(props, "Status", _v(body, "status"))
     return props
 
 
@@ -2879,6 +2891,7 @@ _ADAPTERS: dict[str, Callable[[dict], dict]] = {
     "aws_iam_user_policy_attachment": _policy_attachment,
     "aws_iam_group_policy_attachment": _policy_attachment,
     "aws_iam_policy_attachment": _policy_attachment,
+    "aws_iam_access_key": _iam_access_key,
     "aws_iam_role_policy_attachments_exclusive": _policy_attachment,
     "aws_iam_user_policy_attachments_exclusive": _policy_attachment,
     "aws_iam_group_policy_attachments_exclusive": _policy_attachment,

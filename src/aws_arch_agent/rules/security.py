@@ -24,6 +24,9 @@ from aws_arch_agent.rules.security_compute import EcsTaskRunAsRoot
 from aws_arch_agent.rules.security_compute import Ec2Imdsv2NotRequired
 from aws_arch_agent.rules.security_compute import LambdaDeprecatedRuntime
 from aws_arch_agent.rules.security_iam import IamAdministratorAccess
+from aws_arch_agent.rules.security_iam import IamUserConsolePassword
+from aws_arch_agent.rules.security_iam import IamAccessKeyCreated
+from aws_arch_agent.rules.security_iam import IamUserDirectPolicies
 from aws_arch_agent.rules.security_iam import IamWildcardAction
 from aws_arch_agent.rules.security_iam import IamWildcardResource
 from aws_arch_agent.rules.security_iam import KmsKeyPolicyWildcard
@@ -102,6 +105,9 @@ __all__ = [
     "GuardDutyNotEnabled",
     "HardcodedSecrets",
     "IamAdministratorAccess",
+    "IamUserConsolePassword",
+    "IamAccessKeyCreated",
+    "IamUserDirectPolicies",
     "IamWildcardAction",
     "IamWildcardResource",
     "KinesisEncryption",

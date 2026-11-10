@@ -94,6 +94,14 @@ PAIRS: list[tuple[str, str, dict, str]] = [
          "Topic": {"Type": "AWS::SNS::Topic", "Properties": {}},
          "Alarm": {"Type": "AWS::CloudWatch::Alarm", "Properties": {"AlarmActions": [{"Ref": "Topic"}]}}},
      "new cloudwatch.Alarm(this, 'A', {}).addAlarmAction(new SnsAction(topic));"),
+    ("CF-IAM-009", "SEC-069", {"Type": "AWS::IAM::User", "Properties": {
+        "LoginProfile": {"Password": "x"}}},
+     "new iam.User(this, 'U', { password: SecretValue.unsafePlainText('x') });"),
+    ("CF-IAM-010", "SEC-070", {"Type": "AWS::IAM::AccessKey", "Properties": {"UserName": "u"}},
+     "new iam.AccessKey(this, 'K', { user });"),
+    ("CF-IAM-011", "SEC-071", {"Type": "AWS::IAM::User", "Properties": {
+        "ManagedPolicyArns": ["arn:aws:iam::aws:policy/ReadOnlyAccess"]}},
+     "new iam.User(this, 'U', { managedPolicies: [readOnly] });"),
     ("CF-DASH-001", "OPS-021", {f"Queue{i}": {"Type": "AWS::SQS::Queue", "Properties": {}} for i in range(21)}, _FN),
     ("CF-SQS-001", "SEC-013", {"Type": "AWS::SQS::Queue", "Properties": {}},
      "new sqs.Queue(this, 'Q');"),

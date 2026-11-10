@@ -112,6 +112,9 @@ CF_COVERS_STATIC: dict[str, tuple[str, ...]] = {
     "CF-IAM-003": ("SEC-002",),
     # Action "*" on Resource "*" is reported once, as admin, so it covers both wildcards.
     "CF-IAM-008": ("SEC-067", "SEC-001", "SEC-002"),
+    "CF-IAM-009": ("SEC-069",),
+    "CF-IAM-010": ("SEC-070",),
+    "CF-IAM-011": ("SEC-071",),
     "CF-SQS-001": ("SEC-013",),
     "CF-SQS-002": ("REL-008",),
     "CF-SQS-003": ("REL-024",),
@@ -522,6 +525,8 @@ CHECK_PROPERTIES: dict[str, frozenset[str]] = {
         "CF-IAM-003": {"PolicyDocument", "Policies"},
         # Known admin access stays admin whatever else is unknown, so nothing drops it.
         "CF-IAM-008": set(),
+        # Template-level: _identity_findings skips what it cannot read.
+        **{c: set() for c in ("CF-IAM-009", "CF-IAM-010", "CF-IAM-011")},
         "CF-IAM-004": {"AssumeRolePolicyDocument"},
         "CF-IAM-005": {"AssumeRolePolicyDocument"},
         "CF-IAM-006": {"AssumeRolePolicyDocument"},
@@ -590,7 +595,8 @@ CF_THEMES: dict[str, tuple[str, ...]] = {
     "CF-PATCH-001": (_SB,),
     "CF-GEN-001": (_F, _SUS), "CF-IAM-001": (_ID,), "CF-IAM-002": (_ID,), "CF-IAM-003": (_ID,),
     "CF-IAM-004": (_ID,), "CF-IAM-005": (_ID,), "CF-IAM-006": (_ID,), "CF-IAM-007": (_ID,),
-    "CF-IAM-008": (_ID,), "CF-KIN-001": (_DP,), "CF-KMS-001": (_ID, _DP),
+    "CF-IAM-008": (_ID,), "CF-IAM-009": (_ID,), "CF-IAM-010": (_ID,), "CF-IAM-011": (_ID,),
+    "CF-KIN-001": (_DP,), "CF-KMS-001": (_ID, _DP),
     "CF-RS-002": (_NET,), "CF-RS-003": (_RES,), "CF-RS-004": (_OBS,), "CF-RS-005": (_SB,),
     "CF-RS-006": (_NET,), "CF-RS-007": (_SB,), "CF-DOCDB-002": (_RES,), "CF-DOCDB-003": (_OBS,),
     "CF-DOCDB-004": (_RES, _DP), "CF-NEP-002": (_OBS,), "CF-NEP-003": (_RES, _DP), "CF-NEP-004": (_RES,),
@@ -796,6 +802,9 @@ CF_TITLES: dict[str, str] = {
     "CF-IAM-006": "IAM service role trust has no aws:SourceAccount or aws:SourceArn",
     "CF-IAM-007": "IAM role trusts GitHub Actions OIDC without restricting the repository",
     "CF-IAM-008": "IAM principal has full admin access",
+    "CF-IAM-009": "IAM user has a console password",
+    "CF-IAM-010": "IAM access key is created in the template",
+    "CF-IAM-011": "IAM user has policies attached directly",
     "CF-KIN-001": "Kinesis stream is not encrypted at rest",
     "CF-KIN-002": "Kinesis stream keeps records for only 24 hours",
     "CF-KMS-001": "KMS key policy allows any principal",
@@ -6563,6 +6572,82 @@ def _iam_findings(res: Resource, template_path: Path) -> List[Finding]:
             recommendation=f"Flagged: {shown}{where}. {recommendation}{_IAM_CDK_HINT}",
         ))
     return out
+
+
+_CONSOLE_PASSWORD_RECOMMENDATION = (
+    "This IAM user has a console password, so a person signs in with a long-lived IAM user "
+    "instead of a central identity. Give people access through IAM Identity Center or a "
+    "federated identity provider (SAML 2.0 or OIDC) and roles, so joiners and leavers are "
+    "handled in one place and sessions use temporary credentials. Exclude this check for a "
+    "break-glass user. In CDK: drop password from iam.User; use sso.CfnPermissionSet and "
+    "sso.CfnAssignment, or iam.SamlProvider with a role."
+)
+_ACCESS_KEY_RECOMMENDATION = (
+    "AWS::IAM::AccessKey (Terraform aws_iam_access_key) creates a long-lived access key, and "
+    "its secret ends up in stack outputs or Terraform state. Use roles with temporary "
+    "credentials instead: an IAM role for AWS compute, IAM Roles Anywhere for workloads "
+    "outside AWS, and OIDC federation for CI. If a key cannot be avoided, keep it in Secrets "
+    "Manager and rotate it. In CDK: remove iam.AccessKey and grant to a role."
+)
+_USER_POLICY_RECOMMENDATION = (
+    "Permissions attached to the user itself are managed one person at a time (Security Hub "
+    "IAM.2). Attach the policy to an IAM group for the job function and add the user to it "
+    "(AWS::IAM::Group with Groups on the user or AWS::IAM::UserToGroupAddition; Terraform "
+    "aws_iam_group_membership or aws_iam_user_group_membership). In CDK: group.addUser(user) "
+    "and grant to the group."
+)
+# Always a policy on one user, whatever their properties say.
+_USER_POLICY_TYPES = (
+    "AWS::IAM::UserPolicy", "aws_iam_user_policy", "aws_iam_user_policy_attachment",
+)
+
+
+def _listed(res: Resource, key: str) -> bool:
+    """True when key holds a value other than an empty list. Unknown is not judged."""
+    if res.malformed or key in res.unresolved:
+        return False
+    value = res.properties.get(key)
+    return value is not None and value != [] and value != {}
+
+
+def _attaches_to_user(res: Resource) -> bool:
+    """CF-IAM-011: the resource puts a policy on an IAM user, not on a group or role."""
+    if res.source_type in _USER_POLICY_TYPES:
+        return True
+    if res.source_type == "aws_iam_user_policy_attachments_exclusive":
+        return _listed(res, "ManagedPolicyArns")
+    if res.source_type == "AWS::IAM::User":
+        return _listed(res, "Policies") or _listed(res, "ManagedPolicyArns")
+    if res.source_type in (
+            "AWS::IAM::Policy", "AWS::IAM::ManagedPolicy", "aws_iam_policy_attachment"):
+        return _listed(res, "Users")
+    return False
+
+
+def _identity_findings(resources: List[Resource], template_path: Path) -> List[Finding]:
+    """People and machines with long-lived IAM credentials (SEC 2): a console password on an
+    IAM user (CF-IAM-009), an access key (CF-IAM-010), and policies attached to a user rather
+    than a group (CF-IAM-011). A value the scan cannot read is not judged."""
+    out: List[Finding] = []
+
+    def add(res: Resource, check_id: str, severity: Severity, recommendation: str) -> None:
+        out.append(Finding(
+            id=check_id, title=CF_TITLES[check_id], severity=severity, category="Security",
+            file=res.file or str(template_path), line=res.line,
+            evidence=f"{res.name} ({res.source_type})", recommendation=recommendation,
+        ))
+
+    for res in resources:
+        if (res.source_type == "aws_iam_user_login_profile"
+                or (res.source_type == "AWS::IAM::User" and _listed(res, "LoginProfile"))):
+            add(res, "CF-IAM-009", "Medium", _CONSOLE_PASSWORD_RECOMMENDATION)
+        if res.type == "iam_access_key" and "Status" not in res.unresolved:
+            status = res.properties.get("Status")
+            if not (type(status) is str and status.lower() == "inactive"):
+                add(res, "CF-IAM-010", "Medium", _ACCESS_KEY_RECOMMENDATION)
+        if _attaches_to_user(res):
+            add(res, "CF-IAM-011", "Low", _USER_POLICY_RECOMMENDATION)
+    return out
 def _k8s_minor(version: Any) -> int | None:
     """Minor version of an EKS `Version` ("1.27" -> 27), or None when unknown.
 
@@ -7611,6 +7696,9 @@ def _run_resource_checks(
 
     # --- DynamoDB, ElastiCache and EFS resilience and access ---
     findings.extend(_data_store_findings(resources, template_path))
+
+    # --- IAM users: console passwords, access keys, policies attached directly ---
+    findings.extend(_identity_findings(resources, template_path))
 
     # --- GuardDuty, Security Hub, AWS Config, Macie and Budgets a repo defines ---
     findings.extend(_account_baseline_findings(resources, template_path))

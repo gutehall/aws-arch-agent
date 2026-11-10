@@ -771,5 +771,29 @@
     "negative_py": "s3.Bucket(self, 'Data')",
     "positive_ts": "new organizations.CfnAccount(this, 'Workload', { accountName: 'workload', email });",
     "positive_py": "organizations.CfnAccount(self, 'Workload', account_name='workload', email=email)"
+  },
+  "SEC-069": {
+    "negative_py": "user = iam.User(self, 'Deploy', user_name='deploy')",
+    "negative_ts": "const user = new iam.User(this, 'Deploy', { userName: 'deploy' });",
+    "positive_py": "iam.User(self, 'Alice', password=SecretValue.unsafe_plain_text('x'))",
+    "positive_ts": "new iam.User(this, 'Alice', {\n  password: SecretValue.unsafePlainText('x'),\n});"
+  },
+  "SEC-070": {
+    "negative_py": "role = iam.Role(self, 'Ci', assumed_by=iam.WebIdentityPrincipal('token.actions.githubusercontent.com'))",
+    "negative_ts": "const role = new iam.Role(this, 'Ci', { assumedBy: new iam.ServicePrincipal('ec2.amazonaws.com') });",
+    "positive_py": "iam.AccessKey(self, 'Key', user=user)",
+    "positive_ts": "new iam.AccessKey(this, 'Key', { user });"
+  },
+  "SEC-071": {
+    "negative_py": "group = iam.Group(self, 'Readers')\ngroup.add_managed_policy(iam.ManagedPolicy.from_aws_managed_policy_name('ReadOnlyAccess'))\nuser = iam.User(self, 'Bob', groups=[group])\nrole = iam.Role(self, 'R', assumed_by=principal)\nrole.add_to_policy(statement)",
+    "negative_ts": "const group = new iam.Group(this, 'Readers');\ngroup.addManagedPolicy(readOnly);\nconst user = new iam.User(this, 'Bob', { groups: [group] });\nconst role = new iam.Role(this, 'R', { assumedBy });\nrole.addToPolicy(statement);",
+    "positive_py": "user = iam.User(self, 'Bob')\nuser.add_managed_policy(iam.ManagedPolicy.from_aws_managed_policy_name('ReadOnlyAccess'))",
+    "positive_ts": "const user = new iam.User(this, 'Bob', {\n  managedPolicies: [readOnly],\n});"
+  },
+  "REPO-006": {
+    "negative_ts": "new organizations.CfnAccount(this, 'Workload', { accountName: 'workload', email });\nnew config.ManagedRule(this, 'RootMfa', { identifier: config.ManagedRuleIdentifiers.ROOT_ACCOUNT_MFA_ENABLED });\nnew config.ManagedRule(this, 'RootKey', { identifier: config.ManagedRuleIdentifiers.IAM_ROOT_ACCESS_KEY_CHECK });",
+    "negative_py": "organizations.CfnAccount(self, 'Workload', account_name='workload', email=email)\nsecurityhub.CfnHub(self, 'Hub')",
+    "positive_ts": "new organizations.CfnAccount(this, 'Workload', { accountName: 'workload', email });",
+    "positive_py": "organizations.CfnAccount(self, 'Workload', account_name='workload', email=email)"
   }
 }

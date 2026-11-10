@@ -83,6 +83,9 @@ RULE_BEST_PRACTICES: dict[str, tuple[str, ...]] = {
     "SEC-066": ("SEC06-BP02",),
     "SEC-067": ("SEC03-BP02",),
     "SEC-068": ("SEC06-BP01",),
+    "SEC-069": ("SEC02-BP04",),
+    "SEC-070": ("SEC02-BP02",),
+    "SEC-071": ("SEC02-BP06",),
     # CDK source rules: Reliability
     "REL-001": ("REL10-BP01",),
     "REL-002": ("REL09-BP03",),
@@ -173,6 +176,9 @@ RULE_BEST_PRACTICES: dict[str, tuple[str, ...]] = {
     "REPO-003": ("OPS05-BP08",),
     "REPO-004": ("SEC01-BP01",),
     "REPO-005": ("SEC01-BP06",),
+    # The root user is SEC01-BP02 (Secure account root user and properties), so REPO-006
+    # answers SEC 1 though it sits with the SEC 2 identity checks.
+    "REPO-006": ("SEC01-BP02",),
     # CDK source rules: Performance Efficiency
     "PERF-001": ("PERF02-BP01",),
     "PERF-002": ("PERF03-BP05",),
@@ -370,6 +376,9 @@ RULE_BEST_PRACTICES: dict[str, tuple[str, ...]] = {
     "CF-IAM-006": ("SEC03-BP07",),
     "CF-IAM-007": ("SEC03-BP07",),
     "CF-IAM-008": ("SEC03-BP02",),
+    "CF-IAM-009": ("SEC02-BP04",),
+    "CF-IAM-010": ("SEC02-BP02",),
+    "CF-IAM-011": ("SEC02-BP06",),
     "CF-KIN-001": ("SEC08-BP02",),
     "CF-KIN-002": ("REL09-BP01",),
     "CF-KMS-001": ("SEC08-BP01",),
@@ -492,8 +501,7 @@ NOT_CHECKED: frozenset[str] = frozenset({
     "OPS10-BP03", "OPS10-BP05", "OPS10-BP06", "OPS10-BP07",
     "OPS11-BP01", "OPS11-BP02", "OPS11-BP03", "OPS11-BP04", "OPS11-BP05", "OPS11-BP06",
     "OPS11-BP07", "OPS11-BP08", "OPS11-BP09",
-    "SEC01-BP02", "SEC01-BP03", "SEC01-BP05", "SEC01-BP07", "SEC01-BP08",
-    "SEC02-BP04", "SEC02-BP06",
+    "SEC01-BP03", "SEC01-BP05", "SEC01-BP07", "SEC01-BP08",
     "SEC03-BP01", "SEC03-BP03", "SEC03-BP04", "SEC03-BP06", "SEC03-BP08",
     "SEC05-BP04",
     "SEC06-BP03", "SEC06-BP05",

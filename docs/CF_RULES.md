@@ -4,13 +4,13 @@ This document provides a comprehensive list of all rules checked by AWS Arch Age
 
 ## Overview
 
-AWS Arch Agent checks **179 static analysis rules** and **274 template checks** across all 6 AWS Well-Architected Framework pillars. 134 of the 179 CDK rules (75%) have a template check, so they also run for CloudFormation, Terraform and synthesised CDK. [COVERAGE.md](COVERAGE.md) gives the reason for each of the others.
+AWS Arch Agent checks **183 static analysis rules** and **277 template checks** across all 6 AWS Well-Architected Framework pillars. 137 of the 183 CDK rules (75%) have a template check, so they also run for CloudFormation, Terraform and synthesised CDK. [COVERAGE.md](COVERAGE.md) gives the reason for each of the others.
 
 ## Static Analysis Rules (V1 & V2 Modes)
 
 These rules run on your CDK TypeScript/Python code and execute in both V1 and V2 modes.
 
-### Security (70 rules)
+### Security (74 rules)
 
 **Encryption & Data Protection:**
 - SEC-006: S3 bucket encryption missing
@@ -86,7 +86,7 @@ These rules run on your CDK TypeScript/Python code and execute in both V1 and V2
 - SEC-022: VPC endpoints missing (S3/DynamoDB traffic via internet)
 - SEC-056: Stack termination protection not enabled
 
-**Additional Security (SEC-057 to SEC-068):**
+**Additional Security (SEC-057 to SEC-071):**
 - SEC-057: Lambda function URL without authentication
 - SEC-058: ECS task may run as root user
 - SEC-059: Redshift cluster encryption not enabled
@@ -99,10 +99,14 @@ These rules run on your CDK TypeScript/Python code and execute in both V1 and V2
 - SEC-066: EC2 instance or launch template may not require IMDSv2
 - SEC-068: Lambda function uses a deprecated runtime (`lambda.Runtime.X`; High when deprecated, Low within 6 months)
 - SEC-067: IAM principal has full admin access (`ManagedPolicy.fromAwsManagedPolicyName('AdministratorAccess')` or its ARN)
+- SEC-069: IAM user has a console password (`iam.User` with `password`, `iam.CfnUser` with `loginProfile`)
+- SEC-070: IAM access key is created in the code (`iam.AccessKey`, `iam.CfnAccessKey`)
+- SEC-071: IAM user has policies attached directly (`managedPolicies` on `iam.User`, `policies` or `managedPolicyArns` on `iam.CfnUser`, `addManagedPolicy`, `addToPolicy`, `addToPrincipalPolicy` or `attachInlinePolicy` on a user variable, `users` on `iam.Policy`, `attachToUser`)
 
 **Repo-level account guardrails** (read the IaC across the repo, so they run for CDK, CloudFormation and Terraform):
 - REPO-004: No organization guardrails in the scanned IaC (org-level: runs with `rules.org` or `rules.include`)
 - REPO-005: Account is defined without a security baseline
+- REPO-006: Account baseline does not check root MFA or root access keys
 
 ### Reliability (31 rules)
 
@@ -312,6 +316,10 @@ CloudFormation template rules run when the agent has access to template files. T
 - **Resource policies**: CF-RP-001 (High): an Allow with Principal `*` or `{"AWS": "*"}` and no condition on `aws:SourceArn`, `aws:SourceAccount`, `aws:PrincipalOrgID`, `aws:SourceVpce` (or another caller key) on `AWS::SQS::QueuePolicy`, `AWS::SNS::TopicPolicy`, `AWS::S3::BucketPolicy`, `AWS::ECR::Repository` `RepositoryPolicyText`, `AWS::Events::EventBus` `Policy`, `AWS::Events::EventBusPolicy` (`Statement`, or the older `Principal` and `Condition`), `aws_cloudwatch_event_bus_policy` and `aws_cloudwatch_event_permission`; and `AWS::Lambda::Permission` with Principal `*` and no `SourceArn`, `SourceAccount` or `PrincipalOrgID` (a function URL with `FunctionUrlAuthType: AWS_IAM` is not reported). `aws:SourceIp` and `aws:SecureTransport` do not count as limits. Terraform: `aws_sqs_queue_policy`, `aws_sns_topic_policy`, `aws_s3_bucket_policy`, `aws_ecr_repository_policy`, `aws_lambda_permission`. The inline `policy` argument of `aws_sqs_queue` and `aws_sns_topic` is not read yet.
 - **IAM**: CF-IAM-001 (Allow with Action `*`), CF-IAM-002 (Allow with `<service>:*`), CF-IAM-003 (Allow with write actions on Resource `*`). Read on: managed and inline policies, roles, users, and groups. Terraform: `jsonencode(...)`, heredoc JSON, JSON strings, and `data.aws_iam_policy_document`. Read-only actions and actions without resource-level permissions (X-Ray, `cloudwatch:PutMetricData`, Lambda VPC network interfaces) are not reported by CF-IAM-003. A field set from a variable or intrinsic is not guessed. Allow statements with `NotAction` or `NotResource` are not analyzed yet. In V2, CF-IAM-001/002 replace SEC-001 and CF-IAM-003 replaces SEC-002.
 - **IAM admin access**: CF-IAM-008 (High, Security Hub IAM.1): a role, user, group or policy attachment with the AWS managed policy `AdministratorAccess`, or an Allow statement with Action `*` and Resource `*`. Read on CloudFormation `ManagedPolicyArns` (literal, `Fn::Join` or `Fn::Sub`, as CDK synth writes it; an ARN inside `Fn::If` is not guessed) and inline policies; Terraform `managed_policy_arns`, `aws_iam_role_policy_attachment`, `aws_iam_user_policy_attachment`, `aws_iam_group_policy_attachment`, `aws_iam_policy_attachment`, the role/user/group `*_policy_attachments_exclusive`, and `data.aws_iam_policy` looked up by name or ARN. Action `*` on Resource `*` is reported once, as CF-IAM-008, not also as CF-IAM-001. In V2, CF-IAM-008 replaces SEC-067, SEC-001 and SEC-002.
+- **IAM users and credentials** (SEC 2):
+  - CF-IAM-009 (Medium): an IAM user with a console password, `AWS::IAM::User` with `LoginProfile` (Terraform `aws_iam_user_login_profile`). People should sign in through IAM Identity Center or a federated identity provider. A repo with no IAM users passes, so does one with only Identity Center or a SAML or OIDC provider. Answers SEC02-BP04. In V2 it replaces SEC-069.
+  - CF-IAM-010 (Medium): a long-lived access key, `AWS::IAM::AccessKey` (Terraform `aws_iam_access_key`). `Status: Inactive` is not reported, and a status from a parameter or variable is not judged. Answers SEC02-BP02. In V2 it replaces SEC-070.
+  - CF-IAM-011 (Low, Security Hub IAM.2): a policy attached to an IAM user, not a group: `Policies` or `ManagedPolicyArns` on `AWS::IAM::User`, `AWS::IAM::UserPolicy`, `Users` on `AWS::IAM::Policy` or `AWS::IAM::ManagedPolicy`; Terraform `aws_iam_user_policy`, `aws_iam_user_policy_attachment`, `aws_iam_user_policy_attachments_exclusive`, and `aws_iam_policy_attachment` with `users`. Permissions through `Groups`, `AWS::IAM::UserToGroupAddition`, `aws_iam_group_membership` or `aws_iam_user_group_membership` pass. A user list from a variable is not judged. Answers SEC02-BP06. In V2 it replaces SEC-071.
 - **IAM role trust** (`AssumeRolePolicyDocument`, Terraform `assume_role_policy`): CF-IAM-004 (any AWS account can assume the role: Principal `*` with no condition, High), CF-IAM-007 (GitHub Actions OIDC with no condition on `token.actions.githubusercontent.com:sub`, High), CF-IAM-005 (a literal account principal with no `sts:ExternalId`, Medium), CF-IAM-006 (a service that acts across accounts, such as Config, CloudTrail, SNS, EventBridge or S3, with no `aws:SourceAccount` or `aws:SourceArn`, Low; compute execution roles for Lambda, EC2 and ECS are not reported)
 - **VPC**: CF-VPC-001 (no VPC endpoints), CF-FL-001 (no flow logs)
 - **EC2 patching**: CF-PATCH-001 (EC2 instances, Auto Scaling groups or launch templates with no SSM patch baseline, AWS-RunPatchBaseline association or maintenance window task)
@@ -498,7 +506,7 @@ CloudFormation template rules run when the agent has access to template files. T
 | Pillar | CF rule IDs |
 |--------|-------------|
 | Operational Excellence | CF-CFG-001, CF-ALARM-001, CF-ALARM-002, CF-ALARM-003, CF-DASH-001, CF-CT-004, CF-S3-004, CF-RDS-007, CF-RDS-010, CF-RDS-011, CF-CT-001, CF-CT-002, CF-FL-001, CF-EKS-001, CF-TGW-002, CF-CB-004, CF-CP-003, CF-OS-006, CF-RS-004, CF-DOCDB-003, CF-NEP-002, CF-SFN-002, CF-SFN-003, CF-EB-001, CF-ECS-008, CF-ECS-010, CF-ASG-005, CF-GLUE-002, CF-GLUE-003, CF-S3-011, CF-CF-005, CF-FSX-002, CF-PATCH-001 |
-| Security | CF-GD-001, CF-SH-001, CF-MACIE-001, CF-CT-005, CF-S3-001, CF-S3-002, CF-S3-005, CF-RDS-001, CF-RDS-004, CF-APIGW-003, CF-APIGW-004, CF-APIGW-007, CF-APIGW-009, CF-APIGW-V2-003, CF-LAM-004, CF-LAM-005, CF-RDS-006, CF-RDS-008, CF-RDS-009, CF-RDS-012, CF-RDS-013, CF-CT-003, CF-KMS-001, CF-RP-001, CF-EC2-001, CF-EKS-002, CF-EKS-003, CF-IAM-001, CF-IAM-002, CF-IAM-003, CF-IAM-004, CF-IAM-005, CF-IAM-006, CF-IAM-007, CF-IAM-008, CF-ALB-002, CF-ALB-003, CF-ALB-004, CF-ALB-006, CF-CLB-001, CF-CLB-002, CF-SG-001, CF-SG-002, CF-SG-003, CF-NACL-001, CF-TGW-001, CF-CW-002, CF-SQS-001, CF-DDB-002, CF-LAM-003, CF-SNS-001, CF-EBS-001, CF-EFS-001, CF-KIN-001, CF-EC-001, CF-EC-002, CF-OS-001, CF-OS-002, CF-RS-001, CF-DOCDB-001, CF-NEP-001, CF-MSK-001, CF-CF-001, CF-CF-002, CF-CF-003, CF-CF-004, CF-WAF-001, CF-EC2-002, CF-EC2-003, CF-PAR-001, CF-PAR-002, CF-ECR-001, CF-ECR-002, CF-ECR-003, CF-ECS-001, CF-ECS-002, CF-ECS-003, CF-SM-001, CF-COG-001, CF-COG-002, CF-COG-003, CF-CB-001, CF-CB-002, CF-CB-003, CF-CB-005, CF-CP-001, CF-KMS-002, CF-SSM-001, CF-OS-003, CF-OS-004, CF-OS-005, CF-MSK-002, CF-MSK-003, CF-RS-002, CF-RS-005, CF-RS-006, CF-RS-007, CF-NEP-005, CF-BAK-001, CF-EC-005, CF-EC-006, CF-EC-007, CF-EFS-004, CF-EFS-005, CF-ECS-004, CF-ECS-005, CF-ECS-006, CF-ECS-007, CF-ECS-009, CF-EKS-004, CF-ASG-003, CF-ASG-004, CF-ATH-001, CF-ATH-002, CF-GLUE-001, CF-FH-001, CF-EMR-001, CF-EMR-002, CF-EMR-003, CF-DMS-001, CF-DMS-002, CF-DMS-003, CF-S3-008, CF-S3-009, CF-CF-008, CF-CF-010, CF-CF-011, CF-SAGE-001, CF-SAGE-002, CF-SAGE-003, CF-SAGE-004, CF-FSX-001, CF-APPSYNC-001, CF-APPSYNC-002, CF-APPSYNC-003, CF-TRANSFER-001, CF-TRANSFER-002, CF-TRANSFER-003, CF-BEANSTALK-002, CF-R53-001, CF-R53-002, CF-ACM-002, CF-ACM-003 |
+| Security | CF-GD-001, CF-SH-001, CF-MACIE-001, CF-CT-005, CF-S3-001, CF-S3-002, CF-S3-005, CF-RDS-001, CF-RDS-004, CF-APIGW-003, CF-APIGW-004, CF-APIGW-007, CF-APIGW-009, CF-APIGW-V2-003, CF-LAM-004, CF-LAM-005, CF-RDS-006, CF-RDS-008, CF-RDS-009, CF-RDS-012, CF-RDS-013, CF-CT-003, CF-KMS-001, CF-RP-001, CF-EC2-001, CF-EKS-002, CF-EKS-003, CF-IAM-001, CF-IAM-002, CF-IAM-003, CF-IAM-004, CF-IAM-005, CF-IAM-006, CF-IAM-007, CF-IAM-008, CF-IAM-009, CF-IAM-010, CF-IAM-011, CF-ALB-002, CF-ALB-003, CF-ALB-004, CF-ALB-006, CF-CLB-001, CF-CLB-002, CF-SG-001, CF-SG-002, CF-SG-003, CF-NACL-001, CF-TGW-001, CF-CW-002, CF-SQS-001, CF-DDB-002, CF-LAM-003, CF-SNS-001, CF-EBS-001, CF-EFS-001, CF-KIN-001, CF-EC-001, CF-EC-002, CF-OS-001, CF-OS-002, CF-RS-001, CF-DOCDB-001, CF-NEP-001, CF-MSK-001, CF-CF-001, CF-CF-002, CF-CF-003, CF-CF-004, CF-WAF-001, CF-EC2-002, CF-EC2-003, CF-PAR-001, CF-PAR-002, CF-ECR-001, CF-ECR-002, CF-ECR-003, CF-ECS-001, CF-ECS-002, CF-ECS-003, CF-SM-001, CF-COG-001, CF-COG-002, CF-COG-003, CF-CB-001, CF-CB-002, CF-CB-003, CF-CB-005, CF-CP-001, CF-KMS-002, CF-SSM-001, CF-OS-003, CF-OS-004, CF-OS-005, CF-MSK-002, CF-MSK-003, CF-RS-002, CF-RS-005, CF-RS-006, CF-RS-007, CF-NEP-005, CF-BAK-001, CF-EC-005, CF-EC-006, CF-EC-007, CF-EFS-004, CF-EFS-005, CF-ECS-004, CF-ECS-005, CF-ECS-006, CF-ECS-007, CF-ECS-009, CF-EKS-004, CF-ASG-003, CF-ASG-004, CF-ATH-001, CF-ATH-002, CF-GLUE-001, CF-FH-001, CF-EMR-001, CF-EMR-002, CF-EMR-003, CF-DMS-001, CF-DMS-002, CF-DMS-003, CF-S3-008, CF-S3-009, CF-CF-008, CF-CF-010, CF-CF-011, CF-SAGE-001, CF-SAGE-002, CF-SAGE-003, CF-SAGE-004, CF-FSX-001, CF-APPSYNC-001, CF-APPSYNC-002, CF-APPSYNC-003, CF-TRANSFER-001, CF-TRANSFER-002, CF-TRANSFER-003, CF-BEANSTALK-002, CF-R53-001, CF-R53-002, CF-ACM-002, CF-ACM-003 |
 | Reliability | CF-S3-003, CF-RDS-002, CF-RDS-003, CF-RDS-005, CF-LAM-001, CF-LAM-006, CF-LAM-007, CF-LAM-008, CF-APIGW-005, CF-APIGW-006, CF-APIGW-V2-004, CF-DDB-001, CF-SQS-002, CF-DEL-001, CF-NAT-001, CF-ALB-005, CF-ALB-007, CF-CLB-004, CF-CLB-005, CF-CP-002, CF-KMS-003, CF-OS-007, CF-KIN-002, CF-RS-003, CF-DOCDB-002, CF-DOCDB-004, CF-NEP-003, CF-NEP-004, CF-SFN-001, CF-EB-002, CF-SQS-003, CF-BAK-002, CF-BAK-003, CF-BAK-004, CF-BAK-005, CF-DDB-004, CF-DDB-005, CF-EC-003, CF-EC-004, CF-EFS-002, CF-ASG-001, CF-ASG-002, CF-DMS-004, CF-S3-010, CF-CF-009, CF-SAGE-005, CF-FSX-003, CF-R53-003, CF-ACM-001, CF-GA-001 |
 | Performance Efficiency | CF-APIGW-008, CF-PERF-001, CF-PERF-002, CF-PERF-003, CF-PERF-004, CF-ECS-011, CF-CF-013, CF-APPSYNC-004 |
 | Cost Optimization | CF-BUDGET-001, CF-CW-001, CF-RDS-014, CF-COST-002, CF-EBS-002, CF-EIP-001, CF-TAG-001, CF-ENV-001, CF-ENV-002, CF-ENV-003, CF-ENV-004, CF-ENV-005, CF-ENV-006, CF-GEN-001, CF-S3-006, CF-S3-007, CF-DDB-003, CF-VPC-002, CF-VPC-003, CF-SSM-002, CF-EFS-003, CF-ASG-006, CF-S3-012, CF-CF-006, CF-CF-012 |
@@ -712,6 +720,9 @@ Every rule has one or more themes, which cut across pillars: `finops`, `security
 | CF-IAM-006 | identity |
 | CF-IAM-007 | identity |
 | CF-IAM-008 | identity |
+| CF-IAM-009 | identity |
+| CF-IAM-010 | identity |
+| CF-IAM-011 | identity |
 | CF-KIN-001 | data-protection |
 | CF-KIN-002 | resilience |
 | CF-KMS-001 | identity, data-protection |
@@ -923,6 +934,7 @@ Every rule has one or more themes, which cut across pillars: `finops`, `security
 | REPO-003 | resilience |
 | REPO-004 | security-baseline |
 | REPO-005 | security-baseline |
+| REPO-006 | security-baseline, identity |
 | SEC-001 | identity |
 | SEC-002 | identity |
 | SEC-003 | network-exposure |
@@ -991,6 +1003,9 @@ Every rule has one or more themes, which cut across pillars: `finops`, `security
 | SEC-066 | security-baseline |
 | SEC-067 | identity |
 | SEC-068 | security-baseline |
+| SEC-069 | identity |
+| SEC-070 | identity |
+| SEC-071 | identity |
 | SUST-001 | sustainability, finops |
 | SUST-002 | sustainability, finops |
 | SUST-003 | sustainability |

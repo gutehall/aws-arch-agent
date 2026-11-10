@@ -102,6 +102,8 @@ CF_TYPE_TO_CANONICAL: dict[str, str] = {
     "AWS::IAM::Role": "iam_role",
     "AWS::IAM::User": "iam_user",
     "AWS::IAM::Group": "iam_group",
+    # Long-lived credentials and user policies (CF-IAM-010, CF-IAM-011).
+    "AWS::IAM::AccessKey": "iam_access_key",
     # Resource policies: a PolicyDocument on its own resource, read by CF-RP-001.
     "AWS::SQS::QueuePolicy": "resource_policy",
     "AWS::SNS::TopicPolicy": "resource_policy",
@@ -170,7 +172,7 @@ TF_MODULE_CALL = "module"
 
 CANONICAL_TYPES: frozenset[str] = frozenset(CF_TYPE_TO_CANONICAL.values()) | {
     "events_target", "backup_vault_lock", "efs_backup_policy", "autoscaling_attachment",
-    "route53_query_log", "guardduty_detector_feature",
+    "route53_query_log", "guardduty_detector_feature", "iam_user_login_profile",
 }
 
 
