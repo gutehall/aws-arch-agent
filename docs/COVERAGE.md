@@ -15,7 +15,7 @@ Which CDK rules have a template check, and which AWS Foundational Security Best 
 
 ## CDK rules
 
-188 rules: 130 covered, 7 partial, 10 account, 5 cdk-only, 25 advice, 11 repo.
+190 rules: 130 covered, 7 partial, 10 account, 5 cdk-only, 25 advice, 13 repo.
 
 | Rule | Title | Template check | Status | Note |
 | -- | -- | -- | -- | -- |
@@ -207,6 +207,8 @@ Which CDK rules have a template check, and which AWS Foundational Security Best 
 | REPO-009 | The build does not scan dependencies |  | `repo` | Looks in the CI configs, CodeBuild buildspecs inline in the IaC, and the package.json scripts they run for a dependency scan (npm audit, pip-audit, osv-scanner, snyk, trivy, Amazon Inspector) that can fail the build. |
 | REPO-010 | Container or function artifacts are not scanned before deploy |  | `repo` | When the repo builds images or deploys Lambda functions, looks for ECR scan on push or registry scanning, Amazon Inspector for ECR or Lambda, or a CI scan. |
 | REPO-011 | Packages are not pulled through a central repository |  | `repo` | When the repo has a package manifest, looks for CodeArtifact, `aws codeartifact login`, or a private registry in .npmrc, pip.conf, poetry, Maven or Gradle. |
+| REPO-012 | No Service Quotas usage alarm for the services the stack uses |  | `repo` | When the IaC uses Lambda, Elastic IPs, NAT gateways or load balancers, looks for a CloudWatch alarm on the AWS/Usage namespace, SERVICE_QUOTA metric math, Quota Monitor for AWS, or Trusted Advisor service limit events. Org-level: off unless `rules.org`. |
+| REPO-013 | Limits the IaC sets leave no room for failover |  | `repo` | Sums literal Lambda reserved concurrency and Elastic IPs (with CDK NAT gateways) across the repo against the default quotas; over half fires. |
 
 ## FSBP controls
 

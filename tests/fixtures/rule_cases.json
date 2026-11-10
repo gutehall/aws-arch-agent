@@ -825,5 +825,17 @@
     "negative_py": "codeartifact.CfnRepository(self, 'Pypi', domain_name='corp', repository_name='pypi-store')",
     "positive_ts": "new s3.Bucket(this, 'Data');",
     "positive_py": "s3.Bucket(self, 'Data')"
+  },
+  "REPO-012": {
+    "negative_ts": "new lambda.Function(this, 'Fn', { runtime, handler: 'index.handler', code });\nnew cloudwatch.Alarm(this, 'Quota', { metric: new cloudwatch.Metric({ namespace: 'AWS/Usage', metricName: 'ResourceCount' }), threshold: 800, evaluationPeriods: 1 });",
+    "negative_py": "ec2.CfnEIP(self, 'Eip')\ncloudwatch.MathExpression(expression='(m1 / SERVICE_QUOTA(m1)) * 100')",
+    "positive_ts": "new lambda.Function(this, 'Fn', { runtime, handler: 'index.handler', code });",
+    "positive_py": "ec2.Vpc(self, 'Vpc', nat_gateways=1)"
+  },
+  "REPO-013": {
+    "negative_ts": "new lambda.Function(this, 'Fn', { reservedConcurrentExecutions: 100 });\nnew ec2.Vpc(this, 'Vpc', { natGateways: 2 });",
+    "negative_py": "_lambda.Function(self, 'Fn', reserved_concurrent_executions=450)",
+    "positive_ts": "new lambda.Function(this, 'Fn', { reservedConcurrentExecutions: 500 });",
+    "positive_py": "ec2.Vpc(self, 'Vpc', nat_gateways=3)"
   }
 }

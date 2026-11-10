@@ -1,5 +1,5 @@
 """Repo-level checks: tests, a pipeline, environments (OPS 5), account guardrails (SEC 1),
-incident response (SEC 10).
+incident response (SEC 10), application security (SEC 11), service quotas (REL 1).
 
 REPO-006 (the account root user) answers SEC01-BP02 in SEC 1, though it was added with the
 SEC 2 checks.
@@ -80,6 +80,23 @@ Application security in the pipeline (SEC 11) runs by default:
   CodeArtifact in the IaC, `aws codeartifact login` in a build, or a registry other than
   the public default in .npmrc, .yarnrc(.yml), pip.conf/pip.ini, a requirements index-url,
   a poetry or uv source, Maven or Gradle repositories, or GOPROXY.
+
+Service quotas (REL 1), which are per account and Region:
+
+- REPO-012 quota alarms (org-level, off unless rules.org or rules.include): when the IaC
+  uses Lambda functions, Elastic IPs, NAT gateways (resources, or a CDK natGateways of one
+  or more) or load balancers, it needs a CloudWatch alarm in a file that names the
+  AWS/Usage namespace, SERVICE_QUOTA() metric math, the Quota Monitor for AWS solution, or
+  an EventBridge rule on aws.trustedadvisor events. A CDK Vpc that takes the default NAT
+  gateways, with no natGateways set, is not seen as using NAT.
+- REPO-013 failover headroom: sums the literal limits the IaC declares across the repo
+  against the default quotas in DEFAULT_QUOTAS. Lambda reserved concurrency over half of
+  the 900 that can be reserved fires, as do Elastic IPs (EIP resources plus a CDK VPC's
+  natGateways, which allocate one each) over half of 5. Values from variables, parameters,
+  count or for_each, or loops are not summed: each literal counts once where it is written.
+  NAT gateways per Availability Zone (quota 5) are not checked: the zone of a NAT gateway
+  comes from a subnet reference or from maxAzs and the environment, which a text scan does
+  not resolve, and a stack rarely needs more than one per zone.
 """
 from __future__ import annotations
 
@@ -1182,9 +1199,171 @@ class CentralPackageRepoMissing(_RepoRule):
         )]
 
 
+# Services whose per-account quotas a busy stack runs into (REPO-012).
+QUOTA_HEAVY: tuple[tuple[str, re.Pattern[str]], ...] = (
+    ("Lambda", re.compile(
+        r"AWS::(?:Lambda|Serverless)::Function\b|resource\s+\"aws_lambda_function\""
+        r"|\b_?lambda_?\.(?:Cfn)?Function\(|\b(?:Nodejs|Python|DockerImage)Function\("
+    )),
+    ("Elastic IPs", re.compile(
+        r"AWS::EC2::EIP\b|resource\s+\"aws_eip\"|\bec2\.CfnEIP\("
+    )),
+    ("NAT gateways", re.compile(
+        r"AWS::EC2::NatGateway\b|resource\s+\"aws_nat_gateway\"|\bec2\.CfnNatGateway\("
+        r"|\b(?:natGateways\s*:|nat_gateways\s*=)\s*[1-9]|\bNatProvider\.gateway\("
+    )),
+    ("load balancers", re.compile(
+        r"AWS::ElasticLoadBalancing(?:V2)?::LoadBalancer\b"
+        r"|resource\s+\"aws_(?:lb|alb|elb)\""
+        r"|\b(?:Application|Network)LoadBalancer\(|\belbv2\.CfnLoadBalancer\("
+        r"|\b(?:Application|Network)LoadBalanced\w+\("
+    )),
+)
+_ALARM = re.compile(
+    r"AWS::CloudWatch::Alarm\b|resource\s+\"aws_cloudwatch_metric_alarm\""
+    r"|\bcloudwatch\.(?:Cfn)?Alarm\(|\.create_?[Aa]larm\("
+)
+_USAGE_NAMESPACE = re.compile(r"\bnamespace[\"']?\s*[:=]\s*[\"']?AWS/Usage\b", re.IGNORECASE)
+_SERVICE_QUOTA_MATH = re.compile(r"\bSERVICE_QUOTA\s*\(")
+_QUOTA_MONITOR = re.compile(r"quota[-_ ]?monitor", re.IGNORECASE)
+_TRUSTED_ADVISOR = re.compile(r"\baws\.trustedadvisor\b")
+
+
+def quota_usage(repo_path: Path) -> tuple[dict[str, str], dict[str, str]]:
+    """The quota-heavy services the IaC uses, and the quota alarms it declares.
+
+    Each maps a name to the first file with it.
+    """
+    used: dict[str, str] = {}
+    found: dict[str, str] = {}
+    for rel, text in iac_texts(repo_path):
+        for name, pattern in QUOTA_HEAVY:
+            if pattern.search(text):
+                used.setdefault(name, rel)
+        if _ALARM.search(text) and _USAGE_NAMESPACE.search(text):
+            found.setdefault("AWS/Usage alarm", rel)
+        if _SERVICE_QUOTA_MATH.search(text):
+            found.setdefault("SERVICE_QUOTA metric math", rel)
+        if _QUOTA_MONITOR.search(text):
+            found.setdefault("Quota Monitor for AWS", rel)
+        if _EVENT_RULE.search(text) and _TRUSTED_ADVISOR.search(text):
+            found.setdefault("Trusted Advisor service limit events", rel)
+    return used, found
+
+
+class QuotaAlarmMissing(_RepoRule):
+    id = "REPO-012"
+    title = "No Service Quotas usage alarm for the services the stack uses"
+    category = "Reliability"
+    severity = "Medium"
+    themes = ("resilience",)
+    recommendation = (
+        "Alarm on quota usage before it blocks a deploy or a scale-out: a CloudWatch alarm "
+        "on the AWS/Usage metric with SERVICE_QUOTA() metric math (for example at 80%), the "
+        "Quota Monitor for AWS solution, or Trusted Advisor service limit checks routed "
+        "through EventBridge."
+    )
+
+    def run(self, repo_path: Path, language: str = "typescript") -> List[Finding]:
+        used, found = quota_usage(repo_path)
+        if not used or found:
+            return []
+        services = ", ".join(f"{name} ({rel})" for name, rel in used.items())
+        return [self._finding(
+            f"Uses {services}; searched the IaC for a CloudWatch alarm on the AWS/Usage "
+            "namespace, SERVICE_QUOTA metric math, Quota Monitor for AWS, and Trusted Advisor "
+            "service limit events on EventBridge; found none"
+        )]
+
+
+# Default quotas REPO-013 measures the IaC against, per account and Region. Sources: the
+# Lambda quotas page (/lambda/latest/dg/gettingstarted-limits.html: 1,000 concurrent
+# executions, of which 100 always stay unreserved), the Amazon VPC quotas page
+# (/vpc/latest/userguide/amazon-vpc-limits.html: 5 Elastic IPs per Region, 5 NAT gateways
+# per Availability Zone) and the EC2 Elastic IP page. An account may have raised them; the
+# scan cannot see that, so it uses the defaults.
+DEFAULT_QUOTAS: dict[str, int] = {
+    "lambda_concurrency": 1_000,
+    "lambda_unreserved_minimum": 100,
+    "elastic_ips": 5,
+    "nat_gateways_per_az": 5,
+}
+# Failover can double the load on what is left, so a declared limit over half the quota
+# leaves no room for it.
+_FAILOVER_SHARE = 0.5
+
+_RESERVED_CONCURRENCY = re.compile(
+    r"\b(?:ReservedConcurrentExecutions|reserved_concurrent_executions"
+    r"|reservedConcurrentExecutions)[\"']?\s*[:=]\s*[\"']?(\d+)\b"
+)
+_EIP_DECLARATION = QUOTA_HEAVY[1][1]
+# A CDK VPC's NAT gateways each allocate an Elastic IP of their own. CloudFormation and
+# Terraform NAT gateways take one from an EIP resource, which is counted already.
+_CDK_NAT_GATEWAYS = re.compile(r"\b(?:natGateways\s*:|nat_gateways\s*=)\s*(\d+)\b")
+
+
+def declared_limits(repo_path: Path) -> dict[str, list[tuple[str, int]]]:
+    """Per limit, the (file, amount) of each literal the IaC declares."""
+    limits: dict[str, list[tuple[str, int]]] = {"lambda_concurrency": [], "elastic_ips": []}
+    for rel, text in iac_texts(repo_path):
+        reserved = sum(int(m.group(1)) for m in _RESERVED_CONCURRENCY.finditer(text))
+        if reserved:
+            limits["lambda_concurrency"].append((rel, reserved))
+        eips = len(_EIP_DECLARATION.findall(text))
+        if not rel.endswith((".json", ".yaml", ".yml", ".template", ".tf")):
+            eips += sum(int(m.group(1)) for m in _CDK_NAT_GATEWAYS.finditer(text))
+        if eips:
+            limits["elastic_ips"].append((rel, eips))
+    return limits
+
+
+def _files(parts: list[tuple[str, int]]) -> str:
+    return ", ".join(f"{rel} {amount}" for rel, amount in parts)
+
+
+class FailoverHeadroomMissing(_RepoRule):
+    id = "REPO-013"
+    title = "Limits the IaC sets leave no room for failover"
+    category = "Reliability"
+    severity = "Medium"
+    themes = ("resilience",)
+    recommendation = (
+        "Keep what the IaC reserves well under the quota, so a failover that shifts the load "
+        "here can still be served: lower reserved concurrency or Elastic IP use, or request "
+        "a quota increase in Service Quotas before you need it."
+    )
+
+    def run(self, repo_path: Path, language: str = "typescript") -> List[Finding]:
+        limits = declared_limits(repo_path)
+        findings: List[Finding] = []
+        reservable = (
+            DEFAULT_QUOTAS["lambda_concurrency"] - DEFAULT_QUOTAS["lambda_unreserved_minimum"]
+        )
+        reserved = sum(amount for _rel, amount in limits["lambda_concurrency"])
+        if reserved > reservable * _FAILOVER_SHARE:
+            findings.append(self._finding(
+                f"Lambda reserved concurrency sums to {reserved} "
+                f"({_files(limits['lambda_concurrency'])}); the default quota is "
+                f"{DEFAULT_QUOTAS['lambda_concurrency']:,} per Region with "
+                f"{DEFAULT_QUOTAS['lambda_unreserved_minimum']} unreserved, so {reservable} "
+                f"can be reserved; over half ({int(reservable * _FAILOVER_SHARE)}) leaves no "
+                "room for failover"
+            ))
+        eips = sum(amount for _rel, amount in limits["elastic_ips"])
+        if eips > DEFAULT_QUOTAS["elastic_ips"] * _FAILOVER_SHARE:
+            findings.append(self._finding(
+                f"Elastic IPs (EIP resources and CDK NAT gateways) number {eips} "
+                f"({_files(limits['elastic_ips'])}); the default quota is "
+                f"{DEFAULT_QUOTAS['elastic_ips']} per Region; over half leaves no room for "
+                "failover"
+            ))
+        return findings
+
+
 REPO_RULES: List[Rule] = [
     RepoTestsMissing(), RepoPipelineMissing(), SingleEnvironment(),
     OrgGuardrailsMissing(), AccountBaselineMissing(), RootUserUnchecked(),
     ForensicCaptureMissing(), ContainmentMissing(),
     DependencyScanMissing(), ArtifactScanMissing(), CentralPackageRepoMissing(),
+    QuotaAlarmMissing(), FailoverHeadroomMissing(),
 ]

@@ -1711,6 +1711,20 @@ TOPICS: dict[str, tuple[str, str, str, str]] = {
         "/wellarchitected/latest/security-pillar/"
         "sec_appsec_centralize_services_for_packages_and_dependencies.html",
     ),
+    "quota_alarms": (
+        "Service Quotas and Amazon CloudWatch alarms",
+        "/servicequotas/latest/userguide/configure-cloudwatch.html",
+        "Well-Architected REL01-BP04: Monitor and manage quotas",
+        "/wellarchitected/latest/reliability-pillar/"
+        "rel_manage_service_limits_monitor_manage_limits.html",
+    ),
+    "quota_headroom": (
+        "Lambda quotas",
+        "/lambda/latest/dg/gettingstarted-limits.html",
+        "Well-Architected REL01-BP06: Ensure a sufficient gap between quotas and usage",
+        "/wellarchitected/latest/reliability-pillar/"
+        "rel_manage_service_limits_suff_buffer_limits.html",
+    ),
     "security_hub_fsbp": (
         "Security Hub: AWS Foundational Security Best Practices standard",
         "/securityhub/latest/userguide/fsbp-standard.html",
@@ -1859,6 +1873,8 @@ RULE_TOPICS: dict[str, str] = {
     "REPO-009": "dependency_scan",
     "REPO-010": "artifact_scan",
     "REPO-011": "central_packages",
+    "REPO-012": "quota_alarms",
+    "REPO-013": "quota_headroom",
     "PERF-001": "graviton_ec2",
     "PERF-002": "caching",
     "PERF-003": "ddb_capacity",
