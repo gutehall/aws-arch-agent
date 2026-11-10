@@ -4,6 +4,7 @@ from __future__ import annotations
 import json
 from aws_arch_agent.models import Finding, RepoContext
 from aws_arch_agent.report.summary import build_summary
+from aws_arch_agent.rules import well_architected
 
 
 def _finding_dict(f: Finding) -> dict:
@@ -23,6 +24,7 @@ def render_json(
     data = {
         "context": ctx.model_dump(),
         "summary": build_summary(findings),
+        "answers": [a.to_dict() for a in well_architected.answers(findings)],
         "llm": ctx.llm.to_dict(),
         "findings": [_finding_dict(f) for f in findings],
     }

@@ -56,6 +56,10 @@ class Finding(BaseModel):
     # The rule's themes: finops, security-baseline, identity, data-protection,
     # network-exposure, resilience, observability, sustainability.
     themes: List[str] = Field(default_factory=list)
+    # The Well-Architected question the rule answers (SEC 8) and the best practices it
+    # checks (SEC08-BP02). Set from rules/wa_map.py.
+    question: str | None = None
+    best_practices: List[str] = Field(default_factory=list)
     # The model's opinion. Excluded so JSON findings, SARIF, the baseline and fail-on cannot
     # depend on it; the renderers that show it read it explicitly.
     verdict: Verdict | None = Field(default=None, exclude=True)

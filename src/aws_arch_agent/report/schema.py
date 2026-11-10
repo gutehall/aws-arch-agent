@@ -68,6 +68,17 @@ REPORT_SCHEMA: dict = {
                         "description": "How the estimate was worked out: quantities, unit "
                         "prices, region, price list date, and what it excludes.",
                     },
+                    "question": {
+                        "type": ["string", "null"],
+                        "description": "The Well-Architected question the rule answers, such "
+                        "as SEC 8. Null for an id no rule defines.",
+                    },
+                    "best_practices": {
+                        "type": "array",
+                        "items": {"type": "string"},
+                        "description": "The Well-Architected best practices the rule checks, "
+                        "such as SEC08-BP02.",
+                    },
                     "verdict": {
                         "type": "object",
                         "description": "The model's opinion of this finding. It labels the "
@@ -97,6 +108,32 @@ REPORT_SCHEMA: dict = {
                 "top_fixes": {"type": "array", "items": {"type": "object"}},
                 "pillars": {"type": "array", "items": {"type": "object"}},
                 "quick_wins": {"type": "array", "items": {"type": "object"}},
+            },
+        },
+        "answers": {
+            "type": "array",
+            "description": "One answer per Well-Architected question, in framework order, "
+            "computed from the findings. met means every best practice of the question has a "
+            "rule and no finding falls under it. Nobody is asked, and the LLM does not change it.",
+            "items": {
+                "type": "object",
+                "required": ["question", "pillar", "title", "status", "findings", "not_checked"],
+                "properties": {
+                    "question": {"type": "string"},
+                    "pillar": {"type": "string"},
+                    "title": {"type": "string"},
+                    "status": {"type": "string", "enum": ["met", "not met"]},
+                    "findings": {
+                        "type": "array",
+                        "items": {"type": "string"},
+                        "description": "The rule id of each finding under the question.",
+                    },
+                    "not_checked": {
+                        "type": "array",
+                        "items": {"type": "string"},
+                        "description": "Best practices of the question that no rule checks yet.",
+                    },
+                },
             },
         },
         "llm": {

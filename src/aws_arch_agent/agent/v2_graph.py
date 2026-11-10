@@ -24,6 +24,7 @@ from aws_arch_agent.rules.fix_snippets import attach_fixes
 from aws_arch_agent.rules.registry import ALL_RULES
 from aws_arch_agent.rules.runner import filter_by_severity, run_all_rules
 from aws_arch_agent.rules import cf_template, effort, environments, nonprod, regions, stack_cost, themes
+from aws_arch_agent.rules import well_architected
 from aws_arch_agent.rules.tag_policy import TagPolicy, use_tag_policy
 from aws_arch_agent.report.markdown import render_markdown
 from aws_arch_agent.tools.cdk_synth import (
@@ -502,6 +503,7 @@ def node_report(state: State) -> State:
     warnings = state.get("rule_warnings") or []
     effort.annotate(findings)  # the summary's quick wins need it
     themes.annotate(findings)
+    well_architected.annotate(findings)
     wanted = state.get("theme_filter")
     if wanted:
         findings = themes.select(findings, wanted)
