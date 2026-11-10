@@ -129,6 +129,8 @@ Static and CloudFormation rule IDs, titles, and pillar groups are in [CF_RULES.m
 
 Patching (OPS05-BP05) is `CF-PATCH-001` for templates and `OPS-026` for CDK source: EC2 instances, Auto Scaling groups or launch templates with no SSM patch baseline, no association running `AWS-RunPatchBaseline` (or `AWS-PatchInstanceWithRollback`), and no maintenance window task running it.
 
+Incident routing (OPS 10) is `CF-ALARM-002` and `OPS-011` for an alarm with no action (OPS10-BP02; `ActionsEnabled: false` counts as none), and `CF-ALARM-003` and `OPS-027` for alarms that notify with no escalation after the first notification (OPS10-BP01, OPS10-BP04): no Incident Manager response plan with engagements, no escalation contact or contact plan of two or more stages, and no alarm action that targets a response plan. Forensics after an incident stays with SEC 10.
+
 ## Prices
 
 Cost estimates read `aws_arch_agent/pricing/prices.json.gz`, an offline snapshot of the AWS Price List bulk API: on-demand USD prices for the resources the cost rules touch (EC2 and RDS instance types, NAT gateway hour and GB, EBS gp2/gp3/io2, public IPv4 addresses including Elastic IPs, Lambda, DynamoDB on-demand and provisioned, S3 storage classes, CloudWatch Logs ingestion and storage). Each price carries its region and the publication date of its AWS offer. A tiered price is the first paid tier. An instance type or region the snapshot lacks gives no estimate, never a guess.

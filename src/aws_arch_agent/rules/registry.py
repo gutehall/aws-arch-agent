@@ -51,7 +51,7 @@ from aws_arch_agent.rules.operational_excellence import (
     GlueJobMetrics, TransitGatewayFlowLogs, CodePipelineNotifications, AppRunnerObservability,
     GlueJobBookmarks, CodeBuildLogging,
     CloudWatchDashboardMissing, ResourceTaggingStrategy, SsmParameterAdvancedTier,
-    S3ReplicationMetrics, Ec2PatchBaselineMissing,
+    S3ReplicationMetrics, Ec2PatchBaselineMissing, AlarmEscalationMissing,
 )
 from aws_arch_agent.rules.performance_efficiency import (
     GravitonNotUsed, CachingHint, DynamoDbProvisionedCapacity,
@@ -195,7 +195,7 @@ ALL_RULES = [
     ResourceNamingConvention(),
     CdkAspectsMissing(),
     CdkContextMissing(),
-    # Operational Excellence (28 rules)
+    # Operational Excellence (29 rules)
     CloudTrailMissing(),
     VpcFlowLogsMissing(),
     XRayTracingMissing(),
@@ -221,6 +221,7 @@ ALL_RULES = [
     SsmParameterAdvancedTier(),
     S3ReplicationMetrics(),
     Ec2PatchBaselineMissing(),
+    AlarmEscalationMissing(),
     *REPO_RULES,  # repo-level: tests, pipeline, environments (rules/repo_practices.py)
     # Performance Efficiency (19 rules)
     GravitonNotUsed(),

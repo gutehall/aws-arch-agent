@@ -4,7 +4,7 @@ This document provides a comprehensive list of all rules checked by AWS Arch Age
 
 ## Overview
 
-AWS Arch Agent checks **176 static analysis rules** and **273 template checks** across all 6 AWS Well-Architected Framework pillars. 133 of the 176 CDK rules (76%) have a template check, so they also run for CloudFormation, Terraform and synthesised CDK. [COVERAGE.md](COVERAGE.md) gives the reason for each of the others.
+AWS Arch Agent checks **177 static analysis rules** and **274 template checks** across all 6 AWS Well-Architected Framework pillars. 134 of the 177 CDK rules (76%) have a template check, so they also run for CloudFormation, Terraform and synthesised CDK. [COVERAGE.md](COVERAGE.md) gives the reason for each of the others.
 
 ## Static Analysis Rules (V1 & V2 Modes)
 
@@ -145,7 +145,7 @@ These rules run on your CDK TypeScript/Python code and execute in both V1 and V2
 - REL-030: RDS deletion protection not enabled
 - REL-031: S3 bucket versioning not enabled
 
-### Operational Excellence (28 rules)
+### Operational Excellence (29 rules)
 
 **Logging:**
 - OPS-001: CloudTrail not enabled
@@ -175,13 +175,14 @@ These rules run on your CDK TypeScript/Python code and execute in both V1 and V2
 - OPS-017: CodePipeline notifications not configured
 - OPS-019: Glue job bookmarks not enabled
 
-**Additional OpsEx (OPS-021 to OPS-026):**
+**Additional OpsEx (OPS-021 to OPS-027):**
 - OPS-021: CloudWatch dashboards not configured
 - OPS-022: Resource tagging strategy may be incomplete
 - OPS-023: SSM Parameter Store throughput setting may need review
 - OPS-024: folded into REL-027; reserved concurrency is not reported twice
 - OPS-025: S3 replication metrics not enabled
 - OPS-026: EC2 instances have no patch baseline
+- OPS-027: Alarms have no escalation path
 
 **Repo-level** (read the repository tree, so they run for CDK, CloudFormation and Terraform):
 - REPO-001: Repo has no automated tests
@@ -294,7 +295,8 @@ CloudFormation template rules run when the agent has access to template files. T
 - **CloudTrail**: CF-CT-001 (log file validation), CF-CT-002 (multi-region), CF-CT-003 (KMS encryption), CF-CT-004 (Low, Security Hub CloudTrail.5: no `CloudWatchLogsLogGroupArn`, Terraform `cloud_watch_logs_group_arn`; a value from a parameter or variable counts as set), CF-CT-005 (Low: the template holds a trail and an S3 bucket marked sensitive, and no trail has a data event selector that reaches it. Sensitive means the word `sensitive`, `pii`, `phi`, `confidential` or `secret` in a literal bucket name, logical id, tag value, or tag key with a true value; `non-sensitive` and `pii-free` do not count. A selector for all buckets counts, and so does one that cannot be read, a value from a parameter or variable, an advanced selector with an exclusion, or a literal ARN when the bucket's name is not known. A bucket a trail delivers its logs to is not judged)
 - **CloudWatch alarms and dashboards** (`AWS::CloudWatch::Alarm`, `AWS::CloudWatch::CompositeAlarm`, `AWS::CloudWatch::Dashboard`; Terraform `aws_cloudwatch_metric_alarm`, `aws_cloudwatch_composite_alarm`, `aws_cloudwatch_dashboard`). All Low:
   - CF-ALARM-001: one finding per stack, at the first RDS, DynamoDB, Lambda, ECS service, ALB or SQS resource, when no metric alarm refers to any of them through `Dimensions` or `Metrics`. Composite alarms do not count. A dimension from a parameter or variable counts for all resources, and so does a literal for a resource whose name is not known, or a metric of that service with no dimension naming another resource. CDK's own helper functions, and load balancers not known to be ALBs, do not count as resources. Not judged when the stack has a nested stack, a remote Terraform module, or a local one that defines an alarm. Not reported in dev.
-  - CF-ALARM-002: an alarm or composite alarm with no `AlarmActions`, and nothing in the template that reads it: a composite alarm, an EventBridge rule on alarm state, or another resource or module that refers to it. Any action counts, not only SNS: scaling, EC2, Systems Manager and Lambda actions are real ones, and the CDK rule accepts them too. A value from a parameter or variable is not judged.
+  - CF-ALARM-002: an alarm or composite alarm with no `AlarmActions`, and nothing in the template that reads it: a composite alarm, an EventBridge rule on alarm state, or another resource or module that refers to it. Any action counts, not only SNS: scaling, EC2, Systems Manager, Incident Manager and Lambda actions are real ones, and the CDK rule accepts them too. `ActionsEnabled: false` (Terraform `actions_enabled = false`) counts as no action. A value from a parameter or variable is not judged. Answers OPS10-BP02.
+  - CF-ALARM-003: at least one alarm with an action, and no escalation after that first notification: no `AWS::SSMIncidents::ResponsePlan` with `Engagements` (Terraform `aws_ssmincidents_response_plan` `engagements`), no `AWS::SSMContacts::Contact` of `Type: ESCALATION` or with a `Plan` of two or more stages, no `AWS::SSMContacts::Plan` (Terraform `aws_ssmcontacts_plan`) of two or more stages, and no alarm action that targets a response plan (`arn:...:ssm-incidents::...:response-plan/...`, a `Ref` or `GetAtt` of one, or a CDK `Fn::Join` of that ARN). An action, engagement list or stage list the scan cannot read counts as an escalation, and so does a child stack or a module that may define one. Answers OPS10-BP01 and OPS10-BP04. In V2 it replaces OPS-027.
   - CF-DASH-001: a stack with more than `dashboards.min_resources` resources (default 20, see [CONFIG.md](CONFIG.md)) and no dashboard. Only resources the scan models count. Not judged when the stack has a nested stack, a remote Terraform module, or a local one that defines a dashboard. Not reported in dev.
 - **Account baseline resources a repo defines** (`AWS::GuardDuty::Detector`, `AWS::SecurityHub::Hub`, `AWS::Config::ConfigurationRecorder`, `AWS::Macie::Session`, `AWS::Budgets::Budget`; Terraform `aws_guardduty_detector`, `aws_guardduty_detector_feature`, `aws_securityhub_account`, `aws_config_configuration_recorder`, `aws_macie2_account`, `aws_budgets_budget`). These run only when the resource is in the template, and never report a missing service. A value from a parameter or variable is not judged.
   - CF-GD-001 (Medium): `Enable` literally false (Security Hub GuardDuty.1), or S3 Protection (GuardDuty.10), EKS Audit Log Monitoring (GuardDuty.5) or Malware Protection for EC2 (GuardDuty.8) literally set off in `DataSources`, `Features` or a tied `aws_guardduty_detector_feature`. A feature left unset is not reported: it can be on by default for a new detector or an organization, and the template does not show it. A feature resource the scan cannot tie to a detector counts as on for all of them, and never as off. One that may turn the feature on wins over one that sets it off. Features are not judged when a child stack or module may define feature resources. Other features are not judged.
@@ -491,7 +493,7 @@ CloudFormation template rules run when the agent has access to template files. T
 
 | Pillar | CF rule IDs |
 |--------|-------------|
-| Operational Excellence | CF-CFG-001, CF-ALARM-001, CF-ALARM-002, CF-DASH-001, CF-CT-004, CF-S3-004, CF-RDS-007, CF-RDS-010, CF-RDS-011, CF-CT-001, CF-CT-002, CF-FL-001, CF-EKS-001, CF-TGW-002, CF-CB-004, CF-CP-003, CF-OS-006, CF-RS-004, CF-DOCDB-003, CF-NEP-002, CF-SFN-002, CF-SFN-003, CF-EB-001, CF-ECS-008, CF-ECS-010, CF-ASG-005, CF-GLUE-002, CF-GLUE-003, CF-S3-011, CF-CF-005, CF-FSX-002, CF-PATCH-001 |
+| Operational Excellence | CF-CFG-001, CF-ALARM-001, CF-ALARM-002, CF-ALARM-003, CF-DASH-001, CF-CT-004, CF-S3-004, CF-RDS-007, CF-RDS-010, CF-RDS-011, CF-CT-001, CF-CT-002, CF-FL-001, CF-EKS-001, CF-TGW-002, CF-CB-004, CF-CP-003, CF-OS-006, CF-RS-004, CF-DOCDB-003, CF-NEP-002, CF-SFN-002, CF-SFN-003, CF-EB-001, CF-ECS-008, CF-ECS-010, CF-ASG-005, CF-GLUE-002, CF-GLUE-003, CF-S3-011, CF-CF-005, CF-FSX-002, CF-PATCH-001 |
 | Security | CF-GD-001, CF-SH-001, CF-MACIE-001, CF-CT-005, CF-S3-001, CF-S3-002, CF-S3-005, CF-RDS-001, CF-RDS-004, CF-APIGW-003, CF-APIGW-004, CF-APIGW-007, CF-APIGW-009, CF-APIGW-V2-003, CF-LAM-004, CF-LAM-005, CF-RDS-006, CF-RDS-008, CF-RDS-009, CF-RDS-012, CF-RDS-013, CF-CT-003, CF-KMS-001, CF-RP-001, CF-EC2-001, CF-EKS-002, CF-EKS-003, CF-IAM-001, CF-IAM-002, CF-IAM-003, CF-IAM-004, CF-IAM-005, CF-IAM-006, CF-IAM-007, CF-IAM-008, CF-ALB-002, CF-ALB-003, CF-ALB-004, CF-ALB-006, CF-CLB-001, CF-CLB-002, CF-SG-001, CF-SG-002, CF-SG-003, CF-NACL-001, CF-TGW-001, CF-CW-002, CF-SQS-001, CF-DDB-002, CF-LAM-003, CF-SNS-001, CF-EBS-001, CF-EFS-001, CF-KIN-001, CF-EC-001, CF-EC-002, CF-OS-001, CF-OS-002, CF-RS-001, CF-DOCDB-001, CF-NEP-001, CF-MSK-001, CF-CF-001, CF-CF-002, CF-CF-003, CF-CF-004, CF-WAF-001, CF-EC2-002, CF-EC2-003, CF-PAR-001, CF-PAR-002, CF-ECR-001, CF-ECR-002, CF-ECR-003, CF-ECS-001, CF-ECS-002, CF-ECS-003, CF-SM-001, CF-COG-001, CF-COG-002, CF-COG-003, CF-CB-001, CF-CB-002, CF-CB-003, CF-CB-005, CF-CP-001, CF-KMS-002, CF-SSM-001, CF-OS-003, CF-OS-004, CF-OS-005, CF-MSK-002, CF-MSK-003, CF-RS-002, CF-RS-005, CF-RS-006, CF-RS-007, CF-NEP-005, CF-BAK-001, CF-EC-005, CF-EC-006, CF-EC-007, CF-EFS-004, CF-EFS-005, CF-ECS-004, CF-ECS-005, CF-ECS-006, CF-ECS-007, CF-ECS-009, CF-EKS-004, CF-ASG-003, CF-ASG-004, CF-ATH-001, CF-ATH-002, CF-GLUE-001, CF-FH-001, CF-EMR-001, CF-EMR-002, CF-EMR-003, CF-DMS-001, CF-DMS-002, CF-DMS-003, CF-S3-008, CF-S3-009, CF-CF-008, CF-CF-010, CF-CF-011, CF-SAGE-001, CF-SAGE-002, CF-SAGE-003, CF-SAGE-004, CF-FSX-001, CF-APPSYNC-001, CF-APPSYNC-002, CF-APPSYNC-003, CF-TRANSFER-001, CF-TRANSFER-002, CF-TRANSFER-003, CF-BEANSTALK-002, CF-R53-001, CF-R53-002, CF-ACM-002, CF-ACM-003 |
 | Reliability | CF-S3-003, CF-RDS-002, CF-RDS-003, CF-RDS-005, CF-LAM-001, CF-LAM-006, CF-LAM-007, CF-LAM-008, CF-APIGW-005, CF-APIGW-006, CF-APIGW-V2-004, CF-DDB-001, CF-SQS-002, CF-DEL-001, CF-NAT-001, CF-ALB-005, CF-ALB-007, CF-CLB-004, CF-CLB-005, CF-CP-002, CF-KMS-003, CF-OS-007, CF-KIN-002, CF-RS-003, CF-DOCDB-002, CF-DOCDB-004, CF-NEP-003, CF-NEP-004, CF-SFN-001, CF-EB-002, CF-SQS-003, CF-BAK-002, CF-BAK-003, CF-BAK-004, CF-BAK-005, CF-DDB-004, CF-DDB-005, CF-EC-003, CF-EC-004, CF-EFS-002, CF-ASG-001, CF-ASG-002, CF-DMS-004, CF-S3-010, CF-CF-009, CF-SAGE-005, CF-FSX-003, CF-R53-003, CF-ACM-001, CF-GA-001 |
 | Performance Efficiency | CF-APIGW-008, CF-PERF-001, CF-PERF-002, CF-PERF-003, CF-PERF-004, CF-ECS-011, CF-CF-013, CF-APPSYNC-004 |
@@ -544,6 +546,7 @@ Every rule has one or more themes, which cut across pillars: `finops`, `security
 | CF-ACM-003 | security-baseline |
 | CF-ALARM-001 | observability |
 | CF-ALARM-002 | observability |
+| CF-ALARM-003 | observability |
 | CF-ALB-001 | observability |
 | CF-ALB-002 | data-protection, network-exposure |
 | CF-ALB-003 | data-protection, network-exposure |
@@ -860,6 +863,7 @@ Every rule has one or more themes, which cut across pillars: `finops`, `security
 | OPS-023 | resilience |
 | OPS-025 | observability, data-protection |
 | OPS-026 | security-baseline |
+| OPS-027 | observability |
 | PERF-001 | finops |
 | PERF-002 | resilience |
 | PERF-003 | finops |

@@ -1622,6 +1622,12 @@ TOPICS: dict[str, tuple[str, str, str, str]] = {
         "Well-Architected OPS05-BP05: Perform patch management",
         "/wellarchitected/latest/operational-excellence-pillar/ops_dev_integ_patch_mgmt.html",
     ),
+    "incident_escalation": (
+        "Incident Manager: escalation plans for responder engagement",
+        "/incident-manager/latest/userguide/escalation.html",
+        "Well-Architected OPS10-BP04: Define escalation paths",
+        "/wellarchitected/latest/operational-excellence-pillar/ops_event_response_define_escalation_paths.html",
+    ),
     "repo_tests": (
         "AWS CDK: testing constructs",
         "/cdk/v2/guide/testing.html",
@@ -1764,6 +1770,7 @@ RULE_TOPICS: dict[str, str] = {
     "OPS-023": "ssm_throughput",
     "OPS-025": "s3_replication_metrics",
     "OPS-026": "ssm_patch_manager",
+    "OPS-027": "incident_escalation",
     "REPO-001": "repo_tests",
     "REPO-002": "repo_pipeline",
     "REPO-003": "repo_environments",
@@ -1949,6 +1956,7 @@ RULE_TOPICS: dict[str, str] = {
     "CF-CT-005": "ct_data_events",
     "CF-ALARM-001": "cw_alarms",
     "CF-ALARM-002": "sns_alarm",
+    "CF-ALARM-003": "incident_escalation",
     "CF-DASH-001": "cw_dashboards",
     "CF-GD-001": "guardduty",
     "CF-SH-001": "security_hub",

@@ -163,6 +163,16 @@ ${name}ErrorsAlarm:
   Properties:
     AlarmActions:
       - !Ref AlarmTopic""",
+    "CF-ALARM-003": """# Point the alarm's AlarmActions at !Ref IncidentResponsePlan (Ref is the plan ARN).
+IncidentResponsePlan:
+  Type: AWS::SSMIncidents::ResponsePlan
+  Properties:
+    Name: critical-alarms
+    IncidentTemplate:
+      Title: Critical alarm
+      Impact: 2
+    Engagements:
+      - !Sub arn:$${AWS::Partition}:ssm-contacts:$${AWS::Region}:$${AWS::AccountId}:contact/escalation""",
     "CF-DASH-001": """StackDashboard:
   Type: AWS::CloudWatch::Dashboard
   Properties:
@@ -525,6 +535,20 @@ resource "aws_cloudwatch_metric_alarm" "${tf_name}_errors" {
 }""",
     "CF-ALARM-002": """resource "aws_cloudwatch_metric_alarm" "$tf_name" {
   alarm_actions = [aws_sns_topic.alarms.arn]
+}""",
+    "CF-ALARM-003": """# Point the alarm's alarm_actions at aws_ssmincidents_response_plan.critical.arn.
+resource "aws_ssmcontacts_contact" "escalation" {
+  alias = "escalation"
+  type  = "ESCALATION"
+}
+
+resource "aws_ssmincidents_response_plan" "critical" {
+  name        = "critical-alarms"
+  engagements = [aws_ssmcontacts_contact.escalation.arn]
+  incident_template {
+    title  = "Critical alarm"
+    impact = 2
+  }
 }""",
     "CF-DASH-001": """resource "aws_cloudwatch_dashboard" "stack" {
   dashboard_name = "stack"

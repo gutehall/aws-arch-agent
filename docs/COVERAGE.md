@@ -15,7 +15,7 @@ Which CDK rules have a template check, and which AWS Foundational Security Best 
 
 ## CDK rules
 
-176 rules: 126 covered, 7 partial, 10 account, 5 cdk-only, 25 advice, 3 repo.
+177 rules: 127 covered, 7 partial, 10 account, 5 cdk-only, 25 advice, 3 repo.
 
 | Rule | Title | Template check | Status | Note |
 | -- | -- | -- | -- | -- |
@@ -166,6 +166,7 @@ Which CDK rules have a template check, and which AWS Foundational Security Best 
 | OPS-023 | SSM Parameter Store throughput setting may need review |  | `advice` | Restated: it used to recommend the advanced tier for throughput, but AWS sets throughput per account and Region, whatever the tier. Throughput needs traffic data. `CF-SSM-002` reports the separate cost of an advanced parameter that does not need that tier. |
 | OPS-025 | S3 replication metrics not enabled | `CF-S3-011` | `covered` |  |
 | OPS-026 | EC2 instances have no patch baseline | `CF-PATCH-001` | `covered` |  |
+| OPS-027 | Alarms have no escalation path | `CF-ALARM-003` | `covered` | The template check also passes on an alarm action that targets a response plan ARN, and needs an alarm with an action. |
 | PERF-001 | Compute may not use Graviton/ARM (cost and performance) | `CF-PERF-001` | `partial` | Checks Lambda only; PERF-001 also flags EC2 and ECS. |
 | PERF-002 | No caching layer detected (performance) | `CF-PERF-002` | `partial` | API Gateway and Lambda only; PERF-002 also counts load balancers, API caches and DAX. |
 | PERF-003 | DynamoDB table may use provisioned capacity (consider on-demand) |  | `advice` | On-demand versus provisioned depends on traffic. |

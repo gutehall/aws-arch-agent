@@ -38,6 +38,7 @@ SENSITIVE_PORTS = {
 CF_COVERS_STATIC: dict[str, tuple[str, ...]] = {
     "CF-ALARM-001": ("OPS-010",),
     "CF-ALARM-002": ("OPS-011",),
+    "CF-ALARM-003": ("OPS-027",),
     "CF-DASH-001": ("OPS-021",),
     "CF-R53-002": ("SEC-032",),
     "CF-R53-003": ("SEC-031",),
@@ -500,7 +501,8 @@ CHECK_PROPERTIES: dict[str, frozenset[str]] = {
         **{c: set() for c in ("CF-R53-001", "CF-R53-002", "CF-R53-003", "CF-ACM-001", "CF-ACM-002",
                               "CF-ACM-003", "CF-GA-001")},
         # Template-level: _monitoring_findings skips what it cannot read.
-        **{c: set() for c in ("CF-ALARM-001", "CF-ALARM-002", "CF-DASH-001", "CF-CT-005")},
+        **{c: set() for c in ("CF-ALARM-001", "CF-ALARM-002", "CF-ALARM-003", "CF-DASH-001",
+                              "CF-CT-005")},
         # Template-level: _account_baseline_findings skips what it cannot read.
         **{c: set() for c in ("CF-GD-001", "CF-SH-001", "CF-CFG-001", "CF-MACIE-001", "CF-BUDGET-001")},
         # Template-level: _backup_findings skips what it cannot read.
@@ -539,7 +541,8 @@ _F, _SB, _ID, _DP, _NET, _RES, _OBS, _SUS = (
 CF_THEMES: dict[str, tuple[str, ...]] = {
     "CF-GD-001": (_SB,), "CF-SH-001": (_SB,), "CF-CFG-001": (_OBS, _SB), "CF-MACIE-001": (_DP, _SB),
     "CF-BUDGET-001": (_F,),
-    "CF-ALARM-001": (_OBS,), "CF-ALARM-002": (_OBS,), "CF-DASH-001": (_OBS,),
+    "CF-ALARM-001": (_OBS,), "CF-ALARM-002": (_OBS,), "CF-ALARM-003": (_OBS,),
+    "CF-DASH-001": (_OBS,),
     "CF-CT-004": (_OBS, _SB), "CF-CT-005": (_OBS, _DP),
     "CF-R53-001": (_OBS, _SB), "CF-R53-002": (_SB,), "CF-R53-003": (_RES,),
     "CF-ACM-001": (_RES,), "CF-ACM-002": (_DP,), "CF-ACM-003": (_SB,), "CF-GA-001": (_RES,),
@@ -630,6 +633,7 @@ CF_TITLES: dict[str, str] = {
     "CF-ACM-003": "ACM certificate opts out of certificate transparency logging",
     "CF-ALARM-001": "Stack has no CloudWatch alarm on its main resources",
     "CF-ALARM-002": "CloudWatch alarm has no action",
+    "CF-ALARM-003": "Alarms have no escalation path in this template",
     "CF-ALB-001": "ALB access logs not enabled (template-level)",
     "CF-ALB-002": "HTTP listener does not redirect to HTTPS",
     "CF-ALB-003": "Listener TLS policy allows TLS 1.0 or 1.1",
@@ -3670,6 +3674,108 @@ def _trail_may_reach(trail: Resource, bucket: Resource, buckets: List[Resource])
     return any(_advanced_selector_may_reach(selector, bucket, buckets) for selector in advanced or [])
 
 
+def _alarm_actions(alarm: Resource) -> Any:
+    """The alarm's actions: a list, None when they cannot be read, [] when it has none or
+    ActionsEnabled is false."""
+    if "AlarmActions" in alarm.unresolved:
+        return None
+    enabled = alarm.properties.get("ActionsEnabled", True)
+    if "ActionsEnabled" not in alarm.unresolved and (
+            enabled is False or (type(enabled) is str and enabled.lower() == "false")):
+        return []
+    actions = alarm.properties.get("AlarmActions", [])
+    return actions if isinstance(actions, list) else None
+
+
+_ESCALATION_TF_TYPES = (
+    "aws_ssmincidents_response_plan", "aws_ssmcontacts_contact", "aws_ssmcontacts_plan",
+)
+_ESCALATION_RECOMMENDATION = (
+    "The alarms here notify, and nothing in this template escalates when nobody responds: no "
+    "Incident Manager response plan that engages contacts (AWS::SSMIncidents::ResponsePlan "
+    "Engagements, Terraform aws_ssmincidents_response_plan engagements), no escalation contact "
+    "or plan of two or more stages (AWS::SSMContacts::Contact, Terraform aws_ssmcontacts_plan), "
+    "and no alarm action that starts an incident. Add a response plan whose engagements "
+    "include an escalation plan, and point the alarm action at its ARN. Exclude this check if "
+    "another stack or an on-call tool outside AWS escalates. In CDK: new "
+    "ssmincidents.CfnResponsePlan() and alarm.addAlarmAction(new SsmIncidentAction(plan))."
+)
+_WHOLE_INTERPOLATION = re.compile(r"\$\{([^${}]+)\}")
+_TF_ADDRESS = re.compile(r"^(aws_[a-z0-9_]+)\.[A-Za-z0-9_-]+(?:\[[^\]]*\])?\.")
+
+
+def _arn_text_may_page(text: str, by_name: dict[str, Resource]) -> bool:
+    """True when an action string may be an Incident Manager response plan. A literal ARN of
+    another service, or a reference to another resource in the template, is not one."""
+    whole = _WHOLE_INTERPOLATION.fullmatch(text)
+    if whole:
+        text = whole.group(1)
+    if "ssm-incidents" in text and "response-plan" in text:
+        return True
+    if text.startswith("arn:"):
+        return False
+    address = _TF_ADDRESS.match(text)
+    if address:
+        return address.group(1) == "aws_ssmincidents_response_plan"
+    target = by_name.get(text.split(".", 1)[0])
+    if target is not None:
+        return target.type == "ssm_incidents_response_plan"
+    return True  # a data source, module output or function: not known
+
+
+def _action_may_page(action: Any, by_name: dict[str, Resource]) -> bool:
+    """True when one alarm action may target a response plan. What cannot be read counts."""
+    if isinstance(action, str):
+        return _arn_text_may_page(action, by_name)
+    if not isinstance(action, dict) or len(action) != 1:
+        return True
+    (fn, arg), = action.items()
+    if fn == "Ref" and isinstance(arg, str):
+        return _arn_text_may_page(arg, by_name)
+    if fn == "Fn::GetAtt":
+        name = arg[0] if isinstance(arg, list) and arg else arg
+        return _arn_text_may_page(name, by_name) if isinstance(name, str) else True
+    if fn == "Fn::Join" and isinstance(arg, list) and len(arg) == 2 and isinstance(arg[1], list):
+        # CDK writes ARNs as joins of the partition, region and account with literal parts.
+        text = "".join(p if isinstance(p, str) else "${?}" for p in arg[1])
+        return _arn_text_may_page(text, by_name) if text.startswith("arn:") else True
+    if fn == "Fn::Sub":
+        text = arg[0] if isinstance(arg, list) and arg else arg
+        return _arn_text_may_page(text, by_name) if isinstance(text, str) else True
+    return True
+
+
+def _listed_or_unread(res: Resource, key: str, at_least: int) -> bool:
+    """True when res lists at least this many items under key, or the value cannot be read."""
+    if res.malformed or key in res.unresolved:
+        return True
+    value = res.properties.get(key)
+    if value is None:
+        return False
+    return not isinstance(value, list) or len(value) >= at_least
+
+
+def _escalation_defined(resources: List[Resource], alarms: List[Resource]) -> bool:
+    """A response plan that engages contacts, an escalation contact or plan of two or more
+    stages, or an alarm that starts an incident. A value the scan cannot read counts."""
+    for r in resources:
+        if r.type == "ssm_incidents_response_plan" and _listed_or_unread(r, "Engagements", 1):
+            return True
+        if r.type == "ssm_contacts_plan" and _listed_or_unread(r, "Stages", 2):
+            return True
+        if r.type == "ssm_contacts_contact":
+            kind = r.properties.get("Type")
+            if (r.malformed or "Type" in r.unresolved or (kind is not None and type(kind) is not str)
+                    or kind == "ESCALATION" or _listed_or_unread(r, "Plan", 2)):
+                return True
+    by_name = {r.name: r for r in resources}
+    for alarm in alarms:
+        actions = _alarm_actions(alarm)
+        if actions is None or any(_action_may_page(a, by_name) for a in actions):
+            return True
+    return False
+
+
 def _monitoring_findings(resources: List[Resource], template_path: Path) -> List[Finding]:
     """CloudWatch alarms (CF-ALARM-001..002), a dashboard (CF-DASH-001) and S3 data events on a
     trail (CF-CT-005). A value the scan cannot read is not judged."""
@@ -3696,14 +3802,20 @@ def _monitoring_findings(resources: List[Resource], template_path: Path) -> List
             "affected. Another stack or a central monitoring setup may cover it: if so, exclude this check. "
             "In CDK: metric.createAlarm() on each resource.")
 
-    for alarm in (r for r in usable if r.type in ("cloudwatch_alarm", "cloudwatch_composite_alarm")):
-        actions = None if "AlarmActions" in alarm.unresolved else alarm.properties.get("AlarmActions", [])
-        if actions == [] and not _alarm_is_read(alarm, resources):
+    alarms = [r for r in usable if r.type in ("cloudwatch_alarm", "cloudwatch_composite_alarm")]
+    for alarm in alarms:
+        if _alarm_actions(alarm) == [] and not _alarm_is_read(alarm, resources):
             add(alarm, "CF-ALARM-002", "CloudWatch alarm has no action", "Operational Excellence",
                 "This alarm has no AlarmActions, and nothing in this template reads its state, so when it "
                 "fires nobody is told. Point AlarmActions at an SNS topic, or exclude this check if a "
                 "composite alarm or EventBridge rule in another stack reads it. In CDK: "
                 "alarm.addAlarmAction(new SnsAction(topic)).")
+
+    notifying = [a for a in alarms if _alarm_actions(a) != []]
+    if (notifying and not _escalation_defined(resources, notifying)
+            and not _may_be_out_of_sight(resources, _ESCALATION_TF_TYPES)):
+        add(notifying[0], "CF-ALARM-003", CF_TITLES["CF-ALARM-003"], "Operational Excellence",
+            _ESCALATION_RECOMMENDATION)
 
     # Wiring such as a security group rule or a permission does not make a stack large.
     counted = [r for r in resources if r.type is not None and not r.malformed and not stack_cost.is_free(r.source_type)]

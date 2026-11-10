@@ -13,7 +13,7 @@ from aws_arch_agent.rules.fix_snippets import SNIPPETS, attach_fixes, strip_cdk_
 from aws_arch_agent.tools.cfn_yaml import load_cfn_yaml
 
 FIXTURES = Path(__file__).parent / "fixtures"
-TEMPLATE_LEVEL = {"CF-VPC-001", "CF-FL-001", "CF-SUST-003", "CF-PATCH-001"}
+TEMPLATE_LEVEL = {"CF-VPC-001", "CF-FL-001", "CF-SUST-003", "CF-PATCH-001", "CF-ALARM-003"}
 
 
 def _materialize(name: str, dest: Path) -> Path:

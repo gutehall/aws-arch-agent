@@ -62,6 +62,9 @@ TF_TYPE_TO_CANONICAL: dict[str, str] = {
     "aws_ssm_patch_baseline": "ssm_patch_baseline",
     "aws_ssm_association": "ssm_association",
     "aws_ssm_maintenance_window_task": "ssm_maintenance_window_task",
+    "aws_ssmincidents_response_plan": "ssm_incidents_response_plan",
+    "aws_ssmcontacts_contact": "ssm_contacts_contact",
+    "aws_ssmcontacts_plan": "ssm_contacts_plan",
     "aws_lambda_function": "lambda_function",
     "aws_dynamodb_table": "dynamodb_table",
     "aws_cloudwatch_log_group": "cloudwatch_log_group",
@@ -1729,6 +1732,7 @@ def _metric_alarm(body: dict) -> dict:
     props: dict = {}
     _set(props, "AlarmName", _ref(body, "alarm_name"))
     _set(props, "AlarmActions", _ref(body, "alarm_actions"))
+    _set(props, "ActionsEnabled", _v(body, "actions_enabled"))
     _set(props, "Namespace", _ref(body, "namespace"))
     _set(props, "Dimensions", _alarm_dimensions(body))
     if "metric_query" in _dynamic_names(body):
@@ -1742,6 +1746,7 @@ def _composite_alarm(body: dict) -> dict:
     props: dict = {}
     _set(props, "AlarmName", _ref(body, "alarm_name"))
     _set(props, "AlarmActions", _ref(body, "alarm_actions"))
+    _set(props, "ActionsEnabled", _v(body, "actions_enabled"))
     _set(props, "AlarmRule", _ref(body, "alarm_rule"))
     return props
 
@@ -1783,6 +1788,30 @@ def _ssm_maintenance_window_task(body: dict) -> dict:
     """aws_ssm_maintenance_window_task: task_arn is the document or ARN it runs."""
     props: dict = {}
     _set(props, "TaskArn", _v(body, "task_arn"))
+    return props
+
+
+def _ssmincidents_response_plan(body: dict) -> dict:
+    """aws_ssmincidents_response_plan: engagements are the contacts it pages."""
+    props: dict = {}
+    _set(props, "Engagements", _ref(body, "engagements"))
+    return props
+
+
+def _ssmcontacts_contact(body: dict) -> dict:
+    """aws_ssmcontacts_contact: PERSONAL, ESCALATION or ONCALL_SCHEDULE."""
+    props: dict = {}
+    _set(props, "Type", _v(body, "type"))
+    return props
+
+
+def _ssmcontacts_plan(body: dict) -> dict:
+    """aws_ssmcontacts_plan: one Stages entry per stage block, or unresolved when dynamic."""
+    props: dict = {}
+    if "stage" in _dynamic_names(body):
+        props["Stages"] = UNRESOLVED
+    elif "stage" in body:
+        props["Stages"] = [{} for _ in _blocks(body, "stage")]
     return props
 
 
@@ -2746,6 +2775,9 @@ _ADAPTERS: dict[str, Callable[[dict], dict]] = {
     "aws_ssm_parameter": _ssm_parameter,
     "aws_ssm_association": _ssm_association,
     "aws_ssm_maintenance_window_task": _ssm_maintenance_window_task,
+    "aws_ssmincidents_response_plan": _ssmincidents_response_plan,
+    "aws_ssmcontacts_contact": _ssmcontacts_contact,
+    "aws_ssmcontacts_plan": _ssmcontacts_plan,
     "aws_lambda_function": _lambda,
     "aws_dynamodb_table": _dynamodb,
     "aws_appautoscaling_target": _scalable_target,

@@ -137,7 +137,9 @@
     "positive_ts": "new lambda.Function(this, 'Fn', { runtime: lambda.Runtime.NODEJS_18_X, handler: 'h', code: lambda.Code.fromInline('x') });"
   },
   "OPS-011": {
+    "negative_py": "alarm = cloudwatch.Alarm(self, 'A', metric=m, threshold=1, evaluation_periods=1)\nalarm.add_alarm_action(cw_actions.SnsAction(topic))",
     "negative_ts": "// clean compliant stack",
+    "positive_py": "cloudwatch.Alarm(self, 'A', metric=m, threshold=1, evaluation_periods=1)",
     "positive_ts": "new cloudwatch.Alarm(this, 'A', { metric: metric, threshold: 1, evaluationPeriods: 1 });"
   },
   "OPS-012": {
@@ -739,6 +741,12 @@
     "negative_ts": "new ec2.Instance(this, 'Web', { instanceType, machineImage, vpc });\nnew ssm.CfnPatchBaseline(this, 'Baseline', { name: 'default' });",
     "positive_py": "ec2.Instance(self, 'Web', instance_type=t, machine_image=m, vpc=vpc)",
     "positive_ts": "new autoscaling.AutoScalingGroup(this, 'Asg', { vpc, instanceType, machineImage });"
+  },
+  "OPS-027": {
+    "negative_py": "alarm = cloudwatch.Alarm(self, 'Errors', metric=m, threshold=1, evaluation_periods=1)\nalarm.add_alarm_action(cw_actions.SsmIncidentAction('critical'))",
+    "negative_ts": "const alarm = new cloudwatch.Alarm(this, 'Errors', { metric, threshold: 1, evaluationPeriods: 1 });\nnew ssmincidents.CfnResponsePlan(this, 'Plan', { name: 'critical', incidentTemplate, engagements });",
+    "positive_py": "alarm = cloudwatch.Alarm(self, 'Errors', metric=m, threshold=1, evaluation_periods=1)\nalarm.add_alarm_action(cw_actions.SnsAction(topic))",
+    "positive_ts": "const alarm = new cloudwatch.Alarm(this, 'Errors', { metric, threshold: 1, evaluationPeriods: 1 });\nalarm.addAlarmAction(new cw_actions.SnsAction(topic));"
   },
   "REPO-001": {
     "positive_ts": "new s3.Bucket(this, 'Data');",

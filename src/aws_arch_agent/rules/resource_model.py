@@ -46,6 +46,10 @@ CF_TYPE_TO_CANONICAL: dict[str, str] = {
     "AWS::SSM::PatchBaseline": "ssm_patch_baseline",
     "AWS::SSM::Association": "ssm_association",
     "AWS::SSM::MaintenanceWindowTask": "ssm_maintenance_window_task",
+    # Incident Manager: a response plan that engages contacts, or an escalation (CF-ALARM-003).
+    "AWS::SSMIncidents::ResponsePlan": "ssm_incidents_response_plan",
+    "AWS::SSMContacts::Contact": "ssm_contacts_contact",
+    "AWS::SSMContacts::Plan": "ssm_contacts_plan",
     "AWS::Lambda::Function": "lambda_function",
     "AWS::DynamoDB::Table": "dynamodb_table",
     "AWS::Logs::LogGroup": "cloudwatch_log_group",
