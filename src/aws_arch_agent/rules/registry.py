@@ -51,7 +51,7 @@ from aws_arch_agent.rules.operational_excellence import (
     GlueJobMetrics, TransitGatewayFlowLogs, CodePipelineNotifications, AppRunnerObservability,
     GlueJobBookmarks, CodeBuildLogging,
     CloudWatchDashboardMissing, ResourceTaggingStrategy, SsmParameterAdvancedTier,
-    S3ReplicationMetrics,
+    S3ReplicationMetrics, Ec2PatchBaselineMissing,
 )
 from aws_arch_agent.rules.performance_efficiency import (
     GravitonNotUsed, CachingHint, DynamoDbProvisionedCapacity,
@@ -62,6 +62,7 @@ from aws_arch_agent.rules.performance_efficiency import (
     LambdaSnapStart, AuroraIoOptimized, EbsIo2BlockExpress,
     CloudWatchContributorInsights, RdsProxyMissing,
 )
+from aws_arch_agent.rules.repo_practices import REPO_RULES
 from aws_arch_agent.rules.sustainability import (
     SpotNotConsidered, RightSizingHint,
     ScheduledScalingMissing, AsyncProcessingHint, ManagedServicesPreference,
@@ -194,7 +195,7 @@ ALL_RULES = [
     ResourceNamingConvention(),
     CdkAspectsMissing(),
     CdkContextMissing(),
-    # Operational Excellence (24 rules)
+    # Operational Excellence (28 rules)
     CloudTrailMissing(),
     VpcFlowLogsMissing(),
     XRayTracingMissing(),
@@ -219,6 +220,8 @@ ALL_RULES = [
     ResourceTaggingStrategy(),
     SsmParameterAdvancedTier(),
     S3ReplicationMetrics(),
+    Ec2PatchBaselineMissing(),
+    *REPO_RULES,  # repo-level: tests, pipeline, environments (rules/repo_practices.py)
     # Performance Efficiency (19 rules)
     GravitonNotUsed(),
     CachingHint(),

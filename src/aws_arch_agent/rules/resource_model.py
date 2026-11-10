@@ -42,6 +42,10 @@ CF_TYPE_TO_CANONICAL: dict[str, str] = {
     "AWS::CloudTrail::Trail": "cloudtrail",
     "AWS::KMS::Key": "kms_key",
     "AWS::SSM::Parameter": "ssm_parameter",
+    # Patch Manager: a baseline, or a patch run scheduled by association or window (CF-PATCH-001).
+    "AWS::SSM::PatchBaseline": "ssm_patch_baseline",
+    "AWS::SSM::Association": "ssm_association",
+    "AWS::SSM::MaintenanceWindowTask": "ssm_maintenance_window_task",
     "AWS::Lambda::Function": "lambda_function",
     "AWS::DynamoDB::Table": "dynamodb_table",
     "AWS::Logs::LogGroup": "cloudwatch_log_group",

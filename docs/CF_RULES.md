@@ -4,7 +4,7 @@ This document provides a comprehensive list of all rules checked by AWS Arch Age
 
 ## Overview
 
-AWS Arch Agent checks **172 static analysis rules** and **272 template checks** across all 6 AWS Well-Architected Framework pillars. 132 of the 172 CDK rules (77%) have a template check, so they also run for CloudFormation, Terraform and synthesised CDK. [COVERAGE.md](COVERAGE.md) gives the reason for each of the others.
+AWS Arch Agent checks **176 static analysis rules** and **273 template checks** across all 6 AWS Well-Architected Framework pillars. 133 of the 176 CDK rules (76%) have a template check, so they also run for CloudFormation, Terraform and synthesised CDK. [COVERAGE.md](COVERAGE.md) gives the reason for each of the others.
 
 ## Static Analysis Rules (V1 & V2 Modes)
 
@@ -145,7 +145,7 @@ These rules run on your CDK TypeScript/Python code and execute in both V1 and V2
 - REL-030: RDS deletion protection not enabled
 - REL-031: S3 bucket versioning not enabled
 
-### Operational Excellence (24 rules)
+### Operational Excellence (28 rules)
 
 **Logging:**
 - OPS-001: CloudTrail not enabled
@@ -175,12 +175,18 @@ These rules run on your CDK TypeScript/Python code and execute in both V1 and V2
 - OPS-017: CodePipeline notifications not configured
 - OPS-019: Glue job bookmarks not enabled
 
-**Additional OpsEx (OPS-021 to OPS-025):**
+**Additional OpsEx (OPS-021 to OPS-026):**
 - OPS-021: CloudWatch dashboards not configured
 - OPS-022: Resource tagging strategy may be incomplete
 - OPS-023: SSM Parameter Store throughput setting may need review
 - OPS-024: folded into REL-027; reserved concurrency is not reported twice
 - OPS-025: S3 replication metrics not enabled
+- OPS-026: EC2 instances have no patch baseline
+
+**Repo-level** (read the repository tree, so they run for CDK, CloudFormation and Terraform):
+- REPO-001: Repo has no automated tests
+- REPO-002: No CI workflow or pipeline builds the workload
+- REPO-003: Only one environment is defined
 
 ### Performance Efficiency (19 rules)
 
@@ -302,6 +308,7 @@ CloudFormation template rules run when the agent has access to template files. T
 - **IAM admin access**: CF-IAM-008 (High, Security Hub IAM.1): a role, user, group or policy attachment with the AWS managed policy `AdministratorAccess`, or an Allow statement with Action `*` and Resource `*`. Read on CloudFormation `ManagedPolicyArns` (literal, `Fn::Join` or `Fn::Sub`, as CDK synth writes it; an ARN inside `Fn::If` is not guessed) and inline policies; Terraform `managed_policy_arns`, `aws_iam_role_policy_attachment`, `aws_iam_user_policy_attachment`, `aws_iam_group_policy_attachment`, `aws_iam_policy_attachment`, the role/user/group `*_policy_attachments_exclusive`, and `data.aws_iam_policy` looked up by name or ARN. Action `*` on Resource `*` is reported once, as CF-IAM-008, not also as CF-IAM-001. In V2, CF-IAM-008 replaces SEC-067, SEC-001 and SEC-002.
 - **IAM role trust** (`AssumeRolePolicyDocument`, Terraform `assume_role_policy`): CF-IAM-004 (any AWS account can assume the role: Principal `*` with no condition, High), CF-IAM-007 (GitHub Actions OIDC with no condition on `token.actions.githubusercontent.com:sub`, High), CF-IAM-005 (a literal account principal with no `sts:ExternalId`, Medium), CF-IAM-006 (a service that acts across accounts, such as Config, CloudTrail, SNS, EventBridge or S3, with no `aws:SourceAccount` or `aws:SourceArn`, Low; compute execution roles for Lambda, EC2 and ECS are not reported)
 - **VPC**: CF-VPC-001 (no VPC endpoints), CF-FL-001 (no flow logs)
+- **EC2 patching**: CF-PATCH-001 (EC2 instances, Auto Scaling groups or launch templates with no SSM patch baseline, AWS-RunPatchBaseline association or maintenance window task)
 - **NAT traffic to S3 and DynamoDB**: CF-VPC-002 (S3) and CF-VPC-003 (DynamoDB), Low: a VPC with a public NAT gateway and no gateway VPC endpoint for that service, so private subnets reach it through the NAT gateway. Gateway endpoints for S3 and DynamoDB carry no hourly or data charge; the recommendation gives the NAT per-GB processing price from the snapshot. Only `VpcEndpointType: Gateway` clears it (the default when unset, in CloudFormation and Terraform); an Interface endpoint is billed. Terraform reads `aws_vpc_endpoint` and `aws_nat_gateway`. A NAT gateway and an endpoint are tied to their VPC through `SubnetId` and `VpcId`. A NAT gateway the scan cannot tie to a VPC is judged for the template, and an endpoint it cannot tie to a VPC counts for every VPC. A private NAT gateway (`ConnectivityType: private`) is skipped. An endpoint whose service or type comes from a parameter or variable may be the missing one, so its VPC is not judged
 - **Parameters and variables**: CF-PAR-001 (a parameter named like a secret, such as `DbPassword`, `ApiKey` or `GithubToken`, without `NoEcho: true`, Medium), CF-PAR-002 (the same with a non-empty `Default`, so the secret is committed with the template, High; reported instead of CF-PAR-001, NoEcho or not). Names that point at a secret (`DbSecretArn`, `KeyName`, `PasswordLength`) and `AWS::SSM::Parameter::Value` types are not reported. Use a `{{resolve:secretsmanager:...}}` or `{{resolve:ssm-secure:...}}` dynamic reference instead. Terraform root-module `variable` blocks get the same checks with the same name rules: CF-PAR-001 for a secret-named variable without `sensitive = true` (its value shows in plan and apply output, Medium), CF-PAR-002 for one with a non-empty `default` (High, sensitive or not). The fix reads the secret with `data "aws_secretsmanager_secret_version"` or `data "aws_ssm_parameter"` instead. Variables in child modules are not read
 - **Secrets Manager**: CF-SM-001 (Medium): an `AWS::SecretsManager::Secret` / `aws_secretsmanager_secret` that no `AWS::SecretsManager::RotationSchedule` / `aws_secretsmanager_secret_rotation` in this template points at, by `Ref`, Terraform address or the secret's literal name. A schedule the scan cannot tie to a secret counts for all of them. In V2 it replaces SEC-015
@@ -484,7 +491,7 @@ CloudFormation template rules run when the agent has access to template files. T
 
 | Pillar | CF rule IDs |
 |--------|-------------|
-| Operational Excellence | CF-CFG-001, CF-ALARM-001, CF-ALARM-002, CF-DASH-001, CF-CT-004, CF-S3-004, CF-RDS-007, CF-RDS-010, CF-RDS-011, CF-CT-001, CF-CT-002, CF-FL-001, CF-EKS-001, CF-TGW-002, CF-CB-004, CF-CP-003, CF-OS-006, CF-RS-004, CF-DOCDB-003, CF-NEP-002, CF-SFN-002, CF-SFN-003, CF-EB-001, CF-ECS-008, CF-ECS-010, CF-ASG-005, CF-GLUE-002, CF-GLUE-003, CF-S3-011, CF-CF-005, CF-FSX-002 |
+| Operational Excellence | CF-CFG-001, CF-ALARM-001, CF-ALARM-002, CF-DASH-001, CF-CT-004, CF-S3-004, CF-RDS-007, CF-RDS-010, CF-RDS-011, CF-CT-001, CF-CT-002, CF-FL-001, CF-EKS-001, CF-TGW-002, CF-CB-004, CF-CP-003, CF-OS-006, CF-RS-004, CF-DOCDB-003, CF-NEP-002, CF-SFN-002, CF-SFN-003, CF-EB-001, CF-ECS-008, CF-ECS-010, CF-ASG-005, CF-GLUE-002, CF-GLUE-003, CF-S3-011, CF-CF-005, CF-FSX-002, CF-PATCH-001 |
 | Security | CF-GD-001, CF-SH-001, CF-MACIE-001, CF-CT-005, CF-S3-001, CF-S3-002, CF-S3-005, CF-RDS-001, CF-RDS-004, CF-APIGW-003, CF-APIGW-004, CF-APIGW-007, CF-APIGW-009, CF-APIGW-V2-003, CF-LAM-004, CF-LAM-005, CF-RDS-006, CF-RDS-008, CF-RDS-009, CF-RDS-012, CF-RDS-013, CF-CT-003, CF-KMS-001, CF-RP-001, CF-EC2-001, CF-EKS-002, CF-EKS-003, CF-IAM-001, CF-IAM-002, CF-IAM-003, CF-IAM-004, CF-IAM-005, CF-IAM-006, CF-IAM-007, CF-IAM-008, CF-ALB-002, CF-ALB-003, CF-ALB-004, CF-ALB-006, CF-CLB-001, CF-CLB-002, CF-SG-001, CF-SG-002, CF-SG-003, CF-NACL-001, CF-TGW-001, CF-CW-002, CF-SQS-001, CF-DDB-002, CF-LAM-003, CF-SNS-001, CF-EBS-001, CF-EFS-001, CF-KIN-001, CF-EC-001, CF-EC-002, CF-OS-001, CF-OS-002, CF-RS-001, CF-DOCDB-001, CF-NEP-001, CF-MSK-001, CF-CF-001, CF-CF-002, CF-CF-003, CF-CF-004, CF-WAF-001, CF-EC2-002, CF-EC2-003, CF-PAR-001, CF-PAR-002, CF-ECR-001, CF-ECR-002, CF-ECR-003, CF-ECS-001, CF-ECS-002, CF-ECS-003, CF-SM-001, CF-COG-001, CF-COG-002, CF-COG-003, CF-CB-001, CF-CB-002, CF-CB-003, CF-CB-005, CF-CP-001, CF-KMS-002, CF-SSM-001, CF-OS-003, CF-OS-004, CF-OS-005, CF-MSK-002, CF-MSK-003, CF-RS-002, CF-RS-005, CF-RS-006, CF-RS-007, CF-NEP-005, CF-BAK-001, CF-EC-005, CF-EC-006, CF-EC-007, CF-EFS-004, CF-EFS-005, CF-ECS-004, CF-ECS-005, CF-ECS-006, CF-ECS-007, CF-ECS-009, CF-EKS-004, CF-ASG-003, CF-ASG-004, CF-ATH-001, CF-ATH-002, CF-GLUE-001, CF-FH-001, CF-EMR-001, CF-EMR-002, CF-EMR-003, CF-DMS-001, CF-DMS-002, CF-DMS-003, CF-S3-008, CF-S3-009, CF-CF-008, CF-CF-010, CF-CF-011, CF-SAGE-001, CF-SAGE-002, CF-SAGE-003, CF-SAGE-004, CF-FSX-001, CF-APPSYNC-001, CF-APPSYNC-002, CF-APPSYNC-003, CF-TRANSFER-001, CF-TRANSFER-002, CF-TRANSFER-003, CF-BEANSTALK-002, CF-R53-001, CF-R53-002, CF-ACM-002, CF-ACM-003 |
 | Reliability | CF-S3-003, CF-RDS-002, CF-RDS-003, CF-RDS-005, CF-LAM-001, CF-LAM-006, CF-LAM-007, CF-LAM-008, CF-APIGW-005, CF-APIGW-006, CF-APIGW-V2-004, CF-DDB-001, CF-SQS-002, CF-DEL-001, CF-NAT-001, CF-ALB-005, CF-ALB-007, CF-CLB-004, CF-CLB-005, CF-CP-002, CF-KMS-003, CF-OS-007, CF-KIN-002, CF-RS-003, CF-DOCDB-002, CF-DOCDB-004, CF-NEP-003, CF-NEP-004, CF-SFN-001, CF-EB-002, CF-SQS-003, CF-BAK-002, CF-BAK-003, CF-BAK-004, CF-BAK-005, CF-DDB-004, CF-DDB-005, CF-EC-003, CF-EC-004, CF-EFS-002, CF-ASG-001, CF-ASG-002, CF-DMS-004, CF-S3-010, CF-CF-009, CF-SAGE-005, CF-FSX-003, CF-R53-003, CF-ACM-001, CF-GA-001 |
 | Performance Efficiency | CF-APIGW-008, CF-PERF-001, CF-PERF-002, CF-PERF-003, CF-PERF-004, CF-ECS-011, CF-CF-013, CF-APPSYNC-004 |
@@ -530,7 +537,6 @@ Like Infracost's view, it is an approximation: on-demand prices, 730 hours a mon
 Every rule has one or more themes, which cut across pillars: `finops`, `security-baseline`, `identity`, `data-protection`, `network-exposure`, `resilience`, `observability`, `sustainability`. `--theme finops` (repeatable, or comma-separated; config `themes`) limits a scan to those themes. JSON findings carry `themes`. SARIF carries them as result `properties.themes` and rule `properties.tags`. `--group-by theme` (config `group_by`) groups Markdown findings by theme; a finding in two themes is listed under both. The HTML report has a theme filter next to the severity tabs, and the Markdown and JSON summary add one line per theme. CDK source rules declare their themes in their class; template checks declare them in `CF_THEMES` in `rules/cf_template.py`.
 
 <!-- themes:start -->
-
 | Rule | Themes |
 |------|--------|
 | CF-ACM-001 | resilience |
@@ -732,6 +738,7 @@ Every rule has one or more themes, which cut across pillars: `finops`, `security
 | CF-OS-007 | resilience |
 | CF-PAR-001 | data-protection, identity |
 | CF-PAR-002 | data-protection, identity |
+| CF-PATCH-001 | security-baseline |
 | CF-PERF-001 | finops, sustainability |
 | CF-PERF-002 | resilience |
 | CF-PERF-003 | finops |
@@ -852,6 +859,7 @@ Every rule has one or more themes, which cut across pillars: `finops`, `security
 | OPS-022 | finops, observability |
 | OPS-023 | resilience |
 | OPS-025 | observability, data-protection |
+| OPS-026 | security-baseline |
 | PERF-001 | finops |
 | PERF-002 | resilience |
 | PERF-003 | finops |
@@ -902,6 +910,9 @@ Every rule has one or more themes, which cut across pillars: `finops`, `security
 | REL-029 | resilience |
 | REL-030 | resilience, data-protection |
 | REL-031 | resilience, data-protection |
+| REPO-001 | resilience |
+| REPO-002 | resilience |
+| REPO-003 | resilience |
 | SEC-001 | identity |
 | SEC-002 | identity |
 | SEC-003 | network-exposure |
@@ -977,5 +988,4 @@ Every rule has one or more themes, which cut across pillars: `finops`, `security
 | SUST-005 | sustainability |
 | SUST-006 | sustainability, finops |
 | SUST-007 | sustainability, finops |
-
 <!-- themes:end -->

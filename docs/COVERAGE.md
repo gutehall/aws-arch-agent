@@ -11,10 +11,11 @@ Which CDK rules have a template check, and which AWS Foundational Security Best 
 | `account` | Needs a live account. A scan of templates cannot see it. |
 | `cdk-only` | Reads the CDK code itself, not a resource property. |
 | `advice` | No property to read. The answer depends on traffic, usage or design. |
+| `repo` | Reads the repository tree (tests, CI config, environments), not IaC. Runs for every source. |
 
 ## CDK rules
 
-172 rules: 125 covered, 7 partial, 10 account, 5 cdk-only, 25 advice.
+176 rules: 126 covered, 7 partial, 10 account, 5 cdk-only, 25 advice, 3 repo.
 
 | Rule | Title | Template check | Status | Note |
 | -- | -- | -- | -- | -- |
@@ -164,6 +165,7 @@ Which CDK rules have a template check, and which AWS Foundational Security Best 
 | OPS-022 | Resource tagging strategy may be incomplete |  | `advice` | Tag choice. CF-TAG-001 checks a configured tag policy. |
 | OPS-023 | SSM Parameter Store throughput setting may need review |  | `advice` | Restated: it used to recommend the advanced tier for throughput, but AWS sets throughput per account and Region, whatever the tier. Throughput needs traffic data. `CF-SSM-002` reports the separate cost of an advanced parameter that does not need that tier. |
 | OPS-025 | S3 replication metrics not enabled | `CF-S3-011` | `covered` |  |
+| OPS-026 | EC2 instances have no patch baseline | `CF-PATCH-001` | `covered` |  |
 | PERF-001 | Compute may not use Graviton/ARM (cost and performance) | `CF-PERF-001` | `partial` | Checks Lambda only; PERF-001 also flags EC2 and ECS. |
 | PERF-002 | No caching layer detected (performance) | `CF-PERF-002` | `partial` | API Gateway and Lambda only; PERF-002 also counts load balancers, API caches and DAX. |
 | PERF-003 | DynamoDB table may use provisioned capacity (consider on-demand) |  | `advice` | On-demand versus provisioned depends on traffic. |
@@ -190,6 +192,9 @@ Which CDK rules have a template check, and which AWS Foundational Security Best 
 | SUST-005 | Consider managed services over self-managed |  | `advice` | Architecture advice. |
 | SUST-006 | CloudFront compression not enabled | `CF-CF-007` | `covered` |  |
 | SUST-007 | Latest generation instance types not used | `CF-GEN-001` | `covered` |  |
+| REPO-001 | Repo has no automated tests |  | `repo` | Looks for test directories and test file names. |
+| REPO-002 | No CI workflow or pipeline builds the workload |  | `repo` | Looks for CI config files or a CodePipeline in the IaC. |
+| REPO-003 | Only one environment is defined |  | `repo` | Looks for environment names in IaC paths, CDK stack ids and cdk.json context. |
 
 ## FSBP controls
 

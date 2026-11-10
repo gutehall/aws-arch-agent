@@ -744,3 +744,40 @@ class S3ReplicationMetrics(Rule):
                 recommendation=self.recommendation,
             )]
         return out
+
+
+class Ec2PatchBaselineMissing(Rule):
+    id = "OPS-026"
+    title = "EC2 instances have no patch baseline"
+    category = "Operational Excellence"
+    severity = "Medium"
+    themes = ("security-baseline",)
+    recommendation = (
+        "Patch the instances with Systems Manager Patch Manager: add an ssm.CfnPatchBaseline, "
+        "or an ssm.CfnAssociation (or maintenance window task) that runs AWS-RunPatchBaseline."
+    )
+
+    _COMPUTE = (
+        r"(?:new\s+)?(?:ec2\.(?:Instance|LaunchTemplate|CfnInstance|CfnLaunchTemplate)"
+        r"|autoscaling\.(?:AutoScalingGroup|CfnAutoScalingGroup))\("
+    )
+    _PATCHING = (
+        r"CfnPatchBaseline|CfnMaintenanceWindowTask|AWS-RunPatchBaseline"
+        r"|AWS-PatchInstanceWithRollback"
+    )
+
+    def run(self, repo_path: Path, language: str = "typescript") -> List[Finding]:
+        compute = rg(repo_path, self._COMPUTE, glob=code_glob(language))
+        if not compute or rg(repo_path, self._PATCHING, glob=code_glob(language)):
+            return []
+        f, ln, txt = compute[0]
+        return [Finding(
+            id=self.id,
+            title=self.title,
+            severity="Medium",
+            category=self.category,
+            file=f,
+            line=ln,
+            evidence=txt,
+            recommendation=self.recommendation,
+        )]

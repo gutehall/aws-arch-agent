@@ -1,0 +1,269 @@
+"""Repo-level checks: tests, a build pipeline, and more than one environment (OPS 5).
+
+These rules read the repository tree, not one IaC file, so they run the same for CDK,
+CloudFormation, and Terraform scans. They walk the whole repo (test directories included,
+since tests are what REPO-001 looks for) and skip dependency and build output:
+node_modules, cdk.out, .git, dist, build, .venv, venv, .terraform and caches.
+
+Heuristics, kept simple on purpose:
+
+- REPO-001 tests: a code file under a test/, tests/, __tests__/ or spec/ directory, or a
+  file named like a test (*.test.ts, *.spec.js, test_*.py, *_test.py, *_test.go,
+  *.tftest.hcl), a taskcat config, or cfn-guard rule tests (*_tests.yaml next to *.guard).
+- REPO-002 pipeline: a CI config file (GitHub Actions, GitLab CI, CodeBuild buildspec,
+  Jenkinsfile, Azure Pipelines, Bitbucket Pipelines, CircleCI, Buildkite, Travis), or a
+  CodePipeline declared in the IaC (AWS::CodePipeline::Pipeline, aws_codepipeline,
+  codepipeline.Pipeline, pipelines.CodePipeline).
+- REPO-003 environments: environment words (rules/environments.py: prod, staging, dev and
+  their synonyms) in the paths of IaC files (Terraform, tfvars, CloudFormation templates,
+  parameter files), in CDK stack and stage ids, and in cdk.json context keys. Two distinct
+  environments pass. Environments built in a loop or from a variable are not seen.
+"""
+from __future__ import annotations
+
+import json
+import os
+import re
+from collections.abc import Iterator
+from pathlib import Path
+from typing import ClassVar, List
+
+from aws_arch_agent.models import Finding, Severity
+from aws_arch_agent.rules.base import Rule
+from aws_arch_agent.rules.environments import from_words
+from aws_arch_agent.tools.cfn_yaml import is_cf_template
+from aws_arch_agent.tools.files import read_text_safe
+
+SKIP_DIRS = frozenset({
+    ".git", "node_modules", "cdk.out", "dist", "build", ".venv", "venv", ".terraform",
+    "__pycache__", ".mypy_cache", ".pytest_cache", ".ruff_cache", ".tox",
+})
+MAX_FILES = 20_000
+_BUILD_GLOBS: tuple[str, ...] = tuple(f"**/{d}/**" for d in sorted(SKIP_DIRS))
+
+_TEST_DIRS = frozenset({"test", "tests", "__tests__", "spec"})
+_CODE_SUFFIXES = frozenset({
+    ".ts", ".tsx", ".js", ".jsx", ".mjs", ".cjs", ".py", ".go", ".java", ".kt", ".cs", ".rb",
+})
+_TEST_NAME = re.compile(
+    r"(?:\.(?:test|spec)\.[cm]?[jt]sx?|^test_.*\.py|_test\.py|_test\.go|\.tftest\.hcl)$"
+)
+_TASKCAT = frozenset({".taskcat.yml", ".taskcat.yaml", "taskcat.yml", "taskcat.yaml"})
+_GUARD_TEST = re.compile(r"[_-]tests?\.ya?ml$")
+
+_CI_FILES = frozenset({
+    ".gitlab-ci.yml", "jenkinsfile", "azure-pipelines.yml", "azure-pipelines.yaml",
+    "bitbucket-pipelines.yml", ".travis.yml",
+})
+_PIPELINE_IN_IAC = re.compile(
+    r"AWS::CodePipeline::Pipeline|resource\s+\"aws_codepipeline\""
+    r"|\bcodepipeline\.(?:Cfn)?Pipeline\(|\bCodePipeline\("
+)
+_IAC_TEXT_SUFFIXES = frozenset({
+    ".ts", ".js", ".py", ".json", ".yaml", ".yml", ".template", ".tf",
+})
+
+# Directories that hold one subdirectory per environment: envs/test is an environment,
+# not a test suite.
+_ENV_PARENTS = frozenset({
+    "env", "envs", "environment", "environments", "stage", "stages", "account", "accounts",
+    "deployments", "workspaces", "live",
+})
+_PARAM_SUFFIXES = frozenset({".json", ".yaml", ".yml"})
+_STACK_ID = re.compile(
+    r"\b(\w*(?:Stack|Stage))\(\s*[\w.]+\s*,\s*['\"]([^'\"]+)['\"]"
+)
+
+
+def walk(repo_path: Path) -> Iterator[Path]:
+    """Every file of the repo, less dependency and build output, in a stable order."""
+    seen = 0
+    for root, dirs, files in os.walk(repo_path):
+        dirs[:] = sorted(d for d in dirs if d not in SKIP_DIRS)
+        for name in sorted(files):
+            yield Path(root) / name
+            seen += 1
+            if seen >= MAX_FILES:
+                return
+
+
+def _rel_parts(path: Path, repo_path: Path) -> tuple[str, ...]:
+    return path.relative_to(repo_path).parts
+
+
+def _in_test_dir(parts: tuple[str, ...]) -> bool:
+    """Under a test directory that is not an environment (envs/test stays an environment)."""
+    dirs = parts[:-1]
+    return any(
+        d.lower() in _TEST_DIRS and (i == 0 or dirs[i - 1].lower() not in _ENV_PARENTS)
+        for i, d in enumerate(dirs)
+    )
+
+
+def _is_test_file(path: Path, parts: tuple[str, ...], guard_rules: bool) -> bool:
+    name = path.name.lower()
+    if _TEST_NAME.search(name) or name in _TASKCAT:
+        return True
+    if guard_rules and _GUARD_TEST.search(name):
+        return True
+    return path.suffix.lower() in _CODE_SUFFIXES and _in_test_dir(parts)
+
+
+def _is_ci_file(parts: tuple[str, ...]) -> bool:
+    lowered = tuple(p.lower() for p in parts)
+    name = lowered[-1]
+    if name in _CI_FILES or re.fullmatch(r"buildspec[\w.-]*\.ya?ml", name):
+        return True
+    if lowered[:2] == (".github", "workflows") and name.endswith((".yml", ".yaml")):
+        return True
+    if lowered[:1] == (".circleci",) and name == "config.yml":
+        return True
+    return lowered[:1] == (".buildkite",)
+
+
+class _RepoRule(Rule):
+    category = "Operational Excellence"
+    severity: Severity
+    exclude_globs: ClassVar[tuple[str, ...]] = _BUILD_GLOBS
+
+    def _finding(self, evidence: str, file: str | None = None) -> Finding:
+        return Finding(
+            id=self.id,
+            title=self.title,
+            severity=self.severity,
+            category=self.category,
+            file=file,
+            line=None,
+            evidence=evidence,
+            recommendation=self.recommendation,
+        )
+
+
+class RepoTestsMissing(_RepoRule):
+    id = "REPO-001"
+    title = "Repo has no automated tests"
+    severity = "Medium"
+    themes = ("resilience",)
+    recommendation = (
+        "Add automated tests for the infrastructure code (CDK assertions, pytest, "
+        "terraform test, taskcat or cfn-guard rule tests) and run them on every change."
+    )
+
+    def run(self, repo_path: Path, language: str = "typescript") -> List[Finding]:
+        files = list(walk(repo_path))
+        guard_rules = any(p.suffix.lower() == ".guard" for p in files)
+        for path in files:
+            if _is_test_file(path, _rel_parts(path, repo_path), guard_rules):
+                return []
+        return [self._finding(
+            "Searched the repo for tests (test/, tests/, __tests__/, spec/, "
+            "*.test.ts, *.spec.js, test_*.py, *_test.go, *.tftest.hcl, taskcat, cfn-guard "
+            "tests); found none"
+        )]
+
+
+class RepoPipelineMissing(_RepoRule):
+    id = "REPO-002"
+    title = "No CI workflow or pipeline builds the workload"
+    severity = "Medium"
+    themes = ("resilience",)
+    recommendation = (
+        "Build, test and deploy from a pipeline: add a CI workflow (GitHub Actions, GitLab "
+        "CI, CodeBuild buildspec) or a CodePipeline, so every change takes the same path to "
+        "production."
+    )
+
+    def run(self, repo_path: Path, language: str = "typescript") -> List[Finding]:
+        files = list(walk(repo_path))
+        for path in files:
+            if _is_ci_file(_rel_parts(path, repo_path)):
+                return []
+        for path in files:
+            parts = _rel_parts(path, repo_path)
+            if path.suffix.lower() not in _IAC_TEXT_SUFFIXES or _in_test_dir(parts):
+                continue
+            if _PIPELINE_IN_IAC.search(read_text_safe(path)):
+                return []
+        return [self._finding(
+            "Searched the repo for a CI config (.github/workflows, .gitlab-ci.yml, "
+            "buildspec.yml, Jenkinsfile, azure-pipelines.yml, bitbucket-pipelines.yml, "
+            ".circleci, .buildkite) or a CodePipeline in the IaC; found none"
+        )]
+
+
+def _iac_path(path: Path) -> bool:
+    name = path.name.lower()
+    if path.suffix.lower() in (".tf", ".tfvars") or name.endswith(".tfvars.json"):
+        return True
+    if path.suffix.lower() in _PARAM_SUFFIXES and "param" in name:
+        return True
+    return is_cf_template(path)
+
+
+def _cdk_context_keys(path: Path) -> List[str]:
+    try:
+        doc = json.loads(read_text_safe(path))
+    except ValueError:
+        return []
+    context = doc.get("context") if isinstance(doc, dict) else None
+    if not isinstance(context, dict):
+        return []
+    keys = list(context)
+    for value in context.values():
+        if isinstance(value, dict):
+            keys.extend(value)
+    # Feature flags (@aws-cdk/pipelines:reduceStageRoleTrustScope) name no environment.
+    return [str(k) for k in keys if not str(k).startswith("@") and ":" not in str(k)]
+
+
+def environments_found(repo_path: Path) -> dict[str, str]:
+    """Each environment the repo defines, and where it was first seen."""
+    found: dict[str, str] = {}
+
+    def note(text: str, where: str) -> None:
+        env = from_words(text)
+        if env is not None:
+            found.setdefault(env, where)
+
+    for path in walk(repo_path):
+        parts = _rel_parts(path, repo_path)
+        rel = "/".join(parts)
+        if _in_test_dir(parts) or _TEST_NAME.search(path.name.lower()):
+            continue
+        if path.name == "cdk.json":
+            for key in _cdk_context_keys(path):
+                note(key, f"{rel} context {key}")
+            continue
+        if path.suffix.lower() in (".ts", ".js", ".py"):
+            for match in _STACK_ID.finditer(read_text_safe(path)):
+                note(match.group(2), f"{rel} {match.group(1)} {match.group(2)}")
+                note(match.group(1), f"{rel} {match.group(1)}")
+            continue
+        if _iac_path(path):
+            for part in (*parts[:-1], path.name.split(".", 1)[0]):
+                note(part, rel)
+    return found
+
+
+class SingleEnvironment(_RepoRule):
+    id = "REPO-003"
+    title = "Only one environment is defined"
+    severity = "Low"
+    themes = ("resilience",)
+    recommendation = (
+        "Define at least one environment before production (dev or staging stacks, "
+        "per-environment tfvars or parameter files) and promote changes through it."
+    )
+
+    def run(self, repo_path: Path, language: str = "typescript") -> List[Finding]:
+        found = environments_found(repo_path)
+        if len(found) >= 2:
+            return []
+        seen = ", ".join(f"{env} ({where})" for env, where in sorted(found.items())) or "none"
+        return [self._finding(
+            "Environments named in IaC paths, tfvars and parameter files, CDK stack ids and "
+            f"cdk.json context: {seen}; two or more expected"
+        )]
+
+
+REPO_RULES: List[Rule] = [RepoTestsMissing(), RepoPipelineMissing(), SingleEnvironment()]

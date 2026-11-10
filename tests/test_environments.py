@@ -33,7 +33,9 @@ def _scan(repo: Path) -> list[dict]:
     out = repo / "r.json"
     result = CliRunner().invoke(app, ["--repo", str(repo), "--no-llm", "--format", "json", "--out", str(out)])
     assert result.exit_code == 0, result.output
-    return json.loads(out.read_text(encoding="utf-8"))["findings"]
+    findings = json.loads(out.read_text(encoding="utf-8"))["findings"]
+    # Repo-level findings (tests, CI) belong to no stack, so they have no environment.
+    return [f for f in findings if not f["id"].startswith("REPO-")]
 
 
 def test_infra_dev_and_prod_get_their_environment(tmp_path: Path) -> None:
@@ -139,7 +141,8 @@ def test_reports_show_the_environment(tmp_path: Path) -> None:
     out_sarif = repo / "r.sarif"
     CliRunner().invoke(app, ["--repo", str(repo), "--no-llm", "--format", "sarif", "--out", str(out_sarif)])
     results = json.loads(out_sarif.read_text(encoding="utf-8"))["runs"][0]["results"]
-    assert {r["properties"]["environment"] for r in results} == {"dev", "prod"}
+    stacks = [r for r in results if not r["ruleId"].startswith("REPO-")]
+    assert {r["properties"]["environment"] for r in stacks} == {"dev", "prod"}
     assert "environment" in REPORT_SCHEMA["properties"]["findings"]["items"]["properties"]
 
 

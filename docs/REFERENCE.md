@@ -121,6 +121,14 @@ See [report-schema.json](report-schema.json) for the machine-readable report for
 
 Static and CloudFormation rule IDs, titles, and pillar groups are in [CF_RULES.md](CF_RULES.md). That is the full list. This page does not keep a second copy.
 
+**Repo-level rules (`REPO-*`).** Three rules read the repository tree instead of one IaC file, so they run on CDK, CloudFormation, and Terraform scans alike (V1 and V2). They answer OPS 5. The walk includes test directories and skips `node_modules`, `cdk.out`, `.git`, `dist`, `build`, `.venv`, `venv`, `.terraform`, and caches. `rules.include` and `rules.exclude` apply as usual.
+
+- `REPO-001` Repo has no automated tests (OPS05-BP02): no code under `test/`, `tests/`, `__tests__/` or `spec/`, no `*.test.ts`, `*.spec.js`, `test_*.py`, `*_test.py`, `*_test.go` or `*.tftest.hcl` file, no taskcat config, and no cfn-guard rule tests (`*_tests.yaml` next to a `.guard` file).
+- `REPO-002` No CI workflow or pipeline builds the workload (OPS05-BP04, OPS05-BP10): no `.github/workflows/*.yml`, `.gitlab-ci.yml`, `buildspec*.yml`, `Jenkinsfile`, `azure-pipelines.yml`, `bitbucket-pipelines.yml`, `.circleci/config.yml`, `.buildkite/` or `.travis.yml`, and no CodePipeline in the IaC (`AWS::CodePipeline::Pipeline`, `aws_codepipeline`, `codepipeline.Pipeline`, `pipelines.CodePipeline`).
+- `REPO-003` Only one environment is defined (OPS05-BP08): fewer than two distinct environments (prod, staging, dev and the synonyms in `rules/environments.py`) named in IaC paths (Terraform, tfvars, CloudFormation templates, `*param*` files), CDK stack and stage ids, or `cdk.json` context keys. Test directories and CDK feature flags do not count; `envs/test` does. Environments built in a loop or read from a variable are not seen.
+
+Patching (OPS05-BP05) is `CF-PATCH-001` for templates and `OPS-026` for CDK source: EC2 instances, Auto Scaling groups or launch templates with no SSM patch baseline, no association running `AWS-RunPatchBaseline` (or `AWS-PatchInstanceWithRollback`), and no maintenance window task running it.
+
 ## Prices
 
 Cost estimates read `aws_arch_agent/pricing/prices.json.gz`, an offline snapshot of the AWS Price List bulk API: on-demand USD prices for the resources the cost rules touch (EC2 and RDS instance types, NAT gateway hour and GB, EBS gp2/gp3/io2, public IPv4 addresses including Elastic IPs, Lambda, DynamoDB on-demand and provisioned, S3 storage classes, CloudWatch Logs ingestion and storage). Each price carries its region and the publication date of its AWS offer. A tiered price is the first paid tier. An instance type or region the snapshot lacks gives no estimate, never a guess.

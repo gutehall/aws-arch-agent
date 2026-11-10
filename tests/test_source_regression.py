@@ -102,7 +102,9 @@ def test_workflow_yaml_does_not_switch_a_cdk_repo(tmp_path: Path) -> None:
     )
     source, rows, _warnings = _scan(repo)
     assert source == "cdk"
-    assert rows == json.loads((SNAPSHOTS / "minimal-cdk.json").read_text(encoding="utf-8"))
+    snapshot = json.loads((SNAPSHOTS / "minimal-cdk.json").read_text(encoding="utf-8"))
+    # The workflow is a CI pipeline, so only REPO-002 goes away.
+    assert rows == [r for r in snapshot if r["id"] != "REPO-002"]
 
 
 def test_cloudformation_fixture_runs_template_checks_without_synth(
@@ -115,8 +117,9 @@ def test_cloudformation_fixture_runs_template_checks_without_synth(
     source, rows, warnings = _scan(cf_repo)
     assert source == "cloudformation"
     assert warnings == []
-    assert rows and all(r["id"].startswith("CF-") for r in rows)
-    assert {r["file"] for r in rows} == {"stack.yaml"}  # deploy.yml is not a template
+    checks = [r for r in rows if not r["id"].startswith("REPO-")]  # repo-level: no file
+    assert checks and all(r["id"].startswith("CF-") for r in checks)
+    assert {r["file"] for r in checks} == {"stack.yaml"}  # deploy.yml is not a template
     _check_snapshot("cloudformation", rows)
 
 
@@ -124,8 +127,9 @@ def test_terraform_fixture_reports_controls_at_hcl_lines(tf_repo: Path) -> None:
     source, rows, warnings = _scan(tf_repo)
     assert source == "terraform"
     assert warnings == []
-    assert all(r["line"] for r in rows)
-    assert not any(r["file"].startswith("modules/") for r in rows)  # child module not read
+    checks = [r for r in rows if not r["id"].startswith("REPO-")]  # repo-level: no file
+    assert all(r["line"] for r in checks)
+    assert not any(r["file"].startswith("modules/") for r in checks)  # child module not read
     _check_snapshot("terraform", rows)
 
 

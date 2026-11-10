@@ -56,7 +56,7 @@ def test_terraform_repo_reports_cf_findings_at_hcl_lines(tmp_path: Path) -> None
     assert ctx.source == "terraform"
     assert ctx.notes["terraform_modules"] == ["infra"]
     assert warnings == []
-    assert all(f.id.startswith("CF-") for f in findings), {f.id for f in findings}
+    assert all(f.id.startswith(("CF-", "REPO-")) for f in findings), {f.id for f in findings}
     by_id = {f.id: f for f in findings}
     s3 = by_id["CF-S3-001"]
     assert (s3.file, s3.line) == ("infra/main.tf", 5)

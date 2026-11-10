@@ -387,6 +387,16 @@ ${name}ErrorsAlarm:
     LogDestinationType: cloud-watch-logs
     LogGroupName: /vpc/flow-logs
     DeliverLogsPermissionArn: !GetAtt FlowLogRole.Arn""",
+    "CF-PATCH-001": """PatchAssociation:
+  Type: AWS::SSM::Association
+  Properties:
+    Name: AWS-RunPatchBaseline
+    ScheduleExpression: cron(0 3 ? * SUN *)
+    Parameters:
+      Operation: [Install]
+    Targets:
+      - Key: tag:Patch Group
+        Values: [default]""",
     "CF-SUST-003": """$name:
   Type: AWS::EC2::LaunchTemplate
   Properties:
@@ -750,6 +760,17 @@ resource "aws_vpc_endpoint" "dynamodb" {
   traffic_type    = "ALL"
   log_destination = aws_cloudwatch_log_group.flow_logs.arn
   iam_role_arn    = aws_iam_role.flow_logs.arn
+}""",
+    "CF-PATCH-001": """resource "aws_ssm_association" "patch" {
+  name                = "AWS-RunPatchBaseline"
+  schedule_expression = "cron(0 3 ? * SUN *)"
+  parameters = {
+    Operation = "Install"
+  }
+  targets {
+    key    = "tag:Patch Group"
+    values = ["default"]
+  }
 }""",
     "CF-SUST-003": """resource "aws_launch_template" "$tf_name" {
   instance_market_options {

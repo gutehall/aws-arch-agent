@@ -9,6 +9,7 @@ from typing import Literal
 
 from aws_arch_agent.models import IacSource, RepoContext, Finding
 from aws_arch_agent.rules.registry import ALL_RULES
+from aws_arch_agent.rules.repo_practices import REPO_RULES
 from aws_arch_agent.rules.cf_template import (
     run_cf_rules_from_paths,
     run_resource_checks,
@@ -449,6 +450,11 @@ def _collect_findings(
             )
             findings.extend(found)
             warnings.extend(warned)
+        # The repo-level checks (tests, pipeline, environments) read the tree, not the IaC.
+        repo_rules = _filter_rules(REPO_RULES, rules_include, rules_exclude, org=rules_org)
+        found, warned = run_all_rules(repo_path, repo_rules, ["typescript"])
+        findings.extend(found)
+        warnings.extend(warned)
     else:
         rules = _filter_rules(ALL_RULES, rules_include, rules_exclude, org=rules_org)
         with limit_to_files(repo_path, files):

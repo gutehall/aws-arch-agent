@@ -23,6 +23,9 @@ from aws_arch_agent.models import Finding
 from aws_arch_agent.rules.cf_template import CF_COVERS_STATIC
 from aws_arch_agent.tools.llm import LLMResult
 
+# Repo-level rules add an Operational Excellence pillar to any bare repo.
+REPO_IDS = ["REPO-001", "REPO-002", "REPO-003"]
+
 
 def _ok(text: str) -> LLMResult:
     return LLMResult(text, "ok", "ollama", "llama3:8b")
@@ -217,7 +220,7 @@ def test_v2_all_calls_ok_reports_responded(tmp_path: Path, monkeypatch) -> None:
     _stack_repo(tmp_path)
     with patch("aws_arch_agent.agent.v2_graph.LLMClient") as mock_cls:
         mock_cls.return_value.polish.return_value = _ok("[]")
-        _, ctx, _, _ = analyze_v2(tmp_path, use_llm=True, skip_synth=True)
+        _, ctx, _, _ = analyze_v2(tmp_path, use_llm=True, skip_synth=True, rules_exclude=REPO_IDS)
     assert mock_cls.return_value.polish.call_count == 1  # the one pillar with findings
     assert ctx.llm.line == "LLM: ollama/llama3:8b responded"
 

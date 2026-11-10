@@ -5,5 +5,26 @@
     "file": null,
     "line": null,
     "evidence": null
+  },
+  {
+    "id": "REPO-001",
+    "severity": "Medium",
+    "file": null,
+    "line": null,
+    "evidence": "Searched the repo for tests (test/, tests/, __tests__/, spec/, *.test.ts, *.spec.js, test_*.py, *_test.go, *.tftest.hcl, taskcat, cfn-guard tests); found none"
+  },
+  {
+    "id": "REPO-002",
+    "severity": "Medium",
+    "file": null,
+    "line": null,
+    "evidence": "Searched the repo for a CI config (.github/workflows, .gitlab-ci.yml, buildspec.yml, Jenkinsfile, azure-pipelines.yml, bitbucket-pipelines.yml, .circleci, .buildkite) or a CodePipeline in the IaC; found none"
+  },
+  {
+    "id": "REPO-003",
+    "severity": "Low",
+    "file": null,
+    "line": null,
+    "evidence": "Environments named in IaC paths, tfvars and parameter files, CDK stack ids and cdk.json context: none; two or more expected"
   }
 ]

@@ -60,6 +60,7 @@ CF_COVERS_STATIC: dict[str, tuple[str, ...]] = {
     "CF-S3-002": ("SEC-006",),
     "CF-VPC-001": ("SEC-022",),
     "CF-FL-001": ("OPS-002",),
+    "CF-PATCH-001": ("OPS-026",),
     "CF-EC2-001": ("SEC-066",),
     "CF-SNS-001": ("SEC-014",),
     "CF-LAM-003": ("SEC-068",),
@@ -583,6 +584,7 @@ CF_THEMES: dict[str, tuple[str, ...]] = {
     "CF-EIP-001": (_F,), "CF-EKS-001": (_OBS,), "CF-EKS-002": (_NET,), "CF-EKS-003": (_DP,),
     "CF-ENV-001": (_F,), "CF-ENV-002": (_F,), "CF-ENV-003": (_F,), "CF-ENV-004": (_F,),
     "CF-ENV-005": (_F,), "CF-ENV-006": (_F,), "CF-FL-001": (_OBS, _NET),
+    "CF-PATCH-001": (_SB,),
     "CF-GEN-001": (_F, _SUS), "CF-IAM-001": (_ID,), "CF-IAM-002": (_ID,), "CF-IAM-003": (_ID,),
     "CF-IAM-004": (_ID,), "CF-IAM-005": (_ID,), "CF-IAM-006": (_ID,), "CF-IAM-007": (_ID,),
     "CF-IAM-008": (_ID,), "CF-KIN-001": (_DP,), "CF-KMS-001": (_ID, _DP),
@@ -772,6 +774,7 @@ CF_TITLES: dict[str, str] = {
     "CF-ENV-006": "Provisioned DynamoDB capacity in a non-production stack",
     "CF-FH-001": "Firehose delivery stream is not encrypted at rest",
     "CF-FL-001": "VPC has no flow logs in this template",
+    "CF-PATCH-001": "EC2 instances have no patch baseline in this template",
     "CF-FSX-001": "FSx file system has no customer managed key",
     "CF-FSX-002": "FSx file system does not copy tags to backups",
     "CF-FSX-003": "FSx file system has automatic backups off",
@@ -6615,6 +6618,32 @@ def _one_saving_per_instance(resource_findings: List[Finding]) -> None:
             ).strip()
 
 
+_PATCH_DOCUMENTS = frozenset({"AWS-RunPatchBaseline", "AWS-PatchInstanceWithRollback"})
+_PATCH_RECOMMENDATION = (
+    "Patch the instances with Systems Manager Patch Manager: add an AWS::SSM::PatchBaseline, "
+    "or an AWS::SSM::Association (or maintenance window task) that runs AWS-RunPatchBaseline."
+)
+
+
+def _patching_defined(resources: List[Resource]) -> bool:
+    """A patch baseline, or an association or window task that runs a patch document.
+
+    A document name the scan cannot read counts as patching: no finding on a guess.
+    """
+    for r in resources:
+        if r.type == "ssm_patch_baseline":
+            return True
+        key = {"ssm_association": "Name", "ssm_maintenance_window_task": "TaskArn"}.get(r.type or "")
+        if key is None:
+            continue
+        value = r.properties.get(key)
+        if key in r.unresolved or (value is not None and not isinstance(value, str)):
+            return True
+        if isinstance(value, str) and value.rsplit("/", 1)[-1] in _PATCH_DOCUMENTS:
+            return True
+    return False
+
+
 def run_resource_checks(
     resources: List[Resource],
     template_path: Path,
@@ -7403,6 +7432,24 @@ def _run_resource_checks(
             line=_anchor("vpc")[1],
             evidence=f"Template has {vpc_count} VPC(s) and 0 FlowLog(s)" + _anchor("vpc")[2],
             recommendation="Add AWS::EC2::FlowLog for network troubleshooting and security analysis.",
+        ))
+
+    # --- Patching (template-level: EC2 compute but no patch baseline or patch run) ---
+    if count("instance", "autoscaling_group", "launch_template") and not _patching_defined(resources):
+        file, line, label = _anchor("instance", "autoscaling_group", "launch_template")
+        findings.append(Finding(
+            id="CF-PATCH-001",
+            title=CF_TITLES["CF-PATCH-001"],
+            severity="Medium",
+            category="Operational Excellence",
+            file=file,
+            line=line,
+            evidence=(
+                "Template has EC2 instances, Auto Scaling groups or launch templates and no "
+                "SSM patch baseline, AWS-RunPatchBaseline association or maintenance window "
+                "task" + label
+            ),
+            recommendation=_PATCH_RECOMMENDATION,
         ))
 
     # --- Caching (template-level: API/Lambda but no CloudFront/ElastiCache) ---

@@ -59,6 +59,9 @@ TF_TYPE_TO_CANONICAL: dict[str, str] = {
     "aws_cloudtrail": "cloudtrail",
     "aws_kms_key": "kms_key",
     "aws_ssm_parameter": "ssm_parameter",
+    "aws_ssm_patch_baseline": "ssm_patch_baseline",
+    "aws_ssm_association": "ssm_association",
+    "aws_ssm_maintenance_window_task": "ssm_maintenance_window_task",
     "aws_lambda_function": "lambda_function",
     "aws_dynamodb_table": "dynamodb_table",
     "aws_cloudwatch_log_group": "cloudwatch_log_group",
@@ -1769,6 +1772,20 @@ def _ssm_parameter(body: dict) -> dict:
     return props
 
 
+def _ssm_association(body: dict) -> dict:
+    """aws_ssm_association: name is the SSM document it runs."""
+    props: dict = {}
+    _set(props, "Name", _v(body, "name"))
+    return props
+
+
+def _ssm_maintenance_window_task(body: dict) -> dict:
+    """aws_ssm_maintenance_window_task: task_arn is the document or ARN it runs."""
+    props: dict = {}
+    _set(props, "TaskArn", _v(body, "task_arn"))
+    return props
+
+
 def _iam_policy(body: dict) -> dict:
     """Raw `policy` value. resolve_policy_document turns it into a document later,
     once data.aws_iam_policy_document blocks are known."""
@@ -2727,6 +2744,8 @@ _ADAPTERS: dict[str, Callable[[dict], dict]] = {
     "aws_cloudtrail": _cloudtrail,
     "aws_kms_key": _kms_key,
     "aws_ssm_parameter": _ssm_parameter,
+    "aws_ssm_association": _ssm_association,
+    "aws_ssm_maintenance_window_task": _ssm_maintenance_window_task,
     "aws_lambda_function": _lambda,
     "aws_dynamodb_table": _dynamodb,
     "aws_appautoscaling_target": _scalable_target,

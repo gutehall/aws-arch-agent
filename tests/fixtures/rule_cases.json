@@ -733,5 +733,23 @@
     "negative_ts": "runtime: lambda.Runtime.NODEJS_24_X,",
     "positive_py": "runtime=_lambda.Runtime.PYTHON_3_8",
     "positive_ts": "runtime: lambda.Runtime.NODEJS_16_X,"
+  },
+  "OPS-026": {
+    "negative_py": "ec2.Instance(self, 'Web', instance_type=t, machine_image=m, vpc=vpc)\nssm.CfnAssociation(self, 'Patch', name='AWS-RunPatchBaseline')",
+    "negative_ts": "new ec2.Instance(this, 'Web', { instanceType, machineImage, vpc });\nnew ssm.CfnPatchBaseline(this, 'Baseline', { name: 'default' });",
+    "positive_py": "ec2.Instance(self, 'Web', instance_type=t, machine_image=m, vpc=vpc)",
+    "positive_ts": "new autoscaling.AutoScalingGroup(this, 'Asg', { vpc, instanceType, machineImage });"
+  },
+  "REPO-001": {
+    "positive_ts": "new s3.Bucket(this, 'Data');",
+    "positive_py": "s3.Bucket(self, 'Data')"
+  },
+  "REPO-002": {
+    "positive_ts": "new s3.Bucket(this, 'Data');",
+    "positive_py": "s3.Bucket(self, 'Data')"
+  },
+  "REPO-003": {
+    "positive_ts": "new s3.Bucket(this, 'Data');",
+    "positive_py": "s3.Bucket(self, 'Data')"
   }
 }
