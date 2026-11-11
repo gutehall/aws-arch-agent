@@ -1,7 +1,8 @@
 """Repo-level checks: tests, a pipeline, environments (OPS 5), account guardrails (SEC 1),
 incident response (SEC 10), application security (SEC 11), service quotas (REL 1),
 VPC address plan (REL 2), idempotent workers (REL 4), reliability testing (REL 12),
-observability (OPS 4), deployment risk (OPS 6), change management (REL 8).
+observability (OPS 4), deployment risk (OPS 6), change management (REL 8), workload
+monitoring (REL 6).
 
 REPO-006 (the account root user) answers SEC01-BP02 in SEC 1, though it was added with the
 SEC 2 checks.
@@ -325,6 +326,37 @@ checks; these read the repo:
   breaker library in the code (pybreaker, opossum, resilience4j, Polly, Hystrix,
   circuitbreaker, cockatiel). It is repo-wide: one fallback anywhere passes every
   dependency, and which call it guards is not matched.
+
+Workload monitoring (REL 6) runs by default, only when the IaC runs compute (as REPO-018),
+and reads the IaC with the OPS 4 and OPS 8 telemetry model. Metrics and notifications
+(REL06-BP01, BP03) are per-resource checks; reviewing the monitoring scope
+(REL06-BP06) is a process with nothing in IaC to read:
+
+- REPO-045 alarm metrics: a CloudFormation AWS::CloudWatch::Alarm with no MetricName and no
+  Metrics, or no Threshold and no ThresholdMetricId, or a Terraform
+  aws_cloudwatch_metric_alarm with no metric_name and no metric_query block, or no
+  threshold and no threshold_metric_id, fires and is named by file and line. CDK alarms
+  cannot be built without both. With every alarm complete, it fires when the alarms watch
+  only host metrics (CPU, memory, network, disk), as REPO-027 reads them. No alarm at all is
+  REPO-027 and OPS-025.
+- REPO-046 log errors: a CloudWatch Logs metric filter whose filter pattern names an error
+  (error, exception, fatal, critical, panic in any case, a Java-style FooException, or a
+  5xx status), a log anomaly detector, a Logs Insights saved query, or a subscription
+  filter. A metric filter that counts something else does not pass. Log group retention
+  is CF-CW-001.
+- REPO-047 automated response: an EC2 Auto Scaling or Application Auto Scaling policy (CDK
+  scaleOn*, autoScale*, addAutoScaling), an alarm or OK action that is an SSM Automation,
+  OpsItem, Incident Manager or Lambda ARN (or a CDK Lambda, AutoScaling, Ec2, Ssm or
+  SsmIncident alarm action), or an EventBridge rule with a target in a file that names the
+  "CloudWatch Alarm State Change" event.
+- REPO-048 end to end tracing: fires when compute runs and nothing traces it (Lambda
+  active tracing, an X-Ray daemon or ADOT collector container, an EKS ADOT or CloudWatch
+  observability add-on, App Runner trace configuration, the ADOT layer, Application
+  Signals, or an X-Ray, Powertools Tracer or OpenTelemetry SDK in the function code), or
+  when the IaC declares an API Gateway REST API (or a SAM Api event) and no stage turns on
+  X-Ray tracing (TracingEnabled, xray_tracing_enabled, tracingEnabled). HTTP APIs have no
+  X-Ray and are not judged. Both are repo-wide: one traced function passes every compute
+  resource.
 """
 from __future__ import annotations
 
@@ -4159,6 +4191,359 @@ class FallbackMissing(_RepoRule):
         )]
 
 
+# Workload monitoring (REL 6): alarms defined on workload metrics (REPO-045), logs analyzed
+# for errors (REPO-046), alarms that start an automated response (REPO-047), and end to end
+# tracing (REPO-048). It reuses the OPS 4 and OPS 8 telemetry model above.
+
+_CF_ALARM = re.compile(_cf_type(r"CloudWatch::Alarm"))
+_TF_ALARM = re.compile(r"resource\s+\"aws_cloudwatch_metric_alarm\"\s+\"([^\"]+)\"\s*\{")
+_TF_ALARM_METRIC = re.compile(r"\bmetric_name\s*=|\bmetric_query\s*\{")
+_TF_ALARM_THRESHOLD = re.compile(r"\bthreshold\s*=|\bthreshold_metric_id\s*=")
+
+
+def _cf_logical_line(text: str, name: str) -> int | None:
+    match = re.search(rf"[\"']?{re.escape(name)}[\"']?\s*:", text)
+    return _line_of(text, match.start()) if match else None
+
+
+def _cf_incomplete_alarms(rel: str, text: str) -> List[tuple[str, int | None, str]]:
+    try:
+        doc = parse_template_text(Path(rel), text)
+    except Exception:  # noqa: BLE001 - not a readable template
+        return []
+    resources = doc.get("Resources") if isinstance(doc, dict) else None
+    found: List[tuple[str, int | None, str]] = []
+    for name, body in (resources.items() if isinstance(resources, dict) else ()):
+        if not isinstance(body, dict) or body.get("Type") != "AWS::CloudWatch::Alarm":
+            continue
+        props = body.get("Properties")
+        props = props if isinstance(props, dict) else {}
+        missing = []
+        if "MetricName" not in props and "Metrics" not in props:
+            missing.append("metric")
+        if "Threshold" not in props and "ThresholdMetricId" not in props:
+            missing.append("threshold")
+        if missing:
+            found.append((str(name), _cf_logical_line(text, str(name)), " or ".join(missing)))
+    return found
+
+
+def _tf_incomplete_alarms(text: str) -> List[tuple[str, int | None, str]]:
+    found: List[tuple[str, int | None, str]] = []
+    for match in _TF_ALARM.finditer(text):
+        block = _braced(text, match.end() - 1)
+        missing = []
+        if not _TF_ALARM_METRIC.search(block):
+            missing.append("metric")
+        if not _TF_ALARM_THRESHOLD.search(block):
+            missing.append("threshold")
+        if missing:
+            found.append((match.group(1), _line_of(text, match.start()), " or ".join(missing)))
+    return found
+
+
+def incomplete_alarms(repo_path: Path) -> List[tuple[str, str, int | None, str]]:
+    """CloudFormation and Terraform alarms with no metric or no threshold:
+    (name, file, line, what is missing). CDK alarms need both to be built."""
+    found: List[tuple[str, str, int | None, str]] = []
+    for rel, text in iac_texts(repo_path):
+        alarms = _tf_incomplete_alarms(text)
+        if _CF_ALARM.search(text):
+            alarms += _cf_incomplete_alarms(rel, text)
+        found.extend((name, rel, line, missing) for name, line, missing in alarms)
+    return found
+
+
+class AlarmMetricUndefined(_RepoRule):
+    id = "REPO-045"
+    title = "Alarms are not defined on workload metrics"
+    category = "Reliability"
+    severity = "Medium"
+    themes = ("observability",)
+    recommendation = (
+        "Define each alarm on a named metric with a statistic, a period and a threshold, and "
+        "pick metrics that show whether the workload works: request errors and latency, "
+        "queue depth and age, failed jobs, and the application's own KPIs. CPU and memory "
+        "alone say how busy the hosts are, not whether requests succeed."
+    )
+
+    def run(self, repo_path: Path, language: str = "typescript") -> List[Finding]:
+        compute = _in_iac(repo_path, _COMPUTE)
+        if not compute:
+            return []
+        incomplete = incomplete_alarms(repo_path)
+        if incomplete:
+            places = [f"{name} at {rel}:{line} (no {missing})" if line else
+                      f"{name} in {rel} (no {missing})"
+                      for name, rel, line, missing in incomplete]
+            return [self._finding(
+                f"Declares CloudWatch alarms without a metric or a threshold: "
+                f"{_listed(places, 4)}",
+                file=incomplete[0][1],
+                line=incomplete[0][2],
+            )]
+        found, files, host = workload_alarms(repo_path)
+        if not files or found or not host:
+            return []
+        return [self._finding(
+            f"Runs {_named(compute)}; every alarm defined (in {_listed(files)}) is on a host "
+            f"metric ({_listed(host, 4)}), and none is defined on a request, error, queue or "
+            "application metric",
+            file=files[0],
+        )]
+
+
+_LOG_ERROR_ANALYSIS = tuple(
+    (kind, pattern) for kind, pattern in _LOG_ANALYSIS
+    if kind in ("Logs Insights saved query", "log anomaly detector", "subscription filter")
+)
+_CF_METRIC_FILTER = re.compile(_cf_type(r"Logs::MetricFilter"))
+_TF_METRIC_FILTER = re.compile(
+    r"resource\s+\"aws_cloudwatch_log_metric_filter\"\s+\"[^\"]+\"\s*\{"
+)
+_TF_PATTERN = re.compile(r"(?m)^\s*pattern\s*=\s*(.*)$")
+_CDK_METRIC_FILTER = re.compile(
+    r"\b(?:logs\.)?(?:Cfn)?MetricFilter\(|\.add_?[Mm]etric_?[Ff]ilter\("
+)
+_CDK_FILTER_PATTERN = re.compile(r"\bFilterPattern\.\w+\(")
+_CDK_PATTERN_STRING = re.compile(r"\bfilter_?[pP]attern\s*[:=]\s*(['\"`])(.*?)\1")
+# An error in a filter pattern: ERROR, Exception, FATAL, a 5xx status.
+_ERROR_TERM = re.compile(
+    r"(?i:(?<![\w-])(?:errors?|exceptions?|fatal|critical|panic)(?![\w-]))"
+    r"|[a-z]Exception\b|(?<![\w.])5(?:\d\d|xx|XX|\*)(?!\d)"
+)
+
+
+def _cf_error_filter(rel: str, text: str) -> bool:
+    try:
+        doc = parse_template_text(Path(rel), text)
+    except Exception:  # noqa: BLE001 - not a readable template
+        return False
+    resources = doc.get("Resources") if isinstance(doc, dict) else None
+    for body in (resources.values() if isinstance(resources, dict) else ()):
+        if not isinstance(body, dict) or body.get("Type") != "AWS::Logs::MetricFilter":
+            continue
+        props = body.get("Properties")
+        pattern = props.get("FilterPattern") if isinstance(props, dict) else None
+        if _ERROR_TERM.search(json.dumps(pattern, default=str)):
+            return True
+    return False
+
+
+def _error_filter(rel: str, text: str) -> bool:
+    """The text holds a CloudWatch Logs metric filter whose pattern names an error."""
+    if _CF_METRIC_FILTER.search(text) and _cf_error_filter(rel, text):
+        return True
+    for match in _TF_METRIC_FILTER.finditer(text):
+        for pattern in _TF_PATTERN.finditer(_braced(text, match.end() - 1)):
+            if _ERROR_TERM.search(pattern.group(1)):
+                return True
+    if not _CDK_METRIC_FILTER.search(text):
+        return False
+    for match in _CDK_FILTER_PATTERN.finditer(text):
+        if _ERROR_TERM.search(_braced(text, match.end() - 1, "(", ")")):
+            return True
+    return any(_ERROR_TERM.search(m.group(2)) for m in _CDK_PATTERN_STRING.finditer(text))
+
+
+def error_log_analysis(repo_path: Path) -> dict[str, str]:
+    """Error metric filters, saved queries, log anomaly detectors and subscription filters:
+    kind -> first file."""
+    found = _in_iac(repo_path, _LOG_ERROR_ANALYSIS)
+    for rel, text in iac_texts(repo_path):
+        if _error_filter(rel, text):
+            found.setdefault("metric filter on errors", rel)
+            break
+    return found
+
+
+class LogErrorAnalysisMissing(_RepoRule):
+    id = "REPO-046"
+    title = "Logs are not analyzed for errors"
+    category = "Reliability"
+    severity = "Low"
+    themes = ("observability",)
+    recommendation = (
+        "Read the logs for failures, not only keep them: add a CloudWatch Logs metric filter "
+        "that counts error lines (ERROR, exceptions, 5xx status codes) and alarm on it, turn "
+        "on a log anomaly detector, save Logs Insights queries for errors, or stream the logs "
+        "to an analysis service with a subscription filter. Set a retention on each log "
+        "group too (CF-CW-001)."
+    )
+
+    def run(self, repo_path: Path, language: str = "typescript") -> List[Finding]:
+        compute = _in_iac(repo_path, _COMPUTE)
+        if not compute or error_log_analysis(repo_path):
+            return []
+        filters = _in_iac(repo_path, _LOG_ANALYSIS[:1])
+        seen = (f"the metric filters in {_listed(list(filters.values()))} count no error"
+                if filters else "found none")
+        return [self._finding(
+            f"Runs {_named(compute)}; searched the IaC for a CloudWatch Logs metric filter on "
+            "errors, a log anomaly detector, a Logs Insights saved query and a subscription "
+            f"filter; {seen}",
+            file=next(iter(compute.values())),
+        )]
+
+
+_AUTOMATED_RESPONSE = _kinds(
+    ("scaling policy",
+     _cf_type(r"ApplicationAutoScaling::ScalingPolicy|AutoScaling::ScalingPolicy")
+     + r"|resource\s+\"aws_(?:appautoscaling|autoscaling)_policy\""
+     r"|\.(?:scaleOn\w+|scale_on_\w+|autoScale\w+|auto_scale_\w+|scaleToTrack\w*"
+     r"|scale_to_track\w*|add_?[aA]uto_?[sS]caling)\("
+     r"|\b(?:Cfn)?(?:Step|TargetTracking)?ScalingPolicy\("),
+    ("alarm action that runs automation",
+     r"[\"']?(?:AlarmActions|OKActions|alarm_actions|ok_actions)[\"']?\s*[:=]\s*[^\]]{0,300}?"
+     r"(?:arn:[^:\s\"']+:(?:automate|lambda|ssm|ssm-incidents):"
+     r"|aws_lambda_(?:function|alias)\.|aws_ssmincidents_response_plan\.)"
+     r"|\.add_?(?:[aA]larm|[oO]k)_?[aA]ction\(\s*(?:new\s+)?(?:\w+\.)*"
+     r"(?:Lambda|AutoScaling|Ec2|Ssm|SsmIncident)Action\("),
+)
+_EVENT_RULE_DECL = re.compile(
+    _cf_type(r"Events::Rule") + r"|resource\s+\"aws_cloudwatch_event_rule\""
+    r"|\bevents\.(?:Cfn)?Rule\(|\bnew\s+Rule\("
+)
+_ALARM_STATE_EVENT = re.compile(r"\\?[\"']CloudWatch Alarm State Change\\?[\"']")
+_EVENT_TARGET = re.compile(
+    r"[\"']?Targets[\"']?\s*:|resource\s+\"aws_cloudwatch_event_target\""
+    r"|\btargets\s*[:=]\s*\[|\.add_?[tT]arget\("
+)
+
+
+def automated_responses(repo_path: Path) -> dict[str, str]:
+    """Scaling policies, alarm actions that run automation, and EventBridge rules on alarm
+    state changes with a target: kind -> first file."""
+    found = _in_iac(repo_path, _AUTOMATED_RESPONSE)
+    for rel, text in iac_texts(repo_path):
+        if (_EVENT_RULE_DECL.search(text) and _ALARM_STATE_EVENT.search(text)
+                and _EVENT_TARGET.search(text)):
+            found.setdefault("EventBridge rule on alarm state", rel)
+            break
+    return found
+
+
+class AlarmResponseMissing(_RepoRule):
+    id = "REPO-047"
+    title = "Alarms trigger no automated response"
+    category = "Reliability"
+    severity = "Low"
+    themes = ("observability",)
+    recommendation = (
+        "Let monitoring act, not only notify: scale on load with a target tracking or step "
+        "scaling policy, point alarm actions at an SSM Automation runbook, an OpsItem, an "
+        "Incident Manager response plan or a Lambda function, or route alarm state changes "
+        "through an EventBridge rule to automation."
+    )
+
+    def run(self, repo_path: Path, language: str = "typescript") -> List[Finding]:
+        compute = _in_iac(repo_path, _COMPUTE)
+        if not compute or automated_responses(repo_path):
+            return []
+        return [self._finding(
+            f"Runs {_named(compute)}; searched the IaC for an Auto Scaling or Application "
+            "Auto Scaling policy, an alarm action that runs automation or a Lambda function, "
+            "and an EventBridge rule on alarm state changes; found none",
+            file=next(iter(compute.values())),
+        )]
+
+
+_COMPUTE_TRACING = _kinds(
+    ("Lambda active tracing",
+     r"[\"']?Tracing[\"']?\s*:\s*[\"']?Active\b"
+     r"|[\"']?TracingConfig[\"']?\s*:\s*\{?\s*[\"']?Mode[\"']?\s*:\s*[\"']?Active\b"
+     r"|\btracing_config\s*\{[^}]*\bmode\s*=\s*\"Active\""
+     r"|\btracing\s*[:=]\s*(?:\w+\.)*Tracing\.ACTIVE\b"),
+    ("X-Ray daemon or ADOT collector container",
+     r"\baws-xray-daemon\b|\baws-otel-collector\b|\bAwsOtelCollector\w*"),
+    ("EKS observability add-on",
+     r"[\"']?(?:AddonName|addon_name|addonName)[\"']?\s*[:=]\s*[\"']?"
+     r"(?:adot|amazon-cloudwatch-observability)\b"),
+    ("App Runner tracing",
+     r"[\"']?(?:TraceConfiguration|trace_configuration|traceConfiguration)[\"']?\s*[:={]"),
+)
+_REST_API = re.compile(
+    _cf_type(r"ApiGateway::RestApi|Serverless::Api")
+    + r"|resource\s+\"aws_api_gateway_rest_api\""
+    r"|\b(?:apigateway|apigw)\.(?:Cfn)?(?:RestApi|LambdaRestApi|SpecRestApi|StepFunctionsRestApi)\("
+    r"|(?<![\w.])(?:LambdaRestApi|RestApi|SpecRestApi|StepFunctionsRestApi|CfnRestApi)\("
+)
+# A SAM function event behind an implicit REST API (HttpApi has no X-Ray).
+_SAM_REST_EVENT = re.compile(r"(?m)[\"']?Type[\"']?\s*:\s*[\"']?Api[\"']?\s*(?:,|$)")
+_STAGE_TRACING = re.compile(
+    r"[\"']?TracingEnabled[\"']?\s*:\s*[\"']?(?:true|True)\b"
+    r"|\bxray_tracing_enabled\s*=\s*true\b"
+    r"|\btracing_?[eE]nabled\s*[:=]\s*(?:true|True)\b"
+)
+
+
+def compute_tracing(repo_path: Path) -> dict[str, str]:
+    """Tracing on compute: active tracing, an X-Ray or ADOT collector, the ADOT layer,
+    Application Signals, or a tracing SDK in the function code: kind -> first file."""
+    found = _in_iac(repo_path, _COMPUTE_TRACING + _IAC_TRACING)
+    for rel, name, text in _function_code(repo_path):
+        if name in _DEPENDENCY_MANIFESTS or name.endswith(".txt"):
+            if _OTEL_PACKAGES.search(text):
+                found.setdefault("OpenTelemetry SDK", rel)
+            continue
+        for kind, pattern in _SDK_TRACING_CODE:
+            if pattern.search(text):
+                found.setdefault(kind, rel)
+        if _PY_POWERTOOLS_TRACER.search(text):
+            found.setdefault("Powertools Tracer", rel)
+    return found
+
+
+def untraced_rest_apis(repo_path: Path) -> List[str]:
+    """Files with an API Gateway REST API when no stage in the repo turns on X-Ray."""
+    files: List[str] = []
+    traced = False
+    for rel, text in iac_texts(repo_path):
+        if _STAGE_TRACING.search(text):
+            traced = True
+        if _REST_API.search(text) or (
+            _SAM_TRANSFORM.search(text) and _SAM_REST_EVENT.search(text)
+        ):
+            files.append(rel)
+    return [] if traced else files
+
+
+class EndToEndTracingMissing(_RepoRule):
+    id = "REPO-048"
+    title = "Requests are not traced end to end"
+    category = "Reliability"
+    severity = "Low"
+    themes = ("observability",)
+    recommendation = (
+        "Trace each request through every hop: turn on X-Ray active tracing on the Lambda "
+        "functions, run the X-Ray daemon or the AWS Distro for OpenTelemetry collector next "
+        "to containers (or use CloudWatch Application Signals), instrument the code with "
+        "the X-Ray or OpenTelemetry SDK, and enable X-Ray tracing on API Gateway REST API "
+        "stages so the trace starts at the edge."
+    )
+
+    def run(self, repo_path: Path, language: str = "typescript") -> List[Finding]:
+        gaps: List[str] = []
+        file: str | None = None
+        compute = _in_iac(repo_path, _COMPUTE)
+        if compute and not compute_tracing(repo_path):
+            gaps.append(
+                f"runs {_named(compute)} and no compute is traced (searched for Lambda active "
+                "tracing, an X-Ray daemon or ADOT collector, the ADOT layer, Application "
+                "Signals, and an X-Ray or OpenTelemetry SDK in the function code)"
+            )
+            file = next(iter(compute.values()))
+        apis = untraced_rest_apis(repo_path)
+        if apis:
+            gaps.append(f"the API Gateway REST API in {_listed(apis)} has no stage with X-Ray "
+                        "tracing on")
+            file = file or apis[0]
+        if not gaps:
+            return []
+        text = "; ".join(gaps)
+        return [self._finding(text[0].upper() + text[1:], file=file)]
+
+
 REPO_RULES: List[Rule] = [
     RepoTestsMissing(), RepoPipelineMissing(), SingleEnvironment(),
     OrgGuardrailsMissing(), AccountBaselineMissing(), RootUserUnchecked(),
@@ -4178,4 +4563,6 @@ REPO_RULES: List[Rule] = [
     DataClassificationMissing(), SensitiveDataWithoutCmk(),
     EncryptionGuardrailMissing(),
     LocalStateOnCompute(), EmergencyLeverMissing(), FallbackMissing(),
+    AlarmMetricUndefined(), LogErrorAnalysisMissing(), AlarmResponseMissing(),
+    EndToEndTracingMissing(),
 ]

@@ -15,7 +15,7 @@ Which CDK rules have a template check, and which AWS Foundational Security Best 
 
 ## CDK rules
 
-223 rules: 132 covered, 7 partial, 10 account, 5 cdk-only, 25 advice, 44 repo.
+227 rules: 132 covered, 7 partial, 10 account, 5 cdk-only, 25 advice, 48 repo.
 
 | Rule | Title | Template check | Status | Note |
 | -- | -- | -- | -- | -- |
@@ -242,6 +242,10 @@ Which CDK rules have a template check, and which AWS Foundational Security Best 
 | REPO-042 | Compute keeps state on local disk |  | `repo` | When the IaC runs compute, looks for an attached EBS data volume, a non-root block device, an ECS host volume, an autoprovisioned shared Docker volume or a Kubernetes hostPath. |
 | REPO-043 | No emergency lever to shed load |  | `repo` | When the IaC runs compute, looks for Lambda reserved concurrency, an API Gateway throttle or usage plan, a WAF rate-based rule, AppConfig feature flags, or a feature flag SDK in the function code. |
 | REPO-044 | No fallback when a dependency fails |  | `repo` | When compute has a dependency or an edge, looks for an SQS buffer, an on-failure destination, a Step Functions catch, origin or DNS failover, a fixed or mock response, or a circuit breaker library. |
+| REPO-045 | Alarms are not defined on workload metrics |  | `repo` | When the IaC runs compute, looks for CloudFormation and Terraform alarms with no metric or no threshold, then for alarms that watch only host metrics. |
+| REPO-046 | Logs are not analyzed for errors |  | `repo` | When the IaC runs compute, looks for a CloudWatch Logs metric filter on errors, a log anomaly detector, a Logs Insights saved query or a subscription filter. |
+| REPO-047 | Alarms trigger no automated response |  | `repo` | When the IaC runs compute, looks for an Auto Scaling or Application Auto Scaling policy, an alarm action that runs automation or a Lambda function, or an EventBridge rule on alarm state changes. |
+| REPO-048 | Requests are not traced end to end |  | `repo` | When the IaC runs compute, looks for Lambda active tracing, an X-Ray or ADOT collector, Application Signals or a tracing SDK in the code, and for X-Ray tracing on API Gateway REST API stages. |
 
 ## FSBP controls
 

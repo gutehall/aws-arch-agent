@@ -1035,5 +1035,29 @@
     "negative_py": "fn = _lambda.Function(self, 'Fn', on_failure=destinations.SqsDestination(dlq), **props)\ntable = dynamodb.Table(self, 'Orders', **table_props)",
     "positive_ts": "const fn = new lambda.Function(this, 'Fn', props);\nconst table = new dynamodb.Table(this, 'Orders', props);",
     "positive_py": "fn = _lambda.Function(self, 'Fn', **props)\ntable = dynamodb.Table(self, 'Orders', **table_props)"
+  },
+  "REPO-045": {
+    "negative_ts": "new lambda.Function(this, 'Fn', { runtime, handler: 'index.handler', code });\nnew cloudwatch.Alarm(this, 'Errors', { metric: fn.metricErrors(), threshold: 1, evaluationPeriods: 1 });\nnew cloudwatch.Alarm(this, 'Orders', { metric: new cloudwatch.Metric({ namespace: 'Shop', metricName: 'OrdersPlaced' }), threshold: 1, evaluationPeriods: 1 });",
+    "negative_py": "lambda_.Function(self, 'Fn', runtime=runtime, handler='index.handler', code=code)\nqueue.metric_approximate_age_of_oldest_message().create_alarm(self, 'Age', threshold=300, evaluation_periods=1)",
+    "positive_ts": "new lambda.Function(this, 'Fn', { runtime, handler: 'index.handler', code });\nnew cloudwatch.Alarm(this, 'Cpu', { metric: new cloudwatch.Metric({ namespace: 'AWS/EC2', metricName: 'CPUUtilization' }), threshold: 80, evaluationPeriods: 3 });",
+    "positive_py": "lambda_.Function(self, 'Fn', runtime=runtime, handler='index.handler', code=code)\ncloudwatch.Alarm(self, 'Cpu', metric=cloudwatch.Metric(namespace='AWS/EC2', metric_name='CPUUtilization'), threshold=80, evaluation_periods=3)"
+  },
+  "REPO-046": {
+    "negative_ts": "const fn = new lambda.Function(this, 'Fn', props);\nnew logs.MetricFilter(this, 'Errors', { logGroup, metricNamespace: 'App', metricName: 'Errors', filterPattern: logs.FilterPattern.anyTerm('ERROR', 'Exception') });",
+    "negative_py": "fn = _lambda.Function(self, 'Fn', **props)\nlogs.MetricFilter(self, 'Errors', log_group=group, metric_namespace='App', metric_name='Errors', filter_pattern=logs.FilterPattern.literal('?ERROR ?FATAL'))",
+    "positive_ts": "const fn = new lambda.Function(this, 'Fn', props);\nnew logs.MetricFilter(this, 'Orders', { logGroup, metricNamespace: 'App', metricName: 'Orders', filterPattern: logs.FilterPattern.literal('OrderPlaced') });",
+    "positive_py": "fn = _lambda.Function(self, 'Fn', **props)"
+  },
+  "REPO-047": {
+    "negative_ts": "const svc = new ecs.FargateService(this, 'Svc', props);\nsvc.autoScaleTaskCount({ maxCapacity: 4 }).scaleOnCpuUtilization('Cpu', { targetUtilizationPercent: 60 });",
+    "negative_py": "fn = _lambda.Function(self, 'Fn', **props)\nalarm.add_alarm_action(cw_actions.LambdaAction(responder))",
+    "positive_ts": "const fn = new lambda.Function(this, 'Fn', props);\nalarm.addAlarmAction(new actions.SnsAction(topic));",
+    "positive_py": "fn = _lambda.Function(self, 'Fn', **props)"
+  },
+  "REPO-048": {
+    "negative_ts": "const fn = new lambda.Function(this, 'Fn', { ...props, tracing: lambda.Tracing.ACTIVE });",
+    "negative_py": "fn = _lambda.Function(self, 'Fn', tracing=_lambda.Tracing.ACTIVE, **props)",
+    "positive_ts": "const fn = new lambda.Function(this, 'Fn', props);",
+    "positive_py": "fn = _lambda.Function(self, 'Fn', **props)"
   }
 }

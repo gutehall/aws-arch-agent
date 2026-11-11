@@ -250,5 +250,19 @@
     "file": "stack.yaml",
     "line": null,
     "evidence": "Compute depends on RDS (stack.yaml), SQS (stack.yaml); searched the IaC for an SQS buffer, an on-failure destination, a Step Functions catch, origin or DNS failover and a fixed or mock response, and the function code for a circuit breaker; found none"
+  },
+  {
+    "id": "REPO-046",
+    "severity": "Low",
+    "file": "stack.yaml",
+    "line": null,
+    "evidence": "Runs Lambda (stack.yaml); searched the IaC for a CloudWatch Logs metric filter on errors, a log anomaly detector, a Logs Insights saved query and a subscription filter; found none"
+  },
+  {
+    "id": "REPO-047",
+    "severity": "Low",
+    "file": "stack.yaml",
+    "line": null,
+    "evidence": "Runs Lambda (stack.yaml); searched the IaC for an Auto Scaling or Application Auto Scaling policy, an alarm action that runs automation or a Lambda function, and an EventBridge rule on alarm state changes; found none"
   }
 ]
