@@ -1011,5 +1011,11 @@
     "negative_py": "data = s3.Bucket(self, 'Data', encryption=s3.BucketEncryption.KMS, encryption_key=key)\nTags.of(data).add('DataClassification', 'confidential')",
     "positive_ts": "const data = new s3.Bucket(this, 'Data');\nTags.of(data).add('DataClassification', 'confidential');",
     "positive_py": "data = s3.Bucket(self, 'Data')\nTags.of(data).add('DataClassification', 'restricted')"
+  },
+  "REPO-041": {
+    "negative_ts": "const data = new s3.Bucket(this, 'Data');\nAspects.of(app).add(new AwsSolutionsChecks());",
+    "negative_py": "data = s3.Bucket(self, 'Data')\nconfig.ManagedRule(self, 'Sse', identifier=config.ManagedRuleIdentifiers.S3_BUCKET_SERVER_SIDE_ENCRYPTION_ENABLED)",
+    "positive_ts": "const data = new s3.Bucket(this, 'Data');",
+    "positive_py": "data = s3.Bucket(self, 'Data')"
   }
 }

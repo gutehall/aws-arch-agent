@@ -15,7 +15,7 @@ Which CDK rules have a template check, and which AWS Foundational Security Best 
 
 ## CDK rules
 
-219 rules: 132 covered, 7 partial, 10 account, 5 cdk-only, 25 advice, 40 repo.
+220 rules: 132 covered, 7 partial, 10 account, 5 cdk-only, 25 advice, 41 repo.
 
 | Rule | Title | Template check | Status | Note |
 | -- | -- | -- | -- | -- |
@@ -238,6 +238,7 @@ Which CDK rules have a template check, and which AWS Foundational Security Best 
 | REPO-038 | A container image is referenced by a mutable tag |  | `repo` | Looks for container images in task definitions, Lambda image functions and CDK container images referenced with no tag or :latest, and no digest. |
 | REPO-039 | Data stores carry no classification tag |  | `repo` | Looks in each IaC file that declares a data store for a classification tag key, or for an app-wide CDK tag or Terraform default_tags holding one. |
 | REPO-040 | Data classified as sensitive has no customer managed key |  | `repo` | Looks in each IaC file whose data stores are tagged confidential, restricted, secret, sensitive, PII, PHI or PCI for a customer managed KMS key. |
+| REPO-041 | Nothing stops unencrypted storage from being created |  | `repo` | When the IaC declares a data store or EBS volume, looks for EBS encryption by default, a deny on an encryption condition key, an AWS Config encryption rule, CDK Nag, or checkov, tfsec, trivy config, cfn-guard or KICS in a build. |
 
 ## FSBP controls
 

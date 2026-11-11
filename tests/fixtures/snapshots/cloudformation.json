@@ -229,5 +229,12 @@
     "file": null,
     "line": null,
     "evidence": "Declares S3 bucket in stack.yaml with no classification tag (DataClassification, Classification, Confidentiality or Sensitivity) on the store or the app"
+  },
+  {
+    "id": "REPO-041",
+    "severity": "Low",
+    "file": null,
+    "line": null,
+    "evidence": "Declares S3 bucket (stack.yaml), RDS database (stack.yaml); searched the IaC for EBS encryption by default, a deny on an encryption condition key, an AWS Config encryption rule and CDK Nag, and the builds for checkov, tfsec, trivy config, cfn-guard and KICS; found none"
   }
 ]

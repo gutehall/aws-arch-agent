@@ -1872,6 +1872,12 @@ TOPICS: dict[str, tuple[str, str, str, str]] = {
         "Well-Architected SEC07-BP02: Apply data protection controls based on data sensitivity",
         "/wellarchitected/latest/security-pillar/sec_data_classification_define_protection.html",
     ),
+    "encryption_guardrail": (
+        "EC2: Amazon EBS encryption by default",
+        "/ebs/latest/userguide/encryption-by-default.html",
+        "Well-Architected SEC08-BP03: Automate data at rest protection",
+        "/wellarchitected/latest/security-pillar/sec_protect_data_rest_automate_protection.html",
+    ),
     "org_guardrails": (
         "Service control policies (SCPs)",
         "/organizations/latest/userguide/orgs_manage_policies_scps.html",
@@ -2110,6 +2116,7 @@ RULE_TOPICS: dict[str, str] = {
     "REPO-038": "pinned_images",
     "REPO-039": "data_classification",
     "REPO-040": "sensitive_data_keys",
+    "REPO-041": "encryption_guardrail",
     "PERF-001": "graviton_ec2",
     "PERF-002": "caching",
     "PERF-003": "ddb_capacity",

@@ -288,6 +288,18 @@ Data classification (SEC 7):
   encryptionKey, encryption_key, a CDK BucketEncryption.KMS or TableEncryption
   .CUSTOMER_MANAGED). The per-resource encryption and public access checks still apply to
   every store; this adds the stricter key for the sensitive ones.
+
+Data at rest (SEC 8):
+
+- REPO-041 preventive encryption control: when the IaC declares a data store (as REPO-039)
+  or an EBS volume, something must stop an unencrypted one from being created, not only
+  report it later: EBS encryption by default (aws_ebs_encryption_by_default, the
+  EnableEbsEncryptionByDefault call), a service control policy or bucket policy that denies
+  on an encryption condition key (s3:x-amz-server-side-encryption, ec2:Encrypted,
+  rds:StorageEncrypted, elasticfilesystem:Encrypted), an AWS Config encryption rule
+  (ENCRYPTED_VOLUMES, RDS_STORAGE_ENCRYPTED, S3_BUCKET_SERVER_SIDE_ENCRYPTION_ENABLED,
+  EFS_ENCRYPTED_CHECK, DYNAMODB_TABLE_ENCRYPTED_KMS and the like), CDK Nag aspects, or a
+  policy-as-code scan in a build (checkov, tfsec, trivy config, cfn-guard validate, KICS).
 """
 from __future__ import annotations
 
@@ -3865,6 +3877,73 @@ class SensitiveDataWithoutCmk(_RepoRule):
         )]
 
 
+# SEC 8: a control that keeps unencrypted storage from being created (REPO-041).
+
+_EBS_VOLUME = re.compile(
+    _cf_type(r"EC2::Volume") + r"|resource\s+\"aws_ebs_volume\"|\bec2\.(?:Cfn)?Volume\("
+)
+_ENCRYPTION_GUARDS = _kinds(
+    ("EBS encryption by default",
+     r"resource\s+\"aws_ebs_encryption_by_default\"|\bEnableEbsEncryptionByDefault\b"
+     r"|\benable_ebs_encryption_by_default\b"),
+    ("deny on an encryption condition key",
+     r"[\"']?(?:s3:x-amz-server-side-encryption(?:-aws-kms-key-id)?|ec2:Encrypted"
+     r"|rds:StorageEncrypted|elasticfilesystem:Encrypted|dynamodb:\w*Encrypt\w*)[\"']?\s*[:=,]"),
+    ("AWS Config encryption rule",
+     r"\b(?:ENCRYPTED_VOLUMES|EC2_EBS_ENCRYPTION_BY_DEFAULT|RDS_STORAGE_ENCRYPTED"
+     r"|RDS_SNAPSHOT_ENCRYPTED|S3_BUCKET_SERVER_SIDE_ENCRYPTION_ENABLED"
+     r"|S3_DEFAULT_ENCRYPTION_KMS|EFS_ENCRYPTED_CHECK|DYNAMODB_TABLE_ENCRYPTED_KMS"
+     r"|DYNAMODB_TABLE_ENCRYPTION_ENABLED|ELASTICSEARCH_ENCRYPTED_AT_REST"
+     r"|OPENSEARCH_ENCRYPTED_AT_REST|REDSHIFT_CLUSTER_KMS_ENABLED"
+     r"|ELASTICACHE_REPL_GRP_ENCRYPTED_AT_REST|KINESIS_STREAM_ENCRYPTED)\b"
+     r"|\bManagedRuleIdentifiers\.(?:EC2_EBS_ENCRYPTION_BY_DEFAULT|EBS_ENCRYPTED_VOLUMES"
+     r"|RDS_STORAGE_ENCRYPTED|S3_BUCKET_SERVER_SIDE_ENCRYPTION_ENABLED|EFS_ENCRYPTED_CHECK"
+     r"|DYNAMODB_TABLE_ENCRYPTED_KMS)\b"),
+    ("CDK Nag", r"\bAspects\.of\([^)]*\)\.add\(\s*new\s+\w*Checks\("
+     r"|\bAspects\.of\([^)]*\)\.add\(\s*\w*Checks\(|from\s+['\"]cdk-nag['\"]|\bimport\s+cdk_nag\b"),
+)
+_POLICY_SCANNERS = _kinds(
+    ("checkov", rf"{_CMD_START}checkov\b|\bbridgecrewio/checkov-action\b"),
+    ("tfsec", rf"{_CMD_START}tfsec\b|\baquasecurity/tfsec-action\b"),
+    ("trivy config", r"\btrivy\s+(?:config|conf)\b|\bscan-type:\s*['\"]?config\b"),
+    ("cfn-guard", r"\bcfn-guard\s+validate\b"),
+    ("KICS", rf"{_CMD_START}kics\s+scan\b|\bcheckmarx/kics-github-action\b"),
+)
+
+
+def encryption_guards(repo_path: Path) -> dict[str, str]:
+    """Controls that stop unencrypted storage being created: kind -> first place."""
+    found = _in_iac(repo_path, _ENCRYPTION_GUARDS)
+    _builds, scanners = _tools_in_builds(repo_path, _POLICY_SCANNERS)
+    for name, where in scanners.items():
+        found.setdefault(name, where)
+    return found
+
+
+class EncryptionGuardrailMissing(_RepoRule):
+    id = "REPO-041"
+    title = "Nothing stops unencrypted storage from being created"
+    category = "Security"
+    severity = "Low"
+    themes = ("data-protection",)
+    recommendation = (
+        "Make encryption at rest the only way: turn on EBS encryption by default, deny "
+        "unencrypted creates with an SCP or bucket policy on the encryption condition keys, "
+        "and fail the build when IaC declares unencrypted storage (CDK Nag, checkov, tfsec "
+        "or cfn-guard). Back it with AWS Config encryption rules and auto-remediation."
+    )
+
+    def run(self, repo_path: Path, language: str = "typescript") -> List[Finding]:
+        stores = _in_iac(repo_path, (*_DATA_STORES, ("EBS volume", _EBS_VOLUME)))
+        if not stores or encryption_guards(repo_path):
+            return []
+        return [self._finding(
+            f"Declares {_named(stores)}; searched the IaC for EBS encryption by default, a "
+            "deny on an encryption condition key, an AWS Config encryption rule and CDK Nag, "
+            "and the builds for checkov, tfsec, trivy config, cfn-guard and KICS; found none",
+        )]
+
+
 REPO_RULES: List[Rule] = [
     RepoTestsMissing(), RepoPipelineMissing(), SingleEnvironment(),
     OrgGuardrailsMissing(), AccountBaselineMissing(), RootUserUnchecked(),
@@ -3882,4 +3961,5 @@ REPO_RULES: List[Rule] = [
     EgressInspectionMissing(), AutomatedNetworkProtectionMissing(), PublicSubnetWorkload(),
     CodeSigningMissing(), MutableImageTag(),
     DataClassificationMissing(), SensitiveDataWithoutCmk(),
+    EncryptionGuardrailMissing(),
 ]
