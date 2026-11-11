@@ -4,7 +4,7 @@ This document provides a comprehensive list of all rules checked by AWS Arch Age
 
 ## Overview
 
-AWS Arch Agent checks **205 static analysis rules** and **281 template checks** across all 6 AWS Well-Architected Framework pillars. 139 of the 205 CDK rules (68%) have a template check, so they also run for CloudFormation, Terraform and synthesised CDK. [COVERAGE.md](COVERAGE.md) gives the reason for each of the others.
+AWS Arch Agent checks **209 static analysis rules** and **281 template checks** across all 6 AWS Well-Architected Framework pillars. 139 of the 209 CDK rules (67%) have a template check, so they also run for CloudFormation, Terraform and synthesised CDK. [COVERAGE.md](COVERAGE.md) gives the reason for each of the others.
 
 ## Static Analysis Rules (V1 & V2 Modes)
 
@@ -180,7 +180,7 @@ These rules run on your CDK TypeScript/Python code and execute in both V1 and V2
 - REPO-025: Infrastructure is not deployed by automation
 - REPO-026: Deployments run no resiliency test
 
-### Operational Excellence (34 rules)
+### Operational Excellence (38 rules)
 
 **Logging:**
 - OPS-001: CloudTrail not enabled
@@ -232,6 +232,12 @@ These rules run on your CDK TypeScript/Python code and execute in both V1 and V2
 **Deployment risk (repo-level, OPS 6):**
 - REPO-021: A deploy runs with no test gate before it
 - REPO-022: Deployments of the workload's compute have no automated rollback
+
+**Telemetry analysis (repo-level, OPS 8):**
+- REPO-027: Alarms watch only infrastructure metrics, not the workload's
+- REPO-028: Workload logs are not analyzed
+- REPO-029: Workload traces are not analyzed
+- REPO-030: Dashboards show no workload metric
 
 ### Performance Efficiency (19 rules)
 
@@ -1002,6 +1008,10 @@ Every rule has one or more themes, which cut across pillars: `finops`, `security
 | REPO-024 | resilience |
 | REPO-025 | resilience |
 | REPO-026 | resilience |
+| REPO-027 | observability |
+| REPO-028 | observability |
+| REPO-029 | observability |
+| REPO-030 | observability |
 | SEC-001 | identity |
 | SEC-002 | identity |
 | SEC-003 | network-exposure |

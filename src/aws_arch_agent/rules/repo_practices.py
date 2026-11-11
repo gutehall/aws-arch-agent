@@ -194,6 +194,26 @@ Change management (REL 8) runs by default and reads the builds REPO-009 reads an
   scripts it runs) starts an AWS FIS experiment or runs a chaos tool (as REPO-016), or the
   IaC has a Step Functions task that starts an FIS experiment. An experiment template that
   no build starts does not count.
+
+Telemetry analysis (OPS 8) runs by default and reads the IaC with the OPS 4 telemetry model:
+
+- REPO-027 workload alarms: when the IaC runs compute (as REPO-018), a CloudWatch alarm on a
+  workload metric: a namespace outside AWS/ (a KPI), an edge latency or 5xx metric, a
+  datastore or queue metric (as REPO-019 and REPO-020), or a CloudWatch anomaly detector or
+  anomaly detection band alarm. Alarms only on host metrics (CPU, memory, network, disk) or
+  no alarm at all fire; the evidence says which.
+- REPO-028 log analysis: when the IaC runs compute, a CloudWatch Logs metric filter, a
+  Contributor Insights rule, a Logs Insights saved query, a log anomaly detector, or a
+  subscription filter that ships the logs to analysis.
+- REPO-029 trace analysis: when the IaC runs compute, an X-Ray group or sampling rule,
+  CloudWatch Application Signals (a service level objective or discovery), or an alarm on an
+  Application Signals or X-Ray metric. Active tracing alone collects traces; it does not
+  analyze them.
+- REPO-030 dashboard content: only when the IaC declares a CloudWatch dashboard. It fires
+  when the dashboards show host metrics (CPU, memory, network, disk) and no dashboard shows a
+  workload metric (a namespace outside AWS/, an edge latency or 5xx metric, a datastore or
+  queue metric, Application Signals or X-Ray). A dashboard whose metrics are not readable in
+  the IaC is not judged. No dashboard at all is OPS-021 and CF-DASH-001.
 """
 from __future__ import annotations
 
@@ -2798,6 +2818,285 @@ class ResiliencyTestMissing(_RepoRule):
         )]
 
 
+# Telemetry analysis (OPS 8): alarms on workload metrics (REPO-027), log analysis (REPO-028),
+# trace analysis (REPO-029), and dashboards that show workload metrics (REPO-030). It reuses
+# the OPS 4 model above: what counts as a KPI, edge and dependency metric is shared.
+_HOST_METRIC = re.compile(
+    r"(?<![\w-])(?:CPUUtilization|MemoryUtilization|CPUCreditBalance|CPUCreditUsage"
+    r"|NetworkIn|NetworkOut|NetworkPacketsIn|NetworkPacketsOut|DiskReadBytes|DiskWriteBytes"
+    r"|DiskReadOps|DiskWriteOps|EBSReadBytes|EBSWriteBytes|EBSReadOps|EBSWriteOps"
+    r"|StatusCheckFailed\w*|mem_used_percent|disk_used_percent|cpu_usage_\w+)(?![\w-])"
+    r"|\.metric_?[Cc]pu_?[Uu]tilization\(|\.metric_?[Mm]emory_?[Uu]tilization\("
+)
+_ANOMALY_DETECTOR = re.compile(
+    _cf_type(r"CloudWatch::AnomalyDetector")
+    + r"|resource\s+\"aws_cloudwatch_anomaly_detector\"|\bCfnAnomalyDetector\("
+)
+# An alarm on an anomaly detection band (a typed alarm must be in the same file).
+_ANOMALY_BAND = re.compile(r"\bANOMALY_DETECTION_BAND\(")
+# Application Signals publishes in the ApplicationSignals namespace, X-Ray group metrics in
+# AWS/X-Ray.
+_TRACE_NAMESPACE = re.compile(r"(?<![\w/])(?:ApplicationSignals|AWS/X-Ray)(?![\w/-])")
+_LOG_ANALYSIS = _kinds(
+    ("CloudWatch Logs metric filter", _cf_type(r"Logs::MetricFilter")
+     + r"|resource\s+\"aws_cloudwatch_log_metric_filter\""
+     r"|\blogs\.(?:Cfn)?MetricFilter\(|(?<![\w.])(?:Cfn)?MetricFilter\("
+     r"|\.add_?[Mm]etric_?[Ff]ilter\("),
+    ("Contributor Insights rule", _cf_type(r"CloudWatch::InsightRule")
+     + r"|resource\s+\"aws_cloudwatch_contributor_insight_rule\"|\bCfnInsightRule\("),
+    ("Logs Insights saved query", _cf_type(r"Logs::QueryDefinition")
+     + r"|resource\s+\"aws_cloudwatch_query_definition\""
+     r"|\blogs\.(?:Cfn)?QueryDefinition\(|\bCfnQueryDefinition\(|\bnew\s+QueryDefinition\("),
+    ("log anomaly detector", _cf_type(r"Logs::LogAnomalyDetector")
+     + r"|resource\s+\"aws_cloudwatch_log_anomaly_detector\"|\bCfnLogAnomalyDetector\("),
+    ("subscription filter", _cf_type(r"Logs::SubscriptionFilter")
+     + r"|resource\s+\"aws_cloudwatch_log_subscription_filter\""
+     r"|\blogs\.(?:Cfn)?SubscriptionFilter\(|(?<![\w.])(?:Cfn)?SubscriptionFilter\("
+     r"|\.add_?[Ss]ubscription_?[Ff]ilter\("),
+)
+_TRACE_ANALYSIS = _kinds(
+    ("X-Ray group", _cf_type(r"XRay::Group") + r"|resource\s+\"aws_xray_group\""
+     r"|\bxray\.CfnGroup\("),
+    ("X-Ray sampling rule", _cf_type(r"XRay::SamplingRule")
+     + r"|resource\s+\"aws_xray_sampling_rule\"|\bxray\.CfnSamplingRule\("
+     r"|\bCfnSamplingRule\("),
+    ("CloudWatch Application Signals",
+     _cf_type(r"ApplicationSignals::(?:ServiceLevelObjective|Discovery)")
+     + r"|resource\s+\"aws_applicationsignals_\w+\""
+     r"|\b(?:applicationsignals|application_signals|aws_applicationsignals)\.Cfn\w+\("
+     r"|\bCfnServiceLevelObjective\(|\bApplicationSignalsIntegration\("),
+)
+_DASHBOARD = re.compile(
+    _cf_type(r"CloudWatch::Dashboard") + r"|resource\s+\"aws_cloudwatch_dashboard\""
+    r"|\bcloudwatch\.(?:Cfn)?Dashboard\(|\bnew\s+(?:Cfn)?Dashboard\(|\bCfnDashboard\("
+)
+_CF_DASHBOARD = re.compile(_cf_type(r"CloudWatch::Dashboard"))
+_TF_DASHBOARD = re.compile(r"resource\s+\"aws_cloudwatch_dashboard\"\s+\"[^\"]+\"\s*\{")
+_CDK_DASHBOARD = re.compile(r"\b(?:cloudwatch\.)?(?:Cfn)?Dashboard\(")
+# A metric in a dashboard body: ["Namespace", "MetricName", ...], quotes possibly escaped.
+_BODY_METRIC = re.compile(
+    r"\[\s*\\*[\"']([\w./:#-]+)\\*[\"']\s*,\s*\\*[\"']([\w./:#-]+)\\*[\"']"
+)
+
+
+def _workload_metric_text(rel: str, text: str) -> bool:
+    """The text names a workload metric: a namespace outside AWS/ in an alarm, metric filter
+    or CDK Metric, an edge latency or 5xx metric, a datastore or queue metric, or an
+    Application Signals or X-Ray metric."""
+    return bool(
+        _custom_namespace(rel, text) or _CDK_EDGE_METRIC.search(text)
+        or (_EDGE_NAMESPACE.search(text) and _EDGE_METRIC.search(text))
+        or _DEPENDENCY_NAMESPACE.search(text) or _CDK_DEPENDENCY_METRIC.search(text)
+        or _TRACE_NAMESPACE.search(text)
+    )
+
+
+def workload_alarms(repo_path: Path) -> tuple[dict[str, str], list[str], list[str]]:
+    """(workload alarm kinds -> first file, files with an alarm, host metrics alarmed on)."""
+    found: dict[str, str] = {}
+    files: list[str] = []
+    host: list[str] = []
+    for rel, text in iac_texts(repo_path):
+        if _ANOMALY_DETECTOR.search(text):
+            found.setdefault("CloudWatch anomaly detector", rel)
+        if not _TYPED_ALARM.search(text):
+            continue
+        if _ANOMALY_BAND.search(text):
+            found.setdefault("anomaly detection alarm", rel)
+        files.append(rel)
+        if _workload_metric_text(rel, text):
+            found.setdefault("alarm on a workload metric", rel)
+        for match in _HOST_METRIC.finditer(text):
+            name = match.group(0).strip(".(")
+            if name not in host:
+                host.append(name)
+    return found, files, host
+
+
+def log_analysis(repo_path: Path) -> dict[str, str]:
+    """Metric filters, Contributor Insights, saved queries, log anomaly detectors and
+    subscription filters: kind -> first file."""
+    return _in_iac(repo_path, _LOG_ANALYSIS)
+
+
+def trace_analysis(repo_path: Path) -> dict[str, str]:
+    """X-Ray groups and sampling rules, Application Signals, and alarms on trace metrics:
+    kind -> first file."""
+    found = _in_iac(repo_path, _TRACE_ANALYSIS)
+    for rel, text in iac_texts(repo_path):
+        if _TYPED_ALARM.search(text) and _TRACE_NAMESPACE.search(text):
+            found.setdefault("alarm on an Application Signals or X-Ray metric", rel)
+            break
+    return found
+
+
+def _cf_dashboard_bodies(rel: str, text: str) -> list[str]:
+    """The DashboardBody of each CloudWatch dashboard in a template, as JSON text."""
+    try:
+        doc = parse_template_text(Path(rel), text)
+    except Exception:  # noqa: BLE001 - not a readable template
+        return []
+    resources = doc.get("Resources") if isinstance(doc, dict) else None
+    bodies: list[str] = []
+    for body in (resources.values() if isinstance(resources, dict) else ()):
+        if isinstance(body, dict) and body.get("Type") == "AWS::CloudWatch::Dashboard":
+            props = body.get("Properties")
+            if isinstance(props, dict):
+                bodies.append(json.dumps(props.get("DashboardBody"), default=str))
+    return bodies
+
+
+def _dashboard_texts(rel: str, text: str) -> list[str]:
+    """The parts of an IaC file that hold its dashboards: CloudFormation dashboard bodies,
+    Terraform dashboard blocks, and for CDK the whole file (its metrics feed the widgets)."""
+    if _CF_DASHBOARD.search(text):
+        return _cf_dashboard_bodies(rel, text)
+    blocks = [_braced(text, m.end() - 1) for m in _TF_DASHBOARD.finditer(text)]
+    if blocks:
+        return blocks
+    return [text] if _CDK_DASHBOARD.search(text) else []
+
+
+
+def _body_workload(body: str) -> tuple[bool, list[str]]:
+    """(the dashboard text shows a workload metric, host metrics it shows)."""
+    workload = False
+    host: list[str] = []
+    for match in _BODY_METRIC.finditer(body):
+        namespace, metric = match.groups()
+        if not namespace.strip("."):
+            continue
+        if (not namespace.startswith("AWS/") or _DEPENDENCY_NAMESPACE.fullmatch(namespace)
+                or _TRACE_NAMESPACE.fullmatch(namespace)
+                or (_EDGE_NAMESPACE.fullmatch(namespace) and _EDGE_METRIC.fullmatch(metric))):
+            workload = True
+    for match in _HOST_METRIC.finditer(body):
+        name = match.group(0).strip(".(")
+        if name not in host:
+            host.append(name)
+    return workload, host
+
+
+def dashboard_content(repo_path: Path) -> tuple[list[str], bool, list[str]]:
+    """(files with a dashboard, any dashboard shows a workload metric, host metrics shown)."""
+    files: list[str] = []
+    host: list[str] = []
+    workload = False
+    for rel, text in iac_texts(repo_path):
+        if not _DASHBOARD.search(text):
+            continue
+        files.append(rel)
+        cdk = not _CF_DASHBOARD.search(text) and not _TF_DASHBOARD.search(text)
+        if cdk and _workload_metric_text(rel, text):
+            workload = True
+        for part in _dashboard_texts(rel, text):
+            shows, seen = _body_workload(part)
+            workload = workload or shows
+            host.extend(name for name in seen if name not in host)
+    return files, workload, host
+
+
+class WorkloadAlarmMissing(_RepoRule):
+    id = "REPO-027"
+    title = "Alarms watch only infrastructure metrics, not the workload's"
+    severity = "Medium"
+    themes = ("observability",)
+    recommendation = (
+        "Alarm on the metrics that say whether the workload serves its users, not only on "
+        "host CPU and memory: the application KPIs in your own namespace, the edge latency "
+        "and 5xx metrics, and the datastore and queue metrics the workload depends on. Use "
+        "CloudWatch anomaly detection where a static threshold does not fit."
+    )
+
+    def run(self, repo_path: Path, language: str = "typescript") -> List[Finding]:
+        compute = _in_iac(repo_path, _COMPUTE)
+        if not compute:
+            return []
+        found, files, host = workload_alarms(repo_path)
+        if found:
+            return []
+        if not files:
+            seen = "found no CloudWatch alarm"
+        elif host:
+            seen = (f"the alarms in {_listed(files)} watch only infrastructure metrics "
+                    f"({_listed(host, 4)})")
+        else:
+            seen = f"the alarms in {_listed(files)} watch no workload metric"
+        return [self._finding(
+            f"Runs {_named(compute)}; searched the IaC for an alarm on a metric outside AWS/, "
+            "an edge latency or 5xx metric, a datastore or queue metric, or with anomaly "
+            f"detection; {seen}",
+        )]
+
+
+class LogAnalysisMissing(_RepoRule):
+    id = "REPO-028"
+    title = "Workload logs are not analyzed"
+    severity = "Low"
+    themes = ("observability",)
+    recommendation = (
+        "Turn the workload's logs into signals: a CloudWatch Logs metric filter on error "
+        "and business events, a Contributor Insights rule for the top callers and failing "
+        "keys, saved CloudWatch Logs Insights queries for investigations, a log anomaly "
+        "detector, or a subscription filter that ships the logs to an analysis service."
+    )
+
+    def run(self, repo_path: Path, language: str = "typescript") -> List[Finding]:
+        compute = _in_iac(repo_path, _COMPUTE)
+        if not compute or log_analysis(repo_path):
+            return []
+        return [self._finding(
+            f"Runs {_named(compute)}; searched the IaC for a CloudWatch Logs metric filter, a "
+            "Contributor Insights rule, a Logs Insights saved query, a log anomaly detector, "
+            "and a subscription filter; found none",
+        )]
+
+
+class TraceAnalysisMissing(_RepoRule):
+    id = "REPO-029"
+    title = "Workload traces are not analyzed"
+    severity = "Low"
+    themes = ("observability",)
+    recommendation = (
+        "Analyze the traces, not only collect them: define X-Ray groups (with insights) for "
+        "the main paths and sampling rules for what matters, or use CloudWatch Application "
+        "Signals with service level objectives, and alarm on the trace and SLO metrics."
+    )
+
+    def run(self, repo_path: Path, language: str = "typescript") -> List[Finding]:
+        compute = _in_iac(repo_path, _COMPUTE)
+        if not compute or trace_analysis(repo_path):
+            return []
+        return [self._finding(
+            f"Runs {_named(compute)}; searched the IaC for an X-Ray group or sampling rule, "
+            "CloudWatch Application Signals service level objectives or discovery, and an "
+            "alarm on an Application Signals or X-Ray metric; found none",
+        )]
+
+
+class DashboardWorkloadMetricMissing(_RepoRule):
+    id = "REPO-030"
+    title = "Dashboards show no workload metric"
+    severity = "Low"
+    themes = ("observability",)
+    recommendation = (
+        "Put the workload on the dashboard, not only the hosts: graph the application KPIs, "
+        "the edge latency and 5xx metrics, and the datastore and queue metrics next to CPU "
+        "and memory, so the dashboard shows whether users are served."
+    )
+
+    def run(self, repo_path: Path, language: str = "typescript") -> List[Finding]:
+        files, workload, host = dashboard_content(repo_path)
+        if not files or workload or not host:
+            return []
+        return [self._finding(
+            f"The CloudWatch dashboards in {_listed(files)} show only infrastructure metrics "
+            f"({_listed(host, 4)}); searched them for a metric outside AWS/, an edge "
+            "latency or 5xx metric, a datastore or queue metric, and Application Signals; "
+            "found none",
+        )]
+
+
 REPO_RULES: List[Rule] = [
     RepoTestsMissing(), RepoPipelineMissing(), SingleEnvironment(),
     OrgGuardrailsMissing(), AccountBaselineMissing(), RootUserUnchecked(),
@@ -2808,4 +3107,6 @@ REPO_RULES: List[Rule] = [
     KpiMetricMissing(), EdgeTelemetryMissing(), DependencyTelemetryMissing(),
     DeployTestGateMissing(), AutomatedRollbackMissing(),
     InPlaceChange(), FunctionalTestMissing(), AutomatedDeployMissing(), ResiliencyTestMissing(),
+    WorkloadAlarmMissing(), LogAnalysisMissing(), TraceAnalysisMissing(),
+    DashboardWorkloadMetricMissing(),
 ]

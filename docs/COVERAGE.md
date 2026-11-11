@@ -15,7 +15,7 @@ Which CDK rules have a template check, and which AWS Foundational Security Best 
 
 ## CDK rules
 
-205 rules: 132 covered, 7 partial, 10 account, 5 cdk-only, 25 advice, 26 repo.
+209 rules: 132 covered, 7 partial, 10 account, 5 cdk-only, 25 advice, 30 repo.
 
 | Rule | Title | Template check | Status | Note |
 | -- | -- | -- | -- | -- |
@@ -224,6 +224,10 @@ Which CDK rules have a template check, and which AWS Foundational Security Best 
 | REPO-024 | No functional test runs against the deployed change |  | `repo` | Looks in each build config that deploys for a test that can fail after a deploy (and before the last one when it deploys more than once): the REPO-021 tests, a curl that fails on an HTTP error, Playwright, Cypress, Newman, integ, e2e or smoke scripts, integ-runner, a CodePipeline test action, a CDK pipelines post step. |
 | REPO-025 | Infrastructure is not deployed by automation |  | `repo` | When the repo holds CDK, CloudFormation or Terraform, looks for a build config that deploys it, or a CodePipeline or CDK pipelines in the IaC. |
 | REPO-026 | Deployments run no resiliency test |  | `repo` | When a build deploys, looks in the deploying builds for a started AWS FIS experiment or a chaos tool, and in the IaC for a Step Functions task that starts an FIS experiment. |
+| REPO-027 | Alarms watch only infrastructure metrics, not the workload's |  | `repo` | When the IaC runs compute, looks for an alarm on a metric outside AWS/, an edge latency or 5xx metric, a datastore or queue metric, or with anomaly detection. |
+| REPO-028 | Workload logs are not analyzed |  | `repo` | When the IaC runs compute, looks for a CloudWatch Logs metric filter, Contributor Insights rule, Logs Insights saved query, log anomaly detector or subscription filter. |
+| REPO-029 | Workload traces are not analyzed |  | `repo` | When the IaC runs compute, looks for an X-Ray group or sampling rule, CloudWatch Application Signals, or an alarm on an Application Signals or X-Ray metric. |
+| REPO-030 | Dashboards show no workload metric |  | `repo` | When the IaC declares a CloudWatch dashboard, looks in the dashboards for a metric outside AWS/, an edge latency or 5xx metric, a datastore or queue metric, or Application Signals. |
 
 ## FSBP controls
 

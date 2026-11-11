@@ -927,5 +927,29 @@
     "negative_py": "pipeline = pipelines.CodePipeline(self, 'Pipeline', synth=synth)\npipeline.add_stage(AppStage(self, 'Staging'), post=[pipelines.ShellStep('Chaos', commands=['chaos run experiment.json'])])",
     "positive_ts": "const pipeline = new pipelines.CodePipeline(this, 'Pipeline', { synth });\npipeline.addStage(new AppStage(this, 'Prod'));",
     "positive_py": "pipeline = pipelines.CodePipeline(self, 'Pipeline', synth=synth)\npipeline.add_stage(AppStage(self, 'Prod'))"
+  },
+  "REPO-027": {
+    "negative_ts": "new lambda.Function(this, 'Fn', { runtime, handler: 'index.handler', code });\nnew cloudwatch.Alarm(this, 'Orders', { metric: new cloudwatch.Metric({ namespace: 'Shop', metricName: 'OrdersPlaced' }), threshold: 1, evaluationPeriods: 1 });",
+    "negative_py": "lambda_.Function(self, 'Fn', runtime=runtime, handler='index.handler', code=code)\nqueue.metric_approximate_age_of_oldest_message().create_alarm(self, 'Age', threshold=300, evaluation_periods=1)",
+    "positive_ts": "new lambda.Function(this, 'Fn', { runtime, handler: 'index.handler', code });\nnew cloudwatch.Alarm(this, 'Cpu', { metric: new cloudwatch.Metric({ namespace: 'AWS/EC2', metricName: 'CPUUtilization' }), threshold: 80, evaluationPeriods: 3 });",
+    "positive_py": "lambda_.Function(self, 'Fn', runtime=runtime, handler='index.handler', code=code)"
+  },
+  "REPO-028": {
+    "negative_ts": "new lambda.Function(this, 'Fn', { runtime, handler: 'index.handler', code });\nnew logs.MetricFilter(this, 'Errors', { logGroup, metricNamespace: 'Shop', metricName: 'Errors', filterPattern });",
+    "negative_py": "lambda_.Function(self, 'Fn', runtime=runtime, handler='index.handler', code=code)\ncloudwatch.CfnInsightRule(self, 'TopCallers', rule_name='top-callers', rule_state='ENABLED', rule_body=body)",
+    "positive_ts": "new lambda.Function(this, 'Fn', { runtime, handler: 'index.handler', code });",
+    "positive_py": "lambda_.Function(self, 'Fn', runtime=runtime, handler='index.handler', code=code)"
+  },
+  "REPO-029": {
+    "negative_ts": "new lambda.Function(this, 'Fn', { runtime, handler: 'index.handler', code });\nnew xray.CfnGroup(this, 'Checkout', { groupName: 'checkout', filterExpression: 'service(\"checkout\")' });",
+    "negative_py": "lambda_.Function(self, 'Fn', runtime=runtime, handler='index.handler', code=code)\nxray.CfnSamplingRule(self, 'Checkout', sampling_rule=rule)",
+    "positive_ts": "new lambda.Function(this, 'Fn', { runtime, handler: 'index.handler', code });\nnew lambda.Function(this, 'Traced', { runtime, handler, code, tracing: lambda.Tracing.ACTIVE });",
+    "positive_py": "lambda_.Function(self, 'Fn', runtime=runtime, handler='index.handler', code=code)"
+  },
+  "REPO-030": {
+    "negative_ts": "new cloudwatch.Dashboard(this, 'Ops', { widgets: [[new cloudwatch.GraphWidget({ left: [new cloudwatch.Metric({ namespace: 'Shop', metricName: 'OrdersPlaced' }), service.metricCpuUtilization()] })]] });",
+    "negative_py": "cloudwatch.Dashboard(self, 'Ops', widgets=[[cloudwatch.GraphWidget(left=[queue.metric_approximate_age_of_oldest_message(), service.metric_cpu_utilization()])]])",
+    "positive_ts": "new cloudwatch.Dashboard(this, 'Ops', { widgets: [[new cloudwatch.GraphWidget({ left: [service.metricCpuUtilization(), service.metricMemoryUtilization()] })]] });",
+    "positive_py": "cloudwatch.Dashboard(self, 'Ops', widgets=[[cloudwatch.GraphWidget(left=[service.metric_cpu_utilization()])]])"
   }
 }

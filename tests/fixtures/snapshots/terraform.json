@@ -194,5 +194,26 @@
     "file": null,
     "line": null,
     "evidence": "Holds IaC (Terraform: 3 files); searched the repo for a build config that deploys, and the IaC for a pipeline; found none"
+  },
+  {
+    "id": "REPO-027",
+    "severity": "Medium",
+    "file": null,
+    "line": null,
+    "evidence": "Runs Lambda (main.tf); searched the IaC for an alarm on a metric outside AWS/, an edge latency or 5xx metric, a datastore or queue metric, or with anomaly detection; found no CloudWatch alarm"
+  },
+  {
+    "id": "REPO-028",
+    "severity": "Low",
+    "file": null,
+    "line": null,
+    "evidence": "Runs Lambda (main.tf); searched the IaC for a CloudWatch Logs metric filter, a Contributor Insights rule, a Logs Insights saved query, a log anomaly detector, and a subscription filter; found none"
+  },
+  {
+    "id": "REPO-029",
+    "severity": "Low",
+    "file": null,
+    "line": null,
+    "evidence": "Runs Lambda (main.tf); searched the IaC for an X-Ray group or sampling rule, CloudWatch Application Signals service level objectives or discovery, and an alarm on an Application Signals or X-Ray metric; found none"
   }
 ]

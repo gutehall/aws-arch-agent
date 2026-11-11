@@ -1118,6 +1118,33 @@ TOPICS: dict[str, tuple[str, str, str, str]] = {
         "/wellarchitected/latest/reliability-pillar/"
         "rel_tracking_change_management_resiliency_testing.html",
     ),
+    "workload_alarms": (
+        "CloudWatch: using anomaly detection",
+        "/AmazonCloudWatch/latest/monitoring/CloudWatch_Anomaly_Detection.html",
+        "Well-Architected OPS08-BP01: Analyze workload metrics",
+        "/wellarchitected/latest/operational-excellence-pillar/"
+        "ops_workload_observability_analyze_workload_metrics.html",
+    ),
+    "log_analysis": (
+        "CloudWatch Logs: creating metrics from log events using filters",
+        "/AmazonCloudWatch/latest/logs/MonitoringLogData.html",
+        "Well-Architected OPS08-BP02: Analyze workload logs",
+        "/wellarchitected/latest/operational-excellence-pillar/"
+        "ops_workload_observability_analyze_workload_logs.html",
+    ),
+    "trace_analysis": (
+        "X-Ray: configuring groups",
+        "/xray/latest/devguide/xray-console-groups.html",
+        "Well-Architected OPS08-BP03: Analyze workload traces",
+        "/wellarchitected/latest/operational-excellence-pillar/"
+        "ops_workload_observability_analyze_workload_traces.html",
+    ),
+    "workload_dashboards": (
+        "CloudWatch: adding a graph widget to a dashboard",
+        "/AmazonCloudWatch/latest/monitoring/create_graph_dashboard.html",
+        "Well-Architected OPS08-BP05: Create dashboards",
+        "/wellarchitected/latest/operational-excellence-pillar/ops_workload_observability_create_dashboards.html",
+    ),
     "lambda_dlq": (
         "Lambda: retain records of async invocations (DLQ and destinations)",
         "/lambda/latest/dg/invocation-async-retain-records.html",
@@ -2009,6 +2036,10 @@ RULE_TOPICS: dict[str, str] = {
     "REPO-024": "functional_test_after_deploy",
     "REPO-025": "automated_deploys",
     "REPO-026": "resiliency_test_in_deploy",
+    "REPO-027": "workload_alarms",
+    "REPO-028": "log_analysis",
+    "REPO-029": "trace_analysis",
+    "REPO-030": "workload_dashboards",
     "PERF-001": "graviton_ec2",
     "PERF-002": "caching",
     "PERF-003": "ddb_capacity",
