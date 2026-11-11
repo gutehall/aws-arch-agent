@@ -15,7 +15,7 @@ Which CDK rules have a template check, and which AWS Foundational Security Best 
 
 ## CDK rules
 
-196 rules: 132 covered, 7 partial, 10 account, 5 cdk-only, 25 advice, 17 repo.
+199 rules: 132 covered, 7 partial, 10 account, 5 cdk-only, 25 advice, 20 repo.
 
 | Rule | Title | Template check | Status | Note |
 | -- | -- | -- | -- | -- |
@@ -215,6 +215,9 @@ Which CDK rules have a template check, and which AWS Foundational Security Best 
 | REPO-015 | Queue and stream workers have no idempotency key or dedupe store |  | `repo` | When the IaC has a Lambda queue or stream event source, looks for Powertools idempotency, SQS FIFO deduplication, or a conditional write in the IaC and function code. |
 | REPO-016 | No fault injection experiment targets the workload |  | `repo` | Looks for an AWS FIS experiment template in the IaC, or aws fis start-experiment or a chaos tool (Litmus, Chaos Mesh, Gremlin, Chaos Toolkit) in a build. |
 | REPO-017 | No load test runs in the pipeline |  | `repo` | Looks for a load test tool (k6, Artillery, Locust, JMeter, Gatling, Vegeta, hey, ab, Taurus, Distributed Load Testing on AWS) run by a CI config, an inline buildspec, or a package.json script a build runs. |
+| REPO-018 | No application KPI metric |  | `repo` | When the IaC runs compute, looks for a CloudWatch alarm, metric or metric filter in a namespace outside AWS/, or embedded metric format, PutMetricData or Powertools Metrics in function code. |
+| REPO-019 | No user experience telemetry on the edge |  | `repo` | When the IaC has an API Gateway, load balancer or CloudFront distribution, looks for a Synthetics canary, a RUM app monitor, a Route 53 health check, or an alarm on an edge latency or 5xx metric. |
+| REPO-020 | No telemetry on the datastores and queues the workload calls |  | `repo` | When the IaC has a datastore or queue, looks for AWS SDK tracing in function code (X-Ray, Powertools Tracer, OpenTelemetry), the ADOT Lambda layer or Application Signals, or an alarm on a datastore or queue metric. |
 
 ## FSBP controls
 

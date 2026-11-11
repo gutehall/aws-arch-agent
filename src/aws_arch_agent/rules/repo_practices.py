@@ -1,6 +1,7 @@
 """Repo-level checks: tests, a pipeline, environments (OPS 5), account guardrails (SEC 1),
 incident response (SEC 10), application security (SEC 11), service quotas (REL 1),
-VPC address plan (REL 2), idempotent workers (REL 4), reliability testing (REL 12).
+VPC address plan (REL 2), idempotent workers (REL 4), reliability testing (REL 12),
+observability (OPS 4).
 
 REPO-006 (the account root user) answers SEC01-BP02 in SEC 1, though it was added with the
 SEC 2 checks.
@@ -137,6 +138,19 @@ package.json scripts they run):
   --headless, jmeter -n, Gatling, vegeta attack, hey or ab with a request count, Taurus, or
   Distributed Load Testing on AWS). A load test script or config (a k6 script,
   artillery.yml, locustfile.py) that no build runs does not count.
+
+Observability (OPS 4) runs by default and reads the IaC and the function code outside tests:
+
+- REPO-018 application KPI: when the IaC runs compute (Lambda, ECS service, EKS, EC2 or
+  Auto Scaling, App Runner), a CloudWatch alarm, metric or metric filter in a namespace
+  outside AWS/, or embedded metric format, PutMetricData or Powertools Metrics in the code.
+- REPO-019 user experience: when the IaC has an edge (API Gateway, load balancer,
+  CloudFront), a Synthetics canary, a RUM app monitor, a Route 53 health check, or an alarm
+  on an edge latency or 5xx metric.
+- REPO-020 dependency telemetry: when the IaC has a datastore or queue (DynamoDB, RDS,
+  ElastiCache, SQS, SNS, Kinesis, OpenSearch), AWS SDK tracing in the code (X-Ray, Powertools
+  Tracer, OpenTelemetry), the ADOT Lambda layer or Application Signals, or an alarm on a
+  datastore or queue metric. Which dependency an alarm or trace covers is not matched.
 """
 from __future__ import annotations
 
@@ -1774,6 +1788,397 @@ class LoadTestMissing(_RepoRule):
         )]
 
 
+# Observability (OPS 4): an application KPI (REPO-018), user experience telemetry on the edge
+# (REPO-019), and telemetry on the datastores and queues the workload calls (REPO-020).
+
+
+def _cf_type(types: str) -> str:
+    """A CloudFormation Type key with one of the types, so a report that names the type in
+    its evidence is not a template."""
+    return rf"[\"']?Type[\"']?\s*:\s*[\"']?AWS::(?:{types})\b"
+
+
+def _kinds(*pairs: tuple[str, str]) -> tuple[tuple[str, re.Pattern[str]], ...]:
+    return tuple((name, re.compile(pattern)) for name, pattern in pairs)
+
+
+_COMPUTE = _kinds(
+    ("Lambda", _cf_type(r"Lambda::Function|Serverless::Function")
+     + r"|resource\s+\"aws_lambda_function\""
+     r"|\b_?lambda_?\.(?:Cfn)?Function\(|\b(?:Nodejs|Python|Go|DockerImage)Function\("),
+    ("ECS service", _cf_type(r"ECS::Service") + r"|resource\s+\"aws_ecs_service\""
+     r"|\b(?:Fargate|Ec2)Service\(|\bLoadBalanced(?:Fargate|Ec2)Service\("
+     r"|\becs\.CfnService\("),
+    ("EKS cluster", _cf_type(r"EKS::Cluster") + r"|resource\s+\"aws_eks_cluster\""
+     r"|\beks\.(?:Cfn|Fargate)?Cluster\("),
+    ("EC2", _cf_type(r"EC2::Instance|AutoScaling::AutoScalingGroup")
+     + r"|resource\s+\"aws_(?:instance|autoscaling_group)\""
+     r"|\bec2\.(?:Cfn)?Instance\(|\bautoscaling\.(?:Cfn)?AutoScalingGroup\("),
+    ("App Runner", _cf_type(r"AppRunner::Service") + r"|resource\s+\"aws_apprunner_service\""
+     r"|\bapprunner\.(?:Cfn)?Service\("),
+)
+_EDGES = _kinds(
+    ("API Gateway", _cf_type(r"ApiGateway::RestApi|ApiGatewayV2::Api|Serverless::(?:Http)?Api")
+     + r"|resource\s+\"aws_(?:api_gateway_rest_api|apigatewayv2_api)\""
+     r"|\b(?:apigateway|apigw|apigatewayv2|apigwv2)\.(?:Cfn)?\w*Api\("
+     r"|\b(?:LambdaRestApi|RestApi|SpecRestApi|HttpApi|CfnRestApi)\("),
+    ("load balancer", _cf_type(r"ElasticLoadBalancingV2::LoadBalancer")
+     + r"|resource\s+\"aws_(?:lb|alb)\""
+     r"|\bApplicationLoadBalancer\(|\bApplicationLoadBalanced\w+\("),
+    ("CloudFront", _cf_type(r"CloudFront::Distribution")
+     + r"|resource\s+\"aws_cloudfront_distribution\""
+     r"|\bcloudfront\.(?:Cfn)?Distribution\(|\bCloudFrontWebDistribution\("),
+)
+# A SAM function event behind an implicit API.
+_SAM_API_EVENT = re.compile(
+    r"[\"']?Type[\"']?\s*:\s*[\"']?(?:Http)?Api[\"']?\s*(?:,|$)", re.MULTILINE
+)
+_DEPENDENCIES = _kinds(
+    ("DynamoDB", _cf_type(r"DynamoDB::(?:Global)?Table|Serverless::SimpleTable")
+     + r"|resource\s+\"aws_dynamodb_table\"|\bdynamodb\.(?:Cfn)?Table(?:V2)?\("),
+    ("RDS", _cf_type(r"RDS::DB(?:Instance|Cluster)")
+     + r"|resource\s+\"aws_(?:db_instance|rds_cluster)\""
+     r"|\brds\.Cfn(?:DBInstance|DBCluster)\("
+     r"|\b(?:DatabaseInstance|DatabaseCluster|ServerlessCluster)(?:FromSnapshot)?\("),
+    ("ElastiCache", _cf_type(r"ElastiCache::(?:CacheCluster|ReplicationGroup|ServerlessCache)")
+     + r"|resource\s+\"aws_elasticache_(?:cluster|replication_group|serverless_cache)\""
+     r"|\belasticache\.Cfn(?:CacheCluster|ReplicationGroup|ServerlessCache)\("),
+    ("SQS", _cf_type(r"SQS::Queue") + r"|resource\s+\"aws_sqs_queue\""
+     r"|\bsqs\.(?:Cfn)?Queue\("),
+    ("SNS", _cf_type(r"SNS::Topic") + r"|resource\s+\"aws_sns_topic\""
+     r"|\bsns\.(?:Cfn)?Topic\("),
+    ("Kinesis", _cf_type(r"Kinesis::Stream") + r"|resource\s+\"aws_kinesis_stream\""
+     r"|\bkinesis\.(?:Cfn)?Stream\("),
+    ("OpenSearch", _cf_type(r"OpenSearchService::Domain|Elasticsearch::Domain")
+     + r"|resource\s+\"aws_(?:opensearch|elasticsearch)_domain\""
+     r"|\b(?:opensearch|opensearchservice|es)\.(?:Cfn)?Domain\("),
+)
+_TYPED_ALARM = re.compile(
+    _cf_type(r"CloudWatch::Alarm") + r"|resource\s+\"aws_cloudwatch_metric_alarm\""
+    r"|\bcloudwatch\.(?:Cfn)?Alarm\(|\bnew\s+Alarm\(|\.create_?[Aa]larm\("
+)
+# REPO-018: a metric outside the AWS/ namespaces. CloudFormation names it in an alarm or a
+# metric filter, Terraform in those resources' blocks, CDK in a Metric or MetricFilter call.
+_CF_METRIC_RESOURCE = re.compile(_cf_type(r"CloudWatch::Alarm|Logs::MetricFilter"))
+_CF_METRIC_TYPES = frozenset({"AWS::CloudWatch::Alarm", "AWS::Logs::MetricFilter"})
+_TF_METRIC_RESOURCE = re.compile(
+    r"resource\s+\"aws_cloudwatch_(?:metric_alarm|log_metric_filter)\"\s+\"[^\"]+\"\s*\{"
+)
+_TF_NAMESPACE = re.compile(r"\bnamespace\s*=\s*(?!\"AWS/)(?:\"[^\"\s]+\"|[A-Za-z_][\w.]*)")
+_CDK_METRIC_CALL = re.compile(
+    r"\bcloudwatch\.Metric\(|(?<![\w.])Metric\(|\b(?:logs\.)?MetricFilter\("
+    r"|\.add_?[Mm]etric_?[Ff]ilter\("
+)
+_CDK_NAMESPACE = re.compile(
+    r"\b(?:namespace|metricNamespace|metric_namespace)\s*[:=]\s*"
+    r"(?!['\"]AWS/)(?:['\"][^'\"\s]+['\"]|[A-Za-z_][\w.]*)"
+)
+# In function code: embedded metric format, PutMetricData, Powertools Metrics.
+_CUSTOM_METRIC_CODE = _kinds(
+    ("embedded metric format",
+     r"\baws-embedded-metrics\b|\baws_embedded_metrics\b|\bcreateMetricsLogger\(|@metric_scope\b"
+     r"|\bsoftware\.amazon\.cloudwatchlogs\.emf\b|[\"']CloudWatchMetrics[\"']\s*:"),
+    ("PutMetricData", r"(?<!cloudwatch:)\bPutMetricData(?:Command)?\b|\bput_metric_data\("
+     r"|\bputMetricData\("),
+    ("Powertools Metrics",
+     r"@aws-lambda-powertools/metrics|aws_lambda_powertools\.metrics\b"
+     r"|from\s+aws_lambda_powertools\s+import\s+[^\n]*\bMetrics\b|@metrics\.log_metrics\b"
+     r"|\blogMetrics\(|software\.amazon\.lambda\.powertools\.metrics|"
+     r"AWS\.Lambda\.Powertools\.Metrics"),
+)
+# REPO-019: synthetic and real-user monitoring, health checks, or an alarm on an edge metric.
+_EDGE_MONITORS = _kinds(
+    ("CloudWatch Synthetics canary", _cf_type(r"Synthetics::Canary")
+     + r"|resource\s+\"aws_synthetics_canary\""
+     r"|\bsynthetics\.(?:Cfn)?Canary\(|\bCfnCanary\(|\bnew\s+Canary\("),
+    ("CloudWatch RUM app monitor", _cf_type(r"RUM::AppMonitor")
+     + r"|resource\s+\"aws_rum_app_monitor\"|\bCfnAppMonitor\("),
+    ("Route 53 health check", _cf_type(r"Route53::HealthCheck")
+     + r"|resource\s+\"aws_route53_health_check\""
+     r"|\broute53\.(?:Cfn)?HealthCheck\(|\bCfnHealthCheck\("),
+)
+_EDGE_NAMESPACE = re.compile(r"\bAWS/(?:ApiGateway|ApplicationELB|CloudFront)\b")
+_EDGE_METRIC = re.compile(
+    r"(?<![\w-])(?:Latency|IntegrationLatency|5XXError|5xx|TargetResponseTime"
+    r"|HTTPCode_(?:Target|ELB)_5XX_Count|OriginLatency|5xxErrorRate|TotalErrorRate)(?![\w-])"
+)
+_CDK_EDGE_METRIC = re.compile(
+    r"\.metric(?:Latency|IntegrationLatency|ServerError|5XXError|5xxErrorRate|OriginLatency"
+    r"|TotalErrorRate|TargetResponseTime|HttpCode(?:Target|Elb))\("
+    r"|\.metric_(?:latency|integration_latency|server_error|origin_latency|total_error_rate"
+    r"|target_response_time|http_code_(?:target|elb))\(|\.metric5xx_error_rate\("
+    r"|\.metrics\.(?:targetResponseTime|httpCode(?:Target|Elb)|target_response_time"
+    r"|http_code_(?:target|elb))\("
+)
+# REPO-020: AWS SDK tracing in function code, ADOT or Application Signals in the IaC, or an
+# alarm on a datastore or queue metric.
+_SDK_TRACING_CODE = _kinds(
+    ("X-Ray SDK client capture",
+     r"\bcaptureAWS(?:v3)?Client\(|\bcaptureAWS\(|\bpatch_all\(\s*\)"
+     r"|\bpatch\(\s*[\[(][^\])]*[\"'](?:boto3|botocore)[\"']"
+     r"|\bxray\.AWS(?:V2)?\(|\bAWSV2Instrumentor\b|\bRegisterXRayForAllServices\("
+     r"|\bcom\.amazonaws\.xray\.interceptors\.TracingInterceptor\b"),
+    ("Powertools Tracer", r"\bcaptureAWSv3Client\("),
+    ("OpenTelemetry AWS SDK instrumentation",
+     r"@opentelemetry/instrumentation-aws-sdk|@opentelemetry/auto-instrumentations-node"
+     r"|\bAwsInstrumentation\(|\bBotocoreInstrumentor\b"
+     r"|opentelemetry\.instrumentation\.(?:botocore|boto3sqs)"
+     r"|\bio\.opentelemetry\.instrumentation\.awssdk\b"),
+)
+# Powertools Tracer for Python patches boto3 unless auto_patch is off.
+_PY_POWERTOOLS_TRACER = re.compile(
+    r"from\s+aws_lambda_powertools\s+import\s+[^\n]*\bTracer\b"
+    r"|aws_lambda_powertools\.tracing\b"
+)
+_NO_AUTO_PATCH = re.compile(r"\bauto_patch\s*=\s*False\b")
+_DEPENDENCY_MANIFESTS = frozenset({
+    "package.json", "pyproject.toml", "pom.xml", "build.gradle", "build.gradle.kts",
+})
+_OTEL_PACKAGES = re.compile(
+    r"@opentelemetry/(?:instrumentation-aws-sdk|auto-instrumentations-node)\b"
+    r"|\bopentelemetry-instrumentation-(?:botocore|boto3sqs)\b|\bopentelemetry-javaagent\b"
+    r"|\bio\.opentelemetry\.instrumentation\b[^\n]*\baws-sdk\b"
+)
+_IAC_TRACING = _kinds(
+    ("ADOT Lambda layer",
+     r"\baws-otel-(?:nodejs|python|java|collector)\w*|\bAWSOpenTelemetryDistro\w*"
+     r"|/opt/otel-(?:instrument|handler|proxy-handler|sqs-handler)\b"
+     r"|\bAdotLayerVersion\b|\badot_?[Ii]nstrumentation\b|\bAdotLambdaLayer\w*"),
+    ("CloudWatch Application Signals", _cf_type(r"ApplicationSignals::\w+")
+     + r"|[\"']application_signals[\"']\s*:|\bApplicationSignalsIntegration\("
+     r"|\bCfnServiceLevelObjective\("),
+)
+_DEPENDENCY_NAMESPACE = re.compile(
+    r"\bAWS/(?:DynamoDB|RDS|ElastiCache|SQS|SNS|Kinesis|ES)\b"
+)
+_CDK_DEPENDENCY_METRIC = re.compile(
+    r"\.metric(?:Approximate\w+|NumberOf\w+|SentMessageSize|ThrottledRequests\w*|UserErrors"
+    r"|SystemErrors\w*|SuccessfulRequestLatency|Consumed\w+|CPUUtilization|DatabaseConnections"
+    r"|FreeStorageSpace|FreeableMemory|Deadlocks|ReadLatency|WriteLatency|ReadIOPS|WriteIOPS"
+    r"|ServerlessDatabaseCapacity|GetRecords\w*|PutRecords?\w*|Incoming(?:Records|Bytes)"
+    r"|(?:Read|Write)ProvisionedThroughputExceeded|ClusterStatus\w*|JVMMemoryPressure"
+    r"|SearchLatency|IndexingLatency|AutomatedSnapshotFailure)\("
+    r"|\.metric_(?:approximate_\w+|number_of_\w+|sent_message_size|throttled_requests\w*"
+    r"|user_errors|system_errors\w*|successful_request_latency|consumed_\w+"
+    r"|database_connections|free_storage_space|freeable_memory|deadlocks|read_latency"
+    r"|write_latency|read_iops|write_iops|serverless_database_capacity|get_records\w*"
+    r"|put_records?\w*|incoming_(?:records|bytes)|(?:read|write)_provisioned_throughput_exceeded"
+    r"|cluster_status\w*|jvm_memory_pressure|search_latency|indexing_latency"
+    r"|automated_snapshot_failure)\("
+)
+
+
+def _in_iac(repo_path: Path, kinds: tuple[tuple[str, re.Pattern[str]], ...]) -> dict[str, str]:
+    """Each kind the IaC outside tests declares: kind -> first file."""
+    found: dict[str, str] = {}
+    for rel, text in iac_texts(repo_path):
+        for name, pattern in kinds:
+            if pattern.search(text):
+                found.setdefault(name, rel)
+    return found
+
+
+def _function_code(repo_path: Path) -> Iterator[tuple[str, str, str]]:
+    """(repo-relative path, file name, text) of function code and dependency manifests
+    outside tests."""
+    for path in walk(repo_path):
+        parts = _rel_parts(path, repo_path)
+        name = path.name.lower()
+        if path.suffix.lower() not in _FUNCTION_CODE_SUFFIXES and name not in (
+            _DEPENDENCY_MANIFESTS
+        ) and not re.fullmatch(r"requirements[\w.-]*\.txt", name):
+            continue
+        if _in_test_dir(parts) or _TEST_NAME.search(name):
+            continue
+        yield "/".join(parts), name, read_text_safe(path)
+
+
+def _namespaces(node: object) -> Iterator[object]:
+    """Every Namespace and MetricNamespace value under a CloudFormation resource."""
+    if isinstance(node, dict):
+        for key, value in node.items():
+            if key in ("Namespace", "MetricNamespace"):
+                yield value
+            else:
+                yield from _namespaces(value)
+    elif isinstance(node, list):
+        for item in node:
+            yield from _namespaces(item)
+
+
+def _cf_custom_namespace(rel: str, text: str) -> bool:
+    """A CloudFormation alarm or metric filter on a namespace outside AWS/ (one built with
+    an intrinsic function counts)."""
+    try:
+        doc = parse_template_text(Path(rel), text)
+    except Exception:  # noqa: BLE001 - not a readable template
+        return False
+    resources = doc.get("Resources") if isinstance(doc, dict) else None
+    for body in (resources.values() if isinstance(resources, dict) else ()):
+        if not isinstance(body, dict) or body.get("Type") not in _CF_METRIC_TYPES:
+            continue
+        for value in _namespaces(body.get("Properties")):
+            if isinstance(value, dict) or (
+                isinstance(value, str) and value and not value.startswith("AWS/")
+            ):
+                return True
+    return False
+
+
+def _custom_namespace(rel: str, text: str) -> bool:
+    """A CloudWatch alarm, metric filter or CDK Metric in the text names a namespace outside
+    AWS/."""
+    if _CF_METRIC_RESOURCE.search(text) and _cf_custom_namespace(rel, text):
+        return True
+    for match in _TF_METRIC_RESOURCE.finditer(text):
+        if _TF_NAMESPACE.search(_braced(text, match.end() - 1)):
+            return True
+    for match in _CDK_METRIC_CALL.finditer(text):
+        if _CDK_NAMESPACE.search(_braced(text, match.end() - 1, "(", ")")):
+            return True
+    return False
+
+
+def kpi_metrics(repo_path: Path) -> dict[str, str]:
+    """Custom metrics the repo publishes or alarms on: kind -> first file."""
+    found: dict[str, str] = {}
+    for rel, text in iac_texts(repo_path):
+        if _custom_namespace(rel, text):
+            found.setdefault("CloudWatch metric outside AWS/", rel)
+            break
+    for rel, name, text in _function_code(repo_path):
+        if name in _DEPENDENCY_MANIFESTS or name.endswith(".txt"):
+            continue
+        for kind, pattern in _CUSTOM_METRIC_CODE:
+            if pattern.search(text):
+                found.setdefault(kind, rel)
+    return found
+
+
+def edges(repo_path: Path) -> dict[str, str]:
+    """The user-facing endpoints the IaC declares: kind -> first file."""
+    found = _in_iac(repo_path, _EDGES)
+    if "API Gateway" not in found:
+        for rel, text in iac_texts(repo_path):
+            if _SAM_TRANSFORM.search(text) and _SAM_API_EVENT.search(text):
+                found.setdefault("API Gateway", rel)
+                break
+    return found
+
+
+def edge_telemetry(repo_path: Path) -> dict[str, str]:
+    """Canaries, RUM, health checks and edge metric alarms: kind -> first file."""
+    found = _in_iac(repo_path, _EDGE_MONITORS)
+    for rel, text in iac_texts(repo_path):
+        if not _TYPED_ALARM.search(text):
+            continue
+        if _CDK_EDGE_METRIC.search(text) or (
+            _EDGE_NAMESPACE.search(text) and _EDGE_METRIC.search(text)
+        ):
+            found.setdefault("alarm on an edge latency or error metric", rel)
+            break
+    return found
+
+
+def dependency_telemetry(repo_path: Path) -> dict[str, str]:
+    """SDK tracing and datastore or queue metric alarms: kind -> first file."""
+    found = _in_iac(repo_path, _IAC_TRACING)
+    for rel, text in iac_texts(repo_path):
+        if _TYPED_ALARM.search(text) and (
+            _DEPENDENCY_NAMESPACE.search(text) or _CDK_DEPENDENCY_METRIC.search(text)
+        ):
+            found.setdefault("alarm on a datastore or queue metric", rel)
+            break
+    for rel, name, text in _function_code(repo_path):
+        if name in _DEPENDENCY_MANIFESTS or name.endswith(".txt"):
+            if _OTEL_PACKAGES.search(text):
+                found.setdefault("OpenTelemetry AWS SDK instrumentation", rel)
+            continue
+        for kind, pattern in _SDK_TRACING_CODE:
+            if pattern.search(text):
+                found.setdefault(kind, rel)
+        if _PY_POWERTOOLS_TRACER.search(text) and not _NO_AUTO_PATCH.search(text):
+            found.setdefault("Powertools Tracer", rel)
+    return found
+
+
+def _named(found: dict[str, str]) -> str:
+    return ", ".join(f"{kind} ({rel})" for kind, rel in found.items())
+
+
+class KpiMetricMissing(_RepoRule):
+    id = "REPO-018"
+    title = "No application KPI metric"
+    severity = "Low"
+    themes = ("observability",)
+    recommendation = (
+        "Publish the metrics that say whether the workload does its job (orders placed, "
+        "jobs completed, sign-ups) in your own CloudWatch namespace: embedded metric format "
+        "or Powertools for AWS Lambda Metrics in the function code, or a metric filter on "
+        "the application logs. Alarm and build dashboards on them, not only on the AWS/ "
+        "service metrics."
+    )
+
+    def run(self, repo_path: Path, language: str = "typescript") -> List[Finding]:
+        compute = _in_iac(repo_path, _COMPUTE)
+        if not compute or kpi_metrics(repo_path):
+            return []
+        return [self._finding(
+            f"Runs {_named(compute)}; searched the IaC for a CloudWatch alarm, metric or "
+            "metric filter in a namespace outside AWS/, and the function code for embedded "
+            "metric format, the CloudWatch put metric data API, or Powertools Metrics; "
+            "found none",
+        )]
+
+
+class EdgeTelemetryMissing(_RepoRule):
+    id = "REPO-019"
+    title = "No user experience telemetry on the edge"
+    severity = "Medium"
+    themes = ("observability",)
+    recommendation = (
+        "Measure what users see at the front door: a CloudWatch Synthetics canary on the "
+        "main user journeys, CloudWatch RUM for browser clients, a Route 53 health check on "
+        "the endpoint, or alarms on the edge latency and 5xx metrics (API Gateway Latency "
+        "and 5XXError, ALB TargetResponseTime and HTTPCode_Target_5XX_Count, CloudFront "
+        "5xxErrorRate)."
+    )
+
+    def run(self, repo_path: Path, language: str = "typescript") -> List[Finding]:
+        found = edges(repo_path)
+        if not found or edge_telemetry(repo_path):
+            return []
+        return [self._finding(
+            f"Serves users through {_named(found)}; searched the IaC for a CloudWatch "
+            "Synthetics canary, a CloudWatch RUM app monitor, a Route 53 health check, and "
+            "an alarm on an edge latency or 5xx metric; found none",
+        )]
+
+
+class DependencyTelemetryMissing(_RepoRule):
+    id = "REPO-020"
+    title = "No telemetry on the datastores and queues the workload calls"
+    severity = "Low"
+    themes = ("observability",)
+    recommendation = (
+        "See how the workload's dependencies behave: trace AWS SDK calls (X-Ray "
+        "captureAWSv3Client or patch_all, Powertools Tracer, or OpenTelemetry with the ADOT "
+        "Lambda layer or CloudWatch Application Signals), and alarm on the datastore and "
+        "queue metrics (DynamoDB throttles, RDS connections, SQS age of oldest message)."
+    )
+
+    def run(self, repo_path: Path, language: str = "typescript") -> List[Finding]:
+        found = _in_iac(repo_path, _DEPENDENCIES)
+        if not found or dependency_telemetry(repo_path):
+            return []
+        return [self._finding(
+            f"Calls {_named(found)}; searched the function code for AWS SDK tracing (X-Ray, "
+            "Powertools Tracer, OpenTelemetry), the IaC for the ADOT Lambda layer or "
+            "CloudWatch Application Signals, and an alarm on a datastore or queue metric; "
+            "found none",
+        )]
+
+
 REPO_RULES: List[Rule] = [
     RepoTestsMissing(), RepoPipelineMissing(), SingleEnvironment(),
     OrgGuardrailsMissing(), AccountBaselineMissing(), RootUserUnchecked(),
@@ -1781,4 +2186,5 @@ REPO_RULES: List[Rule] = [
     DependencyScanMissing(), ArtifactScanMissing(), CentralPackageRepoMissing(),
     QuotaAlarmMissing(), FailoverHeadroomMissing(), VpcCidrOverlap(),
     IdempotencyMissing(), FaultInjectionMissing(), LoadTestMissing(),
+    KpiMetricMissing(), EdgeTelemetryMissing(), DependencyTelemetryMissing(),
 ]

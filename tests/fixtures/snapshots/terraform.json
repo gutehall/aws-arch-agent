@@ -166,5 +166,19 @@
     "file": null,
     "line": null,
     "evidence": "Searched the repo for a build to run a load test (a CI config, or a CodeBuild buildspec or pipeline in the IaC); found none"
+  },
+  {
+    "id": "REPO-018",
+    "severity": "Low",
+    "file": null,
+    "line": null,
+    "evidence": "Runs Lambda (main.tf); searched the IaC for a CloudWatch alarm, metric or metric filter in a namespace outside AWS/, and the function code for embedded metric format, the CloudWatch put metric data API, or Powertools Metrics; found none"
+  },
+  {
+    "id": "REPO-020",
+    "severity": "Low",
+    "file": null,
+    "line": null,
+    "evidence": "Calls RDS (main.tf), SQS (main.tf); searched the function code for AWS SDK tracing (X-Ray, Powertools Tracer, OpenTelemetry), the IaC for the ADOT Lambda layer or CloudWatch Application Signals, and an alarm on a datastore or queue metric; found none"
   }
 ]

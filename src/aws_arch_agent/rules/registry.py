@@ -200,7 +200,8 @@ ALL_RULES = [
     ResourceNamingConvention(),
     CdkAspectsMissing(),
     CdkContextMissing(),
-    # Operational Excellence (29 rules)
+    # Operational Excellence (32 rules)
+    # These 26, and REPO-001 to REPO-003 and REPO-018 to REPO-020 in REPO_RULES.
     CloudTrailMissing(),
     VpcFlowLogsMissing(),
     XRayTracingMissing(),
@@ -227,7 +228,8 @@ ALL_RULES = [
     S3ReplicationMetrics(),
     Ec2PatchBaselineMissing(),
     AlarmEscalationMissing(),
-    *REPO_RULES,  # repo-level: tests, pipeline, guardrails, incidents, app security, testing
+    *REPO_RULES,  # repo-level: tests, pipeline, guardrails, incidents, app security, testing,
+    # observability
     # Performance Efficiency (19 rules)
     GravitonNotUsed(),
     CachingHint(),

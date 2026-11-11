@@ -873,5 +873,23 @@
     "negative_py": "pipelines.ShellStep('LoadTest', commands=['artillery run load/artillery.yml'])",
     "positive_ts": "new ShellStep('Synth', { commands: ['npm ci', 'npx cdk synth'] });",
     "positive_py": "pipelines.ShellStep('Synth', commands=['pip install -r requirements.txt', 'cdk synth'])"
+  },
+  "REPO-018": {
+    "negative_ts": "new lambda.Function(this, 'Fn', { runtime, handler: 'index.handler', code });\nnew cloudwatch.Alarm(this, 'Orders', { metric: new cloudwatch.Metric({ namespace: 'Shop', metricName: 'OrdersPlaced' }), threshold: 1, evaluationPeriods: 1 });",
+    "negative_py": "lambda_.Function(self, 'Fn', runtime=runtime, handler='index.handler', code=code)\nlogs.MetricFilter(self, 'Orders', log_group=group, metric_namespace='Shop', metric_name='OrdersPlaced', filter_pattern=pattern)",
+    "positive_ts": "new lambda.Function(this, 'Fn', { runtime, handler: 'index.handler', code });",
+    "positive_py": "lambda_.Function(self, 'Fn', runtime=runtime, handler='index.handler', code=code)"
+  },
+  "REPO-019": {
+    "negative_ts": "new apigateway.RestApi(this, 'Api');\nnew synthetics.Canary(this, 'Checkout', { schedule, test, runtime });",
+    "negative_py": "cloudfront.Distribution(self, 'Cdn', default_behavior=behavior)\ncloudwatch.Alarm(self, 'Slow', metric=cdn.metric_origin_latency(), threshold=1000, evaluation_periods=3)",
+    "positive_ts": "new apigateway.RestApi(this, 'Api');",
+    "positive_py": "cloudfront.Distribution(self, 'Cdn', default_behavior=behavior)"
+  },
+  "REPO-020": {
+    "negative_ts": "new dynamodb.Table(this, 'Orders', { partitionKey });\nnew cloudwatch.Alarm(this, 'Throttles', { metric: table.metricThrottledRequestsForOperations({ operations }), threshold: 1, evaluationPeriods: 1 });",
+    "negative_py": "sqs.Queue(self, 'Jobs')\nqueue.metric_approximate_age_of_oldest_message().create_alarm(self, 'Age', threshold=300, evaluation_periods=1)",
+    "positive_ts": "new dynamodb.Table(this, 'Orders', { partitionKey });",
+    "positive_py": "sqs.Queue(self, 'Jobs')"
   }
 }

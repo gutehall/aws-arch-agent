@@ -1055,6 +1055,27 @@ TOPICS: dict[str, tuple[str, str, str, str]] = {
         "/wellarchitected/latest/reliability-pillar/"
         "rel_testing_resiliency_test_non_functional.html",
     ),
+    "app_kpi_metrics": (
+        "CloudWatch: embedding metrics within logs",
+        "/AmazonCloudWatch/latest/monitoring/CloudWatch_Embedded_Metric_Format.html",
+        "Well-Architected OPS04-BP01: Identify key performance indicators",
+        "/wellarchitected/latest/operational-excellence-pillar/"
+        "ops_observability_identify_kpis.html",
+    ),
+    "edge_user_telemetry": (
+        "CloudWatch: synthetic monitoring (canaries)",
+        "/AmazonCloudWatch/latest/monitoring/CloudWatch_Synthetics_Canaries.html",
+        "Well-Architected OPS04-BP03: Implement user experience telemetry",
+        "/wellarchitected/latest/operational-excellence-pillar/"
+        "ops_observability_customer_telemetry.html",
+    ),
+    "dependency_telemetry": (
+        "X-Ray: tracing AWS SDK calls with the X-Ray SDK for Node.js",
+        "/xray/latest/devguide/xray-sdk-nodejs-awssdkclients.html",
+        "Well-Architected OPS04-BP04: Implement dependency telemetry",
+        "/wellarchitected/latest/operational-excellence-pillar/"
+        "ops_observability_dependency_telemetry.html",
+    ),
     "lambda_dlq": (
         "Lambda: retain records of async invocations (DLQ and destinations)",
         "/lambda/latest/dg/invocation-async-retain-records.html",
@@ -1937,6 +1958,9 @@ RULE_TOPICS: dict[str, str] = {
     "REPO-015": "idempotent_workers",
     "REPO-016": "fault_injection",
     "REPO-017": "load_testing",
+    "REPO-018": "app_kpi_metrics",
+    "REPO-019": "edge_user_telemetry",
+    "REPO-020": "dependency_telemetry",
     "PERF-001": "graviton_ec2",
     "PERF-002": "caching",
     "PERF-003": "ddb_capacity",
