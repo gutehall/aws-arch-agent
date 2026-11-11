@@ -2,7 +2,7 @@
 incident response (SEC 10), application security (SEC 11), service quotas (REL 1),
 VPC address plan (REL 2), idempotent workers (REL 4), reliability testing (REL 12),
 observability (OPS 4), deployment risk (OPS 6), change management (REL 8), workload
-monitoring (REL 6).
+monitoring (REL 6), demand and impairment scaling (REL 7).
 
 REPO-006 (the account root user) answers SEC01-BP02 in SEC 1, though it was added with the
 SEC 2 checks.
@@ -357,6 +357,26 @@ and reads the IaC with the OPS 4 and OPS 8 telemetry model. Metrics and notifica
   X-Ray tracing (TracingEnabled, xray_tracing_enabled, tracingEnabled). HTTP APIs have no
   X-Ray and are not judged. Both are repo-wide: one traced function passes every compute
   resource.
+
+Demand and impairment scaling (REL 7) runs by default and reuses the REPO-047 scaling
+policy pattern. Load testing (REL07-BP04) is REPO-017, which answers REL 12:
+
+- REPO-049 fixed-size fleet: names each fleet that cannot grow on demand. An ECS service
+  (not a DAEMON one; QueueProcessing services scale themselves and are not matched) when
+  the repo declares no Application Auto Scaling target on ecs:service:DesiredCount (CDK
+  autoScaleTaskCount); an Auto Scaling group whose literal minimum equals its maximum
+  (CDK defaults: minimum 1, maximum the minimum) or when the repo has no scaling policy or
+  scheduled action; a DynamoDB table in provisioned billing (BillingMode PROVISIONED, or
+  unset with provisioned throughput or read capacity) when the repo declares no DynamoDB
+  scalable target (CDK autoScale*Capacity, Capacity.autoscaled). Values from variables or
+  parameters are not judged. Each check is repo-wide: which target scales which service
+  is not matched.
+- REPO-050 CPU-only scaling: when the repo has scaling policies and every one tracks CPU or
+  memory (predefined CPU or memory types, CDK CPU and memory helpers, a custom metric or
+  step scaling alarm on CPU or memory). Any other signal passes: request count per target,
+  queue depth or a QueueProcessing service, latency, errors, any other custom metric, or
+  predictive scaling. DynamoDB utilization policies and schedules are not judged; a step
+  policy whose alarm is not found is not counted as CPU.
 """
 from __future__ import annotations
 
@@ -4386,13 +4406,16 @@ class LogErrorAnalysisMissing(_RepoRule):
         )]
 
 
+# An EC2 Auto Scaling or Application Auto Scaling policy (REPO-047, REPO-049, REPO-050).
+_SCALING_POLICY = (
+    _cf_type(r"ApplicationAutoScaling::ScalingPolicy|AutoScaling::ScalingPolicy")
+    + r"|resource\s+\"aws_(?:appautoscaling|autoscaling)_policy\""
+    r"|\.(?:scaleOn\w+|scale_on_\w+|autoScale\w+|auto_scale_\w+|scaleToTrack\w*"
+    r"|scale_to_track\w*|add_?[aA]uto_?[sS]caling)\("
+    r"|\b(?:Cfn)?(?:Step|TargetTracking)?ScalingPolicy\("
+)
 _AUTOMATED_RESPONSE = _kinds(
-    ("scaling policy",
-     _cf_type(r"ApplicationAutoScaling::ScalingPolicy|AutoScaling::ScalingPolicy")
-     + r"|resource\s+\"aws_(?:appautoscaling|autoscaling)_policy\""
-     r"|\.(?:scaleOn\w+|scale_on_\w+|autoScale\w+|auto_scale_\w+|scaleToTrack\w*"
-     r"|scale_to_track\w*|add_?[aA]uto_?[sS]caling)\("
-     r"|\b(?:Cfn)?(?:Step|TargetTracking)?ScalingPolicy\("),
+    ("scaling policy", _SCALING_POLICY),
     ("alarm action that runs automation",
      r"[\"']?(?:AlarmActions|OKActions|alarm_actions|ok_actions)[\"']?\s*[:=]\s*[^\]]{0,300}?"
      r"(?:arn:[^:\s\"']+:(?:automate|lambda|ssm|ssm-incidents):"
@@ -4544,6 +4567,402 @@ class EndToEndTracingMissing(_RepoRule):
         return [self._finding(text[0].upper() + text[1:], file=file)]
 
 
+# Demand and impairment scaling (REL 7): fleets that cannot grow on demand (REPO-049) and
+# scaling that reacts only to CPU or memory (REPO-050). Both reuse the REPO-047 scaling
+# policy pattern.
+
+_CDK_ID = r"\(\s*(?:this|self)\s*,\s*['\"]([^'\"]+)['\"]"
+_SCALABLE_DIMENSION = (
+    r"[\"']?(?:ScalableDimension|scalable_dimension|scalableDimension)[\"']?\s*[:=]\s*[\"']?"
+)
+_ECS_SCALABLE_TARGET = re.compile(
+    _SCALABLE_DIMENSION + r"ecs:service:DesiredCount\b"
+    r"|\.(?:autoScaleTaskCount|auto_scale_task_count)\("
+)
+_DYNAMODB_AUTOSCALING = re.compile(
+    _SCALABLE_DIMENSION + r"dynamodb:(?:table|index):"
+    r"|\.(?:autoScale\w*Capacity|auto_scale_\w*capacity)\(|\bCapacity\.autoscaled\("
+)
+_ASG_SCALING = re.compile(
+    _SCALING_POLICY + "|" + _cf_type(r"AutoScaling::ScheduledAction")
+    + r"|resource\s+\"aws_autoscaling_schedule\""
+)
+_CF_FLEET = re.compile(_cf_type(r"ECS::Service|AutoScaling::AutoScalingGroup|DynamoDB::Table"))
+_TF_FLEET = re.compile(
+    r"resource\s+\"(aws_ecs_service|aws_autoscaling_group|aws_dynamodb_table)\"\s+"
+    r"\"([^\"]+)\"\s*\{"
+)
+# QueueProcessing services scale on their queue by themselves and are not matched.
+_CDK_FLEET = re.compile(
+    r"\b(?:new\s+)?(?:\w+\.)?((?:ApplicationLoadBalanced|NetworkLoadBalanced)?"
+    r"(?:Fargate|Ec2)Service|CfnService|CfnAutoScalingGroup|AutoScalingGroup|CfnTable|Table)"
+    + _CDK_ID
+)
+_TF_DAEMON = re.compile(r"\bscheduling_strategy\s*=\s*\"DAEMON\"")
+_CDK_DAEMON = re.compile(
+    r"\bdaemon\s*[:=]\s*(?:true|True)\b|\bscheduling_?[sS]trategy\s*[:=]\s*['\"]DAEMON['\"]"
+)
+_SPREAD = re.compile(r"\.\.\.|\*\*")
+
+
+def _num(value: object) -> int | None:
+    """A literal whole number (CloudFormation sizes are often strings)."""
+    if isinstance(value, bool):
+        return None
+    if isinstance(value, int):
+        return value
+    if isinstance(value, str) and value.strip().isdigit():
+        return int(value)
+    return None
+
+
+def _same_size(low: int | None, high: int | None) -> int | None:
+    return low if low is not None and low == high else None
+
+
+def _cf_fleets(rel: str, text: str) -> List[tuple[str, str, int | None, int | None]]:
+    """(check, name, line, fixed size) for ECS services, Auto Scaling groups and
+    provisioned DynamoDB tables in a CloudFormation template."""
+    try:
+        doc = parse_template_text(Path(rel), text)
+    except Exception:  # noqa: BLE001 - not a readable template
+        return []
+    resources = doc.get("Resources") if isinstance(doc, dict) else None
+    found: List[tuple[str, str, int | None, int | None]] = []
+    for name, body in (resources.items() if isinstance(resources, dict) else ()):
+        if not isinstance(body, dict):
+            continue
+        props = body.get("Properties")
+        props = props if isinstance(props, dict) else {}
+        line = _cf_logical_line(text, str(name))
+        kind = body.get("Type")
+        if kind == "AWS::ECS::Service" and props.get("SchedulingStrategy") != "DAEMON":
+            found.append(("ecs", str(name), line, None))
+        elif kind == "AWS::AutoScaling::AutoScalingGroup":
+            size = _same_size(_num(props.get("MinSize")), _num(props.get("MaxSize")))
+            found.append(("asg", str(name), line, size))
+        elif kind == "AWS::DynamoDB::Table":
+            mode = props.get("BillingMode")
+            if mode == "PROVISIONED" or (mode is None and "ProvisionedThroughput" in props):
+                found.append(("dynamodb", str(name), line, None))
+    return found
+
+
+def _tf_setting(block: str, key: str) -> str | None:
+    match = re.search(rf"(?m)^\s*{key}\s*=\s*(.+?)\s*(?:#.*)?$", block)
+    return match.group(1) if match else None
+
+
+def _tf_number(block: str, key: str) -> int | None:
+    value = _tf_setting(block, key)
+    match = re.fullmatch(r"\"?(\d+)\"?", value or "")
+    return int(match.group(1)) if match else None
+
+
+def _tf_fleets(text: str) -> List[tuple[str, str, int | None, int | None]]:
+    found: List[tuple[str, str, int | None, int | None]] = []
+    for match in _TF_FLEET.finditer(text):
+        kind, name = match.groups()
+        block = _braced(text, match.end() - 1)
+        line = _line_of(text, match.start())
+        if kind == "aws_ecs_service" and not _TF_DAEMON.search(block):
+            found.append(("ecs", name, line, None))
+        elif kind == "aws_autoscaling_group":
+            size = _same_size(_tf_number(block, "min_size"), _tf_number(block, "max_size"))
+            found.append(("asg", name, line, size))
+        elif kind == "aws_dynamodb_table":
+            mode = _tf_setting(block, "billing_mode")
+            if mode == '"PROVISIONED"' or (
+                mode is None and _tf_setting(block, "read_capacity") is not None
+            ):
+                found.append(("dynamodb", name, line, None))
+    return found
+
+
+def _cdk_literal(args: str, key: str) -> tuple[bool, int | None]:
+    """Whether the props set the key, and its value when it is a literal number."""
+    if not re.search(rf"\b{key}\s*[:=]", args):
+        return False, None
+    match = re.search(rf"\b{key}\s*[:=]\s*['\"]?(\d+)(?![\w.])['\"]?(?![ \t]*[*+\-/])", args)
+    return True, int(match.group(1)) if match else None
+
+
+def _cdk_group_size(cls: str, args: str) -> tuple[bool, int | None]:
+    """(judged, fixed size) of a CDK Auto Scaling group. An AutoScalingGroup defaults to a
+    minimum of 1 and a maximum of max(minimum, 1)."""
+    keys = ("min_?[sS]ize", "max_?[sS]ize") if cls.startswith("Cfn") else (
+        "min_?[cC]apacity", "max_?[cC]apacity")
+    (has_low, low), (has_high, high) = (_cdk_literal(args, k) for k in keys)
+    if (has_low and low is None) or (has_high and high is None):
+        return False, None
+    if not (has_low and has_high) and (cls.startswith("Cfn") or _SPREAD.search(args)):
+        return False, None
+    floor = low if low is not None else 1
+    ceiling = high if high is not None else max(floor, 1)
+    return True, _same_size(floor, ceiling)
+
+
+def _cdk_provisioned_table(cls: str, args: str) -> bool:
+    if cls == "Table":
+        if not re.search(r"\bpartition_?[kK]ey\b", args):
+            return False
+        if re.search(r"\bBillingMode\.PROVISIONED\b", args):
+            return True
+        if re.search(r"\bbilling_?[mM]ode\s*[:=]", args):
+            return False
+        return bool(re.search(r"\b(?:read|write)_?[cC]apacity\s*[:=]", args))
+    if not re.search(r"\bkey_?[sS]chema\b", args):
+        return False
+    if re.search(r"\bbilling_?[mM]ode\s*[:=]\s*['\"]PROVISIONED['\"]", args):
+        return True
+    return not re.search(r"\bbilling_?[mM]ode\s*[:=]", args) and bool(
+        re.search(r"\bprovisioned_?[tT]hroughput\s*[:=]", args))
+
+
+def _cdk_fleets(text: str) -> List[tuple[str, str, int | None, int | None]]:
+    found: List[tuple[str, str, int | None, int | None]] = []
+    for match in _CDK_FLEET.finditer(text):
+        cls, name = match.groups()
+        args = _braced(text, match.start() + match.group(0).index("("), "(", ")")
+        line = _line_of(text, match.start())
+        if cls.endswith("Service"):
+            if cls == "CfnService" and "ecs.CfnService" not in match.group(0):
+                continue
+            if not _CDK_DAEMON.search(args):
+                found.append(("ecs", name, line, None))
+        elif cls.endswith("AutoScalingGroup"):
+            judged, size = _cdk_group_size(cls, args)
+            found.append(("asg", name, line, size if judged else None))
+        elif _cdk_provisioned_table(cls, args):
+            found.append(("dynamodb", name, line, None))
+    return found
+
+
+def fixed_fleets(repo_path: Path) -> List[tuple[str, str, int | None, str]]:
+    """Fleets that cannot grow on demand: (fleet, file, line, why)."""
+    candidates: List[tuple[str, str, str, int | None, int | None]] = []
+    ecs_target = asg_policy = table_scaling = False
+    for rel, text in iac_texts(repo_path):
+        ecs_target = ecs_target or bool(_ECS_SCALABLE_TARGET.search(text))
+        asg_policy = asg_policy or bool(_ASG_SCALING.search(text))
+        table_scaling = table_scaling or bool(_DYNAMODB_AUTOSCALING.search(text))
+        fleets = _tf_fleets(text) + _cdk_fleets(text)
+        if _CF_FLEET.search(text):
+            fleets += _cf_fleets(rel, text)
+        candidates.extend((check, name, rel, line, size) for check, name, line, size in fleets)
+    found: List[tuple[str, str, int | None, str]] = []
+    for check, name, rel, line, size in candidates:
+        if check == "ecs" and not ecs_target:
+            fleet, why = f"ECS service {name}", "no Application Auto Scaling target on its tasks"
+        elif check == "asg" and size is not None:
+            fleet, why = f"Auto Scaling group {name}", f"minimum and maximum size both {size}"
+        elif check == "asg" and not asg_policy:
+            fleet, why = f"Auto Scaling group {name}", "no scaling policy in the repo"
+        elif check == "dynamodb" and not table_scaling:
+            fleet, why = f"DynamoDB table {name}", "provisioned capacity, no auto scaling"
+        else:
+            continue
+        found.append((fleet, rel, line, why))
+    return found
+
+
+class FixedSizeFleet(_RepoRule):
+    id = "REPO-049"
+    title = "A fleet has a fixed size"
+    category = "Reliability"
+    severity = "Medium"
+    themes = ("resilience",)
+    recommendation = (
+        "Let each fleet grow and shrink with demand: register the ECS service's desired "
+        "task count with Application Auto Scaling and attach a scaling policy, give each Auto "
+        "Scaling group a maximum above its minimum and a scaling policy, and switch DynamoDB "
+        "tables to on-demand capacity or turn on auto scaling for their read and write "
+        "capacity."
+    )
+
+    def run(self, repo_path: Path, language: str = "typescript") -> List[Finding]:
+        fleets = fixed_fleets(repo_path)
+        if not fleets:
+            return []
+        places = [f"{fleet} at {rel}:{line} ({why})" if line else f"{fleet} in {rel} ({why})"
+                  for fleet, rel, line, why in fleets]
+        return [self._finding(
+            f"Fleets that cannot grow on demand: {_listed(places, 4)}",
+            file=fleets[0][1],
+            line=fleets[0][2],
+        )]
+
+
+_CPU_OR_MEMORY = re.compile(r"(?i)cpu|memory")
+_DYNAMODB_UTILIZATION = re.compile(r"(?i)dynamodb_?(?:read|write)_?capacity_?utilization")
+_CF_POLICY_TYPES = ("AWS::AutoScaling::ScalingPolicy", "AWS::ApplicationAutoScaling::ScalingPolicy")
+_CF_POLICY = re.compile(
+    _cf_type(r"ApplicationAutoScaling::ScalingPolicy|AutoScaling::ScalingPolicy")
+)
+_TF_POLICY = re.compile(
+    r"resource\s+\"aws_(?:appautoscaling|autoscaling)_policy\"\s+\"([^\"]+)\"\s*\{"
+)
+_TF_POLICY_REF = re.compile(r"\baws_(?:appautoscaling|autoscaling)_policy\.(\w+)\b")
+_TF_PREDICTIVE = re.compile(
+    r"\bpolicy_type\s*=\s*\"PredictiveScaling\"|\bpredictive_scaling_configuration\s*\{"
+)
+_TF_TARGET_TRACKING = re.compile(r"\btarget_tracking_(?:scaling_policy_)?configuration\s*\{")
+_TF_METRIC = re.compile(r"\bmetric_name\s*=\s*[^\n]+|\bmetric_query\s*\{")
+_CDK_SCALE_CALL = re.compile(r"\.(scaleOn\w+|scale_on_\w+|scaleToTrack\w*|scale_to_track\w*)\(")
+_CDK_POLICY_CTOR = re.compile(r"\b(?:Cfn)?(?:Step|TargetTracking)?ScalingPolicy" + _CDK_ID)
+_CDK_QUEUE_SERVICE = re.compile(r"\bQueueProcessing(?:Fargate|Ec2)Service" + _CDK_ID)
+_CDK_FIRST_STRING = re.compile(r"\s*['\"]([^'\"]+)['\"]\s*,")
+
+
+def _metric_kind(text: str) -> str | None:
+    """'cpu' for a CPU or memory metric, None for DynamoDB utilization (not judged), and
+    'other' for any other signal."""
+    if _DYNAMODB_UTILIZATION.search(text):
+        return None
+    return "cpu" if _CPU_OR_MEMORY.search(text) else "other"
+
+
+def _alarm_kind(metrics: List[str]) -> str:
+    """A step or simple scaling policy reacts to the alarms that call it; with no alarm
+    found, the signal is unknown and not counted as CPU."""
+    kinds = {_metric_kind(m) for m in metrics}
+    return "cpu" if kinds == {"cpu"} else "other"
+
+
+def _cf_policies(rel: str, text: str) -> List[tuple[str, int | None, str | None]]:
+    try:
+        doc = parse_template_text(Path(rel), text)
+    except Exception:  # noqa: BLE001 - not a readable template
+        return []
+    resources = doc.get("Resources") if isinstance(doc, dict) else None
+    if not isinstance(resources, dict):
+        return []
+    alarms: List[tuple[str, str]] = []
+    for body in resources.values():
+        if isinstance(body, dict) and body.get("Type") == "AWS::CloudWatch::Alarm":
+            props = body.get("Properties")
+            props = props if isinstance(props, dict) else {}
+            alarms.append((json.dumps(props.get("AlarmActions"), default=str),
+                           json.dumps([props.get("MetricName"), props.get("Metrics")],
+                                      default=str)))
+    found: List[tuple[str, int | None, str | None]] = []
+    for name, body in resources.items():
+        if not isinstance(body, dict) or body.get("Type") not in _CF_POLICY_TYPES:
+            continue
+        props = body.get("Properties")
+        props = props if isinstance(props, dict) else {}
+        config = (props.get("TargetTrackingConfiguration")
+                  or props.get("TargetTrackingScalingPolicyConfiguration"))
+        if props.get("PolicyType") == "PredictiveScaling":
+            kind: str | None = "other"
+        elif config is not None:
+            kind = _metric_kind(json.dumps(config, default=str))
+        else:
+            kind = _alarm_kind([m for actions, m in alarms if f'"{name}"' in actions])
+        found.append((str(name), _cf_logical_line(text, str(name)), kind))
+    return found
+
+
+def _tf_alarm_metrics(text: str) -> dict[str, List[str]]:
+    """Terraform scaling policy name -> the metrics of the alarms that call it."""
+    found: dict[str, List[str]] = {}
+    for match in _TF_ALARM.finditer(text):
+        block = _braced(text, match.end() - 1)
+        metric = " ".join(m.group(0) for m in _TF_METRIC.finditer(block))
+        for ref in _TF_POLICY_REF.finditer(block):
+            found.setdefault(ref.group(1), []).append(metric)
+    return found
+
+
+def _tf_policies(text: str, alarms: dict[str, List[str]]
+                 ) -> List[tuple[str, int | None, str | None]]:
+    found: List[tuple[str, int | None, str | None]] = []
+    for match in _TF_POLICY.finditer(text):
+        name = match.group(1)
+        block = _braced(text, match.end() - 1)
+        tracking = _TF_TARGET_TRACKING.search(block)
+        if _TF_PREDICTIVE.search(block):
+            kind: str | None = "other"
+        elif tracking:
+            kind = _metric_kind(_braced(block, tracking.end() - 1))
+        else:
+            kind = _alarm_kind(alarms.get(name, []))
+        found.append((name, _line_of(text, match.start()), kind))
+    return found
+
+
+def _cdk_policies(text: str) -> List[tuple[str, int | None, str | None]]:
+    found: List[tuple[str, int | None, str | None]] = []
+    for match in _CDK_SCALE_CALL.finditer(text):
+        method = match.group(1).replace("_", "").lower()
+        args = _braced(text, match.end() - 1, "(", ")")
+        named = _CDK_FIRST_STRING.match(args)
+        name = named.group(1) if named else match.group(1)
+        rest = args[named.end():] if named else args
+        if method in ("scaleoncpuutilization", "scaleonmemoryutilization"):
+            kind: str | None = "cpu"
+        elif method in ("scaleonschedule", "scaleonutilization"):
+            continue  # a schedule, or DynamoDB utilization
+        elif method in ("scaleonmetric", "scaletotrackmetric"):
+            kind = _metric_kind(rest)
+        else:
+            kind = "other"
+        found.append((name, _line_of(text, match.start()), kind))
+    for match in _CDK_POLICY_CTOR.finditer(text):
+        args = _braced(text, match.start() + match.group(0).index("("), "(", ")")
+        rest = args[args.find(",") + 1:]
+        kind = "other" if re.search(r"(?i)predictive", rest) else _metric_kind(rest)
+        found.append((match.group(1), _line_of(text, match.start()), kind))
+    for match in _CDK_QUEUE_SERVICE.finditer(text):
+        found.append((match.group(1), _line_of(text, match.start()), "other"))
+    return found
+
+
+def scaling_policies(repo_path: Path) -> List[tuple[str, str, int | None, str]]:
+    """Scaling policies and what they react to: (name, file, line, 'cpu' or 'other').
+    DynamoDB utilization and scheduled actions are left out."""
+    texts = list(iac_texts(repo_path))
+    alarms: dict[str, List[str]] = {}
+    for _, text in texts:
+        for name, metrics in _tf_alarm_metrics(text).items():
+            alarms.setdefault(name, []).extend(metrics)
+    found: List[tuple[str, str, int | None, str]] = []
+    for rel, text in texts:
+        policies = _tf_policies(text, alarms) + _cdk_policies(text)
+        if _CF_POLICY.search(text):
+            policies += _cf_policies(rel, text)
+        found.extend((name, rel, line, kind) for name, line, kind in policies if kind)
+    return found
+
+
+class CpuOnlyScaling(_RepoRule):
+    id = "REPO-050"
+    title = "Scaling reacts only to CPU or memory"
+    category = "Reliability"
+    severity = "Low"
+    themes = ("resilience",)
+    recommendation = (
+        "Scale on the signals that show demand rising or the workload failing, not only on "
+        "host load: track request count per target, queue backlog per task or the age of "
+        "the oldest message, response latency, or the rate of server errors with a target "
+        "tracking or step scaling policy, and add predictive scaling for regular traffic. "
+        "CPU and memory lag behind a queue that is filling or a dependency that is slow."
+    )
+
+    def run(self, repo_path: Path, language: str = "typescript") -> List[Finding]:
+        policies = scaling_policies(repo_path)
+        if not policies or any(kind != "cpu" for *_, kind in policies):
+            return []
+        places = [f"{name} at {rel}:{line}" if line else f"{name} in {rel}"
+                  for name, rel, line, _ in policies]
+        return [self._finding(
+            f"Every scaling policy reacts to CPU or memory ({_listed(places, 4)}); none "
+            "scales on queue depth, request count, latency, error rate or a forecast",
+            file=policies[0][1],
+            line=policies[0][2],
+        )]
+
+
 REPO_RULES: List[Rule] = [
     RepoTestsMissing(), RepoPipelineMissing(), SingleEnvironment(),
     OrgGuardrailsMissing(), AccountBaselineMissing(), RootUserUnchecked(),
@@ -4565,4 +4984,5 @@ REPO_RULES: List[Rule] = [
     LocalStateOnCompute(), EmergencyLeverMissing(), FallbackMissing(),
     AlarmMetricUndefined(), LogErrorAnalysisMissing(), AlarmResponseMissing(),
     EndToEndTracingMissing(),
+    FixedSizeFleet(), CpuOnlyScaling(),
 ]

@@ -1059,5 +1059,17 @@
     "negative_py": "fn = _lambda.Function(self, 'Fn', tracing=_lambda.Tracing.ACTIVE, **props)",
     "positive_ts": "const fn = new lambda.Function(this, 'Fn', props);",
     "positive_py": "fn = _lambda.Function(self, 'Fn', **props)"
+  },
+  "REPO-049": {
+    "negative_ts": "const svc = new ecs.FargateService(this, 'Svc', props);\nsvc.autoScaleTaskCount({ maxCapacity: 4 }).scaleOnRequestCount('Requests', { requestsPerTarget: 100, targetGroup });",
+    "negative_py": "table = dynamodb.Table(self, 'Orders', partition_key=key, billing_mode=dynamodb.BillingMode.PAY_PER_REQUEST)",
+    "positive_ts": "new autoscaling.AutoScalingGroup(this, 'Asg', { vpc, instanceType, machineImage, minCapacity: 2, maxCapacity: 2 });",
+    "positive_py": "ecs.FargateService(self, 'Svc', cluster=cluster, task_definition=task)"
+  },
+  "REPO-050": {
+    "negative_ts": "const svc = new ecs.FargateService(this, 'Svc', props);\nconst scaling = svc.autoScaleTaskCount({ maxCapacity: 4 });\nscaling.scaleOnCpuUtilization('Cpu', { targetUtilizationPercent: 60 });\nscaling.scaleOnMetric('Backlog', { metric: queue.metricApproximateNumberOfMessagesVisible(), scalingSteps });",
+    "negative_py": "svc = ecs.FargateService(self, 'Svc', **props)",
+    "positive_ts": "const svc = new ecs.FargateService(this, 'Svc', props);\nsvc.autoScaleTaskCount({ maxCapacity: 4 }).scaleOnCpuUtilization('Cpu', { targetUtilizationPercent: 60 });",
+    "positive_py": "svc = ecs.FargateService(self, 'Svc', **props)\nscaling = svc.auto_scale_task_count(max_capacity=4)\nscaling.scale_on_cpu_utilization('Cpu', target_utilization_percent=60)\nscaling.scale_on_memory_utilization('Memory', target_utilization_percent=70)"
   }
 }

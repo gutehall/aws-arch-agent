@@ -1926,6 +1926,19 @@ TOPICS: dict[str, tuple[str, str, str, str]] = {
         "Well-Architected REL06-BP07: Monitor end-to-end tracing of requests through your system",
         "/wellarchitected/latest/reliability-pillar/rel_monitor_aws_resources_end_to_end.html",
     ),
+    "demand_scaling": (
+        "Application Auto Scaling: what is Application Auto Scaling",
+        "/autoscaling/application/userguide/what-is-application-auto-scaling.html",
+        "Well-Architected REL07-BP03: Obtain resources upon detection that more resources are "
+        "needed for a workload",
+        "/wellarchitected/latest/reliability-pillar/rel_adapt_to_changes_proactive_adapt_auto.html",
+    ),
+    "impairment_scaling": (
+        "Application Auto Scaling: target tracking scaling policies",
+        "/autoscaling/application/userguide/application-auto-scaling-target-tracking.html",
+        "Well-Architected REL07-BP02: Obtain resources upon detection of impairment to a workload",
+        "/wellarchitected/latest/reliability-pillar/rel_adapt_to_changes_reactive_adapt_auto.html",
+    ),
     "org_guardrails": (
         "Service control policies (SCPs)",
         "/organizations/latest/userguide/orgs_manage_policies_scps.html",
@@ -2172,6 +2185,8 @@ RULE_TOPICS: dict[str, str] = {
     "REPO-046": "log_error_analysis",
     "REPO-047": "alarm_automation",
     "REPO-048": "end_to_end_tracing",
+    "REPO-049": "demand_scaling",
+    "REPO-050": "impairment_scaling",
     "PERF-001": "graviton_ec2",
     "PERF-002": "caching",
     "PERF-003": "ddb_capacity",
