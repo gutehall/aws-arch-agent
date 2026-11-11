@@ -1824,6 +1824,12 @@ TOPICS: dict[str, tuple[str, str, str, str]] = {
         "Well-Architected SEC03-BP03: Establish emergency access process",
         "/wellarchitected/latest/security-pillar/sec_permissions_emergency_process.html",
     ),
+    "finding_aggregation": (
+        "Security Hub: product integrations (GuardDuty, Config, Inspector, Macie)",
+        "/securityhub/latest/userguide/securityhub-internal-providers.html",
+        "Well-Architected SEC04-BP03: Correlate and enrich security alerts",
+        "/wellarchitected/latest/security-pillar/sec_detect_investigate_events_security_alerts.html",
+    ),
     "org_guardrails": (
         "Service control policies (SCPs)",
         "/organizations/latest/userguide/orgs_manage_policies_scps.html",
@@ -2054,6 +2060,7 @@ RULE_TOPICS: dict[str, str] = {
     "REPO-030": "workload_dashboards",
     "REPO-031": "permission_boundaries",
     "REPO-032": "break_glass",
+    "REPO-033": "finding_aggregation",
     "PERF-001": "graviton_ec2",
     "PERF-002": "caching",
     "PERF-003": "ddb_capacity",

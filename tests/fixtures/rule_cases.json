@@ -963,5 +963,11 @@
     "negative_py": "iam.Role(self, 'EmergencyAccess', assumed_by=iam.AccountRootPrincipal())",
     "positive_ts": "new iam.Role(this, 'Worker', { assumedBy });",
     "positive_py": "iam.Role(self, 'Worker', assumed_by=principal)"
+  },
+  "REPO-033": {
+    "negative_ts": "new guardduty.CfnDetector(this, 'Detector', { enable: true });\nnew securityhub.CfnHub(this, 'Hub');",
+    "negative_py": "guardduty.CfnDetector(self, 'Detector', enable=True)\nsecurityhub.CfnHub(self, 'Hub')",
+    "positive_ts": "new guardduty.CfnDetector(this, 'Detector', { enable: true });",
+    "positive_py": "guardduty.CfnDetector(self, 'Detector', enable=True)"
   }
 }

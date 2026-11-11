@@ -4,13 +4,13 @@ This document provides a comprehensive list of all rules checked by AWS Arch Age
 
 ## Overview
 
-AWS Arch Agent checks **211 static analysis rules** and **281 template checks** across all 6 AWS Well-Architected Framework pillars. 139 of the 211 CDK rules (66%) have a template check, so they also run for CloudFormation, Terraform and synthesised CDK. [COVERAGE.md](COVERAGE.md) gives the reason for each of the others.
+AWS Arch Agent checks **212 static analysis rules** and **281 template checks** across all 6 AWS Well-Architected Framework pillars. 139 of the 212 CDK rules (66%) have a template check, so they also run for CloudFormation, Terraform and synthesised CDK. [COVERAGE.md](COVERAGE.md) gives the reason for each of the others.
 
 ## Static Analysis Rules (V1 & V2 Modes)
 
 These rules run on your CDK TypeScript/Python code and execute in both V1 and V2 modes.
 
-### Security (81 rules)
+### Security (82 rules)
 
 **Encryption & Data Protection:**
 - SEC-006: S3 bucket encryption missing
@@ -114,6 +114,7 @@ These rules run on your CDK TypeScript/Python code and execute in both V1 and V2
 - REPO-011: Packages are not pulled through a central repository
 - REPO-031: IAM roles have no permissions boundary or SCP to cap them
 - REPO-032: No break-glass role kept apart from the workload's roles
+- REPO-033: Security findings have no place to meet
 
 ### Reliability (43 rules)
 
@@ -1016,6 +1017,7 @@ Every rule has one or more themes, which cut across pillars: `finops`, `security
 | REPO-030 | observability |
 | REPO-031 | identity |
 | REPO-032 | identity |
+| REPO-033 | security-baseline |
 | SEC-001 | identity |
 | SEC-002 | identity |
 | SEC-003 | network-exposure |

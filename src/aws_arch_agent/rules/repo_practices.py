@@ -232,6 +232,16 @@ CF-RP-001 and CF-KMS-001; these two read the rest:
   ExecutionRoleArn, TaskRoleArn or ServiceRoleArn property (role, role_arn,
   execution_role_arn, task_role_arn, executionRole, taskRole in Terraform and CDK) that
   names it.
+
+Correlated security findings (SEC 4):
+
+- REPO-033 finding destination: when the IaC turns on a detector (a GuardDuty detector, an
+  AWS Config recorder or rule, Amazon Inspector, Amazon Macie, or IAM Access Analyzer), the
+  findings need one place to meet: Security Hub or Amazon Security Lake in the IaC, or an
+  EventBridge rule with a target in a file that names the detector's event source
+  (aws.guardduty, aws.config, aws.inspector2, aws.macie, aws.access-analyzer). It names each
+  detector whose findings go nowhere. Security Hub off by itself, with no detector in the
+  repo, is SEC-026 (an org-level rule).
 """
 from __future__ import annotations
 
@@ -3239,6 +3249,87 @@ class BreakGlassRoleMissing(_RepoRule):
         )]
 
 
+# SEC 4: security findings meet in one place (REPO-033).
+
+_DETECTORS: tuple[tuple[str, str, re.Pattern[str]], ...] = tuple(
+    (name, source, re.compile(pattern)) for name, source, pattern in (
+        ("GuardDuty detector", "guardduty",
+         r"AWS::GuardDuty::Detector\b|resource\s+\"aws_guardduty_detector\""
+         r"|guardduty\.CfnDetector\("),
+        ("AWS Config", "config",
+         r"AWS::Config::(?:ConfigurationRecorder|ConfigRule)\b"
+         r"|resource\s+\"aws_config_(?:configuration_recorder|config_rule)\""
+         r"|\bconfig\.(?:CfnConfigurationRecorder|CfnConfigRule|ManagedRule|CustomRule)\("),
+        ("Amazon Inspector", "inspector2",
+         r"AWS::InspectorV2::\w+|resource\s+\"aws_inspector2_enabler\""
+         r"|\binspectorv2\.Cfn\w+\("),
+        ("Amazon Macie", "macie",
+         r"AWS::Macie::Session\b|resource\s+\"aws_macie2_account\"|\bmacie\.CfnSession\("),
+        ("IAM Access Analyzer", "access-analyzer",
+         r"AWS::AccessAnalyzer::Analyzer\b|resource\s+\"aws_accessanalyzer_analyzer\""
+         r"|accessanalyzer\.CfnAnalyzer\("),
+    )
+)
+_FINDING_HUB = re.compile(
+    r"AWS::SecurityHub::Hub(?:V2)?\b|resource\s+\"aws_securityhub_account\""
+    r"|securityhub\.CfnHub(?:V2)?\("
+    r"|AWS::SecurityLake::DataLake\b|resource\s+\"aws_securitylake_data_lake\""
+    r"|securitylake\.CfnDataLake\("
+)
+_RULE_TARGET = re.compile(
+    r"[\"']?Targets[\"']?\s*:|resource\s+\"aws_cloudwatch_event_target\""
+    r"|\.add_?[tT]arget\(|\btargets\s*[:=]"
+)
+
+
+def finding_destinations(repo_path: Path) -> tuple[dict[str, str], set[str], bool]:
+    """The detectors the IaC turns on (name -> first file), the event sources an
+    EventBridge rule with a target routes, and whether Security Hub or Security Lake is
+    declared."""
+    detectors: dict[str, str] = {}
+    routed: set[str] = set()
+    hub = False
+    for rel, text in iac_texts(repo_path):
+        hub = hub or bool(_FINDING_HUB.search(text))
+        routes = bool(_EVENT_RULE.search(text) and _RULE_TARGET.search(text))
+        for name, source, pattern in _DETECTORS:
+            if pattern.search(text):
+                detectors.setdefault(name, rel)
+            if routes and re.search(rf"\baws\.{re.escape(source)}\b", text):
+                routed.add(source)
+    return detectors, routed, hub
+
+
+class SecurityFindingsUncorrelated(_RepoRule):
+    id = "REPO-033"
+    title = "Security findings have no place to meet"
+    category = "Security"
+    severity = "Medium"
+    themes = ("security-baseline",)
+    recommendation = (
+        "Bring the findings together so one alert can be read with the others: enable "
+        "Security Hub (it takes GuardDuty, Config, Inspector, Macie and Access Analyzer "
+        "findings), or Amazon Security Lake, or route each detector's events with an "
+        "EventBridge rule to one destination your responders watch."
+    )
+
+    def run(self, repo_path: Path, language: str = "typescript") -> List[Finding]:
+        detectors, routed, hub = finding_destinations(repo_path)
+        if hub:
+            return []
+        alone = {
+            name: rel for name, source, _pattern in _DETECTORS
+            if (rel := detectors.get(name)) and source not in routed
+        }
+        if not alone:
+            return []
+        return [self._finding(
+            f"Turns on {_named(alone)}; searched the IaC for Security Hub, Amazon Security "
+            "Lake, and an EventBridge rule with a target on the detector's event source; "
+            "found none",
+        )]
+
+
 REPO_RULES: List[Rule] = [
     RepoTestsMissing(), RepoPipelineMissing(), SingleEnvironment(),
     OrgGuardrailsMissing(), AccountBaselineMissing(), RootUserUnchecked(),
@@ -3252,4 +3343,5 @@ REPO_RULES: List[Rule] = [
     WorkloadAlarmMissing(), LogAnalysisMissing(), TraceAnalysisMissing(),
     DashboardWorkloadMetricMissing(),
     PermissionBoundaryMissing(), BreakGlassRoleMissing(),
+    SecurityFindingsUncorrelated(),
 ]
