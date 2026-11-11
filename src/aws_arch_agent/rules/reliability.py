@@ -983,3 +983,73 @@ class VpcSingleAz(Rule):
                     recommendation=self.recommendation,
                 ))
         return out
+
+
+# A variable (or this./self. field) assigned a new Lambda function: lambda.Function,
+# lambda_.Function, NodejsFunction, PythonFunction, GoFunction, DockerImageFunction.
+_FUNCTION_VAR = re.compile(
+    r"(?:\b(?:const|let|var)\s+|\b(?:this|self)\.|^[ \t]*)(\w+)\s*(?::\s*[\w.]+\s*)?=\s*"
+    r"(?:new\s+)?(?:[\w]+\.)*(?:Function|NodejsFunction|PythonFunction|GoFunction"
+    r"|DockerImageFunction)\(",
+    re.MULTILINE,
+)
+_GRANT_INVOKE = re.compile(
+    r"\b(\w+)\.(?:grantInvoke|grant_invoke)\(\s*(?:this\.|self\.)?(\w+)\s*\)"
+)
+_ADD_TO_ROLE = re.compile(r"\b(\w+)\.(?:role!?\??\.)?(?:addToRolePolicy|add_to_role_policy"
+                          r"|addToPrincipalPolicy|add_to_principal_policy)\(")
+_INVOKE_IN_POLICY = re.compile(r"['\"]lambda:(?:InvokeFunction|Invoke\*|\*)['\"]")
+_ON_FAILURE = re.compile(r"\b(?:onFailure|on_failure|onSuccess|on_success)\s*[:=]")
+
+
+class LambdaDirectInvoke(Rule):
+    id = "REL-033"
+    title = "Lambda function is granted direct invoke on another function"
+    category = "Reliability"
+    severity = "Medium"
+    themes = ("resilience",)
+    recommendation = (
+        "One function calling another synchronously ties their failures, timeouts and "
+        "throttling together. Put an SQS queue (SqsEventSource), an EventBridge bus or a Step "
+        "Functions state machine between them, or invoke the callee asynchronously with "
+        "onFailure set to a destination, instead of grantInvoke."
+    )
+
+    def run(self, repo_path: Path, language: str = "typescript") -> List[Finding]:
+        out: List[Finding] = []
+        seen: list[str] = []
+        pattern = r"grantInvoke\(|grant_invoke\(|add_?[Tt]o_?(?:[Rr]ole|[Pp]rincipal)_?[Pp]olicy\("
+        for f, _ln, _txt in rg(repo_path, pattern, glob=code_glob(language)):
+            if f in seen:
+                continue
+            seen.append(f)
+            text = read_text_safe(repo_path / f)
+            # Function variable -> whether it is invoked async with a destination.
+            functions: dict[str, bool] = {}
+            for match in _FUNCTION_VAR.finditer(text):
+                args = _call_args(text, match.end() - 1)
+                functions[match.group(1)] = bool(_ON_FAILURE.search(args))
+            for match in _GRANT_INVOKE.finditer(text):
+                callee, caller = match.group(1), match.group(2)
+                if caller in functions and caller != callee and not functions.get(callee):
+                    out.append(self._finding(f, text, match.start()))
+            for match in _ADD_TO_ROLE.finditer(text):
+                if match.group(1) not in functions:
+                    continue
+                if _INVOKE_IN_POLICY.search(_call_args(text, match.end() - 1)):
+                    out.append(self._finding(f, text, match.start()))
+        return out
+
+    def _finding(self, file: str, text: str, offset: int) -> Finding:
+        start = text.rfind("\n", 0, offset) + 1
+        end = text.find("\n", offset)
+        return Finding(
+            id=self.id,
+            title=self.title,
+            severity="Medium",
+            category=self.category,
+            file=file,
+            line=text.count("\n", 0, offset) + 1,
+            evidence=text[start:end if end != -1 else None].strip(),
+            recommendation=self.recommendation,
+        )

@@ -2044,6 +2044,19 @@ def _lambda(body: dict) -> dict:
     return props
 
 
+def _event_invoke_config(body: dict) -> dict:
+    """aws_lambda_function_event_invoke_config: the destinations CF-LAM-009 reads."""
+    config = _first_block(body, "destination_config")
+    if "destination_config" in _dynamic_names(body):
+        return {"DestinationConfig": UNRESOLVED}
+    out: dict = {}
+    for block, key in (("on_failure", "OnFailure"), ("on_success", "OnSuccess")):
+        destination = _ref(_first_block(config, block), "destination")
+        if destination is not None:
+            out[key] = {"Destination": destination}
+    return {"DestinationConfig": out} if out else {}
+
+
 def _lambda_url(body: dict) -> dict:
     props: dict = {}
     _set(props, "AuthType", _v(body, "authorization_type"))
@@ -2897,6 +2910,7 @@ _ADAPTERS: dict[str, Callable[[dict], dict]] = {
     "aws_secretsmanager_secret_rotation": _secret_rotation,
     "aws_cognito_user_pool": _cognito_user_pool,
     "aws_lambda_permission": _lambda_permission,
+    "aws_lambda_function_event_invoke_config": _event_invoke_config,
     "aws_lambda_function_url": _lambda_url,
     "aws_iam_role_policy_attachment": _policy_attachment,
     "aws_iam_user_policy_attachment": _policy_attachment,

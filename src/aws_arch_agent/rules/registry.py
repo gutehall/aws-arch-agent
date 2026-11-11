@@ -29,7 +29,7 @@ from aws_arch_agent.rules.reliability import (
     CodePipelineApproval, AcmCertificateValidation,
     BlueGreenDeploymentMissing, SqsVisibilityTimeout, DynamoDbGlobalTables, S3ReplicationMissing,
     LambdaReservedConcurrency, ApiGatewayRequestValidator, EventBridgeRetryPolicy,
-    RdsDeletionProtection, S3VersioningMissing, VpcSingleAz,
+    RdsDeletionProtection, S3VersioningMissing, VpcSingleAz, LambdaDirectInvoke,
 )
 from aws_arch_agent.rules.cost import (
     LogRetentionNeverExpire, MissingAutoscalingHint, DynamoDbAutoscalingMissing,
@@ -142,7 +142,7 @@ ALL_RULES = [
     IamUserConsolePassword(),
     IamAccessKeyCreated(),
     IamUserDirectPolicies(),
-    # Reliability (35 rules: these 32, and REPO-012 to REPO-014 in REPO_RULES)
+    # Reliability (37 rules: these 33, and REPO-012 to REPO-015 in REPO_RULES)
     RdsMultiAzMissing(),
     BackupRetentionMissing(),
     LambdaDlqMissing(),
@@ -175,6 +175,7 @@ ALL_RULES = [
     RdsDeletionProtection(),
     S3VersioningMissing(),
     VpcSingleAz(),
+    LambdaDirectInvoke(),
     LogRetentionNeverExpire(),
     MissingAutoscalingHint(),
     DynamoDbAutoscalingMissing(),

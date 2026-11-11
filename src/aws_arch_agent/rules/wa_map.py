@@ -119,6 +119,7 @@ RULE_BEST_PRACTICES: dict[str, tuple[str, ...]] = {
     "REL-030": ("REL09-BP01",),
     "REL-031": ("REL09-BP01",),
     "REL-032": ("REL02-BP03",),
+    "REL-033": ("REL04-BP02",),
     # CDK source rules: Cost
     "COST-001": ("COST04-BP05",),
     "COST-002": ("COST09-BP03",),
@@ -188,6 +189,7 @@ RULE_BEST_PRACTICES: dict[str, tuple[str, ...]] = {
     "REPO-012": ("REL01-BP04",),
     "REPO-013": ("REL01-BP06",),
     "REPO-014": ("REL02-BP05",),
+    "REPO-015": ("REL04-BP04",),
     # CDK source rules: Performance Efficiency
     "PERF-001": ("PERF02-BP01",),
     "PERF-002": ("PERF03-BP05",),
@@ -401,6 +403,7 @@ RULE_BEST_PRACTICES: dict[str, tuple[str, ...]] = {
     "CF-LAM-006": ("REL10-BP03",),
     "CF-LAM-007": ("REL05-BP05",),
     "CF-LAM-008": ("REL10-BP01",),
+    "CF-LAM-009": ("REL04-BP02",),
     "CF-MACIE-001": ("SEC07-BP03",),
     "CF-MSK-001": ("SEC09-BP02",),
     "CF-MSK-002": ("SEC09-BP03",),

@@ -849,5 +849,17 @@
     "negative_py": "ec2.Vpc(self, 'A', ip_addresses=ec2.IpAddresses.cidr('10.0.0.0/16'))",
     "positive_ts": "new ec2.Vpc(this, 'A', { ipAddresses: ec2.IpAddresses.cidr('10.0.0.0/16') });\nnew ec2.Vpc(this, 'B', { ipAddresses: ec2.IpAddresses.cidr('10.0.128.0/17') });",
     "positive_py": "ec2.CfnVPC(self, 'A', cidr_block='10.0.0.0/16')\nec2.Vpc(self, 'B', cidr='10.0.0.0/24')"
+  },
+  "REL-033": {
+    "negative_ts": "const worker = new lambda.Function(this, 'Worker', { onFailure: new destinations.SqsDestination(dlq) });\nconst api = new lambda.Function(this, 'Api', {});\nworker.grantInvoke(api);\nqueue.grantSendMessages(api);",
+    "negative_py": "worker = _lambda.Function(self, 'Worker')\nqueue.grant_send_messages(worker)\nworker.add_to_role_policy(iam.PolicyStatement(actions=['sqs:SendMessage'], resources=['*']))",
+    "positive_ts": "const worker = new lambda.Function(this, 'Worker', {});\nconst api = new NodejsFunction(this, 'Api', {});\nworker.grantInvoke(api);",
+    "positive_py": "worker = _lambda.Function(self, 'Worker')\napi = PythonFunction(self, 'Api')\napi.add_to_role_policy(iam.PolicyStatement(actions=['lambda:InvokeFunction'], resources=[worker.function_arn]))"
+  },
+  "REPO-015": {
+    "negative_ts": "import { makeIdempotent } from '@aws-lambda-powertools/idempotency';\nfn.addEventSource(new SqsEventSource(queue));",
+    "negative_py": "fn.add_event_source(SqsEventSource(queue))\nsqs.Queue(self, 'Q', fifo=True, content_based_deduplication=True)",
+    "positive_ts": "fn.addEventSource(new SqsEventSource(queue));",
+    "positive_py": "fn.add_event_source(KinesisEventSource(stream, starting_position=lambda_.StartingPosition.LATEST))"
   }
 }

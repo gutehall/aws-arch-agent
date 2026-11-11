@@ -1,6 +1,6 @@
 """Repo-level checks: tests, a pipeline, environments (OPS 5), account guardrails (SEC 1),
 incident response (SEC 10), application security (SEC 11), service quotas (REL 1),
-VPC address plan (REL 2).
+VPC address plan (REL 2), idempotent workers (REL 4).
 
 REPO-006 (the account root user) answers SEC01-BP02 in SEC 1, though it was added with the
 SEC 2 checks.
@@ -110,6 +110,20 @@ Network address plan (REL 2):
   (rules/environments.py words in the path, such as dev and prod) are not compared: those
   networks are not connected. A compiled .js next to its .ts source counts once, and
   cdk.out is not walked. CIDRs from variables, parameters, tfvars or IPAM are not seen.
+
+Idempotent workers (REL 4) runs by default:
+
+- REPO-015 idempotency: when the IaC gives a Lambda function a queue or stream event source
+  (AWS::Lambda::EventSourceMapping, aws_lambda_event_source_mapping, CDK SqsEventSource,
+  KinesisEventSource, DynamoEventSource, ManagedKafkaEventSource, CfnEventSourceMapping or
+  addEventSourceMapping, or a SAM SQS, Kinesis, DynamoDB, MSK or MQ event), the IaC or the
+  function code (Python, TypeScript, JavaScript, Java, Kotlin, C#, Go; tests excluded) needs
+  one of: Powertools idempotency (Python utilities.idempotency, @idempotent,
+  idempotent_function; TypeScript @aws-lambda-powertools/idempotency, makeIdempotent; the
+  Java and .NET packages, @Idempotent, [Idempotent]), SQS FIFO content-based deduplication
+  or a MessageDeduplicationId, or a conditional write (attribute_not_exists in a file with
+  a ConditionExpression). It is repo-wide: one control anywhere passes every worker, and
+  function code outside the repo is not seen.
 """
 from __future__ import annotations
 
@@ -1519,10 +1533,118 @@ class VpcCidrOverlap(_RepoRule):
         return findings
 
 
+# Lambda event sources that deliver at least once (REPO-015, REL 4).
+_EVENT_SOURCES: tuple[tuple[str, re.Pattern[str]], ...] = (
+    ("AWS::Lambda::EventSourceMapping", re.compile(r"AWS::Lambda::EventSourceMapping\b")),
+    ("aws_lambda_event_source_mapping",
+     re.compile(r"resource\s+\"aws_lambda_event_source_mapping\"")),
+    ("CDK SqsEventSource", re.compile(r"\bSqsEventSource\(")),
+    ("CDK KinesisEventSource", re.compile(r"\bKinesisEventSource\(")),
+    ("CDK DynamoEventSource", re.compile(r"\bDynamoEventSource\(")),
+    ("CDK ManagedKafkaEventSource", re.compile(r"\bManagedKafkaEventSource\(")),
+    ("CDK event source mapping",
+     re.compile(r"\bCfnEventSourceMapping\("
+                r"|\.(?:addEventSourceMapping|add_event_source_mapping)\(")),
+)
+# A SAM function event of a polled type; only read in a SAM template.
+_SAM_TRANSFORM = re.compile(r"AWS::Serverless-2016-10-31")
+_SAM_POLLED_EVENT = re.compile(
+    r"[\"']?Type[\"']?\s*:\s*[\"']?(SQS|Kinesis|DynamoDB|MSK|MQ)[\"']?\s*(?:,|$)", re.MULTILINE
+)
+# Idempotency in function code or a dedupe store (REPO-015).
+_POWERTOOLS_IDEMPOTENCY = re.compile(
+    r"aws_lambda_powertools\.utilities\.idempotency|@aws-lambda-powertools/idempotency"
+    r"|software\.amazon\.lambda\.powertools\.idempotency|AWS\.Lambda\.Powertools\.Idempotency"
+    r"|\bmake(?:Handler)?Idempotent\b|@idempotent(?:_function)?\b|\bidempotent_function\("
+    r"|@Idempotent\b|\[Idempotent\]"
+)
+_CONTENT_DEDUPE = re.compile(
+    r"\b(?:ContentBasedDeduplication|content_based_deduplication|contentBasedDeduplication)"
+    r"[\"']?\s*[:=]\s*[\"']?(?:true|True)\b"
+)
+_DEDUPE_ID = re.compile(
+    r"\b(?:MessageDeduplicationId|messageDeduplicationId|message_deduplication_id)\b"
+)
+_NOT_EXISTS = re.compile(r"\battribute_not_exists\s*\(")
+_CONDITION_EXPRESSION = re.compile(
+    r"\b(?:ConditionExpression|conditionExpression|condition_expression)\b"
+)
+# Function code in the languages Powertools ships for, plus Go and Kotlin for a conditional write.
+_FUNCTION_CODE_SUFFIXES = frozenset({
+    ".py", ".ts", ".js", ".mjs", ".cjs", ".java", ".kt", ".cs", ".go",
+})
+
+
+def event_sources(repo_path: Path) -> dict[str, str]:
+    """Lambda event sources on queues and streams the IaC declares: kind -> first file."""
+    found: dict[str, str] = {}
+    for rel, text in iac_texts(repo_path):
+        for kind, pattern in _EVENT_SOURCES:
+            if pattern.search(text):
+                found.setdefault(kind, rel)
+        if _SAM_TRANSFORM.search(text):
+            for match in _SAM_POLLED_EVENT.finditer(text):
+                found.setdefault(f"SAM {match.group(1)} event", rel)
+    return found
+
+
+def idempotency_controls(repo_path: Path) -> dict[str, str]:
+    """Idempotency the repo shows: control -> first file. IaC and function code outside
+    tests is read."""
+    found: dict[str, str] = {}
+    for path in walk(repo_path):
+        parts = _rel_parts(path, repo_path)
+        suffix = path.suffix.lower()
+        if suffix not in _IAC_TEXT_SUFFIXES and suffix not in _FUNCTION_CODE_SUFFIXES:
+            continue
+        if _in_test_dir(parts) or _TEST_NAME.search(path.name.lower()):
+            continue
+        rel, text = "/".join(parts), read_text_safe(path)
+        if _POWERTOOLS_IDEMPOTENCY.search(text):
+            found.setdefault("Powertools idempotency", rel)
+        if _CONTENT_DEDUPE.search(text):
+            found.setdefault("SQS FIFO content-based deduplication", rel)
+        if _DEDUPE_ID.search(text):
+            found.setdefault("SQS MessageDeduplicationId", rel)
+        if _NOT_EXISTS.search(text) and _CONDITION_EXPRESSION.search(text):
+            found.setdefault("conditional write (attribute_not_exists)", rel)
+    return found
+
+
+class IdempotencyMissing(_RepoRule):
+    id = "REPO-015"
+    title = "Queue and stream workers have no idempotency key or dedupe store"
+    category = "Reliability"
+    severity = "Medium"
+    themes = ("resilience",)
+    recommendation = (
+        "Queues and streams deliver at least once, and a failed batch is retried, so a "
+        "worker sees the same message more than once. Make the handler idempotent: Powertools "
+        "for AWS Lambda idempotency (Python @idempotent, TypeScript makeIdempotent) with a "
+        "DynamoDB persistence store, a conditional write (attribute_not_exists in a "
+        "ConditionExpression) keyed on the message id, or an SQS FIFO queue with "
+        "content-based deduplication."
+    )
+
+    def run(self, repo_path: Path, language: str = "typescript") -> List[Finding]:
+        sources = event_sources(repo_path)
+        if not sources or idempotency_controls(repo_path):
+            return []
+        listed = ", ".join(f"{kind} ({rel})" for kind, rel in sources.items())
+        return [self._finding(
+            f"Lambda reads from queues or streams: {listed}; searched the IaC and function "
+            "code for Powertools idempotency, an SQS FIFO queue with content-based "
+            "deduplication or a MessageDeduplicationId, and a conditional write "
+            "(attribute_not_exists in a ConditionExpression); found none",
+            file=next(iter(sources.values())),
+        )]
+
+
 REPO_RULES: List[Rule] = [
     RepoTestsMissing(), RepoPipelineMissing(), SingleEnvironment(),
     OrgGuardrailsMissing(), AccountBaselineMissing(), RootUserUnchecked(),
     ForensicCaptureMissing(), ContainmentMissing(),
     DependencyScanMissing(), ArtifactScanMissing(), CentralPackageRepoMissing(),
     QuotaAlarmMissing(), FailoverHeadroomMissing(), VpcCidrOverlap(),
+    IdempotencyMissing(),
 ]

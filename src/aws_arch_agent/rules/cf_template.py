@@ -1,5 +1,6 @@
 """CloudFormation template-based rules (S3, RDS, ALB, CloudTrail, KMS, Lambda, DynamoDB, etc.) run after cdk synth."""
 from __future__ import annotations
+import fnmatch
 import ipaddress
 import json
 import re
@@ -160,6 +161,7 @@ CF_COVERS_STATIC: dict[str, tuple[str, ...]] = {
     "CF-LAM-005": ("SEC-017", "BP-002"),
     "CF-LAM-006": ("REL-027",),
     "CF-LAM-007": ("REL-009",),
+    "CF-LAM-009": ("REL-033",),
     "CF-RDS-002": ("REL-002",),
     "CF-RDS-004": ("SEC-064",),
     "CF-RDS-005": ("REL-030",),
@@ -608,7 +610,7 @@ CF_THEMES: dict[str, tuple[str, ...]] = {
     "CF-KMS-002": (_DP,), "CF-KMS-003": (_RES,), "CF-SSM-001": (_DP,), "CF-SSM-002": (_F,),
     "CF-LAM-001": (_RES,), "CF-LAM-002": (_OBS,), "CF-LAM-003": (_SB,),
     "CF-LAM-004": (_ID, _NET), "CF-LAM-005": (_DP, _ID), "CF-LAM-006": (_RES,),
-    "CF-LAM-007": (_RES,), "CF-LAM-008": (_RES,),
+    "CF-LAM-007": (_RES,), "CF-LAM-008": (_RES,), "CF-LAM-009": (_RES,),
     "CF-MSK-001": (_DP,), "CF-NEP-001": (_DP,), "CF-OS-001": (_DP,), "CF-OS-002": (_DP,),
     "CF-PAR-001": (_DP, _ID), "CF-PAR-002": (_DP, _ID),
     "CF-PERF-001": (_F, _SUS), "CF-PERF-002": (_RES,), "CF-PERF-003": (_F,), "CF-PERF-004": (_F,),
@@ -821,6 +823,7 @@ CF_TITLES: dict[str, str] = {
     "CF-LAM-006": "Lambda function has no reserved concurrency",
     "CF-LAM-007": "Lambda timeout does not fit its trigger",
     "CF-LAM-008": "Lambda function in a VPC uses subnets in one AZ",
+    "CF-LAM-009": "Lambda function invokes another function synchronously",
     "CF-MACIE-001": "Macie session is paused",
     "CF-MSK-001": "MSK cluster allows unencrypted traffic",
     "CF-MSK-002": "MSK cluster allows unauthenticated clients",
@@ -2135,6 +2138,111 @@ def _lambda_wiring_findings(resources: List[Resource], template_path: Path) -> L
                     "All of this function's subnets are in one Availability Zone, so an AZ failure "
                     "stops it. Give it subnets in at least two AZs (Security Hub Lambda.5). In CDK: "
                     "vpcSubnets: { subnetType: ec2.SubnetType.PRIVATE_WITH_EGRESS }.")))
+    return out
+
+
+_INVOKE_ACTION = "lambda:invokefunction"
+# The functions cr.Provider adds to run a custom resource handler at deploy time.
+_CDK_PROVIDER_FRAMEWORK = re.compile(r"framework-?(?:onEvent|isComplete|onTimeout)", re.I)
+# Policy resources that attach to the role named in Roles (or RoleName) / the role block.
+_ROLE_POLICY_TYPES = (
+    "AWS::IAM::Policy", "AWS::IAM::ManagedPolicy", "AWS::IAM::RolePolicy", "aws_iam_role_policy",
+)
+_ROLE_ATTACHMENT_TYPES = (
+    "aws_iam_role_policy_attachment", "aws_iam_role_policy_attachments_exclusive",
+    "aws_iam_policy_attachment",
+)
+_EVENT_INVOKE_TYPES = ("AWS::Lambda::EventInvokeConfig", "aws_lambda_function_event_invoke_config")
+_LAMBDA_CHAIN_RECOMMENDATION = (
+    "This function's role lets it call the other function synchronously, so the caller waits "
+    "on the callee and fails, times out or is throttled with it. Put an SQS queue, an "
+    "EventBridge bus or a Step Functions state machine between them, or invoke "
+    "asynchronously (InvocationType Event) with an on-failure destination "
+    "(AWS::Lambda::EventInvokeConfig, Terraform aws_lambda_function_event_invoke_config). "
+    "In CDK: a queue with SqsEventSource, or onFailure on the callee, instead of grantInvoke."
+)
+
+
+def _role_documents(role: Resource, resources: List[Resource]) -> list[dict]:
+    """Policy documents attached to a role: inline Policies, policy resources naming it,
+    managed policies of this template it lists, and Terraform policy attachments."""
+    docs = [doc for _label, doc in _policy_documents(role.properties)]
+    policies = [r for r in resources if r.type == "iam_policy" and not r.malformed]
+    attached: set[str] = set()
+    for pol in policies:
+        if pol.source_type in _ROLE_POLICY_TYPES and (
+                _points_at(pol, "Roles", role) or _points_at(pol, "RoleName", role)):
+            attached.add(pol.name)
+        elif pol.source_type in _ROLE_ATTACHMENT_TYPES and role.name in pol.references:
+            attached |= {p.name for p in policies if p.name in pol.references}
+        elif _points_at(role, "ManagedPolicyArns", pol):
+            attached.add(pol.name)
+    for pol in policies:
+        if pol.name in attached:
+            docs.extend(doc for _label, doc in _policy_documents(pol.properties))
+    return docs
+
+
+def _invokes(doc: dict, callee: Resource) -> bool:
+    """True when an Allow statement grants lambda:InvokeFunction (or a wildcard that covers
+    it) on the callee, named by Ref, GetAtt, Sub or Terraform address."""
+    for stmt in iam_policy.statements(doc):
+        if stmt.get("Effect") != "Allow" or "Resource" not in stmt:
+            continue
+        actions = iam_policy.literals(stmt.get("Action"))
+        if not any(fnmatch.fnmatchcase(_INVOKE_ACTION, a.lower()) for a in actions):
+            continue
+        if _references(json.dumps(stmt["Resource"], default=str), callee.name):
+            return True
+    return False
+
+
+def _async_with_destination(callee: Resource, configs: List[Resource]) -> bool:
+    """The callee has an event invoke config with an on-success or on-failure destination."""
+    for config in configs:
+        if not _points_at(config, "FunctionName", callee):
+            continue
+        destinations = config.properties.get("DestinationConfig")
+        if "DestinationConfig" in config.unresolved:
+            return True  # set from a variable: assume it routes somewhere
+        if isinstance(destinations, dict) and any(
+                destinations.get(key) for key in ("OnFailure", "OnSuccess")):
+            return True
+    return False
+
+
+def _lambda_chain_findings(resources: List[Resource], template_path: Path) -> List[Finding]:
+    """CF-LAM-009: a function whose role may invoke another function of this template, when
+    the callee has no event invoke config with a destination (a sign it is called
+    asynchronously). Step Functions and other services' roles are not function roles, so
+    orchestration does not fire. CDK's custom resource helpers are skipped."""
+    functions = [r for r in resources if r.type == "lambda_function" and not r.malformed]
+    if len(functions) < 2:
+        return []
+    roles = [r for r in resources if r.type == "iam_role" and not r.malformed]
+    configs = [r for r in resources if r.source_type in _EVENT_INVOKE_TYPES and not r.malformed]
+    out: List[Finding] = []
+    for caller in functions:
+        if _CDK_HELPER_FUNCTION.search(caller.name) or _CDK_PROVIDER_FRAMEWORK.search(caller.name):
+            continue
+        role = next((r for r in roles if _points_at(caller, "Role", r)), None)
+        if role is None:
+            continue
+        docs = _role_documents(role, resources)
+        callees = [
+            fn.name for fn in functions
+            if fn is not caller and any(_invokes(doc, fn) for doc in docs)
+            and not _async_with_destination(fn, configs)
+        ]
+        if callees:
+            out.append(Finding(
+                id="CF-LAM-009", title=CF_TITLES["CF-LAM-009"], severity="Medium",
+                category="Reliability", file=caller.file or str(template_path),
+                line=caller.line,
+                evidence=(f"{caller.name} ({caller.source_type}): role {role.name} allows "
+                          f"lambda:InvokeFunction on {', '.join(callees)}"),
+                recommendation=_LAMBDA_CHAIN_RECOMMENDATION,
+            ))
     return out
 
 
@@ -7917,6 +8025,9 @@ def _run_resource_checks(
 
     # --- Lambda timeouts against their triggers, and VPC functions in one AZ ---
     findings.extend(_lambda_wiring_findings(resources, template_path))
+
+    # --- Lambda functions that call each other directly, with no queue between (REL 4) ---
+    findings.extend(_lambda_chain_findings(resources, template_path))
 
     # --- Network: one NAT gateway for several AZs, transit gateways without flow logs ---
     findings.extend(_nat_single_az_findings(resources, template_path, _at))

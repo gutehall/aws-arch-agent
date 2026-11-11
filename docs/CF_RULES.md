@@ -4,7 +4,7 @@ This document provides a comprehensive list of all rules checked by AWS Arch Age
 
 ## Overview
 
-AWS Arch Agent checks **192 static analysis rules** and **280 template checks** across all 6 AWS Well-Architected Framework pillars. 138 of the 192 CDK rules (72%) have a template check, so they also run for CloudFormation, Terraform and synthesised CDK. [COVERAGE.md](COVERAGE.md) gives the reason for each of the others.
+AWS Arch Agent checks **194 static analysis rules** and **281 template checks** across all 6 AWS Well-Architected Framework pillars. 139 of the 194 CDK rules (72%) have a template check, so they also run for CloudFormation, Terraform and synthesised CDK. [COVERAGE.md](COVERAGE.md) gives the reason for each of the others.
 
 ## Static Analysis Rules (V1 & V2 Modes)
 
@@ -113,7 +113,7 @@ These rules run on your CDK TypeScript/Python code and execute in both V1 and V2
 - REPO-010: Container or function artifacts are not scanned before deploy
 - REPO-011: Packages are not pulled through a central repository
 
-### Reliability (35 rules)
+### Reliability (37 rules)
 
 **High Availability:**
 - REL-001: RDS instance missing multi-AZ
@@ -147,7 +147,7 @@ These rules run on your CDK TypeScript/Python code and execute in both V1 and V2
 - REL-021: CodePipeline missing manual approval for production
 - REL-022: ACM certificate validation method not specified
 
-**Additional Reliability (REL-023 to REL-032):**
+**Additional Reliability (REL-023 to REL-033):**
 - REL-023: Blue-green deployment not configured for critical services
 - REL-024: SQS visibility timeout may need review
 - REL-025: DynamoDB global tables not configured for multi-region
@@ -158,6 +158,7 @@ These rules run on your CDK TypeScript/Python code and execute in both V1 and V2
 - REL-030: RDS deletion protection not enabled
 - REL-031: S3 bucket versioning not enabled
 - REL-032: VPC uses one Availability Zone (`ec2.Vpc` with `maxAzs: 1` / `max_azs=1`, or one entry in `availabilityZones` / `availability_zones`)
+- REL-033: Lambda function is granted direct invoke on another function (`callee.grantInvoke(fn)` / `grant_invoke`, where `fn` is a variable assigned a new `lambda.Function`, `NodejsFunction`, `PythonFunction`, `GoFunction` or `DockerImageFunction` in the same file and the callee has no `onFailure` / `onSuccess` destination; or `addToRolePolicy` / `addToPrincipalPolicy` on a function with `lambda:InvokeFunction`, `lambda:Invoke*` or `lambda:*`)
 
 **Service quotas (repo-level, REL 1):**
 - REPO-012: No Service Quotas usage alarm for the services the stack uses (org-level: runs with `rules.org` or `rules.include`)
@@ -165,6 +166,9 @@ These rules run on your CDK TypeScript/Python code and execute in both V1 and V2
 
 **Network address plan (repo-level, REL 2):**
 - REPO-014: VPC CIDR ranges overlap
+
+**Idempotent workers (repo-level, REL 4):**
+- REPO-015: Queue and stream workers have no idempotency key or dedupe store
 
 ### Operational Excellence (29 rules)
 
@@ -358,6 +362,7 @@ CloudFormation template rules run when the agent has access to template files. T
 - **WAF**: CF-WAF-001 (Low): an internet-facing Application Load Balancer or an API Gateway REST API stage that no `AWS::WAFv2::WebACLAssociation` / `aws_wafv2_web_acl_association` (or WAF Classic regional association) in this template points at. Network and Gateway Load Balancers and internal ALBs are not reported. An association the scan cannot tie to a resource counts for all of them
 - **Lambda**: CF-LAM-001 (no DLQ), CF-LAM-002 (X-Ray not enabled), CF-LAM-003 (deprecated runtime, High; deprecated within 6 months, Low; container images skipped; dates in `rules/lambda_runtimes.py`), CF-PERF-001 (ARM64 not used)
 - **Lambda access and limits** (`AWS::Lambda::Function`, `AWS::Lambda::Url`, `AWS::Lambda::EventSourceMapping`; Terraform `aws_lambda_function`, `aws_lambda_function_url`, `aws_lambda_event_source_mapping`): CF-LAM-004 (function URL with `AuthType: NONE`, High). CF-LAM-005 (High): an environment variable named like a secret (`DB_PASSWORD`, `API_KEY`, `GITHUB_TOKEN`) with a literal value. A reference, an ARN, a dynamic reference (`{{resolve:...}}`), a flag such as `true` or a number is not reported; the name rules are shared with CF-PAR-001 (`rules/secret_names.py`). CF-LAM-006 (Low): no `ReservedConcurrentExecutions`. CF-LAM-007 (Low): `Timeout` left at the 3 second default on a function an event source mapping polls for, or at 900 seconds on a function API Gateway invokes (read from an `AWS::Lambda::Permission` for `apigateway.amazonaws.com`). CF-LAM-008 (Medium, Security Hub Lambda.5): a VPC function whose subnets in this template are all in one AZ; a subnet the scan cannot place is not judged. In V2, CF-LAM-004..007 replace SEC-057, SEC-017, BP-002, REL-027 and REL-009
+- **Lambda chains** (REL 4): CF-LAM-009 (Medium): a Lambda function whose role (its `Role`; Terraform `role`) has a policy that allows `lambda:InvokeFunction`, or a wildcard that covers it (`lambda:*`, `lambda:Invoke*`), on another function of the same template or module (`Ref`, `Fn::GetAtt`, `Fn::Sub`, a Terraform `aws_lambda_function.<name>.arn`). Policies are read inline on the role, from `AWS::IAM::Policy`, `AWS::IAM::ManagedPolicy` and `AWS::IAM::RolePolicy` naming the role or a managed policy the role lists, and from Terraform `inline_policy`, `aws_iam_role_policy`, and `aws_iam_policy` attached by `aws_iam_role_policy_attachment`. A callee with an `AWS::Lambda::EventInvokeConfig` (Terraform `aws_lambda_function_event_invoke_config`) that has an on-failure or on-success destination is taken as invoked asynchronously and passes. Step Functions and other service roles are not function roles, so orchestration does not fire; CDK's custom resource helpers and `cr.Provider` framework functions are skipped, and so are SAM `AWS::Serverless::Function` resources before transform. Answers REL04-BP02. In V2 it replaces REL-033
 - **S3 ACLs, replication and Bucket Keys** (`AWS::S3::Bucket`; Terraform `aws_s3_bucket` with its inline `acl` and `replication_configuration`, `aws_s3_bucket_ownership_controls`, `aws_s3_bucket_acl`, `aws_s3_bucket_replication_configuration`, `aws_s3_bucket_server_side_encryption_configuration`):
   - CF-S3-008 (Medium, Security Hub S3.12): `OwnershipControls` literally `ObjectWriter` or `BucketOwnerPreferred`, or an explicit `AccessControl` other than `Private` (Terraform `acl`) with no ownership set. Unset ownership alone is not reported: new buckets have defaulted to `BucketOwnerEnforced` since April 2023. `LogDeliveryWrite` is not reported, since it grants the S3 log delivery group and not user access. A bucket that takes CloudFront standard logs is not reported, since those logs need ACLs. Terraform grants (`access_control_policy`, `grant`) are not read
   - CF-S3-009 (High, Security Hub S3.2 and S3.3): a literal `AccessControl` of `PublicRead` or `PublicReadWrite` (Terraform `public-read`, `public-read-write`). Not reported with `BucketOwnerEnforced`, or when `BlockPublicAcls` or `IgnorePublicAcls` is true, since the ACL then has no effect: such a bucket reports CF-S3-008 if it has no enforced ownership. CF-S3-009 replaces CF-S3-008 on the same bucket. CF-S3-001 reads Block Public Access and not the ACL, so it may report the same bucket
@@ -524,7 +529,7 @@ CloudFormation template rules run when the agent has access to template files. T
 |--------|-------------|
 | Operational Excellence | CF-CFG-001, CF-ALARM-001, CF-ALARM-002, CF-ALARM-003, CF-DASH-001, CF-CT-004, CF-S3-004, CF-RDS-007, CF-RDS-010, CF-RDS-011, CF-CT-001, CF-CT-002, CF-FL-001, CF-EKS-001, CF-TGW-002, CF-CB-004, CF-CP-003, CF-OS-006, CF-RS-004, CF-DOCDB-003, CF-NEP-002, CF-SFN-002, CF-SFN-003, CF-EB-001, CF-ECS-008, CF-ECS-010, CF-ASG-005, CF-GLUE-002, CF-GLUE-003, CF-S3-011, CF-CF-005, CF-FSX-002, CF-PATCH-001 |
 | Security | CF-GD-001, CF-SH-001, CF-MACIE-001, CF-CT-005, CF-S3-001, CF-S3-002, CF-S3-005, CF-RDS-001, CF-RDS-004, CF-APIGW-003, CF-APIGW-004, CF-APIGW-007, CF-APIGW-009, CF-APIGW-V2-003, CF-LAM-004, CF-LAM-005, CF-RDS-006, CF-RDS-008, CF-RDS-009, CF-RDS-012, CF-RDS-013, CF-CT-003, CF-KMS-001, CF-RP-001, CF-EC2-001, CF-EKS-002, CF-EKS-003, CF-IAM-001, CF-IAM-002, CF-IAM-003, CF-IAM-004, CF-IAM-005, CF-IAM-006, CF-IAM-007, CF-IAM-008, CF-IAM-009, CF-IAM-010, CF-IAM-011, CF-ALB-002, CF-ALB-003, CF-ALB-004, CF-ALB-006, CF-CLB-001, CF-CLB-002, CF-SG-001, CF-SG-002, CF-SG-003, CF-NACL-001, CF-TGW-001, CF-CW-002, CF-SQS-001, CF-DDB-002, CF-LAM-003, CF-SNS-001, CF-EBS-001, CF-EFS-001, CF-KIN-001, CF-EC-001, CF-EC-002, CF-OS-001, CF-OS-002, CF-RS-001, CF-DOCDB-001, CF-NEP-001, CF-MSK-001, CF-CF-001, CF-CF-002, CF-CF-003, CF-CF-004, CF-WAF-001, CF-EC2-002, CF-EC2-003, CF-PAR-001, CF-PAR-002, CF-ECR-001, CF-ECR-002, CF-ECR-003, CF-ECS-001, CF-ECS-002, CF-ECS-003, CF-SM-001, CF-COG-001, CF-COG-002, CF-COG-003, CF-CB-001, CF-CB-002, CF-CB-003, CF-CB-005, CF-CP-001, CF-KMS-002, CF-SSM-001, CF-OS-003, CF-OS-004, CF-OS-005, CF-MSK-002, CF-MSK-003, CF-RS-002, CF-RS-005, CF-RS-006, CF-RS-007, CF-NEP-005, CF-BAK-001, CF-EC-005, CF-EC-006, CF-EC-007, CF-EFS-004, CF-EFS-005, CF-ECS-004, CF-ECS-005, CF-ECS-006, CF-ECS-007, CF-ECS-009, CF-EKS-004, CF-ASG-003, CF-ASG-004, CF-ATH-001, CF-ATH-002, CF-GLUE-001, CF-FH-001, CF-EMR-001, CF-EMR-002, CF-EMR-003, CF-DMS-001, CF-DMS-002, CF-DMS-003, CF-S3-008, CF-S3-009, CF-CF-008, CF-CF-010, CF-CF-011, CF-SAGE-001, CF-SAGE-002, CF-SAGE-003, CF-SAGE-004, CF-FSX-001, CF-APPSYNC-001, CF-APPSYNC-002, CF-APPSYNC-003, CF-TRANSFER-001, CF-TRANSFER-002, CF-TRANSFER-003, CF-BEANSTALK-002, CF-R53-001, CF-R53-002, CF-ACM-002, CF-ACM-003 |
-| Reliability | CF-S3-003, CF-RDS-002, CF-RDS-003, CF-RDS-005, CF-LAM-001, CF-LAM-006, CF-LAM-007, CF-LAM-008, CF-APIGW-005, CF-APIGW-006, CF-APIGW-V2-004, CF-DDB-001, CF-SQS-002, CF-DEL-001, CF-NAT-001, CF-ALB-005, CF-ALB-007, CF-CLB-004, CF-CLB-005, CF-CP-002, CF-KMS-003, CF-OS-007, CF-KIN-002, CF-RS-003, CF-DOCDB-002, CF-DOCDB-004, CF-NEP-003, CF-NEP-004, CF-SFN-001, CF-EB-002, CF-SQS-003, CF-BAK-002, CF-BAK-003, CF-BAK-004, CF-BAK-005, CF-DDB-004, CF-DDB-005, CF-EC-003, CF-EC-004, CF-EFS-002, CF-ASG-001, CF-ASG-002, CF-DMS-004, CF-S3-010, CF-CF-009, CF-SAGE-005, CF-FSX-003, CF-R53-003, CF-ACM-001, CF-GA-001, CF-VPC-004, CF-VPC-005, CF-VPC-006 |
+| Reliability | CF-S3-003, CF-RDS-002, CF-RDS-003, CF-RDS-005, CF-LAM-001, CF-LAM-006, CF-LAM-007, CF-LAM-008, CF-LAM-009, CF-APIGW-005, CF-APIGW-006, CF-APIGW-V2-004, CF-DDB-001, CF-SQS-002, CF-DEL-001, CF-NAT-001, CF-ALB-005, CF-ALB-007, CF-CLB-004, CF-CLB-005, CF-CP-002, CF-KMS-003, CF-OS-007, CF-KIN-002, CF-RS-003, CF-DOCDB-002, CF-DOCDB-004, CF-NEP-003, CF-NEP-004, CF-SFN-001, CF-EB-002, CF-SQS-003, CF-BAK-002, CF-BAK-003, CF-BAK-004, CF-BAK-005, CF-DDB-004, CF-DDB-005, CF-EC-003, CF-EC-004, CF-EFS-002, CF-ASG-001, CF-ASG-002, CF-DMS-004, CF-S3-010, CF-CF-009, CF-SAGE-005, CF-FSX-003, CF-R53-003, CF-ACM-001, CF-GA-001, CF-VPC-004, CF-VPC-005, CF-VPC-006 |
 | Performance Efficiency | CF-APIGW-008, CF-PERF-001, CF-PERF-002, CF-PERF-003, CF-PERF-004, CF-ECS-011, CF-CF-013, CF-APPSYNC-004 |
 | Cost Optimization | CF-BUDGET-001, CF-CW-001, CF-RDS-014, CF-COST-002, CF-EBS-002, CF-EIP-001, CF-TAG-001, CF-ENV-001, CF-ENV-002, CF-ENV-003, CF-ENV-004, CF-ENV-005, CF-ENV-006, CF-GEN-001, CF-S3-006, CF-S3-007, CF-DDB-003, CF-VPC-002, CF-VPC-003, CF-SSM-002, CF-EFS-003, CF-ASG-006, CF-S3-012, CF-CF-006, CF-CF-012 |
 | Sustainability | CF-SUST-001, CF-SUST-002, CF-SUST-003, CF-CF-007 |
@@ -753,6 +758,7 @@ Every rule has one or more themes, which cut across pillars: `finops`, `security
 | CF-LAM-006 | resilience |
 | CF-LAM-007 | resilience |
 | CF-LAM-008 | resilience |
+| CF-LAM-009 | resilience |
 | CF-MACIE-001 | data-protection, security-baseline |
 | CF-MSK-001 | data-protection |
 | CF-MSK-002 | identity |
@@ -950,6 +956,7 @@ Every rule has one or more themes, which cut across pillars: `finops`, `security
 | REL-030 | resilience, data-protection |
 | REL-031 | resilience, data-protection |
 | REL-032 | resilience |
+| REL-033 | resilience |
 | REPO-001 | resilience |
 | REPO-002 | resilience |
 | REPO-003 | resilience |
@@ -964,6 +971,7 @@ Every rule has one or more themes, which cut across pillars: `finops`, `security
 | REPO-012 | resilience |
 | REPO-013 | resilience |
 | REPO-014 | resilience |
+| REPO-015 | resilience |
 | SEC-001 | identity |
 | SEC-002 | identity |
 | SEC-003 | network-exposure |

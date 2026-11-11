@@ -149,6 +149,16 @@ PAIRS: list[tuple[str, str, dict, str]] = [
         "SecurityGroupEgress": [{"IpProtocol": "-1", "CidrIp": "0.0.0.0/0"}],
     }}, "new ec2.SecurityGroup(this, 'Sg', { vpc, allowAllOutbound: true });"),
     ("CF-NAT-001", "REL-012", _ONE_NAT_TWO_AZS, "new ec2.Vpc(this, 'Vpc', { natGateways: 1 });"),
+    ("CF-LAM-009", "REL-033", {
+        "CallerRole": {"Type": "AWS::IAM::Role", "Properties": {"AssumeRolePolicyDocument": {}}},
+        "Caller": _lambda(Role={"Fn::GetAtt": ["CallerRole", "Arn"]}),
+        "Worker": _lambda(),
+        "Invoke": {"Type": "AWS::IAM::Policy", "Properties": {
+            "PolicyName": "invoke", "Roles": [{"Ref": "CallerRole"}],
+            "PolicyDocument": {"Statement": [{"Effect": "Allow", "Action": "lambda:InvokeFunction",
+                                              "Resource": {"Fn::GetAtt": ["Worker", "Arn"]}}]}}},
+    }, "const worker = new lambda.Function(this, 'Worker', {});\n"
+       "const caller = new lambda.Function(this, 'Caller', {});\nworker.grantInvoke(caller);"),
     ("CF-VPC-004", "REL-032", {
         "Vpc": {"Type": "AWS::EC2::VPC", "Properties": {"CidrBlock": "10.0.0.0/16"}},
         "Subnet": {"Type": "AWS::EC2::Subnet", "Properties": {

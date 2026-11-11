@@ -15,7 +15,7 @@ Which CDK rules have a template check, and which AWS Foundational Security Best 
 
 ## CDK rules
 
-192 rules: 131 covered, 7 partial, 10 account, 5 cdk-only, 25 advice, 14 repo.
+194 rules: 132 covered, 7 partial, 10 account, 5 cdk-only, 25 advice, 15 repo.
 
 | Rule | Title | Template check | Status | Note |
 | -- | -- | -- | -- | -- |
@@ -122,6 +122,7 @@ Which CDK rules have a template check, and which AWS Foundational Security Best 
 | REL-030 | RDS deletion protection not enabled | `CF-RDS-005` | `covered` |  |
 | REL-031 | S3 bucket versioning not enabled | `CF-S3-003` | `covered` |  |
 | REL-032 | VPC uses one Availability Zone | `CF-VPC-004` | `covered` | The template check reads each subnet tier (public, private) of the synthesised VPC. |
+| REL-033 | Lambda function is granted direct invoke on another function | `CF-LAM-009` | `covered` | The template check reads the caller's role policies and the callee's event invoke config. |
 | COST-001 | Log retention may be infinite (cost risk) | `CF-CW-001` | `covered` |  |
 | COST-002 | Compute resources may miss autoscaling | `CF-ASG-006` | `partial` | CF-ASG-006 checks Auto Scaling groups of fixed size; COST-002 reports ECS services in code with no Auto Scaling at all. |
 | COST-003 | DynamoDB provisioned capacity may miss autoscaling | `CF-DDB-003` | `covered` |  |
@@ -211,6 +212,7 @@ Which CDK rules have a template check, and which AWS Foundational Security Best 
 | REPO-012 | No Service Quotas usage alarm for the services the stack uses |  | `repo` | When the IaC uses Lambda, Elastic IPs, NAT gateways or load balancers, looks for a CloudWatch alarm on the AWS/Usage namespace, SERVICE_QUOTA metric math, Quota Monitor for AWS, or Trusted Advisor service limit events. Org-level: off unless `rules.org`. |
 | REPO-013 | Limits the IaC sets leave no room for failover |  | `repo` | Sums literal Lambda reserved concurrency and Elastic IPs (with CDK NAT gateways) across the repo against the default quotas; over half fires. |
 | REPO-014 | VPC CIDR ranges overlap |  | `repo` | Compares the literal VPC CIDRs of CloudFormation, Terraform and CDK across the repo; files for different environments (dev and prod) are not compared. |
+| REPO-015 | Queue and stream workers have no idempotency key or dedupe store |  | `repo` | When the IaC has a Lambda queue or stream event source, looks for Powertools idempotency, SQS FIFO deduplication, or a conditional write in the IaC and function code. |
 
 ## FSBP controls
 

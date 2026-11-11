@@ -1028,6 +1028,19 @@ TOPICS: dict[str, tuple[str, str, str, str]] = {
         "Well-Architected SEC08-BP01: Implement secure key management",
         "/wellarchitected/latest/security-pillar/sec_protect_data_rest_key_mgmt.html",
     ),
+    "lambda_chain": (
+        "Lambda: invoking a function asynchronously",
+        "/lambda/latest/dg/invocation-async.html",
+        "Well-Architected REL04-BP02: Implement loosely coupled dependencies",
+        "/wellarchitected/latest/reliability-pillar/"
+        "rel_prevent_interaction_failure_loosely_coupled_system.html",
+    ),
+    "idempotent_workers": (
+        "Lambda: how Lambda processes records from stream and queue-based event sources",
+        "/lambda/latest/dg/invocation-eventsourcemapping.html",
+        "Well-Architected REL04-BP04: Make mutating operations idempotent",
+        "/wellarchitected/latest/reliability-pillar/rel_prevent_interaction_failure_idempotent.html",
+    ),
     "lambda_dlq": (
         "Lambda: retain records of async invocations (DLQ and destinations)",
         "/lambda/latest/dg/invocation-async-retain-records.html",
@@ -1907,6 +1920,7 @@ RULE_TOPICS: dict[str, str] = {
     "REPO-012": "quota_alarms",
     "REPO-013": "quota_headroom",
     "REPO-014": "vpc_ip_plan",
+    "REPO-015": "idempotent_workers",
     "PERF-001": "graviton_ec2",
     "PERF-002": "caching",
     "PERF-003": "ddb_capacity",
@@ -1939,6 +1953,7 @@ RULE_TOPICS: dict[str, str] = {
     "REL-011": "rds_replicas",
     "REL-012": "nat_multi_az",
     "REL-032": "subnet_azs",
+    "REL-033": "lambda_chain",
     "REL-013": "backup_vault",
     "REL-014": "backup_cross_region",
     "REL-015": "sfn_errors",
@@ -2178,6 +2193,7 @@ RULE_TOPICS: dict[str, str] = {
     "CF-LAM-006": "lambda_reserved",
     "CF-LAM-007": "lambda_timeout",
     "CF-LAM-008": "lambda_vpc_multi_az",
+    "CF-LAM-009": "lambda_chain",
     "CF-LAM-003": "lambda_runtime",
     "CF-MSK-001": "msk_encryption",
     "CF-NEP-001": "neptune_encryption",
