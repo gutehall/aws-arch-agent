@@ -1500,6 +1500,12 @@ TOPICS: dict[str, tuple[str, str, str, str]] = {
         "Well-Architected SEC05-BP01: Create network layers",
         "/wellarchitected/latest/security-pillar/sec_network_protection_create_layers.html",
     ),
+    "redshift_ssl": (
+        "Amazon Redshift: configuring security options for connections",
+        "/redshift/latest/mgmt/connecting-ssl-support.html",
+        "Well-Architected SEC09-BP02: Enforce encryption in transit",
+        "/wellarchitected/latest/security-pillar/sec_protect_data_transit_encrypt.html",
+    ),
     "redshift_defaults": (
         "Amazon Redshift: create a cluster",
         "/redshift/latest/mgmt/create-cluster.html",
@@ -2250,6 +2256,7 @@ RULE_TOPICS: dict[str, str] = {
     "CF-ALB-001": "alb_logs",
     "CF-ALB-002": "alb_redirect",
     "CF-ALB-003": "alb_tls",
+    "CF-NLB-001": "alb_tls",
     "CF-ALB-004": "alb_attributes",
     "CF-ALB-005": "alb_deletion_protection",
     "CF-ALB-006": "alb_attributes",
@@ -2431,6 +2438,7 @@ RULE_TOPICS: dict[str, str] = {
     "CF-RS-005": "redshift_upgrade",
     "CF-RS-006": "redshift_vpc_routing",
     "CF-RS-007": "redshift_defaults",
+    "CF-RS-008": "redshift_ssl",
     "CF-DOCDB-002": "docdb_backup",
     "CF-DOCDB-003": "docdb_audit",
     "CF-DOCDB-004": "docdb_deletion",

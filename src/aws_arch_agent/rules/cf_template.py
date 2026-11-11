@@ -380,6 +380,7 @@ CHECK_PROPERTIES: dict[str, frozenset[str]] = {
         "CF-ALB-001": {"LoadBalancerAttributes"},
         "CF-ALB-002": {"Protocol", "DefaultActions"},
         "CF-ALB-003": {"Protocol", "SslPolicy"},
+        "CF-NLB-001": {"Protocol", "Port"},
         "CF-ALB-004": {"LoadBalancerAttributes", "Type"},
         "CF-ALB-005": {"LoadBalancerAttributes"},
         "CF-ALB-006": {"LoadBalancerAttributes", "Type"},
@@ -470,6 +471,7 @@ CHECK_PROPERTIES: dict[str, frozenset[str]] = {
                               "CF-SQS-003")},
         # Template-level: _warehouse_findings skips what it cannot read.
         **{c: set() for c in ("CF-RS-002", "CF-RS-003", "CF-RS-004", "CF-RS-005", "CF-RS-006", "CF-RS-007",
+                              "CF-RS-008",
                               "CF-DOCDB-002", "CF-DOCDB-003", "CF-DOCDB-004", "CF-NEP-002", "CF-NEP-003",
                               "CF-NEP-004", "CF-NEP-005")},
         # Template-level: _search_streaming_findings skips what it cannot read.
@@ -570,6 +572,7 @@ CF_THEMES: dict[str, tuple[str, ...]] = {
     "CF-ASG-001": (_RES,), "CF-ASG-002": (_RES,), "CF-ASG-003": (_SB, _ID), "CF-ASG-004": (_NET,),
     "CF-ASG-005": (_SB,), "CF-ASG-006": (_F,),
     "CF-ALB-001": (_OBS,), "CF-ALB-002": (_DP, _NET), "CF-ALB-003": (_DP, _NET),
+    "CF-NLB-001": (_DP, _NET), "CF-RS-008": (_DP, _NET),
     "CF-ALB-004": (_NET,), "CF-ALB-005": (_RES,), "CF-ALB-006": (_NET,), "CF-ALB-007": (_RES,),
     "CF-CLB-001": (_DP, _NET), "CF-CLB-002": (_DP,), "CF-CLB-003": (_OBS,), "CF-CLB-004": (_RES,),
     "CF-CLB-005": (_RES,), "CF-APIGW-001": (_OBS,), "CF-APIGW-002": (_OBS,),
@@ -648,6 +651,7 @@ CF_TITLES: dict[str, str] = {
     "CF-ALB-001": "ALB access logs not enabled (template-level)",
     "CF-ALB-002": "HTTP listener does not redirect to HTTPS",
     "CF-ALB-003": "Listener TLS policy allows TLS 1.0 or 1.1",
+    "CF-NLB-001": "Load balancer listener passes plain TCP",
     "CF-ALB-004": "ALB does not drop invalid HTTP headers",
     "CF-ALB-005": "Load balancer deletion protection not enabled",
     "CF-ALB-006": "ALB desync mitigation mode is monitor",
@@ -873,6 +877,7 @@ CF_TITLES: dict[str, str] = {
     "CF-RS-005": "Redshift cluster does not take major version upgrades",
     "CF-RS-006": "Redshift cluster does not use enhanced VPC routing",
     "CF-RS-007": "Redshift cluster uses a default name",
+    "CF-RS-008": "Redshift cluster does not require SSL",
     "CF-S3-001": "S3 bucket may miss full PublicAccessBlock",
     "CF-S3-002": "S3 bucket encryption explicitly disabled",
     "CF-S3-003": "S3 bucket versioning not enabled",
@@ -1981,6 +1986,15 @@ def _load_balancer_findings(res: Resource, template_path: Path) -> List[Finding]
                 "Make the HTTP listener's default action a redirect to HTTPS (port 443, HTTP_301), so "
                 "no request is served in clear text (Security Hub ELB.1). In CDK: redirectHTTP: true, or "
                 "ListenerAction.redirect({ protocol: 'HTTPS', port: '443' }).")
+        port = props.get("Port")
+        port = int(port) if isinstance(port, str) and port.isdigit() else port
+        if protocol == "TCP" and isinstance(port, int) and not isinstance(port, bool) \
+                and port not in _TLS_PASSTHROUGH_PORTS:
+            add("CF-NLB-001", "Load balancer listener passes plain TCP", "Low", "Security",
+                f"This listener takes plain TCP on port {port}, so the load balancer does not "
+                "encrypt the connection. Use a TLS listener with an ACM certificate (Protocol: TLS, "
+                "Certificates, SslPolicy). Port 443 and 8443 are read as TLS passed through to the "
+                "targets. In CDK: protocol: elbv2.Protocol.TLS, certificates: [cert].")
         if protocol in ("HTTPS", "TLS"):
             policy = props.get("SslPolicy", _DEFAULT_ELB_POLICY)
             if isinstance(policy, str) and _WEAK_ELB_POLICY.match(policy):
@@ -4272,6 +4286,10 @@ def _redshift_logs(cluster: Resource, clusters: List[Resource], logging: List[Re
                for r in logging)
 
 
+# TCP listeners on these ports are read as TLS passed through to the targets.
+_TLS_PASSTHROUGH_PORTS = frozenset({443, 8443, 636, 993, 995, 465, 5671, 9094})
+
+
 def _warehouse_findings(resources: List[Resource], template_path: Path) -> List[Finding]:
     """Redshift (CF-RS-002..007), DocumentDB (CF-DOCDB-002..004) and Neptune (CF-NEP-002..005)
     beyond encryption. A value the scan cannot read is not judged."""
@@ -4313,6 +4331,12 @@ def _warehouse_findings(resources: List[Resource], template_path: Path) -> List[
             add(cluster, "CF-RS-006", "Redshift cluster does not use enhanced VPC routing", "Low", "Security",
                 "COPY and UNLOAD traffic can leave the VPC, out of reach of its security groups and flow "
                 "logs. Set EnhancedVpcRouting: true (Security Hub Redshift.7). In CDK: enhancedVpcRouting: true.")
+        if "ClusterParameterGroupName" not in cluster.unresolved \
+                and not props.get("ClusterParameterGroupName"):
+            add(cluster, "CF-RS-008", "Redshift cluster does not require SSL", "Medium", "Security",
+                "The cluster uses the default parameter group, where require_ssl is false, so clients "
+                "can connect in clear text. Attach a parameter group that sets require_ssl to true "
+                "(Security Hub Redshift.2). In CDK: parameterGroup with require_ssl: 'true'.")
         # A cluster restored from a snapshot keeps the snapshot's names.
         if props.get("SnapshotIdentifier") is None:
             defaults = []

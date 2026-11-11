@@ -2166,6 +2166,11 @@ _CLOUDFORMATION["CF-RS-007"] = """$name:
   Properties:
     MasterUsername: warehouse_admin  # cannot change later
     DBName: analytics"""
+_CLOUDFORMATION["CF-RS-008"] = """$name:
+  Type: AWS::Redshift::Cluster
+  Properties:
+    # An AWS::Redshift::ClusterParameterGroup whose Parameters set require_ssl to 'true'
+    ClusterParameterGroupName: !Ref RequireSslParameterGroup"""
 _CLOUDFORMATION["CF-DOCDB-002"] = """$name:
   Type: AWS::DocDB::DBCluster
   Properties:
@@ -2823,6 +2828,18 @@ _TERRAFORM["CF-RS-007"] = """resource "aws_redshift_cluster" "$tf_name" {
   master_username = "warehouse_admin" # cannot change later
   database_name   = "analytics"
 }"""
+_TERRAFORM["CF-RS-008"] = """resource "aws_redshift_cluster" "$tf_name" {
+  cluster_parameter_group_name = aws_redshift_parameter_group.require_ssl.name
+}
+
+resource "aws_redshift_parameter_group" "require_ssl" {
+  name   = "require-ssl"
+  family = "redshift-1.0"
+  parameter {
+    name  = "require_ssl"
+    value = "true"
+  }
+}"""
 _TERRAFORM["CF-DOCDB-002"] = """resource "aws_docdb_cluster" "$tf_name" {
   backup_retention_period = 7
 }"""
@@ -3377,6 +3394,13 @@ _CLOUDFORMATION["CF-ALB-003"] = """$name:
   Type: AWS::ElasticLoadBalancingV2::Listener
   Properties:
     SslPolicy: ELBSecurityPolicy-TLS13-1-2-2021-06"""
+_CLOUDFORMATION["CF-NLB-001"] = """$name:
+  Type: AWS::ElasticLoadBalancingV2::Listener
+  Properties:
+    Protocol: TLS
+    Certificates:
+      - CertificateArn: !Ref Certificate
+    SslPolicy: ELBSecurityPolicy-TLS13-1-2-2021-06"""
 _CLOUDFORMATION["CF-ALB-004"] = """$name:
   Type: AWS::ElasticLoadBalancingV2::LoadBalancer
   Properties:
@@ -3441,6 +3465,11 @@ _TERRAFORM["CF-ALB-002"] = """resource "aws_lb_listener" "$tf_name" {
 }"""
 _TERRAFORM["CF-ALB-003"] = """resource "aws_lb_listener" "$tf_name" {
   ssl_policy = "ELBSecurityPolicy-TLS13-1-2-2021-06"
+}"""
+_TERRAFORM["CF-NLB-001"] = """resource "aws_lb_listener" "$tf_name" {
+  protocol        = "TLS"
+  certificate_arn = aws_acm_certificate.this.arn
+  ssl_policy      = "ELBSecurityPolicy-TLS13-1-2-2021-06"
 }"""
 _TERRAFORM["CF-ALB-004"] = """resource "aws_lb" "$tf_name" {
   drop_invalid_header_fields = true

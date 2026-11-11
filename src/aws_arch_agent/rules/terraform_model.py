@@ -1062,6 +1062,7 @@ def _redshift_cluster(body: dict) -> dict:
     _set(props, "AutomatedSnapshotRetentionPeriod", _v(body, "automated_snapshot_retention_period"))
     _set(props, "AllowVersionUpgrade", _v(body, "allow_version_upgrade"))
     _set(props, "EnhancedVpcRouting", _v(body, "enhanced_vpc_routing"))
+    _set(props, "ClusterParameterGroupName", _ref(body, "cluster_parameter_group_name"))
     _set(props, "MasterUsername", _v(body, "master_username"))
     _set(props, "DBName", _v(body, "database_name", "dev"))  # Redshift's default database
     # Older providers log from this block; aws_redshift_logging is read by _warehouse_findings.
@@ -1291,6 +1292,7 @@ def _lb_listener(body: dict) -> dict:
     props: dict = {}
     _set(props, "Protocol", _v(body, "protocol"))
     _set(props, "SslPolicy", _v(body, "ssl_policy"))
+    _set(props, "Port", _v(body, "port"))
     if "default_action" in _dynamic_names(body):
         props["DefaultActions"] = UNRESOLVED
         return props
