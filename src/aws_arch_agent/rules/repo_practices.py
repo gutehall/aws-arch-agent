@@ -1,6 +1,6 @@
 """Repo-level checks: tests, a pipeline, environments (OPS 5), account guardrails (SEC 1),
 incident response (SEC 10), application security (SEC 11), service quotas (REL 1),
-VPC address plan (REL 2), idempotent workers (REL 4).
+VPC address plan (REL 2), idempotent workers (REL 4), reliability testing (REL 12).
 
 REPO-006 (the account root user) answers SEC01-BP02 in SEC 1, though it was added with the
 SEC 2 checks.
@@ -124,6 +124,19 @@ Idempotent workers (REL 4) runs by default:
   or a MessageDeduplicationId, or a conditional write (attribute_not_exists in a file with
   a ConditionExpression). It is repo-wide: one control anywhere passes every worker, and
   function code outside the repo is not seen.
+
+Reliability testing (REL 12) runs by default and reads the IaC and the builds REPO-009 reads
+(CI configs, inline buildspecs, CodeBuild projects and pipelines in the IaC, and the
+package.json scripts they run):
+
+- REPO-016 fault injection: an AWS FIS experiment template in the IaC
+  (AWS::FIS::ExperimentTemplate, aws_fis_experiment_template, fis.CfnExperimentTemplate),
+  or a build that starts an experiment (aws fis start-experiment) or runs a chaos tool
+  (Litmus, Chaos Mesh, Gremlin, Chaos Toolkit). What the template targets is not read.
+- REPO-017 load test: a build runs a load test tool (k6 run, artillery run, locust
+  --headless, jmeter -n, Gatling, vegeta attack, hey or ab with a request count, Taurus, or
+  Distributed Load Testing on AWS). A load test script or config (a k6 script,
+  artillery.yml, locustfile.py) that no build runs does not count.
 """
 from __future__ import annotations
 
@@ -1640,11 +1653,132 @@ class IdempotencyMissing(_RepoRule):
         )]
 
 
+# Reliability testing (REL 12): fault injection (REPO-016) and load tests (REPO-017).
+
+# Typed, so a report that names the resource type in its evidence is not a template.
+_FIS_IN_IAC = re.compile(
+    r"[\"']?Type[\"']?\s*:\s*[\"']?AWS::FIS::ExperimentTemplate\b"
+    r"|resource\s+\"aws_fis_experiment_template\""
+    r"|\bCfnExperimentTemplate\("
+)
+_CHAOS_TOOLS: tuple[tuple[str, re.Pattern[str]], ...] = tuple(
+    (name, re.compile(pattern)) for name, pattern in (
+        ("aws fis start-experiment", r"\bfis\s+start-experiment\b"),
+        ("Litmus", r"\blitmusctl\b|\blitmuschaos/|\bkind:\s*ChaosEngine\b"),
+        ("Chaos Mesh", r"\bchaos-mesh\b|\bchaosctl\b"),
+        ("Gremlin",
+         r"\bgremlin\s+(?:attack|attack-container|scenario)\b|\bapi\.gremlin\.com\b"),
+        ("Chaos Toolkit", r"\bchaostoolkit\b|\bchaos\s+run\b"),
+    )
+)
+_LOAD_TOOLS: tuple[tuple[str, re.Pattern[str]], ...] = tuple(
+    (name, re.compile(pattern)) for name, pattern in (
+        ("k6", r"\bk6\s+(?:run|cloud)\b|\bgrafana/(?:run-)?k6-action\b"),
+        ("Artillery", r"\bartillery\s+run(?:-fargate|-lambda)?\b|\bartilleryio/action-cli\b"),
+        ("Locust", r"\blocust\b[^\n]*\s--(?:headless|no-web)\b"),
+        ("JMeter", r"\bjmeter\b[^\n]*\s-n\b|\bjmeter:jmeter\b"),
+        ("Gatling", r"\bgatling:test\b|\bgatlingRun\b|\bgatling\.sh\b"),
+        ("Vegeta", r"\bvegeta\s+attack\b"),
+        ("hey/ab", r"\b(?:hey|ab)\s+(?:[^\n|;&]*\s)?-n\s*\d+"),
+        ("Taurus", r"\bbzt\s+\S"),
+        ("Distributed Load Testing on AWS",
+         r"\bdistributed-load-testing\b|\bDistributedLoadTesting\b"),
+    )
+)
+
+
+def _tools_in_builds(
+    repo_path: Path, tools: tuple[tuple[str, re.Pattern[str]], ...]
+) -> tuple[List[str], dict[str, str]]:
+    """The build configs found, and each tool they (or the package.json scripts they run)
+    invoke: tool -> first place."""
+    builds = build_texts(repo_path)
+    found: dict[str, str] = {}
+    places = list(builds)
+    run = _scripts_run([text for _rel, text in builds], _package_scripts(repo_path))
+    places.extend((f"package.json script {script}", command) for script, command in run)
+    for where, text in places:
+        for name, pattern in tools:
+            if pattern.search(text):
+                found.setdefault(name, where)
+    return [rel for rel, _text in builds], found
+
+
+def fault_injection(repo_path: Path) -> dict[str, str]:
+    """FIS experiment templates in the IaC and chaos tools the builds run: kind -> place."""
+    found: dict[str, str] = {}
+    for rel, text in iac_texts(repo_path):
+        if _FIS_IN_IAC.search(text):
+            found.setdefault("AWS FIS experiment template", rel)
+            break
+    _builds, chaos = _tools_in_builds(repo_path, _CHAOS_TOOLS)
+    for name, where in chaos.items():
+        found.setdefault(name, where)
+    return found
+
+
+class FaultInjectionMissing(_RepoRule):
+    id = "REPO-016"
+    title = "No fault injection experiment targets the workload"
+    category = "Reliability"
+    severity = "Low"
+    themes = ("resilience",)
+    recommendation = (
+        "Test how the workload behaves when parts of it fail: define an AWS FIS experiment "
+        "template (stop an instance, throttle an API, fail an AZ) with a stop condition on a "
+        "CloudWatch alarm, and run it on a schedule or from the pipeline (aws fis "
+        "start-experiment) against a pre-production environment first."
+    )
+
+    def run(self, repo_path: Path, language: str = "typescript") -> List[Finding]:
+        if fault_injection(repo_path):
+            return []
+        return [self._finding(
+            "Searched the IaC for an AWS FIS experiment template (AWS::FIS::ExperimentTemplate, "
+            "aws_fis_experiment_template, fis.CfnExperimentTemplate) and the build configs for "
+            "aws fis start-experiment or a chaos tool (Litmus, Chaos Mesh, Gremlin, Chaos "
+            "Toolkit); found none"
+        )]
+
+
+_LOAD_TOOL_NAMES = (
+    "k6 run, artillery run, locust --headless, jmeter -n, Gatling, vegeta attack, hey or ab "
+    "-n, Taurus, Distributed Load Testing on AWS"
+)
+
+
+class LoadTestMissing(_RepoRule):
+    id = "REPO-017"
+    title = "No load test runs in the pipeline"
+    category = "Reliability"
+    severity = "Low"
+    themes = ("resilience",)
+    recommendation = (
+        "Run a load test in the pipeline against a pre-production environment, sized to the "
+        "peak the workload must take: k6 or Artillery in a CI step or CodeBuild stage, or "
+        "Distributed Load Testing on AWS. Watch scaling and error rates while it runs."
+    )
+
+    def run(self, repo_path: Path, language: str = "typescript") -> List[Finding]:
+        builds, found = _tools_in_builds(repo_path, _LOAD_TOOLS)
+        if found:
+            return []
+        if not builds:
+            return [self._finding(
+                "Searched the repo for a build to run a load test (a CI config, or a "
+                "CodeBuild buildspec or pipeline in the IaC); found none"
+            )]
+        return [self._finding(
+            f"Searched the build configs ({_listed(builds)}) and the package.json scripts "
+            f"they run for a load test ({_LOAD_TOOL_NAMES}); found none"
+        )]
+
+
 REPO_RULES: List[Rule] = [
     RepoTestsMissing(), RepoPipelineMissing(), SingleEnvironment(),
     OrgGuardrailsMissing(), AccountBaselineMissing(), RootUserUnchecked(),
     ForensicCaptureMissing(), ContainmentMissing(),
     DependencyScanMissing(), ArtifactScanMissing(), CentralPackageRepoMissing(),
     QuotaAlarmMissing(), FailoverHeadroomMissing(), VpcCidrOverlap(),
-    IdempotencyMissing(),
+    IdempotencyMissing(), FaultInjectionMissing(), LoadTestMissing(),
 ]

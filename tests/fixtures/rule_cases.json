@@ -861,5 +861,17 @@
     "negative_py": "fn.add_event_source(SqsEventSource(queue))\nsqs.Queue(self, 'Q', fifo=True, content_based_deduplication=True)",
     "positive_ts": "fn.addEventSource(new SqsEventSource(queue));",
     "positive_py": "fn.add_event_source(KinesisEventSource(stream, starting_position=lambda_.StartingPosition.LATEST))"
+  },
+  "REPO-016": {
+    "negative_ts": "new fis.CfnExperimentTemplate(this, 'StopInstances', { description: 'stop one AZ', roleArn: role.roleArn, stopConditions: [{ source: 'aws:cloudwatch:alarm', value: alarm.alarmArn }], targets: {}, actions: {} });",
+    "negative_py": "pipelines.ShellStep('Chaos', commands=['aws fis start-experiment --experiment-template-id EXT123'])",
+    "positive_ts": "new ec2.Instance(this, 'Web', { instanceType, machineImage, vpc });",
+    "positive_py": "ec2.Instance(self, 'Web', instance_type=instance_type, machine_image=image, vpc=vpc)"
+  },
+  "REPO-017": {
+    "negative_ts": "new ShellStep('LoadTest', { commands: ['k6 run load/checkout.js'] });",
+    "negative_py": "pipelines.ShellStep('LoadTest', commands=['artillery run load/artillery.yml'])",
+    "positive_ts": "new ShellStep('Synth', { commands: ['npm ci', 'npx cdk synth'] });",
+    "positive_py": "pipelines.ShellStep('Synth', commands=['pip install -r requirements.txt', 'cdk synth'])"
   }
 }

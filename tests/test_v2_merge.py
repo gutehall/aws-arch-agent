@@ -23,8 +23,9 @@ from aws_arch_agent.models import Finding
 from aws_arch_agent.rules.cf_template import CF_COVERS_STATIC
 from aws_arch_agent.tools.llm import LLMResult
 
-# Repo-level rules add an Operational Excellence pillar to any bare repo.
-REPO_IDS = ["REPO-001", "REPO-002", "REPO-003"]
+# Repo-level rules add Operational Excellence (OPS 5) and Reliability (REL 12: no fault
+# injection, no load test) pillars to any bare repo.
+REPO_IDS = ["REPO-001", "REPO-002", "REPO-003", "REPO-016", "REPO-017"]
 
 
 def _ok(text: str) -> LLMResult:

@@ -1041,6 +1041,20 @@ TOPICS: dict[str, tuple[str, str, str, str]] = {
         "Well-Architected REL04-BP04: Make mutating operations idempotent",
         "/wellarchitected/latest/reliability-pillar/rel_prevent_interaction_failure_idempotent.html",
     ),
+    "fault_injection": (
+        "AWS FIS: experiment template components",
+        "/fis/latest/userguide/experiment-templates.html",
+        "Well-Architected REL12-BP04: Test resiliency using chaos engineering",
+        "/wellarchitected/latest/reliability-pillar/"
+        "rel_testing_resiliency_failure_injection_resiliency.html",
+    ),
+    "load_testing": (
+        "Distributed Load Testing on AWS",
+        "/solutions/latest/distributed-load-testing-on-aws/solution-overview.html",
+        "Well-Architected REL12-BP03: Test scalability and performance requirements",
+        "/wellarchitected/latest/reliability-pillar/"
+        "rel_testing_resiliency_test_non_functional.html",
+    ),
     "lambda_dlq": (
         "Lambda: retain records of async invocations (DLQ and destinations)",
         "/lambda/latest/dg/invocation-async-retain-records.html",
@@ -1921,6 +1935,8 @@ RULE_TOPICS: dict[str, str] = {
     "REPO-013": "quota_headroom",
     "REPO-014": "vpc_ip_plan",
     "REPO-015": "idempotent_workers",
+    "REPO-016": "fault_injection",
+    "REPO-017": "load_testing",
     "PERF-001": "graviton_ec2",
     "PERF-002": "caching",
     "PERF-003": "ddb_capacity",

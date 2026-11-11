@@ -15,7 +15,7 @@ Which CDK rules have a template check, and which AWS Foundational Security Best 
 
 ## CDK rules
 
-194 rules: 132 covered, 7 partial, 10 account, 5 cdk-only, 25 advice, 15 repo.
+196 rules: 132 covered, 7 partial, 10 account, 5 cdk-only, 25 advice, 17 repo.
 
 | Rule | Title | Template check | Status | Note |
 | -- | -- | -- | -- | -- |
@@ -213,6 +213,8 @@ Which CDK rules have a template check, and which AWS Foundational Security Best 
 | REPO-013 | Limits the IaC sets leave no room for failover |  | `repo` | Sums literal Lambda reserved concurrency and Elastic IPs (with CDK NAT gateways) across the repo against the default quotas; over half fires. |
 | REPO-014 | VPC CIDR ranges overlap |  | `repo` | Compares the literal VPC CIDRs of CloudFormation, Terraform and CDK across the repo; files for different environments (dev and prod) are not compared. |
 | REPO-015 | Queue and stream workers have no idempotency key or dedupe store |  | `repo` | When the IaC has a Lambda queue or stream event source, looks for Powertools idempotency, SQS FIFO deduplication, or a conditional write in the IaC and function code. |
+| REPO-016 | No fault injection experiment targets the workload |  | `repo` | Looks for an AWS FIS experiment template in the IaC, or aws fis start-experiment or a chaos tool (Litmus, Chaos Mesh, Gremlin, Chaos Toolkit) in a build. |
+| REPO-017 | No load test runs in the pipeline |  | `repo` | Looks for a load test tool (k6, Artillery, Locust, JMeter, Gatling, Vegeta, hey, ab, Taurus, Distributed Load Testing on AWS) run by a CI config, an inline buildspec, or a package.json script a build runs. |
 
 ## FSBP controls
 

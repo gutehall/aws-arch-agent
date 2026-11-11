@@ -145,7 +145,8 @@ def test_v2_reports_the_repo_rules(tmp_path: Path) -> None:
     _bare_repo(tmp_path, "cdk")
     _report, ctx, findings, _w = analyze_v2(tmp_path, use_llm=False, skip_synth=True)
     repo = sorted(f.id for f in findings if f.id.startswith("REPO-"))
-    assert repo == [*REPO_IDS, "REPO-009", "REPO-011"]  # SEC 11: no build, a package.json
+    # SEC 11: no build, a package.json. REL 12: no fault injection, no load test.
+    assert repo == [*REPO_IDS, "REPO-009", "REPO-011", "REPO-016", "REPO-017"]
     assert set(REPO_IDS) <= set(ctx.rules_run)
 
 

@@ -152,5 +152,19 @@
     "file": null,
     "line": null,
     "evidence": "Deploys Lambda functions (stack.yaml); searched for Amazon Inspector Lambda scanning and a dependency scan that fails the build; found none"
+  },
+  {
+    "id": "REPO-016",
+    "severity": "Low",
+    "file": null,
+    "line": null,
+    "evidence": "Searched the IaC for an AWS FIS experiment template (AWS::FIS::ExperimentTemplate, aws_fis_experiment_template, fis.CfnExperimentTemplate) and the build configs for aws fis start-experiment or a chaos tool (Litmus, Chaos Mesh, Gremlin, Chaos Toolkit); found none"
+  },
+  {
+    "id": "REPO-017",
+    "severity": "Low",
+    "file": null,
+    "line": null,
+    "evidence": "Searched the repo for a build to run a load test (a CI config, or a CodeBuild buildspec or pipeline in the IaC); found none"
   }
 ]

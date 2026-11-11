@@ -142,7 +142,7 @@ ALL_RULES = [
     IamUserConsolePassword(),
     IamAccessKeyCreated(),
     IamUserDirectPolicies(),
-    # Reliability (37 rules: these 33, and REPO-012 to REPO-015 in REPO_RULES)
+    # Reliability (39 rules: these 33, and REPO-012 to REPO-017 in REPO_RULES)
     RdsMultiAzMissing(),
     BackupRetentionMissing(),
     LambdaDlqMissing(),
@@ -227,7 +227,7 @@ ALL_RULES = [
     S3ReplicationMetrics(),
     Ec2PatchBaselineMissing(),
     AlarmEscalationMissing(),
-    *REPO_RULES,  # repo-level: tests, pipeline, guardrails, incidents, app security
+    *REPO_RULES,  # repo-level: tests, pipeline, guardrails, incidents, app security, testing
     # Performance Efficiency (19 rules)
     GravitonNotUsed(),
     CachingHint(),
