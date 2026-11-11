@@ -891,5 +891,17 @@
     "negative_py": "sqs.Queue(self, 'Jobs')\nqueue.metric_approximate_age_of_oldest_message().create_alarm(self, 'Age', threshold=300, evaluation_periods=1)",
     "positive_ts": "new dynamodb.Table(this, 'Orders', { partitionKey });",
     "positive_py": "sqs.Queue(self, 'Jobs')"
+  },
+  "REPO-021": {
+    "negative_ts": "const pipeline = new pipelines.CodePipeline(this, 'Pipeline', { synth: new pipelines.ShellStep('Synth', { input, commands: ['npm ci', 'npm test', 'npx cdk synth'] }) });\npipeline.addStage(new AppStage(this, 'Prod'));",
+    "negative_py": "pipeline = pipelines.CodePipeline(self, 'Pipeline', synth=pipelines.ShellStep('Synth', input=source, commands=['pip install -r requirements.txt', 'pytest', 'cdk synth']))\npipeline.add_stage(AppStage(self, 'Prod'))",
+    "positive_ts": "const pipeline = new pipelines.CodePipeline(this, 'Pipeline', { synth: new pipelines.ShellStep('Synth', { input, commands: ['npm ci', 'npx cdk synth'] }) });\npipeline.addStage(new AppStage(this, 'Prod'));",
+    "positive_py": "pipeline = pipelines.CodePipeline(self, 'Pipeline', synth=pipelines.ShellStep('Synth', input=source, commands=['pip install -r requirements.txt', 'cdk synth']))\npipeline.add_stage(AppStage(self, 'Prod'))"
+  },
+  "REPO-022": {
+    "negative_ts": "new ecs.FargateService(this, 'Svc', { cluster, taskDefinition, circuitBreaker: { rollback: true } });",
+    "negative_py": "fn = lambda_.Function(self, 'Fn', runtime=runtime, handler='index.handler', code=code)\ncodedeploy.LambdaDeploymentGroup(self, 'Deploy', alias=alias, deployment_config=codedeploy.LambdaDeploymentConfig.CANARY_10_PERCENT_5_MINUTES)",
+    "positive_ts": "new ecs.FargateService(this, 'Svc', { cluster, taskDefinition });",
+    "positive_py": "lambda_.Function(self, 'Fn', runtime=runtime, handler='index.handler', code=code)"
   }
 }

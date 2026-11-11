@@ -15,7 +15,7 @@ Which CDK rules have a template check, and which AWS Foundational Security Best 
 
 ## CDK rules
 
-199 rules: 132 covered, 7 partial, 10 account, 5 cdk-only, 25 advice, 20 repo.
+201 rules: 132 covered, 7 partial, 10 account, 5 cdk-only, 25 advice, 22 repo.
 
 | Rule | Title | Template check | Status | Note |
 | -- | -- | -- | -- | -- |
@@ -218,6 +218,8 @@ Which CDK rules have a template check, and which AWS Foundational Security Best 
 | REPO-018 | No application KPI metric |  | `repo` | When the IaC runs compute, looks for a CloudWatch alarm, metric or metric filter in a namespace outside AWS/, or embedded metric format, PutMetricData or Powertools Metrics in function code. |
 | REPO-019 | No user experience telemetry on the edge |  | `repo` | When the IaC has an API Gateway, load balancer or CloudFront distribution, looks for a Synthetics canary, a RUM app monitor, a Route 53 health check, or an alarm on an edge latency or 5xx metric. |
 | REPO-020 | No telemetry on the datastores and queues the workload calls |  | `repo` | When the IaC has a datastore or queue, looks for AWS SDK tracing in function code (X-Ray, Powertools Tracer, OpenTelemetry), the ADOT Lambda layer or Application Signals, or an alarm on a datastore or queue metric. |
+| REPO-021 | A deploy runs with no test gate before it |  | `repo` | Looks in each build config that deploys (cdk deploy, terraform apply, aws cloudformation deploy, sam deploy, a CodePipeline deploy action, a CDK pipelines stage) for a test that can fail before its last deploy, including package.json scripts the build runs. |
+| REPO-022 | Deployments of the workload's compute have no automated rollback |  | `repo` | When the IaC runs compute, looks for an ECS circuit breaker or deployment alarms with rollback, CodeDeploy automatic rollback, a SAM deployment preference, CloudFormation rollback triggers, a CodePipeline stage that rolls back, an Auto Scaling rollback, or Argo Rollouts or Flagger. |
 
 ## FSBP controls
 

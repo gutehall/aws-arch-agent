@@ -1,7 +1,7 @@
 """Repo-level checks: tests, a pipeline, environments (OPS 5), account guardrails (SEC 1),
 incident response (SEC 10), application security (SEC 11), service quotas (REL 1),
 VPC address plan (REL 2), idempotent workers (REL 4), reliability testing (REL 12),
-observability (OPS 4).
+observability (OPS 4), deployment risk (OPS 6).
 
 REPO-006 (the account root user) answers SEC01-BP02 in SEC 1, though it was added with the
 SEC 2 checks.
@@ -151,6 +151,25 @@ Observability (OPS 4) runs by default and reads the IaC and the function code ou
   ElastiCache, SQS, SNS, Kinesis, OpenSearch), AWS SDK tracing in the code (X-Ray, Powertools
   Tracer, OpenTelemetry), the ADOT Lambda layer or Application Signals, or an alarm on a
   datastore or queue metric. Which dependency an alarm or trace covers is not matched.
+
+Deployment risk (OPS 6) runs by default and reads the builds REPO-009 reads and the IaC:
+
+- REPO-021 test gate: each build config that deploys (cdk deploy, terraform apply, aws
+  cloudformation deploy or a stack or change set call, sam, serverless or copilot deploy, an
+  ECS service or Lambda code update, a CodePipeline deploy action, a CDK pipelines stage)
+  runs a test that can fail (npm test, jest, vitest, pytest, tox, go test, terraform test,
+  taskcat, cfn-guard, mvn, gradle, dotnet, cargo or make test, a CodePipeline test action)
+  before its last deploy, so a test between a staging and a production deploy gates the
+  promotion. A package.json script a build runs counts at the place it is run. A test whose
+  failure is swallowed (|| true, continue-on-error, allow_failure) is not a gate. A test in
+  a separate workflow from the deploy is not seen as a gate.
+- REPO-022 automated rollback: when the IaC runs compute (as REPO-018), an ECS deployment
+  circuit breaker or deployment alarms with rollback, CodeDeploy automatic rollback (CDK
+  deployment groups roll back by default), a SAM deployment preference, CloudFormation
+  rollback triggers, a CodePipeline stage that rolls back on failure, an Auto Scaling
+  instance refresh or rolling update that rolls back, or an Argo Rollouts Rollout or Flagger
+  Canary manifest. It is repo-wide: one control passes every compute resource. A
+  CloudFormation stack's own rollback on a failed resource does not count.
 """
 from __future__ import annotations
 
@@ -2179,6 +2198,213 @@ class DependencyTelemetryMissing(_RepoRule):
         )]
 
 
+# Deployment risk (OPS 6): a test gates each deploy (REPO-021), and the compute's deployments
+# roll back on their own (REPO-022).
+
+# A tool name only counts at the start of a command (a line or list item, a run: key, after a
+# quote, ;, && or |), so pip install pytest is not a test run.
+_CMD_START = (
+    r"(?:^[ \t-]*|\brun:[ \t]*|[\"'`;&|(][ \t]*|\bpython3?\s+-m\s+|\bnpx\s+|\buv\s+run\s+"
+    r"|\bpoetry\s+run\s+)"
+)
+_TEST_COMMANDS = re.compile(
+    r"\b(?:npm|yarn|pnpm)\s+(?:run\s+)?test\b"
+    rf"|{_CMD_START}(?:jest|vitest|pytest|tox|taskcat\s+test)(?=[\s\"'`;&|)]|$)"
+    r"|\bgo\s+test\b|\bterraform\s+test\b|\bcfn-guard\s+(?:test|validate)\b"
+    r"|\b(?:mvn|mvnw)\b[^\n]*?\s(?:test|verify)\b|\b(?:gradle|gradlew)\b[^\n]*?\stest\b"
+    r"|\bdotnet\s+test\b|\bcargo\s+test\b|\bmake\s+test\b"
+    r"|[\"']?Category[\"']?\s*:\s*[\"']?Test\b|\bcategory\s*=\s*\"Test\""
+    r"|\bCodeBuildActionType\.TEST\b",
+    re.MULTILINE,
+)
+_DEPLOY_COMMANDS = re.compile(
+    r"\bcdk\s+deploy\b|\bterraform(?:\s+-chdir=\S+)?\s+apply\b"
+    r"|\bterragrunt\s+(?:run-all\s+)?apply\b"
+    r"|\baws\s+cloudformation\s+(?:deploy|create-stack|update-stack|execute-change-set)\b"
+    r"|\bsam\s+deploy\b|\b(?:serverless|sls)\s+deploy\b|\bcopilot\s+(?:\w+\s+)?deploy\b"
+    r"|\baws\s+ecs\s+update-service\b|\baws\s+lambda\s+update-function-code\b"
+    r"|\baws-actions/(?:aws-cloudformation-github-deploy|amazon-ecs-deploy-task-definition)\b"
+    r"|[\"']?Category[\"']?\s*:\s*[\"']?Deploy\b|\bcategory\s*=\s*\"Deploy\""
+    r"|\b\w*DeployAction\(|\bCloudFormation(?:CreateUpdateStack|CreateReplaceChangeSet"
+    r"|ExecuteChangeSet)Action\("
+    # CDK pipelines: addStage(new AppStage(...)), not a codepipeline.Pipeline stage literal.
+    r"|\.add_?[sS]tage\(\s*(?!\{|stage_name\b)",
+)
+_POST_STEPS = re.compile(r"\bpost\s*[:=]")
+_TEST_COMMAND_NAMES = (
+    "npm, yarn or pnpm test, jest, vitest, pytest, tox, go test, terraform test, taskcat, "
+    "cfn-guard, mvn, gradle, dotnet, cargo or make test, a CodePipeline test action"
+)
+
+
+def _deploy_at(text: str, match: re.Match[str]) -> int:
+    """Where a deploy takes effect. A CDK pipelines stage deploys after its pre steps, so a
+    test in pre: gates it and one in post: does not."""
+    if not match.group(0).startswith("."):
+        return match.start()
+    paren = match.start() + match.group(0).index("(")
+    call = _braced(text, paren, "(", ")")
+    post = _POST_STEPS.search(call)
+    return paren + 1 + (post.start() if post else len(call))
+
+
+def _events(
+    text: str, scripts: dict[str, str], depth: int = 0
+) -> List[tuple[tuple[int, ...], str, bool]]:
+    """(position, "test" or "deploy", can fail) in the order the text runs them. A
+    package.json script the text runs stands in for its own commands, at the place it is
+    run: its position is the offset of the call, then the offset in the script."""
+    lines = text.split("\n")
+    out: List[tuple[tuple[int, ...], str, bool]] = []
+
+    def tail_at(end: int) -> str:
+        rest = text[end:]
+        stop = _TAIL_END.search(rest)
+        return rest[:stop.start()] if stop else rest
+
+    for m in _TEST_COMMANDS.finditer(text):
+        i = text.count("\n", 0, m.start())
+        out.append(((m.start(),), "test", not _cannot_fail(lines, i, tail_at(m.end()))))
+    for m in _DEPLOY_COMMANDS.finditer(text):
+        out.append(((_deploy_at(text, m),), "deploy", True))
+    if depth < 3:
+        for m in _RUN_SCRIPT.finditer(text):
+            command = scripts.get(m.group(1) or m.group(2) or "")
+            if command is None:
+                continue
+            i = text.count("\n", 0, m.start())
+            swallowed = _cannot_fail(lines, i, tail_at(m.end()))
+            out.extend(
+                ((m.start(), *inner), kind, fails and not swallowed)
+                for inner, kind, fails in _events(command, scripts, depth + 1)
+            )
+    return sorted(out, key=lambda event: event[0])
+
+
+def ungated_deploys(repo_path: Path) -> List[tuple[str, int]]:
+    """(build config, line of its first deploy) for each build config that deploys with no
+    test that can fail before its last deploy. A test between a staging and a production
+    deploy gates the promotion."""
+    scripts = _package_scripts(repo_path)
+    out: List[tuple[str, int]] = []
+    for rel, text in build_texts(repo_path):
+        events = _events(text, scripts)
+        deploys = [offset for offset, kind, _fails in events if kind == "deploy"]
+        if not deploys:
+            continue
+        gated = any(
+            kind == "test" and fails and offset < deploys[-1]
+            for offset, kind, fails in events
+        )
+        if not gated:
+            out.append((rel, _line_of(text, deploys[0][0])))
+    return out
+
+
+class DeployTestGateMissing(_RepoRule):
+    id = "REPO-021"
+    title = "A deploy runs with no test gate before it"
+    severity = "Medium"
+    themes = ("resilience",)
+    recommendation = (
+        "Run the tests before the deploy in the same pipeline, and let a failed test stop "
+        "it: a test step ahead of the deploy step in the CI job, a test action in a "
+        "CodePipeline stage before the deploy stage, or a pre step on a CDK pipelines stage. "
+        "Do not swallow the test's exit code, and deploy to a staging environment and test "
+        "it before promoting to production."
+    )
+
+    def run(self, repo_path: Path, language: str = "typescript") -> List[Finding]:
+        ungated = ungated_deploys(repo_path)
+        if not ungated:
+            return []
+        places = [f"{rel} (line {line})" for rel, line in ungated]
+        return [self._finding(
+            f"Deploys from {_listed(places)} with no test that can fail before the deploy; "
+            "searched each build config and the package.json scripts it runs for a test "
+            f"({_TEST_COMMAND_NAMES}) ahead of it; found none",
+            file=ungated[0][0],
+            line=ungated[0][1],
+        )]
+
+
+_I = re.IGNORECASE
+_M = re.MULTILINE
+_ROLLBACK_CONTROLS: tuple[tuple[str, re.Pattern[str]], ...] = tuple(
+    (name, re.compile(pattern, flags)) for name, pattern, flags in (
+        ("ECS circuit breaker with rollback",
+         r"circuit_?breaker[\s\S]{0,200}?\brollback[\"']?\s*[:=]\s*[\"']?true\b", _I),
+        ("ECS deployment alarms with rollback",
+         r"\balarms[\"']?\s*[:{][\s\S]{0,200}?"
+         r"\brollback[\"']?\s*[:=]\s*[\"']?true\b", _I),
+        # CDK deploymentAlarms roll back by default.
+        ("ECS deployment alarms (CDK)", r"\bdeploymentAlarms\s*:|\bdeployment_alarms\s*=", 0),
+        ("CodeDeploy automatic rollback",
+         r"auto_?rollback_?configuration[\"']?\s*[:={][\s\S]{0,200}?"
+         r"\benabled[\"']?\s*[:=]\s*[\"']?true\b", _I),
+        ("SAM DeploymentPreference", r"[\"']?DeploymentPreference[\"']?\s*:", 0),
+        ("CloudFormation rollback triggers",
+         r"[\"']?RollbackTriggers[\"']?\s*:|--rollback-configuration\b", 0),
+        ("CodePipeline stage rollback on failure",
+         r"on_?failure[\"']?\s*[:={][\s\S]{0,120}?\bresult[\"']?\s*[:=]\s*[\"']?ROLLBACK\b"
+         r"|\bResult\.ROLLBACK\b", _I),
+        ("Auto Scaling instance refresh rollback",
+         r"[\"']?auto_?rollback[\"']?\s*[:=]\s*[\"']?true\b", _I),
+        ("Auto Scaling rolling update on signals",
+         r"AutoScalingRollingUpdate[\"']?\s*:[\s\S]{0,400}?"
+         r"WaitOnResourceSignals[\"']?\s*:\s*[\"']?true\b", 0),
+        ("Argo Rollouts", r"^apiVersion:\s*argoproj\.io/[\s\S]*^kind:\s*Rollout\b"
+         r"|^kind:\s*Rollout\b[\s\S]*^apiVersion:\s*argoproj\.io/", _M),
+        ("Flagger canary", r"^apiVersion:\s*flagger\.app/[\s\S]*^kind:\s*Canary\b"
+         r"|^kind:\s*Canary\b[\s\S]*^apiVersion:\s*flagger\.app/", _M),
+    )
+)
+# CDK deployment groups roll back a failed deployment unless told not to.
+_CDK_DEPLOYMENT_GROUP = re.compile(r"\b(?:Lambda|Ecs|Server)DeploymentGroup\(")
+_CDK_NO_ROLLBACK = re.compile(r"\bfailedDeployment\s*:\s*false\b|\bfailed_deployment\s*=\s*False\b")
+
+
+def rollback_controls(repo_path: Path) -> dict[str, str]:
+    """Each automated rollback the IaC or builds declare: kind -> first file."""
+    found: dict[str, str] = {}
+    places = list(iac_texts(repo_path))
+    known = {rel for rel, _text in places}
+    places.extend((rel, text) for rel, text in build_texts(repo_path) if rel not in known)
+    for rel, text in places:
+        for name, pattern in _ROLLBACK_CONTROLS:
+            if pattern.search(text):
+                found.setdefault(name, rel)
+        if _CDK_DEPLOYMENT_GROUP.search(text) and not _CDK_NO_ROLLBACK.search(text):
+            found.setdefault("CodeDeploy deployment group (CDK)", rel)
+    return found
+
+
+class AutomatedRollbackMissing(_RepoRule):
+    id = "REPO-022"
+    title = "Deployments of the workload's compute have no automated rollback"
+    severity = "Medium"
+    themes = ("resilience",)
+    recommendation = (
+        "Let a failed deployment roll itself back: turn on the ECS deployment circuit breaker "
+        "with rollback (or deployment alarms), deploy Lambda and ECS through CodeDeploy with "
+        "automatic rollback on failure and on alarm (SAM DeploymentPreference does this for "
+        "Lambda), set CloudFormation rollback triggers on a CloudWatch alarm, or set a "
+        "CodePipeline V2 stage to roll back on failure."
+    )
+
+    def run(self, repo_path: Path, language: str = "typescript") -> List[Finding]:
+        compute = _in_iac(repo_path, _COMPUTE)
+        if not compute or rollback_controls(repo_path):
+            return []
+        return [self._finding(
+            f"Runs {_named(compute)}; searched the IaC and builds for an ECS deployment "
+            "circuit breaker or deployment alarms with rollback, CodeDeploy automatic "
+            "rollback, a SAM deployment preference, CloudFormation rollback triggers, a "
+            "CodePipeline stage that rolls back on failure, an Auto Scaling instance refresh "
+            "or rolling update that rolls back, and Argo Rollouts or Flagger; found none",
+        )]
+
+
 REPO_RULES: List[Rule] = [
     RepoTestsMissing(), RepoPipelineMissing(), SingleEnvironment(),
     OrgGuardrailsMissing(), AccountBaselineMissing(), RootUserUnchecked(),
@@ -2187,4 +2413,5 @@ REPO_RULES: List[Rule] = [
     QuotaAlarmMissing(), FailoverHeadroomMissing(), VpcCidrOverlap(),
     IdempotencyMissing(), FaultInjectionMissing(), LoadTestMissing(),
     KpiMetricMissing(), EdgeTelemetryMissing(), DependencyTelemetryMissing(),
+    DeployTestGateMissing(), AutomatedRollbackMissing(),
 ]

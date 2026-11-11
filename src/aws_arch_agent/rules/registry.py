@@ -200,8 +200,8 @@ ALL_RULES = [
     ResourceNamingConvention(),
     CdkAspectsMissing(),
     CdkContextMissing(),
-    # Operational Excellence (32 rules)
-    # These 26, and REPO-001 to REPO-003 and REPO-018 to REPO-020 in REPO_RULES.
+    # Operational Excellence (34 rules)
+    # These 26, and REPO-001 to REPO-003 and REPO-018 to REPO-022 in REPO_RULES.
     CloudTrailMissing(),
     VpcFlowLogsMissing(),
     XRayTracingMissing(),
@@ -229,7 +229,7 @@ ALL_RULES = [
     Ec2PatchBaselineMissing(),
     AlarmEscalationMissing(),
     *REPO_RULES,  # repo-level: tests, pipeline, guardrails, incidents, app security, testing,
-    # observability
+    # observability, deployment risk
     # Performance Efficiency (19 rules)
     GravitonNotUsed(),
     CachingHint(),

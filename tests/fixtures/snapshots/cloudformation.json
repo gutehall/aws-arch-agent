@@ -180,5 +180,12 @@
     "file": null,
     "line": null,
     "evidence": "Calls RDS (stack.yaml), SQS (stack.yaml); searched the function code for AWS SDK tracing (X-Ray, Powertools Tracer, OpenTelemetry), the IaC for the ADOT Lambda layer or CloudWatch Application Signals, and an alarm on a datastore or queue metric; found none"
+  },
+  {
+    "id": "REPO-022",
+    "severity": "Medium",
+    "file": null,
+    "line": null,
+    "evidence": "Runs Lambda (stack.yaml); searched the IaC and builds for an ECS deployment circuit breaker or deployment alarms with rollback, CodeDeploy automatic rollback, a SAM deployment preference, CloudFormation rollback triggers, a CodePipeline stage that rolls back on failure, an Auto Scaling instance refresh or rolling update that rolls back, and Argo Rollouts or Flagger; found none"
   }
 ]

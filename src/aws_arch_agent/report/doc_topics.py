@@ -1076,6 +1076,20 @@ TOPICS: dict[str, tuple[str, str, str, str]] = {
         "/wellarchitected/latest/operational-excellence-pillar/"
         "ops_observability_dependency_telemetry.html",
     ),
+    "deployment_test_gate": (
+        "CodePipeline: add a test action to a pipeline stage",
+        "/codepipeline/latest/userguide/integrations-action-type.html",
+        "Well-Architected OPS06-BP02: Test deployments",
+        "/wellarchitected/latest/operational-excellence-pillar/"
+        "ops_mit_deploy_risks_test_val_chg.html",
+    ),
+    "automated_rollback": (
+        "ECS: deployment circuit breaker",
+        "/AmazonECS/latest/developerguide/deployment-circuit-breaker.html",
+        "Well-Architected OPS06-BP04: Automate testing and rollback",
+        "/wellarchitected/latest/operational-excellence-pillar/"
+        "ops_mit_deploy_risks_auto_testing_and_rollback.html",
+    ),
     "lambda_dlq": (
         "Lambda: retain records of async invocations (DLQ and destinations)",
         "/lambda/latest/dg/invocation-async-retain-records.html",
@@ -1961,6 +1975,8 @@ RULE_TOPICS: dict[str, str] = {
     "REPO-018": "app_kpi_metrics",
     "REPO-019": "edge_user_telemetry",
     "REPO-020": "dependency_telemetry",
+    "REPO-021": "deployment_test_gate",
+    "REPO-022": "automated_rollback",
     "PERF-001": "graviton_ec2",
     "PERF-002": "caching",
     "PERF-003": "ddb_capacity",
