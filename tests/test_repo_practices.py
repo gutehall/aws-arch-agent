@@ -147,10 +147,10 @@ def test_v2_reports_the_repo_rules(tmp_path: Path) -> None:
     repo = sorted(f.id for f in findings if f.id.startswith("REPO-"))
     # SEC 11: no build, a package.json. REL 12: no fault injection, no load test. REL 8: no
     # build deploys the stack. SEC 7: the bucket has no classification tag. SEC 8: nothing
-    # stops an unencrypted bucket.
+    # stops an unencrypted bucket. REL 13: the bucket has no recovery objective.
     assert repo == [
         *REPO_IDS, "REPO-009", "REPO-011", "REPO-016", "REPO-017", "REPO-025", "REPO-039",
-        "REPO-041",
+        "REPO-041", "REPO-052",
     ]
     assert set(REPO_IDS) <= set(ctx.rules_run)
 

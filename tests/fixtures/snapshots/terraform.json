@@ -271,5 +271,12 @@
     "file": null,
     "line": null,
     "evidence": "Backs up data with RDS or Aurora backups (main.tf); searched the IaC for an AWS Backup restore testing plan, a schedule that calls a restore API, and the builds for a restore command; found none"
+  },
+  {
+    "id": "REPO-052",
+    "severity": "Low",
+    "file": null,
+    "line": null,
+    "evidence": "Runs S3 bucket (main.tf), RDS database (main.tf), Lambda (main.tf); searched the IaC for a Resilience Hub resiliency policy and for a recovery time or recovery point objective tag or context key; found none"
   }
 ]

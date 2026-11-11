@@ -4,7 +4,7 @@ This document provides a comprehensive list of all rules checked by AWS Arch Age
 
 ## Overview
 
-AWS Arch Agent checks **230 static analysis rules** and **283 template checks** across all 6 AWS Well-Architected Framework pillars. 139 of the 230 CDK rules (60%) have a template check, so they also run for CloudFormation, Terraform and synthesised CDK. [COVERAGE.md](COVERAGE.md) gives the reason for each of the others.
+AWS Arch Agent checks **234 static analysis rules** and **283 template checks** across all 6 AWS Well-Architected Framework pillars. 139 of the 234 CDK rules (59%) have a template check, so they also run for CloudFormation, Terraform and synthesised CDK. [COVERAGE.md](COVERAGE.md) gives the reason for each of the others.
 
 ## Static Analysis Rules (V1 & V2 Modes)
 
@@ -124,7 +124,7 @@ These rules run on your CDK TypeScript/Python code and execute in both V1 and V2
 - REPO-040: Data classified as sensitive has no customer managed key
 - REPO-041: Nothing stops unencrypted storage from being created
 
-### Reliability (53 rules)
+### Reliability (57 rules)
 
 **High Availability:**
 - REL-001: RDS instance missing multi-AZ
@@ -206,6 +206,12 @@ These rules run on your CDK TypeScript/Python code and execute in both V1 and V2
 - REPO-049: A fleet has a fixed size
 - REPO-050: Scaling reacts only to CPU or memory
 - REPO-051: Backups are never restored to test them
+
+**Disaster recovery (repo-level, REL 13):**
+- REPO-052: Recovery objectives are not defined
+- REPO-053: Replicated data has no automated failover
+- REPO-054: Disaster recovery is never tested
+- REPO-055: The DR Region can drift from the primary
 
 ### Operational Excellence (38 rules)
 
@@ -1063,6 +1069,10 @@ Every rule has one or more themes, which cut across pillars: `finops`, `security
 | REPO-049 | resilience |
 | REPO-050 | resilience |
 | REPO-051 | resilience |
+| REPO-052 | resilience |
+| REPO-053 | resilience |
+| REPO-054 | resilience |
+| REPO-055 | resilience |
 | SEC-001 | identity |
 | SEC-002 | identity |
 | SEC-003 | network-exposure |

@@ -1077,5 +1077,29 @@
     "negative_py": "backup.BackupPlan(self, 'Plan')\nbackup.CfnRestoreTestingPlan(self, 'RestoreTest', restore_testing_plan_name='weekly', schedule_expression='cron(0 3 ? * SUN *)', recovery_point_selection=selection)",
     "positive_ts": "new backup.BackupPlan(this, 'Plan', {});",
     "positive_py": "backup.BackupPlan(self, 'Plan')"
+  },
+  "REPO-052": {
+    "negative_ts": "new s3.Bucket(this, 'Data');\nTags.of(this).add('RTO', '4h');",
+    "negative_py": "s3.Bucket(self, 'Data')\nTags.of(self).add('RecoveryPointObjective', '15m')",
+    "positive_ts": "new s3.Bucket(this, 'Data');",
+    "positive_py": "s3.Bucket(self, 'Data')"
+  },
+  "REPO-053": {
+    "negative_ts": "new s3.Bucket(this, 'Data', { replicationRules: [{ destination, priority: 1 }] });\nnew route53.ARecord(this, 'Primary', { zone, target, failover: 'PRIMARY' });",
+    "negative_py": "s3.Bucket(self, 'Data', replication_rules=[rule])\nroute53.CfnHealthCheck(self, 'Health', health_check_config=config)",
+    "positive_ts": "new s3.Bucket(this, 'Data', { replicationRules: [{ destination, priority: 1 }] });",
+    "positive_py": "s3.Bucket(self, 'Data', replication_rules=[rule])"
+  },
+  "REPO-054": {
+    "negative_ts": "new rds.CfnGlobalCluster(this, 'Global', { globalClusterIdentifier: 'g' });\nnew fis.CfnExperimentTemplate(this, 'RegionFailover', { description: 'fail over' });",
+    "negative_py": "rds.CfnGlobalCluster(self, 'Global', global_cluster_identifier='g')\nfis.CfnExperimentTemplate(self, 'RegionFailover', description='fail over')",
+    "positive_ts": "new rds.CfnGlobalCluster(this, 'Global', { globalClusterIdentifier: 'g' });",
+    "positive_py": "rds.CfnGlobalCluster(self, 'Global', global_cluster_identifier='g')"
+  },
+  "REPO-055": {
+    "negative_ts": "new rds.CfnGlobalCluster(this, 'Global', { globalClusterIdentifier: 'g' });\nnew AppStack(app, 'Primary', { env: { region: 'us-east-1' } });\nnew AppStack(app, 'Recovery', { env: { region: 'us-west-2' } });",
+    "negative_py": "rds.CfnGlobalCluster(self, 'Global', global_cluster_identifier='g')\nAppStack(app, 'Primary', env=cdk.Environment(region='us-east-1'))\nAppStack(app, 'Recovery', env=cdk.Environment(region='us-west-2'))",
+    "positive_ts": "new rds.CfnGlobalCluster(this, 'Global', { globalClusterIdentifier: 'g' });\nnew AppStack(app, 'Primary', { env: { region: 'us-east-1' } });",
+    "positive_py": "rds.CfnGlobalCluster(self, 'Global', global_cluster_identifier='g')\nAppStack(app, 'Primary', env=cdk.Environment(region='us-east-1'))"
   }
 }

@@ -15,7 +15,7 @@ Which CDK rules have a template check, and which AWS Foundational Security Best 
 
 ## CDK rules
 
-230 rules: 132 covered, 7 partial, 10 account, 5 cdk-only, 25 advice, 51 repo.
+234 rules: 132 covered, 7 partial, 10 account, 5 cdk-only, 25 advice, 55 repo.
 
 | Rule | Title | Template check | Status | Note |
 | -- | -- | -- | -- | -- |
@@ -249,6 +249,10 @@ Which CDK rules have a template check, and which AWS Foundational Security Best 
 | REPO-049 | A fleet has a fixed size |  | `repo` | Names each ECS service with no Application Auto Scaling target on its task count, Auto Scaling group whose minimum equals its maximum or with no scaling policy in the repo, and provisioned DynamoDB table with no auto scaling. |
 | REPO-050 | Scaling reacts only to CPU or memory |  | `repo` | When the repo has scaling policies, fires if every one tracks CPU or memory and none scales on queue depth, request count, latency, errors, another custom metric or a forecast. |
 | REPO-051 | Backups are never restored to test them |  | `repo` | When the IaC backs data up (AWS Backup plan, DynamoDB point-in-time recovery, RDS or Aurora), looks for an AWS Backup restore testing plan, a schedule that calls a restore API, or a restore command in a build. |
+| REPO-052 | Recovery objectives are not defined |  | `repo` | When the IaC holds a data store or compute, looks for a Resilience Hub resiliency policy or an RTO or RPO tag or context key. |
+| REPO-053 | Replicated data has no automated failover |  | `repo` | When data is copied to another Region, looks for DNS failover or health checks, origin failover, Application Recovery Controller, Global Accelerator in two Regions, a global table, Elastic Disaster Recovery, or a tested restore. |
+| REPO-054 | Disaster recovery is never tested |  | `repo` | When data is copied to another Region, looks for a fault injection experiment, a failover or recovery drill in a build, a readiness check, or a scheduled restore test. |
+| REPO-055 | The DR Region can drift from the primary |  | `repo` | When data is copied to another Region, looks for StackSets, a readiness check or resource set, a Config aggregator, drift detection in a build, or one stack or module deployed to two Regions. |
 
 ## FSBP controls
 

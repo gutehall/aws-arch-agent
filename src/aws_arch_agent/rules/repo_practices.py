@@ -2,7 +2,8 @@
 incident response (SEC 10), application security (SEC 11), service quotas (REL 1),
 VPC address plan (REL 2), idempotent workers (REL 4), reliability testing (REL 12),
 observability (OPS 4), deployment risk (OPS 6), change management (REL 8), workload
-monitoring (REL 6), demand and impairment scaling (REL 7).
+monitoring (REL 6), demand and impairment scaling (REL 7), backup recovery (REL 9) and
+disaster recovery (REL 13).
 
 REPO-006 (the account root user) answers SEC01-BP02 in SEC 1, though it was added with the
 SEC 2 checks.
@@ -388,6 +389,33 @@ Backup recovery (REL 9):
   API (StartRestoreJob, RestoreDBInstanceFromDBSnapshot, RestoreDBClusterToPointInTime,
   RestoreTableToPointInTime and the like), or a build that runs aws backup
   start-restore-job, aws rds restore-db-*, or aws dynamodb restore-table-*.
+
+Disaster recovery (REL 13) runs by default. REL13-BP02 (the copies themselves) is REL-014,
+REL-025, REL-026, CF-BAK-002 and CF-S3-010. Three of the rules below judge only a repo that
+copies data or workloads to another Region: S3 replication, a DynamoDB global table, an
+Aurora global database, an RDS read replica from another Region (SourceRegion, or a
+Terraform replicate_source_db that is an ARN), an AWS Backup copy action, or Elastic
+Disaster Recovery. S3 and AWS Backup copies to the same Region or another account are not
+told apart.
+
+- REPO-052 recovery objectives: when the IaC holds a data store or compute, it must state a
+  recovery time or point objective: an AWS Resilience Hub resiliency policy, or a tag,
+  object or context key named rto, rpo, RecoveryTimeObjective or RecoveryPointObjective
+  (any case, an optional unit suffix such as RtoMinutes). Only key syntax counts, not prose.
+- REPO-053 automated failover: the copy needs something that moves traffic: Route 53
+  failover records or health checks, CloudFront origin failover, Route 53 Application
+  Recovery Controller, Global Accelerator endpoint groups in two or more literal Regions, a
+  DynamoDB global table (active-active), Elastic Disaster Recovery, or a tested restore
+  (REPO-051). Which record fails over which copy is not matched.
+- REPO-054 DR drill: an AWS FIS template or chaos tool (REPO-016), a build that flips an
+  ARC routing control, fails over or switches over an Aurora global database, or starts an
+  Elastic Disaster Recovery recovery, an ARC readiness check, or a scheduled restore test.
+- REPO-055 DR drift: CloudFormation StackSets, an ARC readiness check or resource set, an
+  AWS Config aggregator, a build that runs CloudFormation drift detection or terraform plan
+  -detailed-exitcode, or one stack deployed to two Regions. That last check is literal: a
+  CDK stack class instantiated with two different literal region values, or one Terraform
+  module source used by two module blocks with different aws provider aliases (the alias
+  regions are not read; a module with no providers map counts as the default provider).
 """
 from __future__ import annotations
 
@@ -5057,6 +5085,291 @@ class RestoreTestMissing(_RepoRule):
         )]
 
 
+# Disaster recovery (REL 13): recovery objectives (REPO-052), automated failover (REPO-053),
+# DR drills (REPO-054) and drift between the Regions (REPO-055).
+
+_DR_REPLICATION = _kinds(
+    ("S3 replication",
+     r"[\"']?ReplicationConfiguration[\"']?\s*:\s*(?:$|\{|\n)"
+     r"|resource\s+\"aws_s3_bucket_replication_configuration\""
+     r"|\breplication_?[rR]ules\s*[:=]\s*\["
+     r"|\breplication_?[cC]onfiguration\s*[:=]\s*(?:\{|s3\.)"),
+    ("DynamoDB global table", _cf_type(r"DynamoDB::GlobalTable")
+     + r"|resource\s+\"aws_dynamodb_global_table\""
+     r"|\breplica\s*\{[^}]*\bregion_name\s*="
+     r"|\breplication_?[rR]egions\s*[:=]\s*\["
+     r"|\breplicas\s*[:=]\s*\[\s*(?:\{|dynamodb\.)"
+     r"|\bdynamodb\.CfnGlobalTable\("),
+    ("Aurora global database", _cf_type(r"RDS::GlobalCluster")
+     + r"|resource\s+\"aws_rds_global_cluster\"|\brds\.CfnGlobalCluster\("),
+    ("RDS cross-Region read replica",
+     r"[\"']?SourceRegion[\"']?\s*:\s*\S|\bsourceRegion\s*:\s*\S"
+     r"|\breplicate_source_db\s*=\s*\"arn:"),
+    ("AWS Backup copy action",
+     r"[\"']?CopyActions[\"']?\s*:|\bcopyActions\s*:|\bcopy_actions\s*="
+     r"|\bcopy_action\s*\{[^}]*\bdestination_vault_arn\s*="),
+    ("Elastic Disaster Recovery", _cf_type(r"DRS::\w+") + r"|resource\s+\"aws_drs_\w+\""
+     r"|\bdrs\.Cfn\w+\("),
+)
+_OBJECTIVE = (
+    r"(?:rto|rpo|recovery[-_]?(?:time|point)[-_]?objective)"
+    r"(?:[-_]?(?:in)?[-_]?(?:s|secs?|seconds?|m|mins?|minutes?|h|hrs?|hours?))?"
+)
+_RECOVERY_OBJECTIVES = _kinds(
+    ("Resilience Hub resiliency policy", _cf_type(r"ResilienceHub::ResiliencyPolicy")
+     + r"|resource\s+\"aws_resiliencehub_resiliency_policy\""
+     r"|\bresiliencehub\.CfnResiliencyPolicy\(|\bCfnResiliencyPolicy\("),
+    ("recovery objective tag or context key",
+     rf"(?i:[\"']{_OBJECTIVE}[\"']\s*[:=]"
+     rf"|\bkey[\"']?\s*[:=]\s*[\"']{_OBJECTIVE}[\"']"
+     rf"|\.add\(\s*[\"']{_OBJECTIVE}[\"']\s*,)"
+     rf"|(?im:^\s*{_OBJECTIVE}\s*[:=])"),
+)
+_ARC_READINESS = (
+    _cf_type(r"Route53RecoveryReadiness::(?:ReadinessCheck|ResourceSet)")
+    + r"|resource\s+\"aws_route53recoveryreadiness_(?:readiness_check|resource_set)\""
+    r"|\broute53recoveryreadiness\.Cfn(?:ReadinessCheck|ResourceSet)\("
+)
+_FAILOVER = _kinds(
+    ("Route 53 failover routing", dict(_FALLBACKS)["Route 53 failover routing"].pattern),
+    ("Route 53 health check", dict(_EDGE_MONITORS)["Route 53 health check"].pattern),
+    ("CloudFront origin failover", dict(_FALLBACKS)["CloudFront origin failover"].pattern),
+    ("Route 53 Application Recovery Controller",
+     _cf_type(r"Route53Recovery(?:Control|Readiness)::\w+")
+     + r"|resource\s+\"aws_route53recovery(?:controlconfig|readiness)_\w+\""
+     r"|\broute53recovery(?:control|readiness)\.Cfn\w+\("),
+)
+_ACTIVE_REPLICATION = ("DynamoDB global table", "Elastic Disaster Recovery")
+_REGION = r"[a-z]{2}(?:-gov|-iso[a-z]?)?-[a-z]+-\d"
+_ENDPOINT_GROUP_REGION = re.compile(
+    rf"[\"']?(?:EndpointGroupRegion|endpointGroupRegion|endpoint_group_region)[\"']?\s*[:=]"
+    rf"\s*[\"']?({_REGION})\b"
+)
+_DR_DRILL_TOOLS: tuple[tuple[str, re.Pattern[str]], ...] = tuple(
+    (name, re.compile(pattern)) for name, pattern in (
+        ("ARC routing control switch",
+         r"\baws\s+route53-recovery-cluster\s+update-routing-control-states?\b"),
+        ("Aurora global database failover",
+         r"\baws\s+rds\s+(?:failover|switchover)-global-cluster\b"),
+        ("Elastic Disaster Recovery drill", r"\baws\s+drs\s+start-(?:recovery|drill)\b"),
+    )
+)
+_DR_SYNC = _kinds(
+    ("CloudFormation StackSet", _cf_type(r"CloudFormation::StackSet")
+     + r"|resource\s+\"aws_cloudformation_stack_set\""
+     r"|\bCfnStackSet\(|\bnew\s+StackSet\(|\bcdk[-_]stacksets\b"),
+    ("ARC readiness check", _ARC_READINESS),
+    ("AWS Config aggregator", _cf_type(r"Config::ConfigurationAggregator")
+     + r"|resource\s+\"aws_config_configuration_aggregator\""
+     r"|\bCfnConfigurationAggregator\("),
+)
+_DRIFT_TOOLS: tuple[tuple[str, re.Pattern[str]], ...] = tuple(
+    (name, re.compile(pattern)) for name, pattern in (
+        ("CloudFormation drift detection",
+         r"\baws\s+cloudformation\s+detect-stack(?:-set)?-drift\b"),
+        ("terraform plan -detailed-exitcode",
+         r"\bterraform\s+plan\b[^\n]*\s-detailed-exitcode\b"),
+    )
+)
+_CDK_NEW = re.compile(r"\bnew\s+([A-Z]\w*)\s*\(")
+_PY_CALL = re.compile(r"(?<![\w.])([A-Z]\w*)\s*\(")
+_LITERAL_REGION = re.compile(rf"\bregion\s*[:=]\s*['\"]({_REGION})['\"]")
+_NOT_STACKS = frozenset({"Environment"})
+_TF_MODULE = re.compile(r"\bmodule\s+\"[^\"]+\"\s*\{")
+_TF_SOURCE = re.compile(r"^\s*source\s*=\s*\"([^\"]+)\"", re.MULTILINE)
+_TF_AWS_PROVIDER = re.compile(r"\bproviders\s*=\s*\{[^}]*?\baws\s*=\s*aws\.(\w+)")
+
+
+def dr_replication(repo_path: Path) -> dict[str, str]:
+    """Data or workloads the IaC copies to another Region: kind -> first file."""
+    return _in_iac(repo_path, _DR_REPLICATION)
+
+
+def failover_controls(repo_path: Path, replication: dict[str, str]) -> dict[str, str]:
+    """What moves traffic to the copy when the primary fails: kind -> first place."""
+    found = {kind: rel for kind, rel in replication.items() if kind in _ACTIVE_REPLICATION}
+    found.update(_in_iac(repo_path, _FAILOVER))
+    regions: dict[str, str] = {}
+    for rel, text in iac_texts(repo_path):
+        for match in _ENDPOINT_GROUP_REGION.finditer(text):
+            regions.setdefault(match.group(1), rel)
+    if len(regions) > 1:
+        found.setdefault("Global Accelerator in two Regions", next(iter(regions.values())))
+    for kind, rel in restore_tests(repo_path).items():
+        found.setdefault(kind, rel)
+    return found
+
+
+def dr_drills(repo_path: Path) -> dict[str, str]:
+    """Fault injection, failover or recovery drills and restore tests: kind -> place."""
+    found = fault_injection(repo_path)
+    _builds, drills = _tools_in_builds(repo_path, _DR_DRILL_TOOLS)
+    found.update(drills)
+    for rel, text in iac_texts(repo_path):
+        if re.search(_ARC_READINESS, text):
+            found.setdefault("ARC readiness check", rel)
+            break
+    for kind, rel in restore_tests(repo_path).items():
+        found.setdefault(kind, rel)
+    return found
+
+
+def _stack_regions(rel: str, text: str) -> Iterator[tuple[str, str]]:
+    """(class, literal region) of each CDK construct call that names a region."""
+    if rel.endswith((".ts", ".js")):
+        calls = _CDK_NEW
+    elif rel.endswith(".py"):
+        calls = _PY_CALL
+    else:
+        return
+    for match in calls.finditer(text):
+        if match.group(1) in _NOT_STACKS:
+            continue
+        args = _braced(text, match.end() - 1, "(", ")")
+        for region in _LITERAL_REGION.finditer(args):
+            yield match.group(1), region.group(1)
+
+
+def _module_providers(text: str) -> Iterator[tuple[str, str]]:
+    """(source, aws provider alias) of each Terraform module block."""
+    for match in _TF_MODULE.finditer(text):
+        body = _braced(text, match.end() - 1)
+        source = _TF_SOURCE.search(body)
+        if source:
+            provider = _TF_AWS_PROVIDER.search(body)
+            yield source.group(1), provider.group(1) if provider else "default"
+
+
+def multi_region_deploys(repo_path: Path) -> dict[str, str]:
+    """A CDK stack class or Terraform module deployed to two Regions: name -> file."""
+    stacks: dict[str, set[str]] = {}
+    modules: dict[str, set[str]] = {}
+    where: dict[str, str] = {}
+    for rel, text in iac_texts(repo_path):
+        for name, region in _stack_regions(rel, text):
+            stacks.setdefault(name, set()).add(region)
+            where.setdefault(name, rel)
+        if rel.endswith(".tf"):
+            for source, alias in _module_providers(text):
+                modules.setdefault(source, set()).add(alias)
+                where.setdefault(source, rel)
+    found = {f"stack {name} in two Regions": where[name]
+             for name, regions in stacks.items() if len(regions) > 1}
+    found.update({f"module {source} in two Regions": where[source]
+                  for source, aliases in modules.items() if len(aliases) > 1})
+    return found
+
+
+def drift_controls(repo_path: Path) -> dict[str, str]:
+    """StackSets, readiness checks, aggregators, drift checks and two-Region deploys."""
+    found = _in_iac(repo_path, _DR_SYNC)
+    _builds, drift = _tools_in_builds(repo_path, _DRIFT_TOOLS)
+    found.update(drift)
+    found.update(multi_region_deploys(repo_path))
+    return found
+
+
+class RecoveryObjectivesMissing(_RepoRule):
+    id = "REPO-052"
+    title = "Recovery objectives are not defined"
+    category = "Reliability"
+    severity = "Low"
+    themes = ("resilience",)
+    recommendation = (
+        "Write down how long the workload may be down and how much data it may lose, and "
+        "keep it next to the code: an AWS Resilience Hub resiliency policy with RTO and RPO "
+        "per disruption type, or recovery time and recovery point objective tags on the "
+        "stacks. Pick the backup frequency and the DR strategy from those numbers."
+    )
+
+    def run(self, repo_path: Path, language: str = "typescript") -> List[Finding]:
+        workload = {**_in_iac(repo_path, _DATA_STORES), **_in_iac(repo_path, _COMPUTE)}
+        if not workload or _in_iac(repo_path, _RECOVERY_OBJECTIVES):
+            return []
+        return [self._finding(
+            f"Runs {_named(workload)}; searched the IaC for a Resilience Hub resiliency policy "
+            "and for a recovery time or recovery point objective tag or context key; found "
+            "none",
+        )]
+
+
+class FailoverAutomationMissing(_RepoRule):
+    id = "REPO-053"
+    title = "Replicated data has no automated failover"
+    category = "Reliability"
+    severity = "Medium"
+    themes = ("resilience",)
+    recommendation = (
+        "A copy in another Region only shortens recovery if traffic can reach it: add DNS "
+        "failover records with health checks, Application Recovery Controller routing "
+        "controls, Global Accelerator endpoints in both Regions, CloudFront origin failover, "
+        "or active-active global tables, and rehearse a restore so the recovery time is known."
+    )
+
+    def run(self, repo_path: Path, language: str = "typescript") -> List[Finding]:
+        replication = dr_replication(repo_path)
+        if not replication or failover_controls(repo_path, replication):
+            return []
+        return [self._finding(
+            f"Copies data to another Region with {_named(replication)}; searched the IaC for "
+            "DNS failover, health checks, origin failover, Application Recovery Controller, "
+            "Global Accelerator in two Regions, an active-active global table, Elastic "
+            "Disaster Recovery and a tested restore; found none",
+            file=next(iter(replication.values())),
+        )]
+
+
+class DisasterRecoveryUntested(_RepoRule):
+    id = "REPO-054"
+    title = "Disaster recovery is never tested"
+    category = "Reliability"
+    severity = "Low"
+    themes = ("resilience",)
+    recommendation = (
+        "Run a DR drill on a schedule: fail the workload over to the recovery Region with a "
+        "fault injection experiment, an Application Recovery Controller routing control "
+        "change, an Aurora global database switchover or an Elastic Disaster Recovery drill, "
+        "or restore backups in the recovery Region, and measure the recovery time and point "
+        "against the objectives."
+    )
+
+    def run(self, repo_path: Path, language: str = "typescript") -> List[Finding]:
+        replication = dr_replication(repo_path)
+        if not replication or dr_drills(repo_path):
+            return []
+        return [self._finding(
+            f"Copies data to another Region with {_named(replication)}; searched the IaC and "
+            "builds for a fault injection experiment, a routing control or global database "
+            "failover, a recovery drill, a readiness check and a scheduled restore; found none",
+            file=next(iter(replication.values())),
+        )]
+
+
+class DisasterRecoveryDrift(_RepoRule):
+    id = "REPO-055"
+    title = "The DR Region can drift from the primary"
+    category = "Reliability"
+    severity = "Low"
+    themes = ("resilience",)
+    recommendation = (
+        "Deploy the recovery Region from the same code as the primary and check it stays "
+        "the same: deploy one stack or module to both Regions, or use CloudFormation "
+        "StackSets, add Application Recovery Controller readiness checks or an AWS Config "
+        "aggregator across the Regions, and run drift detection on a schedule."
+    )
+
+    def run(self, repo_path: Path, language: str = "typescript") -> List[Finding]:
+        replication = dr_replication(repo_path)
+        if not replication or drift_controls(repo_path):
+            return []
+        return [self._finding(
+            f"Copies data to another Region with {_named(replication)}; searched the IaC for "
+            "StackSets, a readiness check, a Config aggregator and one stack or module "
+            "deployed to two Regions, and the builds for drift detection; found none",
+            file=next(iter(replication.values())),
+        )]
+
+
 REPO_RULES: List[Rule] = [
     RepoTestsMissing(), RepoPipelineMissing(), SingleEnvironment(),
     OrgGuardrailsMissing(), AccountBaselineMissing(), RootUserUnchecked(),
@@ -5080,4 +5393,6 @@ REPO_RULES: List[Rule] = [
     EndToEndTracingMissing(),
     FixedSizeFleet(), CpuOnlyScaling(),
     RestoreTestMissing(),
+    RecoveryObjectivesMissing(), FailoverAutomationMissing(), DisasterRecoveryUntested(),
+    DisasterRecoveryDrift(),
 ]
