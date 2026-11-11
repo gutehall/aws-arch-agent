@@ -1017,5 +1017,23 @@
     "negative_py": "data = s3.Bucket(self, 'Data')\nconfig.ManagedRule(self, 'Sse', identifier=config.ManagedRuleIdentifiers.S3_BUCKET_SERVER_SIDE_ENCRYPTION_ENABLED)",
     "positive_ts": "const data = new s3.Bucket(this, 'Data');",
     "positive_py": "data = s3.Bucket(self, 'Data')"
+  },
+  "REPO-042": {
+    "negative_ts": "const fn = new lambda.Function(this, 'Fn', props);\nconst table = new dynamodb.Table(this, 'State', props);",
+    "negative_py": "fn = _lambda.Function(self, 'Fn', **props)\nfs = efs.FileSystem(self, 'State', vpc=vpc)",
+    "positive_ts": "const host = new ec2.Instance(this, 'Host', props);\nconst data = new ec2.Volume(this, 'Data', props);\ndata.grantAttachVolume(host.role, [host]);",
+    "positive_py": "svc = ecs.FargateService(self, 'Svc', task_definition=task)\ntask.add_volume(name='data', host=ecs.Host(source_path='/data'))"
+  },
+  "REPO-043": {
+    "negative_ts": "const fn = new lambda.Function(this, 'Fn', { ...props, reservedConcurrentExecutions: 50 });",
+    "negative_py": "fn = _lambda.Function(self, 'Fn', reserved_concurrent_executions=50, **props)",
+    "positive_ts": "const fn = new lambda.Function(this, 'Fn', props);",
+    "positive_py": "fn = _lambda.Function(self, 'Fn', **props)"
+  },
+  "REPO-044": {
+    "negative_ts": "const fn = new lambda.Function(this, 'Fn', props);\nconst queue = new sqs.Queue(this, 'Work');\nfn.addEventSource(new SqsEventSource(queue));",
+    "negative_py": "fn = _lambda.Function(self, 'Fn', on_failure=destinations.SqsDestination(dlq), **props)\ntable = dynamodb.Table(self, 'Orders', **table_props)",
+    "positive_ts": "const fn = new lambda.Function(this, 'Fn', props);\nconst table = new dynamodb.Table(this, 'Orders', props);",
+    "positive_py": "fn = _lambda.Function(self, 'Fn', **props)\ntable = dynamodb.Table(self, 'Orders', **table_props)"
   }
 }

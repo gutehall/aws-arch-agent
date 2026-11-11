@@ -236,5 +236,19 @@
     "file": null,
     "line": null,
     "evidence": "Declares S3 bucket (stack.yaml), RDS database (stack.yaml); searched the IaC for EBS encryption by default, a deny on an encryption condition key, an AWS Config encryption rule and CDK Nag, and the builds for checkov, tfsec, trivy config, cfn-guard and KICS; found none"
+  },
+  {
+    "id": "REPO-043",
+    "severity": "Low",
+    "file": "stack.yaml",
+    "line": null,
+    "evidence": "Runs Lambda (stack.yaml); searched the IaC for Lambda reserved concurrency, an API Gateway throttle or usage plan, a WAF rate-based rule and AppConfig feature flags, and the function code for a feature flag SDK; found none"
+  },
+  {
+    "id": "REPO-044",
+    "severity": "Low",
+    "file": "stack.yaml",
+    "line": null,
+    "evidence": "Compute depends on RDS (stack.yaml), SQS (stack.yaml); searched the IaC for an SQS buffer, an on-failure destination, a Step Functions catch, origin or DNS failover and a fixed or mock response, and the function code for a circuit breaker; found none"
   }
 ]

@@ -15,7 +15,7 @@ Which CDK rules have a template check, and which AWS Foundational Security Best 
 
 ## CDK rules
 
-220 rules: 132 covered, 7 partial, 10 account, 5 cdk-only, 25 advice, 41 repo.
+223 rules: 132 covered, 7 partial, 10 account, 5 cdk-only, 25 advice, 44 repo.
 
 | Rule | Title | Template check | Status | Note |
 | -- | -- | -- | -- | -- |
@@ -239,6 +239,9 @@ Which CDK rules have a template check, and which AWS Foundational Security Best 
 | REPO-039 | Data stores carry no classification tag |  | `repo` | Looks in each IaC file that declares a data store for a classification tag key, or for an app-wide CDK tag or Terraform default_tags holding one. |
 | REPO-040 | Data classified as sensitive has no customer managed key |  | `repo` | Looks in each IaC file whose data stores are tagged confidential, restricted, secret, sensitive, PII, PHI or PCI for a customer managed KMS key. |
 | REPO-041 | Nothing stops unencrypted storage from being created |  | `repo` | When the IaC declares a data store or EBS volume, looks for EBS encryption by default, a deny on an encryption condition key, an AWS Config encryption rule, CDK Nag, or checkov, tfsec, trivy config, cfn-guard or KICS in a build. |
+| REPO-042 | Compute keeps state on local disk |  | `repo` | When the IaC runs compute, looks for an attached EBS data volume, a non-root block device, an ECS host volume, an autoprovisioned shared Docker volume or a Kubernetes hostPath. |
+| REPO-043 | No emergency lever to shed load |  | `repo` | When the IaC runs compute, looks for Lambda reserved concurrency, an API Gateway throttle or usage plan, a WAF rate-based rule, AppConfig feature flags, or a feature flag SDK in the function code. |
+| REPO-044 | No fallback when a dependency fails |  | `repo` | When compute has a dependency or an edge, looks for an SQS buffer, an on-failure destination, a Step Functions catch, origin or DNS failover, a fixed or mock response, or a circuit breaker library. |
 
 ## FSBP controls
 

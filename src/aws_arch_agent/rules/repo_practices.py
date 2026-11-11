@@ -300,6 +300,31 @@ Data at rest (SEC 8):
   (ENCRYPTED_VOLUMES, RDS_STORAGE_ENCRYPTED, S3_BUCKET_SERVER_SIDE_ENCRYPTION_ENABLED,
   EFS_ENCRYPTED_CHECK, DYNAMODB_TABLE_ENCRYPTED_KMS and the like), CDK Nag aspects, or a
   policy-as-code scan in a build (checkov, tfsec, trivy config, cfn-guard validate, KICS).
+
+Failure interactions (REL 5) run by default, and only when the IaC runs compute (as
+REPO-018). Throttling, retries, fail fast and timeouts (REL05-BP02 to BP05) are per-resource
+checks; these read the repo:
+
+- REPO-042 local state: fires only on evidence of state kept on the compute's own disk: an
+  EBS volume attachment (AWS::EC2::VolumeAttachment, aws_volume_attachment,
+  CfnVolumeAttachment, grantAttachVolume), a block device on a non-root device name (other
+  than /dev/xvda, /dev/sda1, /dev/sda, /dev/nvme0n1) or a Terraform ebs_block_device, an ECS
+  host volume (SourcePath, sourcePath, host_path), an autoprovisioned shared Docker volume,
+  or a Kubernetes hostPath. Each place is named by file and line. Lambda ephemeral storage
+  above 512 MB is not judged: /tmp lives only as long as the execution environment, so it
+  is scratch space, and flagging its size would be noise.
+- REPO-043 emergency lever: Lambda reserved concurrency, an API Gateway stage or usage plan
+  throttle, a WAF rate-based rule, an AppConfig feature flag profile (or the AppConfig
+  extension layer), or a feature flag SDK in the function code (the AppConfig agent on
+  localhost:2772, LaunchDarkly, Unleash, Flagsmith, OpenFeature, Powertools feature flags).
+- REPO-044 fallback: when compute has a dependency (as REPO-020) or an edge (as REPO-019),
+  a buffering or degraded path: an SQS queue feeding a consumer (SqsEventSource, an SNS
+  subscription to SQS, a SAM SQS event, an event source mapping on a queue), a Lambda
+  on-failure destination, a Step Functions Catch, CloudFront origin groups, Route 53
+  failover records, an ALB fixed response or API Gateway mock integration, or a circuit
+  breaker library in the code (pybreaker, opossum, resilience4j, Polly, Hystrix,
+  circuitbreaker, cockatiel). It is repo-wide: one fallback anywhere passes every
+  dependency, and which call it guards is not matched.
 """
 from __future__ import annotations
 
@@ -3944,6 +3969,196 @@ class EncryptionGuardrailMissing(_RepoRule):
         )]
 
 
+# Failure interactions (REL 5): local state on compute (REPO-042), an emergency lever to shed
+# load (REPO-043), and a fallback when a dependency fails (REPO-044).
+
+_ROOT_DEVICE = r"/dev/(?!(?:xvda|sda1?|nvme0n1)(?![\w/]))"
+_LOCAL_STATE = _kinds(
+    ("EBS data volume attached",
+     _cf_type(r"EC2::VolumeAttachment") + r"|resource\s+\"aws_volume_attachment\""
+     r"|\bec2\.CfnVolumeAttachment\(|\.grant_?[aA]ttach_?[vV]olume\w*\("),
+    ("EBS data volume on a non-root device",
+     rf"[\"']?(?:Device|DeviceName|deviceName|device_name)[\"']?\s*[:=]\s*[\"']?{_ROOT_DEVICE}"
+     r"|\bebs_block_device\s*\{"),
+    ("ECS host volume",
+     r"[\"']?SourcePath[\"']?\s*:|\bsourcePath\s*:|\bHost\(\s*source_path\s*="
+     r"|\bhost_path\s*="),
+    ("Docker volume shared and autoprovisioned",
+     r"[\"']?[aA]utoprovision[\"']?\s*[:=]\s*[\"']?(?:true|True)\b"),
+    ("Kubernetes hostPath volume", r"\bhostPath\s*:|\bhost_path\s*\{"),
+)
+
+
+def local_state(repo_path: Path) -> List[tuple[str, str, int]]:
+    """Compute that keeps state on local disk: (kind, file, line), first per kind and file."""
+    found: List[tuple[str, str, int]] = []
+    for rel, text in iac_texts(repo_path):
+        for kind, pattern in _LOCAL_STATE:
+            match = pattern.search(text)
+            if match:
+                found.append((kind, rel, _line_of(text, match.start())))
+    return found
+
+
+class LocalStateOnCompute(_RepoRule):
+    id = "REPO-042"
+    title = "Compute keeps state on local disk"
+    category = "Reliability"
+    severity = "Medium"
+    themes = ("resilience",)
+    recommendation = (
+        "Keep compute stateless so any instance or task can serve any request and a lost "
+        "one loses nothing: put state in DynamoDB, S3, ElastiCache or an EFS mount instead "
+        "of an attached data volume, a host volume or a shared Docker volume."
+    )
+
+    def run(self, repo_path: Path, language: str = "typescript") -> List[Finding]:
+        if not _in_iac(repo_path, _COMPUTE):
+            return []
+        found = local_state(repo_path)
+        if not found:
+            return []
+        places = [f"{kind} at {rel}:{line}" for kind, rel, line in found]
+        return [self._finding(
+            f"Keeps state on local disk: {_listed(places, 5)}",
+            file=found[0][1],
+            line=found[0][2],
+        )]
+
+
+_LEVERS = _kinds(
+    ("Lambda reserved concurrency",
+     r"[\"']?ReservedConcurrentExecutions[\"']?\s*:|\breservedConcurrentExecutions\s*:"
+     r"|\breserved_concurrent_executions\s*=\s*[^-\s]"),
+    ("API Gateway throttle",
+     r"[\"']?Throttling(?:Burst|Rate)Limit[\"']?\s*:|\bthrottling(?:Burst|Rate)Limit\s*:"
+     r"|\bthrottling_(?:burst|rate)_limit\s*=|\bthrottle_settings\s*\{"
+     r"|\bthrottle\s*[:=]\s*(?:\{|\w+\.ThrottleSettings\()"
+     + "|" + _cf_type(r"ApiGateway::UsagePlan")
+     + r"|resource\s+\"aws_api_gateway_usage_plan\"|\.add_?[uU]sage_?[pP]lan\("),
+    ("WAF rate-based rule",
+     r"[\"']?RateBasedStatement[\"']?\s*:|\brateBasedStatement\s*:"
+     r"|\brate_based_statement\s*[{=]"),
+    ("AppConfig feature flags",
+     r"[\"']?[tT]ype[\"']?\s*[:=]\s*[\"']?AWS\.AppConfig\.FeatureFlags\b"
+     r"|\bConfigurationType\.FEATURE_FLAGS\b|AWS-AppConfig-Extension"),
+)
+_FLAG_CODE = _kinds(
+    ("AppConfig agent", r"\blocalhost:2772\b"),
+    ("LaunchDarkly", r"@launchdarkly/|\blaunchdarkly[-_][\w-]+|\bldclient\b"),
+    ("Unleash", r"\bunleash[-_]client\b|\bUnleashClient\b"),
+    ("Flagsmith", r"\bflagsmith\b"),
+    ("OpenFeature", r"@openfeature/|\bopenfeature\b"),
+    ("Powertools feature flags",
+     r"\butilities\.feature_flags\b|software\.amazon\.lambda\.powertools\.featureflags"),
+)
+
+
+def emergency_levers(repo_path: Path) -> dict[str, str]:
+    """Ways to shed load or turn a feature off: kind -> first file."""
+    found = _in_iac(repo_path, _LEVERS)
+    for rel, _name, text in _function_code(repo_path):
+        for kind, pattern in _FLAG_CODE:
+            if pattern.search(text):
+                found.setdefault(kind, rel)
+    return found
+
+
+class EmergencyLeverMissing(_RepoRule):
+    id = "REPO-043"
+    title = "No emergency lever to shed load"
+    category = "Reliability"
+    severity = "Low"
+    themes = ("resilience",)
+    recommendation = (
+        "Give operators a lever they can pull in an incident without a deploy: reserved "
+        "concurrency on the Lambda functions, an API Gateway stage or usage plan throttle, "
+        "a WAF rate-based rule, or feature flags (AWS AppConfig, LaunchDarkly, Unleash, "
+        "OpenFeature) that turn off non-critical paths. Write down when to pull each one."
+    )
+
+    def run(self, repo_path: Path, language: str = "typescript") -> List[Finding]:
+        compute = _in_iac(repo_path, _COMPUTE)
+        if not compute or emergency_levers(repo_path):
+            return []
+        return [self._finding(
+            f"Runs {_named(compute)}; searched the IaC for Lambda reserved concurrency, an API "
+            "Gateway throttle or usage plan, a WAF rate-based rule and AppConfig feature flags, "
+            "and the function code for a feature flag SDK; found none",
+            file=next(iter(compute.values())),
+        )]
+
+
+_FALLBACKS = _kinds(
+    ("SQS buffer",
+     r"\bSqsEventSource\(|\bSqsSubscription\(|\bQueueProcessing(?:Fargate|Ec2)Service\("
+     r"|(?m:[\"']?Type[\"']?\s*:\s*[\"']?SQS[\"']?\s*(?:,|$))"
+     r"|[\"']?[pP]rotocol[\"']?\s*[:=]\s*[\"']?sqs\b"
+     r"|\bevent_source_arn\s*=\s*aws_sqs_queue\."),
+    ("Lambda on-failure destination",
+     r"[\"']?OnFailure[\"']?\s*:|\bonFailure\s*:|\bon_failure\s*(?:\{|=)"),
+    ("Step Functions Catch", r"\\?[\"']Catch\\?[\"']\s*:|(?m:^\s*Catch\s*:)|\bCatch\s*=\s*\["
+     r"|\.add_?[cC]atch\("),
+    ("CloudFront origin failover",
+     r"[\"']?OriginGroups[\"']?\s*:|\borigin_group\s*\{|\bOriginGroup\("
+     r"|\bfallback_?[oO]rigin\s*[:=]"),
+    ("Route 53 failover routing",
+     r"[\"']?[fF]ailover[\"']?\s*[:=]\s*[\"']?(?:PRIMARY|SECONDARY)\b"
+     r"|\bfailover_routing_policy\s*\{"),
+    ("fixed response or mock integration",
+     r"[\"']?FixedResponseConfig[\"']?\s*:|\bfixed_response\s*\{"
+     r"|\bListenerAction\.fixed_?[rR]esponse\(|\bMockIntegration\("
+     r"|[\"']?Type[\"']?\s*:\s*[\"']?MOCK\b|\btype\s*=\s*\"MOCK\""),
+)
+_FALLBACK_CODE = re.compile(
+    r"\bpybreaker\b|\bopossum\b|\bresilience4j\b|\busing\s+Polly\b|\bhystrix\b"
+    r"|\bHystrix\w*|\bcircuitbreaker\b|\bcockatiel\b"
+)
+# CloudFormation needs the queue and the mapping in one file to call it a buffer.
+_CF_SQS_MAPPING = re.compile(_cf_type(r"Lambda::EventSourceMapping"))
+_CF_SQS_QUEUE = re.compile(_cf_type(r"SQS::Queue"))
+
+
+def fallbacks(repo_path: Path) -> dict[str, str]:
+    """Buffering or degraded paths when a dependency fails: kind -> first file."""
+    found = _in_iac(repo_path, _FALLBACKS)
+    for rel, text in iac_texts(repo_path):
+        if _CF_SQS_MAPPING.search(text) and _CF_SQS_QUEUE.search(text):
+            found.setdefault("SQS buffer", rel)
+    for rel, _name, text in _function_code(repo_path):
+        if _FALLBACK_CODE.search(text):
+            found.setdefault("circuit breaker library", rel)
+    return found
+
+
+class FallbackMissing(_RepoRule):
+    id = "REPO-044"
+    title = "No fallback when a dependency fails"
+    category = "Reliability"
+    severity = "Low"
+    themes = ("resilience",)
+    recommendation = (
+        "Turn hard dependencies into soft ones: buffer work in an SQS queue so callers do "
+        "not wait on the consumer, send failed async calls to an on-failure destination, "
+        "catch errors in Step Functions, fail over with CloudFront origin groups or Route 53 "
+        "failover records, return a degraded or cached answer, or wrap calls in a circuit "
+        "breaker."
+    )
+
+    def run(self, repo_path: Path, language: str = "typescript") -> List[Finding]:
+        if not _in_iac(repo_path, _COMPUTE):
+            return []
+        deps = {**_in_iac(repo_path, _DEPENDENCIES), **edges(repo_path)}
+        if not deps or fallbacks(repo_path):
+            return []
+        return [self._finding(
+            f"Compute depends on {_named(deps)}; searched the IaC for an SQS buffer, an "
+            "on-failure destination, a Step Functions catch, origin or DNS failover and a "
+            "fixed or mock response, and the function code for a circuit breaker; found none",
+            file=next(iter(deps.values())),
+        )]
+
+
 REPO_RULES: List[Rule] = [
     RepoTestsMissing(), RepoPipelineMissing(), SingleEnvironment(),
     OrgGuardrailsMissing(), AccountBaselineMissing(), RootUserUnchecked(),
@@ -3962,4 +4177,5 @@ REPO_RULES: List[Rule] = [
     CodeSigningMissing(), MutableImageTag(),
     DataClassificationMissing(), SensitiveDataWithoutCmk(),
     EncryptionGuardrailMissing(),
+    LocalStateOnCompute(), EmergencyLeverMissing(), FallbackMissing(),
 ]
