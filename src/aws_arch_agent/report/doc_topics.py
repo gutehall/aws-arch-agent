@@ -1969,6 +1969,12 @@ TOPICS: dict[str, tuple[str, str, str, str]] = {
         "Well-Architected REL13-BP04: Manage configuration drift at the DR site or Region",
         "/wellarchitected/latest/reliability-pillar/rel_planning_for_recovery_config_drift.html",
     ),
+    "single_location_recovery": (
+        "EC2: recover your instance",
+        "/AWSEC2/latest/UserGuide/ec2-instance-recover.html",
+        "Well-Architected REL10-BP02: Automate recovery for components constrained to a single location",
+        "/wellarchitected/latest/reliability-pillar/rel_fault_isolation_single_az_system.html",
+    ),
     "org_guardrails": (
         "Service control policies (SCPs)",
         "/organizations/latest/userguide/orgs_manage_policies_scps.html",
@@ -2222,6 +2228,7 @@ RULE_TOPICS: dict[str, str] = {
     "REPO-053": "dr_failover",
     "REPO-054": "dr_testing",
     "REPO-055": "dr_drift",
+    "REPO-056": "single_location_recovery",
     "PERF-001": "graviton_ec2",
     "PERF-002": "caching",
     "PERF-003": "ddb_capacity",

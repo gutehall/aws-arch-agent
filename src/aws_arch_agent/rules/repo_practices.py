@@ -416,6 +416,18 @@ told apart.
   CDK stack class instantiated with two different literal region values, or one Terraform
   module source used by two module blocks with different aws provider aliases (the alias
   regions are not read; a module with no providers map counts as the default provider).
+
+Fault isolation (REL 10). Multi-AZ (REL10-BP01) and bulkheads (REL10-BP03) are mapped
+template and CDK checks; this one reads the rest:
+
+- REPO-056 single-location recovery: a standalone EC2 instance (AWS::EC2::Instance,
+  aws_instance, ec2.Instance, ec2.CfnInstance) lives in one Availability Zone and is not
+  replaced when it fails. It needs one of: an Auto Scaling group that the repo declares
+  (an instance of one is rebuilt), a CloudWatch alarm whose action recovers or reboots it
+  (arn:aws:automate:...:ec2:recover or :reboot, CDK Ec2Action with RECOVER or REBOOT), or
+  an AWS Backup plan or a restore test (as REPO-051) to rebuild it from. Simplified
+  automatic recovery is on by default but recovers only from host failures; an instance that
+  turns it off (AutoRecovery disabled, auto_recovery = "disabled") always fires.
 """
 from __future__ import annotations
 
@@ -5370,6 +5382,79 @@ class DisasterRecoveryDrift(_RepoRule):
         )]
 
 
+# REL 10: a component in one location is rebuilt automatically (REPO-056).
+
+_STANDALONE_INSTANCE = re.compile(
+    _cf_type(r"EC2::Instance") + r"|resource\s+\"aws_instance\"\s+\"|\bec2\.(?:Cfn)?Instance\("
+)
+_ASG = re.compile(
+    _cf_type(r"AutoScaling::AutoScalingGroup") + r"|resource\s+\"aws_autoscaling_group\""
+    r"|\bautoscaling\.(?:Cfn)?AutoScalingGroup\("
+)
+_INSTANCE_RECOVERY_ACTION = re.compile(
+    r"arn:aws:automate:[^\"'\s]*:ec2:(?:recover|reboot)\b|:ec2:(?:recover|reboot)[\"']"
+    r"|\bEc2InstanceAction\.(?:RECOVER|REBOOT)\b"
+)
+_AUTO_RECOVERY_OFF = re.compile(
+    r"[\"']?AutoRecovery[\"']?\s*:\s*[\"']?disabled\b|\bauto_recovery\s*=\s*\"disabled\"",
+    re.IGNORECASE,
+)
+
+
+def single_location_rebuild(repo_path: Path) -> dict[str, str]:
+    """What rebuilds a standalone instance: kind -> first place."""
+    found: dict[str, str] = {}
+    for rel, text in iac_texts(repo_path):
+        if _ASG.search(text):
+            found.setdefault("Auto Scaling group", rel)
+        if _INSTANCE_RECOVERY_ACTION.search(text):
+            found.setdefault("alarm that recovers or reboots the instance", rel)
+    backups = _in_iac(repo_path, _BACKUP_SOURCES[:1])
+    if backups:
+        found.setdefault("AWS Backup plan", next(iter(backups.values())))
+    for kind, where in restore_tests(repo_path).items():
+        found.setdefault(kind, where)
+    return found
+
+
+class SingleLocationRecoveryMissing(_RepoRule):
+    id = "REPO-056"
+    title = "A standalone instance is not rebuilt when it fails"
+    category = "Reliability"
+    severity = "Low"
+    themes = ("resilience",)
+    recommendation = (
+        "Let a component that runs in one place come back by itself: run it in an Auto "
+        "Scaling group of one (min = max = 1) so a failed instance is replaced, add a status "
+        "check alarm whose action recovers or reboots the instance, or back it up with AWS "
+        "Backup and test the restore. Keep simplified automatic recovery on."
+    )
+
+    def run(self, repo_path: Path, language: str = "typescript") -> List[Finding]:
+        instances: List[tuple[str, int]] = []
+        disabled: List[tuple[str, int]] = []
+        for rel, text in iac_texts(repo_path):
+            match = _STANDALONE_INSTANCE.search(text)
+            if match:
+                instances.append((rel, _line_of(text, match.start())))
+            off = _AUTO_RECOVERY_OFF.search(text)
+            if off:
+                disabled.append((rel, _line_of(text, off.start())))
+        if disabled:
+            places = [f"{rel} (line {line})" for rel, line in disabled]
+            return [self._finding(
+                f"Turns off automatic recovery for an EC2 instance at {_listed(places)}",
+            )]
+        if not instances or single_location_rebuild(repo_path):
+            return []
+        places = [f"{rel} (line {line})" for rel, line in instances]
+        return [self._finding(
+            f"Runs a standalone EC2 instance at {_listed(places)}; searched the IaC for an "
+            "Auto Scaling group, an alarm that recovers or reboots the instance, an AWS Backup "
+            "plan, and a restore test; found none",
+        )]
+
+
 REPO_RULES: List[Rule] = [
     RepoTestsMissing(), RepoPipelineMissing(), SingleEnvironment(),
     OrgGuardrailsMissing(), AccountBaselineMissing(), RootUserUnchecked(),
@@ -5395,4 +5480,5 @@ REPO_RULES: List[Rule] = [
     RestoreTestMissing(),
     RecoveryObjectivesMissing(), FailoverAutomationMissing(), DisasterRecoveryUntested(),
     DisasterRecoveryDrift(),
+    SingleLocationRecoveryMissing(),
 ]

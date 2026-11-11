@@ -15,7 +15,7 @@ Which CDK rules have a template check, and which AWS Foundational Security Best 
 
 ## CDK rules
 
-234 rules: 132 covered, 7 partial, 10 account, 5 cdk-only, 25 advice, 55 repo.
+235 rules: 132 covered, 7 partial, 10 account, 5 cdk-only, 25 advice, 56 repo.
 
 | Rule | Title | Template check | Status | Note |
 | -- | -- | -- | -- | -- |
@@ -253,6 +253,7 @@ Which CDK rules have a template check, and which AWS Foundational Security Best 
 | REPO-053 | Replicated data has no automated failover |  | `repo` | When data is copied to another Region, looks for DNS failover or health checks, origin failover, Application Recovery Controller, Global Accelerator in two Regions, a global table, Elastic Disaster Recovery, or a tested restore. |
 | REPO-054 | Disaster recovery is never tested |  | `repo` | When data is copied to another Region, looks for a fault injection experiment, a failover or recovery drill in a build, a readiness check, or a scheduled restore test. |
 | REPO-055 | The DR Region can drift from the primary |  | `repo` | When data is copied to another Region, looks for StackSets, a readiness check or resource set, a Config aggregator, drift detection in a build, or one stack or module deployed to two Regions. |
+| REPO-056 | A standalone instance is not rebuilt when it fails |  | `repo` | When the IaC runs a standalone EC2 instance, looks for an Auto Scaling group, an alarm that recovers or reboots the instance, an AWS Backup plan, or a restore test; an instance with automatic recovery turned off always fires. |
 
 ## FSBP controls
 

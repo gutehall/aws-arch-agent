@@ -1101,5 +1101,11 @@
     "negative_py": "rds.CfnGlobalCluster(self, 'Global', global_cluster_identifier='g')\nAppStack(app, 'Primary', env=cdk.Environment(region='us-east-1'))\nAppStack(app, 'Recovery', env=cdk.Environment(region='us-west-2'))",
     "positive_ts": "new rds.CfnGlobalCluster(this, 'Global', { globalClusterIdentifier: 'g' });\nnew AppStack(app, 'Primary', { env: { region: 'us-east-1' } });",
     "positive_py": "rds.CfnGlobalCluster(self, 'Global', global_cluster_identifier='g')\nAppStack(app, 'Primary', env=cdk.Environment(region='us-east-1'))"
+  },
+  "REPO-056": {
+    "negative_ts": "new ec2.Instance(this, 'Box', { vpc, instanceType, machineImage });\nnew cloudwatch.Alarm(this, 'Status', { metric, threshold: 1, evaluationPeriods: 2 }).addAlarmAction(new actions.Ec2Action(actions.Ec2InstanceAction.RECOVER));",
+    "negative_py": "ec2.Instance(self, 'Box', vpc=vpc, instance_type=t, machine_image=ami)\nautoscaling.AutoScalingGroup(self, 'Fleet', vpc=vpc, instance_type=t, machine_image=ami)",
+    "positive_ts": "new ec2.Instance(this, 'Box', { vpc, instanceType, machineImage });",
+    "positive_py": "ec2.Instance(self, 'Box', vpc=vpc, instance_type=t, machine_image=ami)"
   }
 }
