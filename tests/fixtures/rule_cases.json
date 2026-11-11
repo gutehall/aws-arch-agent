@@ -951,5 +951,17 @@
     "negative_py": "cloudwatch.Dashboard(self, 'Ops', widgets=[[cloudwatch.GraphWidget(left=[queue.metric_approximate_age_of_oldest_message(), service.metric_cpu_utilization()])]])",
     "positive_ts": "new cloudwatch.Dashboard(this, 'Ops', { widgets: [[new cloudwatch.GraphWidget({ left: [service.metricCpuUtilization(), service.metricMemoryUtilization()] })]] });",
     "positive_py": "cloudwatch.Dashboard(self, 'Ops', widgets=[[cloudwatch.GraphWidget(left=[service.metric_cpu_utilization()])]])"
+  },
+  "REPO-031": {
+    "negative_ts": "new iam.Role(this, 'Worker', { assumedBy, permissionsBoundary: boundary });",
+    "negative_py": "iam.Role(self, 'Worker', assumed_by=principal)\niam.PermissionsBoundary.of(self).apply(boundary)",
+    "positive_ts": "new iam.Role(this, 'Worker', { assumedBy });",
+    "positive_py": "iam.Role(self, 'Worker', assumed_by=principal)"
+  },
+  "REPO-032": {
+    "negative_ts": "new iam.Role(this, 'BreakGlass', { assumedBy: new iam.AccountRootPrincipal() });",
+    "negative_py": "iam.Role(self, 'EmergencyAccess', assumed_by=iam.AccountRootPrincipal())",
+    "positive_ts": "new iam.Role(this, 'Worker', { assumedBy });",
+    "positive_py": "iam.Role(self, 'Worker', assumed_by=principal)"
   }
 }

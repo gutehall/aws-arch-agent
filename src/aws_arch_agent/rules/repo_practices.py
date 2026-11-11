@@ -214,6 +214,24 @@ Telemetry analysis (OPS 8) runs by default and reads the IaC with the OPS 4 tele
   workload metric (a namespace outside AWS/, an edge latency or 5xx metric, a datastore or
   queue metric, Application Signals or X-Ray). A dashboard whose metrics are not readable in
   the IaC is not judged. No dashboard at all is OPS-021 and CF-DASH-001.
+
+Permission guardrails and emergency access (SEC 3). Principal `*` on a resource policy is
+CF-RP-001 and CF-KMS-001; these two read the rest:
+
+- REPO-031 permission boundary: when the IaC declares an IAM role or user (CloudFormation
+  `Type: AWS::IAM::Role` or `AWS::IAM::User`, Terraform aws_iam_role or aws_iam_user, CDK
+  iam.Role or iam.User), it needs a permissions boundary somewhere in the repo
+  (PermissionsBoundary on a role or user, permissions_boundary in Terraform, CDK
+  permissionsBoundary or PermissionsBoundary.of(), the @aws-cdk/core:permissionsBoundary
+  context in cdk.json), or a service control policy (as REPO-004 finds it). One boundary
+  anywhere passes every role: which role it sits on is not matched.
+- REPO-032 break-glass role (an org-level rule, off unless rules.org or rules.include): an
+  IAM role or IAM Identity Center permission set whose logical id, resource name or name
+  (within a few hundred characters of the declaration) says break-glass or emergency access.
+  It also fires when a workload resource uses that role every day: a Role, Roles,
+  ExecutionRoleArn, TaskRoleArn or ServiceRoleArn property (role, role_arn,
+  execution_role_arn, task_role_arn, executionRole, taskRole in Terraform and CDK) that
+  names it.
 """
 from __future__ import annotations
 
@@ -3097,6 +3115,130 @@ class DashboardWorkloadMetricMissing(_RepoRule):
         )]
 
 
+# SEC 3: permission guardrails (REPO-031) and emergency access (REPO-032).
+
+_IAM_PRINCIPAL = re.compile(
+    r"[\"']?Type[\"']?\s*:\s*[\"']?AWS::IAM::(?:Role|User)\b"
+    r"|resource\s+\"aws_iam_(?:role|user)\"\s+\"|\biam\.(?:Role|User)\("
+)
+_BOUNDARY = re.compile(
+    r"[\"']?PermissionsBoundary[\"']?\s*:|\bpermissions_boundary\s*="
+    r"|\bpermissionsBoundary\s*:|\bPermissionsBoundary\.of\(|\bpermissions_boundary\s*:"
+    r"|[\"']@aws-cdk/core:permissionsBoundary[\"']\s*:"
+)
+
+
+class PermissionBoundaryMissing(_RepoRule):
+    id = "REPO-031"
+    title = "IAM roles have no permissions boundary or SCP to cap them"
+    category = "Security"
+    severity = "Low"
+    themes = ("identity",)
+    recommendation = (
+        "Cap the most a role can do, whatever its own policy says: set a permissions "
+        "boundary on the roles and users the workload creates (CDK "
+        "PermissionsBoundary.of(app).apply(), or the @aws-cdk/core:permissionsBoundary "
+        "context; PermissionsBoundary in CloudFormation; permissions_boundary in Terraform), "
+        "or govern the account with service control policies."
+    )
+
+    def run(self, repo_path: Path, language: str = "typescript") -> List[Finding]:
+        principals: dict[str, str] = {}
+        for rel, text in iac_texts(repo_path):
+            if _BOUNDARY.search(text):
+                return []
+            if _IAM_PRINCIPAL.search(text):
+                principals.setdefault("IAM role or user", rel)
+        if not principals or "service control policy" in org_guardrails(repo_path):
+            return []
+        return [self._finding(
+            f"Declares {_named(principals)}; searched the IaC for a permissions boundary "
+            "(PermissionsBoundary, permissions_boundary, CDK permissionsBoundary or "
+            "PermissionsBoundary.of, the @aws-cdk/core:permissionsBoundary context) and a "
+            "service control policy; found none",
+        )]
+
+
+_ROLE_DECL = re.compile(
+    r"[\"']?Type[\"']?\s*:\s*[\"']?AWS::(?:IAM::Role|SSO::PermissionSet)\b"
+    r"|resource\s+\"aws_(?:iam_role|ssoadmin_permission_set)\"\s+\""
+    r"|\b(?:iam\.Role|sso\.CfnPermissionSet)\("
+)
+_BREAK_GLASS = re.compile(r"break[\s_-]?glass|emergency[\s_-]?access", re.IGNORECASE)
+_BREAK_GLASS_WINDOW = 300
+_DAILY_ROLE = re.compile(
+    r"(?:\b(?:Role|Roles|ExecutionRoleArn|TaskRoleArn|ServiceRoleArn|role|role_arn"
+    r"|execution_role_arn|task_role_arn|service_role|executionRole|taskRole)\b)"
+    # The value is a reference: GetAtt, Ref or Sub around an id, or a dotted name.
+    r"[\"']?\s*[:=]\s*(?:[\s\[{\"':,]|Fn::\w+|!\w+|\$\{)*[\w.$-]{0,80}?"
+    r"(?:break[_-]?glass|emergency[_-]?access)",
+    re.IGNORECASE,
+)
+
+# The resource a property sits in: the last CloudFormation type, Terraform resource or CDK
+# construct declared before it.
+_DECLARATION = re.compile(
+    r"[\"']?Type[\"']?\s*:\s*[\"']?(AWS::[\w:]+)|resource\s+\"(\w+)\""
+    r"|\bnew\s+([\w.]+)\(|\b([\w]+\.[A-Z]\w*)\(\s*self\b"
+)
+# Attaching a policy to the role, or letting someone assume it, is not using it.
+_IAM_OWNER = re.compile(r"^(?:AWS::IAM::|aws_iam_|iam\.)")
+
+
+def _owner(text: str, offset: int) -> str:
+    last = ""
+    for match in _DECLARATION.finditer(text, 0, offset):
+        last = next(g for g in match.groups() if g)
+    return last
+
+
+def break_glass_roles(repo_path: Path) -> tuple[dict[str, str], List[tuple[str, int]]]:
+    """Break-glass roles the IaC declares (kind -> first file), and the places a workload
+    resource uses one as its role (file, line)."""
+    found: dict[str, str] = {}
+    daily: List[tuple[str, int]] = []
+    for rel, text in iac_texts(repo_path):
+        for match in _ROLE_DECL.finditer(text):
+            start = max(0, match.start() - _BREAK_GLASS_WINDOW)
+            if _BREAK_GLASS.search(text[start:match.end() + _BREAK_GLASS_WINDOW]):
+                kind = "permission set" if "ermission" in match.group(0) else "IAM role"
+                found.setdefault(f"break-glass {kind}", rel)
+        for match in _DAILY_ROLE.finditer(text):
+            if not _IAM_OWNER.search(_owner(text, match.start())):
+                daily.append((rel, _line_of(text, match.start())))
+    return found, daily
+
+
+class BreakGlassRoleMissing(_RepoRule):
+    id = "REPO-032"
+    title = "No break-glass role kept apart from the workload's roles"
+    category = "Security"
+    severity = "Low"
+    themes = ("identity",)
+    recommendation = (
+        "Keep an emergency access path for when the normal one fails: a break-glass IAM role "
+        "(or Identity Center permission set) that only a few people can assume, with MFA, "
+        "whose use alarms. Never give it to a workload resource as its everyday role."
+    )
+
+    def run(self, repo_path: Path, language: str = "typescript") -> List[Finding]:
+        found, daily = break_glass_roles(repo_path)
+        if not found:
+            return [self._finding(
+                "Searched the IaC for an IAM role or Identity Center permission set named "
+                "for break-glass or emergency access; found none"
+            )]
+        if not daily:
+            return []
+        places = [f"{rel} (line {line})" for rel, line in daily]
+        return [self._finding(
+            f"Declares {_named(found)}, and a workload resource uses it as its role at "
+            f"{_listed(places)}",
+            file=daily[0][0],
+            line=daily[0][1],
+        )]
+
+
 REPO_RULES: List[Rule] = [
     RepoTestsMissing(), RepoPipelineMissing(), SingleEnvironment(),
     OrgGuardrailsMissing(), AccountBaselineMissing(), RootUserUnchecked(),
@@ -3109,4 +3251,5 @@ REPO_RULES: List[Rule] = [
     InPlaceChange(), FunctionalTestMissing(), AutomatedDeployMissing(), ResiliencyTestMissing(),
     WorkloadAlarmMissing(), LogAnalysisMissing(), TraceAnalysisMissing(),
     DashboardWorkloadMetricMissing(),
+    PermissionBoundaryMissing(), BreakGlassRoleMissing(),
 ]

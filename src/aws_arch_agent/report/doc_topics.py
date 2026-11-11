@@ -1812,6 +1812,18 @@ TOPICS: dict[str, tuple[str, str, str, str]] = {
         "Well-Architected OPS05-BP04: Use build and deployment management systems",
         "/wellarchitected/latest/operational-excellence-pillar/ops_dev_integ_build_mgmt_sys.html",
     ),
+    "permission_boundaries": (
+        "IAM: permissions boundaries for IAM entities",
+        "/IAM/latest/UserGuide/access_policies_boundaries.html",
+        "Well-Architected SEC03-BP05: Define permission guardrails for your organization",
+        "/wellarchitected/latest/security-pillar/sec_permissions_define_guardrails.html",
+    ),
+    "break_glass": (
+        "IAM: security best practices",
+        "/IAM/latest/UserGuide/best-practices.html",
+        "Well-Architected SEC03-BP03: Establish emergency access process",
+        "/wellarchitected/latest/security-pillar/sec_permissions_emergency_process.html",
+    ),
     "org_guardrails": (
         "Service control policies (SCPs)",
         "/organizations/latest/userguide/orgs_manage_policies_scps.html",
@@ -2040,6 +2052,8 @@ RULE_TOPICS: dict[str, str] = {
     "REPO-028": "log_analysis",
     "REPO-029": "trace_analysis",
     "REPO-030": "workload_dashboards",
+    "REPO-031": "permission_boundaries",
+    "REPO-032": "break_glass",
     "PERF-001": "graviton_ec2",
     "PERF-002": "caching",
     "PERF-003": "ddb_capacity",

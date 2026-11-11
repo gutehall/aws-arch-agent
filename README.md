@@ -4,7 +4,7 @@ Local-first AWS architecture review for infrastructure code. It scans **CDK** (T
 
 No AWS credentials. No cloud calls. LLM output is optional.
 
-> Early-stage: 209 static rules and 281 template checks are implemented and tested. 139 of the 209 CDK rules (67%) have a template check, so they also run for CloudFormation, Terraform and synthesised CDK. [docs/COVERAGE.md](docs/COVERAGE.md) gives the reason for each of the others. Expect some false positives and negatives, and API changes.
+> Early-stage: 211 static rules and 281 template checks are implemented and tested. 139 of the 211 CDK rules (66%) have a template check, so they also run for CloudFormation, Terraform and synthesised CDK. [docs/COVERAGE.md](docs/COVERAGE.md) gives the reason for each of the others. Expect some false positives and negatives, and API changes.
 
 ## Install
 
@@ -51,7 +51,7 @@ Each finding has a severity, a pillar, a file and line, evidence, a recommendati
 
 | Pillar | Rules | Examples |
 |--------|------:|----------|
-| **Security** | 79 | Missing encryption, public access, hardcoded secrets, no MFA |
+| **Security** | 81 | Missing encryption, public access, hardcoded secrets, no MFA |
 | **Reliability** | 43 | Missing DLQs, no backups, single-AZ, no health checks |
 | **Operational Excellence** | 38 | No logging, alarms, tracing, KPI metrics, log and trace analysis, test gates, or rollback |
 | **Performance Efficiency** | 19 | No caching, oversized instances, no Graviton |

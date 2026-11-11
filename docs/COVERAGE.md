@@ -15,7 +15,7 @@ Which CDK rules have a template check, and which AWS Foundational Security Best 
 
 ## CDK rules
 
-209 rules: 132 covered, 7 partial, 10 account, 5 cdk-only, 25 advice, 30 repo.
+211 rules: 132 covered, 7 partial, 10 account, 5 cdk-only, 25 advice, 32 repo.
 
 | Rule | Title | Template check | Status | Note |
 | -- | -- | -- | -- | -- |
@@ -228,6 +228,8 @@ Which CDK rules have a template check, and which AWS Foundational Security Best 
 | REPO-028 | Workload logs are not analyzed |  | `repo` | When the IaC runs compute, looks for a CloudWatch Logs metric filter, Contributor Insights rule, Logs Insights saved query, log anomaly detector or subscription filter. |
 | REPO-029 | Workload traces are not analyzed |  | `repo` | When the IaC runs compute, looks for an X-Ray group or sampling rule, CloudWatch Application Signals, or an alarm on an Application Signals or X-Ray metric. |
 | REPO-030 | Dashboards show no workload metric |  | `repo` | When the IaC declares a CloudWatch dashboard, looks in the dashboards for a metric outside AWS/, an edge latency or 5xx metric, a datastore or queue metric, or Application Signals. |
+| REPO-031 | IAM roles have no permissions boundary or SCP to cap them |  | `repo` | When the IaC declares an IAM role or user, looks for a permissions boundary (CloudFormation, Terraform, CDK or the cdk.json context) or a service control policy. |
+| REPO-032 | No break-glass role kept apart from the workload's roles |  | `repo` | Looks for an IAM role or Identity Center permission set named for break-glass or emergency access, and for a workload resource that uses it as its role. Org-level: off unless `rules.org`. |
 
 ## FSBP controls
 

@@ -97,7 +97,7 @@ rules:
 - **no_synth**: if `true`, do not run cdk synth (V2 only). Use with **templates** for raw CF, or alone for static analysis only.
 - **rules.include**: list of rule IDs to run (e.g. `["SEC-001", "SEC-002"]`); if set, only these run
 - **rules.exclude**: list of rule IDs to skip
-- **rules.org**: if `true`, also run account-level absence rules `SEC-026`, `SEC-027`, `OPS-001`, `OPS-014`, `COST-014`, `REPO-004`, `REPO-007`, `REPO-008`, and `REPO-012`. Default is `false` because an app stack does not own those controls. Listing an id in **rules.include** runs that rule even when this is false. **rules.exclude** still skips it.
+- **rules.org**: if `true`, also run account-level absence rules `SEC-026`, `SEC-027`, `OPS-001`, `OPS-014`, `COST-014`, `REPO-004`, `REPO-007`, `REPO-008`, `REPO-012`, and `REPO-032`. Default is `false` because an app stack does not own those controls. Listing an id in **rules.include** runs that rule even when this is false. **rules.exclude** still skips it.
 - **rag.path**: path to a markdown doc for RAG context (V2 only). Pillar and merge prompts include retrieved snippets when set.
 - **rag.use_embeddings**: if `true`, use embedding-based retrieval (V2 only). Requires **rag.embedding_provider**.
 - **rag.embedding_provider**: `"sentence-transformers"` (local; install with `pip install -e ".[rag]"`). It is the only value accepted.
