@@ -107,11 +107,17 @@ def test_workflow_yaml_does_not_switch_a_cdk_repo(tmp_path: Path) -> None:
     # (neither build scans dependencies or runs a load test), but their evidence now names
     # the builds they searched.
     named = ("REPO-009", "REPO-017")
-    # The workflow deploys with no test before it, so REPO-021 fires on it.
+    # The workflow deploys with no test before it, so REPO-021 fires on it. It deploys the
+    # stack, so REPO-025 goes away, and with no smoke or resiliency test after the deploy
+    # REPO-024 and REPO-026 fire on it.
+    deploy_rules = ("REPO-021", "REPO-024", "REPO-026")
+    for rule_id in deploy_rules:
+        (row,) = [r for r in rows if r["id"] == rule_id]
+        assert row["file"] == ".github/workflows/deploy.yml"
     (gate,) = [r for r in rows if r["id"] == "REPO-021"]
-    assert (gate["file"], gate["line"]) == (".github/workflows/deploy.yml", 7)
-    assert [r for r in rows if r["id"] not in (*named, "REPO-021")] == [
-        r for r in snapshot if r["id"] not in ("REPO-002", *named)
+    assert gate["line"] == 7
+    assert [r for r in rows if r["id"] not in (*named, *deploy_rules)] == [
+        r for r in snapshot if r["id"] not in ("REPO-002", "REPO-025", *named)
     ]
     for rule_id in named:
         (row,) = [r for r in rows if r["id"] == rule_id]

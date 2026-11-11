@@ -15,7 +15,7 @@ Which CDK rules have a template check, and which AWS Foundational Security Best 
 
 ## CDK rules
 
-201 rules: 132 covered, 7 partial, 10 account, 5 cdk-only, 25 advice, 22 repo.
+205 rules: 132 covered, 7 partial, 10 account, 5 cdk-only, 25 advice, 26 repo.
 
 | Rule | Title | Template check | Status | Note |
 | -- | -- | -- | -- | -- |
@@ -220,6 +220,10 @@ Which CDK rules have a template check, and which AWS Foundational Security Best 
 | REPO-020 | No telemetry on the datastores and queues the workload calls |  | `repo` | When the IaC has a datastore or queue, looks for AWS SDK tracing in function code (X-Ray, Powertools Tracer, OpenTelemetry), the ADOT Lambda layer or Application Signals, or an alarm on a datastore or queue metric. |
 | REPO-021 | A deploy runs with no test gate before it |  | `repo` | Looks in each build config that deploys (cdk deploy, terraform apply, aws cloudformation deploy, sam deploy, a CodePipeline deploy action, a CDK pipelines stage) for a test that can fail before its last deploy, including package.json scripts the build runs. |
 | REPO-022 | Deployments of the workload's compute have no automated rollback |  | `repo` | When the IaC runs compute, looks for an ECS circuit breaker or deployment alarms with rollback, CodeDeploy automatic rollback, a SAM deployment preference, CloudFormation rollback triggers, a CodePipeline stage that rolls back, an Auto Scaling rollback, or Argo Rollouts or Flagger. |
+| REPO-023 | Live instances are changed in place |  | `repo` | Looks for builds that ssh, scp or rsync to a host, run ansible-playbook, SSM Run Command or an in-place CodeDeploy deployment, and in the IaC for in-place CodeDeploy deployment groups, SSM associations that run shell scripts or Ansible, and cfn-hup. |
+| REPO-024 | No functional test runs against the deployed change |  | `repo` | Looks in each build config that deploys for a test that can fail after a deploy (and before the last one when it deploys more than once): the REPO-021 tests, a curl that fails on an HTTP error, Playwright, Cypress, Newman, integ, e2e or smoke scripts, integ-runner, a CodePipeline test action, a CDK pipelines post step. |
+| REPO-025 | Infrastructure is not deployed by automation |  | `repo` | When the repo holds CDK, CloudFormation or Terraform, looks for a build config that deploys it, or a CodePipeline or CDK pipelines in the IaC. |
+| REPO-026 | Deployments run no resiliency test |  | `repo` | When a build deploys, looks in the deploying builds for a started AWS FIS experiment or a chaos tool, and in the IaC for a Step Functions task that starts an FIS experiment. |
 
 ## FSBP controls
 

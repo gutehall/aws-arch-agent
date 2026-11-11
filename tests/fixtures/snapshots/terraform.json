@@ -187,5 +187,12 @@
     "file": null,
     "line": null,
     "evidence": "Runs Lambda (main.tf); searched the IaC and builds for an ECS deployment circuit breaker or deployment alarms with rollback, CodeDeploy automatic rollback, a SAM deployment preference, CloudFormation rollback triggers, a CodePipeline stage that rolls back on failure, an Auto Scaling instance refresh or rolling update that rolls back, and Argo Rollouts or Flagger; found none"
+  },
+  {
+    "id": "REPO-025",
+    "severity": "Medium",
+    "file": null,
+    "line": null,
+    "evidence": "Holds IaC (Terraform: 3 files); searched the repo for a build config that deploys, and the IaC for a pipeline; found none"
   }
 ]

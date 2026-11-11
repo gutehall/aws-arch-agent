@@ -1,7 +1,7 @@
 """Repo-level checks: tests, a pipeline, environments (OPS 5), account guardrails (SEC 1),
 incident response (SEC 10), application security (SEC 11), service quotas (REL 1),
 VPC address plan (REL 2), idempotent workers (REL 4), reliability testing (REL 12),
-observability (OPS 4), deployment risk (OPS 6).
+observability (OPS 4), deployment risk (OPS 6), change management (REL 8).
 
 REPO-006 (the account root user) answers SEC01-BP02 in SEC 1, though it was added with the
 SEC 2 checks.
@@ -170,6 +170,30 @@ Deployment risk (OPS 6) runs by default and reads the builds REPO-009 reads and 
   instance refresh or rolling update that rolls back, or an Argo Rollouts Rollout or Flagger
   Canary manifest. It is repo-wide: one control passes every compute resource. A
   CloudFormation stack's own rollback on a failed resource does not count.
+
+Change management (REL 8) runs by default and reads the builds REPO-009 reads and the IaC:
+
+- REPO-023 in-place change: fires only when the repo changes running instances instead of
+  replacing them: a build (or a package.json script it runs) that runs ssh, scp or rsync to
+  a user@host, ansible-playbook, aws ssm send-command, or aws deploy create-deployment when
+  the IaC declares no blue/green, ECS or Lambda CodeDeploy group; a CodeDeploy deployment
+  group that deploys in place (DeploymentType IN_PLACE, or no deployment style on the Server
+  platform; a CDK ServerDeploymentGroup); an SSM association that runs AWS-RunShellScript,
+  AWS-RunPowerShellScript or AWS-ApplyAnsiblePlaybooks; or cfn-hup. Lambda versions, ECS
+  task definitions and launch templates replace and never fire.
+- REPO-024 functional test: each build config that deploys (as REPO-021) runs a test that
+  can fail after a deploy, and before the last deploy when it deploys more than once
+  (staging, test, production): the REPO-021 tests, curl with a fail flag against a URL,
+  newman run, playwright test, cypress run, an integ, e2e or smoke package script,
+  integ-runner, a CodePipeline test action after the deploy, or a CDK pipelines post step.
+- REPO-025 automated deploy: when the repo holds IaC (Terraform, CloudFormation templates,
+  CDK code or cdk.json), a build config deploys it (the REPO-021 deploy commands, in the
+  build or the package.json scripts it runs) or the IaC declares a CodePipeline or CDK
+  pipelines. A pipeline is the automated runbook for a deploy.
+- REPO-026 resiliency test: when a build deploys, a deploying build (or the package.json
+  scripts it runs) starts an AWS FIS experiment or runs a chaos tool (as REPO-016), or the
+  IaC has a Step Functions task that starts an FIS experiment. An experiment template that
+  no build starts does not count.
 """
 from __future__ import annotations
 
@@ -1720,17 +1744,23 @@ _LOAD_TOOLS: tuple[tuple[str, re.Pattern[str]], ...] = tuple(
 )
 
 
-def _tools_in_builds(
-    repo_path: Path, tools: tuple[tuple[str, re.Pattern[str]], ...]
-) -> tuple[List[str], dict[str, str]]:
-    """The build configs found, and each tool they (or the package.json scripts they run)
-    invoke: tool -> first place."""
-    builds = build_texts(repo_path)
-    found: dict[str, str] = {}
+def _build_places(repo_path: Path, builds: List[tuple[str, str]]) -> List[tuple[str, str]]:
+    """(where, text) of each build config and each package.json script they run."""
     places = list(builds)
     run = _scripts_run([text for _rel, text in builds], _package_scripts(repo_path))
     places.extend((f"package.json script {script}", command) for script, command in run)
-    for where, text in places:
+    return places
+
+
+def _tools_in_builds(
+    repo_path: Path, tools: tuple[tuple[str, re.Pattern[str]], ...],
+    builds: List[tuple[str, str]] | None = None,
+) -> tuple[List[str], dict[str, str]]:
+    """The build configs found, and each tool they (or the package.json scripts they run)
+    invoke: tool -> first place. builds narrows the search to some build configs."""
+    builds = build_texts(repo_path) if builds is None else builds
+    found: dict[str, str] = {}
+    for where, text in _build_places(repo_path, builds):
         for name, pattern in tools:
             if pattern.search(text):
                 found.setdefault(name, where)
@@ -2231,6 +2261,18 @@ _DEPLOY_COMMANDS = re.compile(
     r"|\.add_?[sS]tage\(\s*(?!\{|stage_name\b)",
 )
 _POST_STEPS = re.compile(r"\bpost\s*[:=]")
+# A CDK pipelines post: list that holds a step (ShellStep, CodeBuildStep, ...).
+_POST_STEP = re.compile(r"post\s*[:=]\s*\[[^\]]*?\w*Step\(")
+# Functional tests for REPO-024 beyond the REPO-021 test commands: curl that fails on an HTTP
+# error, against a URL; Postman, Playwright and Cypress runs; integ, e2e and smoke scripts;
+# the CDK integ-runner.
+_SMOKE_TESTS = (
+    rf"{_CMD_START}curl(?=\s)(?=[^\n]*?\s(?:--fail(?:-with-body)?|-[a-zA-Z]*f[a-zA-Z]*)"
+    r"(?=[\s\"'`;&|)]|$))(?=[^\n]*?(?:https?://|\$\{*\s*\w))"
+    rf"|{_CMD_START}(?:newman\s+run|playwright\s+test|cypress\s+run|integ-runner)\b"
+    r"|\b(?:npm|yarn|pnpm)\s+(?:run\s+)?(?:integ|e2e|smoke)[\w:.-]*"
+)
+_FUNCTIONAL_TESTS = re.compile(f"{_TEST_COMMANDS.pattern}|{_SMOKE_TESTS}", re.MULTILINE)
 _TEST_COMMAND_NAMES = (
     "npm, yarn or pnpm test, jest, vitest, pytest, tox, go test, terraform test, taskcat, "
     "cfn-guard, mvn, gradle, dotnet, cargo or make test, a CodePipeline test action"
@@ -2249,11 +2291,13 @@ def _deploy_at(text: str, match: re.Match[str]) -> int:
 
 
 def _events(
-    text: str, scripts: dict[str, str], depth: int = 0
+    text: str, scripts: dict[str, str], depth: int = 0, functional: bool = False
 ) -> List[tuple[tuple[int, ...], str, bool]]:
     """(position, "test" or "deploy", can fail) in the order the text runs them. A
     package.json script the text runs stands in for its own commands, at the place it is
-    run: its position is the offset of the call, then the offset in the script."""
+    run: its position is the offset of the call, then the offset in the script. With
+    functional, smoke, integration and end-to-end tests and CDK pipelines post steps count
+    as tests too (REPO-024)."""
     lines = text.split("\n")
     out: List[tuple[tuple[int, ...], str, bool]] = []
 
@@ -2262,11 +2306,14 @@ def _events(
         stop = _TAIL_END.search(rest)
         return rest[:stop.start()] if stop else rest
 
-    for m in _TEST_COMMANDS.finditer(text):
+    for m in (_FUNCTIONAL_TESTS if functional else _TEST_COMMANDS).finditer(text):
         i = text.count("\n", 0, m.start())
         out.append(((m.start(),), "test", not _cannot_fail(lines, i, tail_at(m.end()))))
     for m in _DEPLOY_COMMANDS.finditer(text):
-        out.append(((_deploy_at(text, m),), "deploy", True))
+        at = _deploy_at(text, m)
+        out.append(((at,), "deploy", True))
+        if functional and m.group(0).startswith(".") and _POST_STEP.match(text, at):
+            out.append(((at + 1,), "test", True))
     if depth < 3:
         for m in _RUN_SCRIPT.finditer(text):
             command = scripts.get(m.group(1) or m.group(2) or "")
@@ -2276,22 +2323,32 @@ def _events(
             swallowed = _cannot_fail(lines, i, tail_at(m.end()))
             out.extend(
                 ((m.start(), *inner), kind, fails and not swallowed)
-                for inner, kind, fails in _events(command, scripts, depth + 1)
+                for inner, kind, fails in _events(command, scripts, depth + 1, functional)
             )
     return sorted(out, key=lambda event: event[0])
+
+
+def deploying_builds(
+    repo_path: Path, functional: bool = False
+) -> List[tuple[str, str, List[tuple[tuple[int, ...], str, bool]]]]:
+    """(build config, text, events) of each build config that deploys, itself or through
+    the package.json scripts it runs."""
+    scripts = _package_scripts(repo_path)
+    out: List[tuple[str, str, List[tuple[tuple[int, ...], str, bool]]]] = []
+    for rel, text in build_texts(repo_path):
+        events = _events(text, scripts, functional=functional)
+        if any(kind == "deploy" for _offset, kind, _fails in events):
+            out.append((rel, text, events))
+    return out
 
 
 def ungated_deploys(repo_path: Path) -> List[tuple[str, int]]:
     """(build config, line of its first deploy) for each build config that deploys with no
     test that can fail before its last deploy. A test between a staging and a production
     deploy gates the promotion."""
-    scripts = _package_scripts(repo_path)
     out: List[tuple[str, int]] = []
-    for rel, text in build_texts(repo_path):
-        events = _events(text, scripts)
+    for rel, text, events in deploying_builds(repo_path):
         deploys = [offset for offset, kind, _fails in events if kind == "deploy"]
-        if not deploys:
-            continue
         gated = any(
             kind == "test" and fails and offset < deploys[-1]
             for offset, kind, fails in events
@@ -2405,6 +2462,342 @@ class AutomatedRollbackMissing(_RepoRule):
         )]
 
 
+# Change management (REL 8): live instances are replaced, not changed in place (REPO-023);
+# a functional test runs against the deployed change (REPO-024); the infrastructure is
+# deployed by automation, the runbook for a deploy (REPO-025); and the deploy runs a
+# resiliency test (REPO-026).
+
+_HOST_TARGET = r"(?!git@)[\w.${}-]+@[\w.${}-]+"
+_IN_PLACE_COMMANDS: tuple[tuple[str, re.Pattern[str]], ...] = tuple(
+    (name, re.compile(pattern, re.MULTILINE)) for name, pattern in (
+        ("ssh, scp or rsync to a host",
+         rf"{_CMD_START}(?:ssh|scp|rsync)\s[^\n]*?\s{_HOST_TARGET}"
+         r"|\bappleboy/(?:ssh|scp)-action\b"),
+        ("ansible-playbook", rf"{_CMD_START}ansible-playbook\b"),
+        ("SSM Run Command", rf"{_CMD_START}aws\s+ssm\s+send-command\b"),
+    )
+)
+_CREATE_DEPLOYMENT = re.compile(rf"{_CMD_START}aws\s+deploy\s+create-deployment\b", re.M)
+_REPLACING_CONFIG = re.compile(r"CodeDeployDefault\.(?:Lambda|ECS)")
+# CodeDeploy deploys in place on the Server platform unless told to go blue/green.
+_NOT_IN_PLACE = re.compile(
+    r"\b[dD]eployment_?[tT]ype[\"']?\s*[:=]\s*[\"']?BLUE_GREEN\b"
+    r"|\b[cC]ompute_?[pP]latform[\"']?\s*[:=]\s*[\"']?(?:ECS|Lambda)\b"
+    r"|\b(?:Lambda|Ecs)DeploymentGroup\("
+)
+_EXPLICIT_IN_PLACE = re.compile(r"\b[dD]eployment_?[tT]ype[\"']?\s*[:=]\s*[\"']?IN_PLACE\b")
+_RUN_DOCUMENTS = frozenset({
+    "AWS-RunShellScript", "AWS-RunPowerShellScript", "AWS-ApplyAnsiblePlaybooks",
+})
+_RUN_DOCUMENT = r"AWS-(?:RunShellScript|RunPowerShellScript|ApplyAnsiblePlaybooks)\b"
+_TF_GROUP = re.compile(r"resource\s+\"aws_codedeploy_deployment_group\"\s+\"[^\"]+\"\s*\{")
+_TF_ASSOCIATION = re.compile(r"resource\s+\"aws_ssm_association\"\s+\"[^\"]+\"\s*\{")
+_TF_RUN_DOCUMENT = re.compile(rf"\bname\s*=\s*\"{_RUN_DOCUMENT}")
+_CDK_SERVER_GROUP = re.compile(r"\bServerDeploymentGroup\(")
+_CDK_CFN_GROUP = re.compile(r"\bCfnDeploymentGroup\(")
+_CDK_ASSOCIATION = re.compile(r"\bCfnAssociation\(")
+_CDK_RUN_DOCUMENT = re.compile(rf"\bname\s*[:=]\s*['\"]{_RUN_DOCUMENT}")
+_CFN_HUP = re.compile(
+    r"/etc/cfn/cfn-hup\.conf\b|\bInitService\.enable\(\s*['\"]cfn-hup['\"]"
+    r"|['\"]cfn-hup['\"]\s*:|^\s*cfn-hup\s*:",
+    re.MULTILINE,
+)
+_CF_SUFFIXES = (".json", ".yaml", ".yml", ".template")
+
+
+def _cf_in_place(rel: str, text: str, replacing: bool) -> List[tuple[str, int]]:
+    """(what, line) of each in-place CodeDeploy group and Run Command association in a
+    CloudFormation template."""
+    if not rel.endswith(_CF_SUFFIXES) or "AWS::" not in text:
+        return []
+    try:
+        doc = parse_template_text(Path(rel), text)
+    except Exception:  # noqa: BLE001 - not a readable template
+        return []
+    resources = doc.get("Resources") if isinstance(doc, dict) else None
+    out: List[tuple[str, int]] = []
+    for name, body in (resources.items() if isinstance(resources, dict) else ()):
+        if not isinstance(body, dict):
+            continue
+        props = body.get("Properties")
+        props = props if isinstance(props, dict) else {}
+        line = _line_of(text, text.find(str(name)))
+        if body.get("Type") == "AWS::CodeDeploy::DeploymentGroup":
+            style = props.get("DeploymentStyle")
+            kind = style.get("DeploymentType") if isinstance(style, dict) else None
+            if kind == "IN_PLACE" or (style is None and not replacing):
+                out.append((f"in-place CodeDeploy deployment group {name}", line))
+        elif body.get("Type") == "AWS::SSM::Association":
+            if props.get("Name") in _RUN_DOCUMENTS:
+                out.append((f"SSM association {name} running {props['Name']}", line))
+    return out
+
+
+def _tf_in_place(text: str, replacing: bool) -> List[tuple[str, int]]:
+    out: List[tuple[str, int]] = []
+    for m in _TF_GROUP.finditer(text):
+        body = _braced(text, m.end() - 1)
+        if _EXPLICIT_IN_PLACE.search(body) or (
+            "deployment_style" not in body and not replacing
+        ):
+            out.append(("in-place CodeDeploy deployment group", _line_of(text, m.start())))
+    for m in _TF_ASSOCIATION.finditer(text):
+        doc = _TF_RUN_DOCUMENT.search(_braced(text, m.end() - 1))
+        if doc:
+            out.append((
+                f"SSM association running {doc.group(0).split(chr(34))[-1]}",
+                _line_of(text, m.start()),
+            ))
+    return out
+
+
+def _cdk_in_place(text: str, replacing: bool) -> List[tuple[str, int]]:
+    out: List[tuple[str, int]] = []
+    for m in _CDK_SERVER_GROUP.finditer(text):
+        out.append(("CodeDeploy ServerDeploymentGroup (in place)", _line_of(text, m.start())))
+    for m in _CDK_CFN_GROUP.finditer(text):
+        call = _braced(text, m.end() - 1, "(", ")")
+        if _EXPLICIT_IN_PLACE.search(call) or (
+            not re.search(r"\bdeployment_?[sS]tyle\b", call) and not replacing
+        ):
+            out.append(("in-place CodeDeploy deployment group", _line_of(text, m.start())))
+    for m in _CDK_ASSOCIATION.finditer(text):
+        doc = _CDK_RUN_DOCUMENT.search(_braced(text, m.end() - 1, "(", ")"))
+        if doc:
+            name = re.search(_RUN_DOCUMENT, doc.group(0))
+            out.append((
+                f"SSM association running {name.group(0) if name else 'a shell script'}",
+                _line_of(text, m.start()),
+            ))
+    return out
+
+
+def in_place_changes(repo_path: Path) -> List[tuple[str, str, int | None]]:
+    """(what, where, line) for each place the repo changes running instances in place:
+    commands in the builds, in-place CodeDeploy groups, Run Command associations, and
+    cfn-hup."""
+    iac = list(iac_texts(repo_path))
+    replacing = any(_NOT_IN_PLACE.search(text) for _rel, text in iac)
+    out: List[tuple[str, str, int | None]] = []
+    for where, text in _build_places(repo_path, build_texts(repo_path)):
+        script = where.startswith("package.json")
+        hits = [(name, pattern.search(text)) for name, pattern in _IN_PLACE_COMMANDS]
+        for deploy in _CREATE_DEPLOYMENT.finditer(text):
+            rest = text[deploy.end():]
+            stop = _TAIL_END.search(rest)
+            if not replacing and not _REPLACING_CONFIG.search(rest[:stop.start()] if stop else rest):
+                hits.append(("in-place CodeDeploy deployment", deploy))
+                break
+        out.extend(
+            (name, where, None if script else _line_of(text, m.start()))
+            for name, m in hits if m is not None
+        )
+    for rel, text in iac:
+        found = _cf_in_place(rel, text, replacing)
+        if rel.endswith(".tf"):
+            found += _tf_in_place(text, replacing)
+        elif rel.endswith((".ts", ".js", ".py")):
+            found += _cdk_in_place(text, replacing)
+        m = _CFN_HUP.search(text)
+        if m:
+            found.append(("cfn-hup updating live instances", _line_of(text, m.start())))
+        out.extend((what, rel, line) for what, line in found)
+    return out
+
+
+class InPlaceChange(_RepoRule):
+    id = "REPO-023"
+    title = "Live instances are changed in place"
+    category = "Reliability"
+    severity = "Medium"
+    themes = ("resilience",)
+    recommendation = (
+        "Deploy by replacing instances, not by changing them: bake each release into a new "
+        "AMI or container image, and roll it out with an Auto Scaling instance refresh, ECS, "
+        "Lambda versions, or CodeDeploy blue/green. Stop running shell sessions, Ansible, "
+        "Run Command scripts or cfn-hup against live hosts, so every instance matches a "
+        "known, tested image and a failed release is undone by going back to the old one."
+    )
+
+    def run(self, repo_path: Path, language: str = "typescript") -> List[Finding]:
+        changes = in_place_changes(repo_path)
+        if not changes:
+            return []
+        places = [
+            f"{what} in {where}" + (f" (line {line})" if line else "")
+            for what, where, line in changes
+        ]
+        return [self._finding(
+            f"Changes running instances in place instead of replacing them: {_listed(places)}",
+            file=changes[0][1] if not changes[0][1].startswith("package.json") else None,
+            line=changes[0][2],
+        )]
+
+
+_FUNCTIONAL_TEST_NAMES = (
+    "the test commands REPO-021 knows, curl with a fail flag against a URL, Newman, "
+    "Playwright, Cypress, integ, e2e or smoke package scripts, the CDK integ runner, a "
+    "CodePipeline test action, a CDK pipelines post step"
+)
+
+
+def untested_deploys(repo_path: Path) -> List[tuple[str, int]]:
+    """(build config, line of its first deploy) for each build config that deploys with no
+    functional test that can fail after a deploy: between the first and the last deploy when
+    it deploys more than once (staging, test, production), after the deploy otherwise."""
+    out: List[tuple[str, int]] = []
+    for rel, text, events in deploying_builds(repo_path, functional=True):
+        deploys = [offset for offset, kind, _fails in events if kind == "deploy"]
+        last = deploys[-1] if len(deploys) > 1 else None
+        tested = any(
+            kind == "test" and fails and offset > deploys[0]
+            and (last is None or offset < last)
+            for offset, kind, fails in events
+        )
+        if not tested:
+            out.append((rel, _line_of(text, deploys[0][0])))
+    return out
+
+
+class FunctionalTestMissing(_RepoRule):
+    id = "REPO-024"
+    title = "No functional test runs against the deployed change"
+    category = "Reliability"
+    severity = "Low"
+    themes = ("resilience",)
+    recommendation = (
+        "Test the change once it is deployed, in the same pipeline: after the deploy to a "
+        "staging environment, run smoke, integration or end-to-end tests against it (an "
+        "HTTP check that fails on an error, Playwright, Cypress, Newman, or a CDK pipelines "
+        "post step), and promote to production only when they pass. Do not swallow the "
+        "tests' exit code."
+    )
+
+    def run(self, repo_path: Path, language: str = "typescript") -> List[Finding]:
+        untested = untested_deploys(repo_path)
+        if not untested:
+            return []
+        places = [f"{rel} (line {line})" for rel, line in untested]
+        return [self._finding(
+            f"Deploys from {_listed(places)} with no functional test that can fail after the "
+            "deploy; searched each build config and the package.json scripts it runs for a "
+            f"test ({_FUNCTIONAL_TEST_NAMES}) after a deploy, and before the last deploy when "
+            "it deploys more than once; found none",
+            file=untested[0][0],
+            line=untested[0][1],
+        )]
+
+
+_CF_TEMPLATE_TEXT = re.compile(
+    r"\bAWSTemplateFormatVersion\b|[\"']?Type[\"']?\s*:\s*[\"']?AWS::\w+::\w+"
+)
+_CDK_CODE = re.compile(
+    r"\baws-cdk-lib\b|\baws_cdk\b|\bnew\s+\w+(?:\.\w+)?\(\s*(?:this|scope|app)\s*,\s*['\"]"
+    r"|\b\w+\.\w+\(\s*(?:self|scope|app)\s*,\s*['\"]"
+)
+_PIPELINE_DECLARED = re.compile(
+    _cf_type(r"CodePipeline::Pipeline") + r"|resource\s+\"aws_codepipeline\""
+    r"|\bcodepipeline\.(?:Cfn)?Pipeline\(|\bCodePipeline\("
+)
+
+
+def iac_files(repo_path: Path) -> dict[str, int]:
+    """How many IaC files outside tests the repo holds, by kind: Terraform, CloudFormation
+    templates, and CDK code (cdk.json counts as CDK)."""
+    out: dict[str, int] = {}
+
+    def add(kind: str) -> None:
+        out[kind] = out.get(kind, 0) + 1
+
+    if (repo_path / "cdk.json").is_file():
+        add("CDK")
+    for rel, text in iac_texts(repo_path):
+        if rel.endswith(".tf"):
+            add("Terraform")
+        elif rel.endswith(_CF_SUFFIXES) and _CF_TEMPLATE_TEXT.search(text):
+            add("CloudFormation")
+        elif rel.endswith((".ts", ".js", ".py")) and _CDK_CODE.search(text):
+            add("CDK")
+    return out
+
+
+def automated_deploys(repo_path: Path) -> List[str]:
+    """Where the repo deploys by automation: build configs that deploy, and pipelines in the
+    IaC."""
+    found = [rel for rel, _text, _events in deploying_builds(repo_path)]
+    found.extend(
+        rel for rel, text in iac_texts(repo_path)
+        if rel not in found and _PIPELINE_DECLARED.search(text)
+    )
+    return found
+
+
+class AutomatedDeployMissing(_RepoRule):
+    id = "REPO-025"
+    title = "Infrastructure is not deployed by automation"
+    category = "Reliability"
+    severity = "Medium"
+    themes = ("resilience",)
+    recommendation = (
+        "Deploy the infrastructure from a pipeline, the runbook for every change: a CI job "
+        "or CodeBuild project that runs the CDK, CloudFormation or Terraform deploy, a "
+        "CodePipeline, or CDK pipelines. Take deploys from laptops out of the path to "
+        "production, so each change takes the same reviewed, repeatable steps."
+    )
+
+    def run(self, repo_path: Path, language: str = "typescript") -> List[Finding]:
+        iac = iac_files(repo_path)
+        if not iac or automated_deploys(repo_path):
+            return []
+        builds = [rel for rel, _text in build_texts(repo_path)]
+        searched = (
+            f"the build configs ({_listed(builds)}) and the package.json scripts they run "
+            "for a deploy step" if builds else "the repo for a build config that deploys"
+        )
+        held = "; ".join(
+            f"{kind}: {count} file{'s' if count > 1 else ''}" for kind, count in sorted(iac.items())
+        )
+        return [self._finding(
+            f"Holds IaC ({held}); searched {searched}, and the IaC for a pipeline; found none",
+        )]
+
+
+_FIS_TASK = re.compile(
+    r"\baws-sdk:fis:startExperiment\b"
+    r"|\bservice\s*[:=]\s*['\"]fis['\"][\s\S]{0,200}?\baction\s*[:=]\s*['\"]startExperiment['\"]"
+)
+
+
+class ResiliencyTestMissing(_RepoRule):
+    id = "REPO-026"
+    title = "Deployments run no resiliency test"
+    category = "Reliability"
+    severity = "Low"
+    themes = ("resilience",)
+    recommendation = (
+        "Run a resiliency test as part of the deployment: after the deploy to a "
+        "pre-production environment, start an AWS FIS experiment from the pipeline (with a "
+        "stop condition on a CloudWatch alarm) or run a chaos tool, and promote only when "
+        "the workload rides it out."
+    )
+
+    def run(self, repo_path: Path, language: str = "typescript") -> List[Finding]:
+        deploying = deploying_builds(repo_path)
+        if not deploying:
+            return []
+        builds = [(rel, text) for rel, text, _events in deploying]
+        _found, chaos = _tools_in_builds(repo_path, _CHAOS_TOOLS, builds)
+        if chaos or any(_FIS_TASK.search(text) for _rel, text in iac_texts(repo_path)):
+            return []
+        return [self._finding(
+            f"Deploys from {_listed([rel for rel, _text in builds])}; searched those builds "
+            "and the package.json scripts they run for a started AWS FIS experiment or a "
+            "chaos tool (Litmus, Chaos Mesh, Gremlin, Chaos Toolkit), and the IaC for a Step "
+            "Functions task that starts an FIS experiment; found none",
+            file=builds[0][0],
+        )]
+
+
 REPO_RULES: List[Rule] = [
     RepoTestsMissing(), RepoPipelineMissing(), SingleEnvironment(),
     OrgGuardrailsMissing(), AccountBaselineMissing(), RootUserUnchecked(),
@@ -2414,4 +2807,5 @@ REPO_RULES: List[Rule] = [
     IdempotencyMissing(), FaultInjectionMissing(), LoadTestMissing(),
     KpiMetricMissing(), EdgeTelemetryMissing(), DependencyTelemetryMissing(),
     DeployTestGateMissing(), AutomatedRollbackMissing(),
+    InPlaceChange(), FunctionalTestMissing(), AutomatedDeployMissing(), ResiliencyTestMissing(),
 ]

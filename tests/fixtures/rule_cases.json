@@ -903,5 +903,29 @@
     "negative_py": "fn = lambda_.Function(self, 'Fn', runtime=runtime, handler='index.handler', code=code)\ncodedeploy.LambdaDeploymentGroup(self, 'Deploy', alias=alias, deployment_config=codedeploy.LambdaDeploymentConfig.CANARY_10_PERCENT_5_MINUTES)",
     "positive_ts": "new ecs.FargateService(this, 'Svc', { cluster, taskDefinition });",
     "positive_py": "lambda_.Function(self, 'Fn', runtime=runtime, handler='index.handler', code=code)"
+  },
+  "REPO-023": {
+    "negative_ts": "new codedeploy.LambdaDeploymentGroup(this, 'Deploy', { alias });\nnew autoscaling.AutoScalingGroup(this, 'Fleet', { vpc, launchTemplate });",
+    "negative_py": "ec2.LaunchTemplate(self, 'Lt', machine_image=image)\nssm.CfnAssociation(self, 'Agent', name='AWS-UpdateSSMAgent')",
+    "positive_ts": "new codedeploy.ServerDeploymentGroup(this, 'Fleet', { autoScalingGroups: [asg] });",
+    "positive_py": "ssm.CfnAssociation(self, 'Patch', name='AWS-RunShellScript', targets=[targets])"
+  },
+  "REPO-024": {
+    "negative_ts": "const pipeline = new pipelines.CodePipeline(this, 'Pipeline', { synth });\npipeline.addStage(new AppStage(this, 'Prod'), { post: [new pipelines.ShellStep('Smoke', { commands: ['curl -f https://example.com/health'] })] });",
+    "negative_py": "pipeline = pipelines.CodePipeline(self, 'Pipeline', synth=synth)\npipeline.add_stage(AppStage(self, 'Prod'), post=[pipelines.ShellStep('Smoke', commands=['npm run e2e'])])",
+    "positive_ts": "const pipeline = new pipelines.CodePipeline(this, 'Pipeline', { synth });\npipeline.addStage(new AppStage(this, 'Prod'));",
+    "positive_py": "pipeline = pipelines.CodePipeline(self, 'Pipeline', synth=synth)\npipeline.add_stage(AppStage(self, 'Prod'))"
+  },
+  "REPO-025": {
+    "negative_ts": "new s3.Bucket(this, 'Data');\nconst pipeline = new pipelines.CodePipeline(this, 'Pipeline', { synth });\npipeline.addStage(new AppStage(this, 'Prod'));",
+    "negative_py": "s3.Bucket(self, 'Data')\npipeline = pipelines.CodePipeline(self, 'Pipeline', synth=synth)",
+    "positive_ts": "new s3.Bucket(this, 'Data');",
+    "positive_py": "s3.Bucket(self, 'Data')"
+  },
+  "REPO-026": {
+    "negative_ts": "const pipeline = new pipelines.CodePipeline(this, 'Pipeline', { synth });\npipeline.addStage(new AppStage(this, 'Staging'), { post: [new pipelines.ShellStep('Chaos', { commands: ['aws fis start-experiment --experiment-template-id EXT1'] })] });",
+    "negative_py": "pipeline = pipelines.CodePipeline(self, 'Pipeline', synth=synth)\npipeline.add_stage(AppStage(self, 'Staging'), post=[pipelines.ShellStep('Chaos', commands=['chaos run experiment.json'])])",
+    "positive_ts": "const pipeline = new pipelines.CodePipeline(this, 'Pipeline', { synth });\npipeline.addStage(new AppStage(this, 'Prod'));",
+    "positive_py": "pipeline = pipelines.CodePipeline(self, 'Pipeline', synth=synth)\npipeline.add_stage(AppStage(self, 'Prod'))"
   }
 }

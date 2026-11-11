@@ -693,13 +693,16 @@ def test_cli_html_escapes_scanned_source(tmp_path: Path) -> None:
 
 def test_cli_html_with_no_findings_writes_a_page(tmp_path: Path) -> None:
     (tmp_path / "main.tf").write_text('variable "x" {}\n', encoding="utf-8")
-    # Tests, a CI workflow that scans dependencies, runs a load test and a FIS experiment,
-    # and two environments: the repo-level rules have nothing to say.
+    # Tests, a CI workflow that scans dependencies, deploys behind a test, smoke-tests the
+    # deploy, runs a load test and a FIS experiment, and two environments: the repo-level
+    # rules have nothing to say.
     for rel in (".github/workflows/ci.yml", "tests/main.tftest.hcl", "dev.tfvars", "prod.tfvars"):
         (tmp_path / rel).parent.mkdir(parents=True, exist_ok=True)
         (tmp_path / rel).write_text("\n", encoding="utf-8")
     (tmp_path / ".github/workflows/ci.yml").write_text(
         "jobs:\n  build:\n    steps:\n      - run: osv-scanner -r .\n"
+        "      - run: terraform test\n      - run: terraform apply -auto-approve\n"
+        "      - run: curl -fsS https://example.com/health\n"
         "      - run: k6 run load/smoke.js\n"
         "      - run: aws fis start-experiment --experiment-template-id EXT1\n",
         encoding="utf-8",

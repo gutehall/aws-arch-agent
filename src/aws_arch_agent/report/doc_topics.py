@@ -1090,6 +1090,34 @@ TOPICS: dict[str, tuple[str, str, str, str]] = {
         "/wellarchitected/latest/operational-excellence-pillar/"
         "ops_mit_deploy_risks_auto_testing_and_rollback.html",
     ),
+    "immutable_deploys": (
+        "EC2 Auto Scaling: use an instance refresh to update instances",
+        "/autoscaling/ec2/userguide/asg-instance-refresh.html",
+        "Well-Architected REL08-BP04: Deploy using immutable infrastructure",
+        "/wellarchitected/latest/reliability-pillar/"
+        "rel_tracking_change_management_immutable_infrastructure.html",
+    ),
+    "functional_test_after_deploy": (
+        "CDK: continuous integration and delivery using CDK Pipelines",
+        "/cdk/v2/guide/cdk-pipeline.html",
+        "Well-Architected REL08-BP02: Integrate functional testing as part of your deployment",
+        "/wellarchitected/latest/reliability-pillar/"
+        "rel_tracking_change_management_functional_testing.html",
+    ),
+    "automated_deploys": (
+        "What is AWS CodePipeline?",
+        "/codepipeline/latest/userguide/welcome.html",
+        "Well-Architected REL08-BP05: Deploy changes with automation",
+        "/wellarchitected/latest/reliability-pillar/"
+        "rel_tracking_change_management_automated_changemgmt.html",
+    ),
+    "resiliency_test_in_deploy": (
+        "AWS FIS: start an experiment",
+        "/fis/latest/userguide/run-experiment.html",
+        "Well-Architected REL08-BP03: Integrate resiliency testing as part of your deployment",
+        "/wellarchitected/latest/reliability-pillar/"
+        "rel_tracking_change_management_resiliency_testing.html",
+    ),
     "lambda_dlq": (
         "Lambda: retain records of async invocations (DLQ and destinations)",
         "/lambda/latest/dg/invocation-async-retain-records.html",
@@ -1977,6 +2005,10 @@ RULE_TOPICS: dict[str, str] = {
     "REPO-020": "dependency_telemetry",
     "REPO-021": "deployment_test_gate",
     "REPO-022": "automated_rollback",
+    "REPO-023": "immutable_deploys",
+    "REPO-024": "functional_test_after_deploy",
+    "REPO-025": "automated_deploys",
+    "REPO-026": "resiliency_test_in_deploy",
     "PERF-001": "graviton_ec2",
     "PERF-002": "caching",
     "PERF-003": "ddb_capacity",

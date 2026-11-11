@@ -54,5 +54,12 @@
     "file": null,
     "line": null,
     "evidence": "Searched the repo for a build to run a load test (a CI config, or a CodeBuild buildspec or pipeline in the IaC); found none"
+  },
+  {
+    "id": "REPO-025",
+    "severity": "Medium",
+    "file": null,
+    "line": null,
+    "evidence": "Holds IaC (CDK: 2 files); searched the repo for a build config that deploys, and the IaC for a pipeline; found none"
   }
 ]
