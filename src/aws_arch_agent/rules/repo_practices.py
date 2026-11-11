@@ -242,6 +242,23 @@ Correlated security findings (SEC 4):
   (aws.guardduty, aws.config, aws.inspector2, aws.macie, aws.access-analyzer). It names each
   detector whose findings go nowhere. Security Hub off by itself, with no detector in the
   repo, is SEC-026 (an org-level rule).
+
+Network protection (SEC 5):
+
+- REPO-034 egress inspection: when the IaC gives a VPC a path out to the internet (a NAT
+  gateway, an internet gateway, or a CDK ec2.Vpc that keeps its default NAT gateways), it
+  needs inspection: AWS Network Firewall, a Route 53 Resolver DNS Firewall rule group
+  association, or a Gateway Load Balancer endpoint for third-party appliances.
+- REPO-035 automated protection: when the IaC has an edge (as REPO-019) or an egress path
+  (as REPO-034), it needs protection that updates itself: a WAF rule using an AWS managed
+  rule group, Shield Advanced protection, a Firewall Manager policy, AWS managed threat
+  signatures in Network Firewall, or AWS managed domain lists in DNS Firewall.
+- REPO-036 workloads in public subnets: a workload placed in a public subnet. CDK: a
+  construct other than a load balancer, NAT or VPC endpoint given vpcSubnets (vpc_subnets) of
+  SubnetType.PUBLIC. Terraform and CloudFormation: a resource other than a load balancer, NAT
+  gateway, route, network ACL, endpoint or firewall that names a subnet whose
+  map_public_ip_on_launch (MapPublicIpOnLaunch) is true. A subnet id from a variable,
+  parameter or lookup is not resolved.
 """
 from __future__ import annotations
 
@@ -3330,6 +3347,207 @@ class SecurityFindingsUncorrelated(_RepoRule):
         )]
 
 
+# SEC 5: egress inspection (REPO-034), automated protection (REPO-035), and workloads in
+# public subnets (REPO-036).
+
+_EGRESS = _kinds(
+    ("NAT gateway", _cf_type(r"EC2::NatGateway") + r"|resource\s+\"aws_nat_gateway\""
+     r"|\bec2\.CfnNatGateway\(|\b(?:natGateways\s*:|nat_gateways\s*=)\s*[1-9]"
+     r"|\bNatProvider\.(?:gateway|instance\w*)\("),
+    ("internet gateway", _cf_type(r"EC2::InternetGateway")
+     + r"|resource\s+\"aws_internet_gateway\"|\bec2\.CfnInternetGateway\("),
+)
+_CDK_VPC = re.compile(r"\bec2\.Vpc(?:V2)?\(")
+_NO_NAT = re.compile(r"\b(?:natGateways\s*:|nat_gateways\s*=)\s*0\b")
+_INSPECTION = _kinds(
+    ("Network Firewall", _cf_type(r"NetworkFirewall::Firewall")
+     + r"|resource\s+\"aws_networkfirewall_firewall\"|\bnetworkfirewall\.CfnFirewall\("),
+    ("DNS Firewall", _cf_type(r"Route53Resolver::FirewallRuleGroupAssociation")
+     + r"|resource\s+\"aws_route53_resolver_firewall_rule_group_association\""
+     r"|\broute53resolver\.CfnFirewallRuleGroupAssociation\("),
+    ("Gateway Load Balancer endpoint",
+     r"[\"']?VpcEndpointType[\"']?\s*:\s*[\"']?GatewayLoadBalancer\b"
+     r"|\bvpc_endpoint_type\s*=\s*\"GatewayLoadBalancer\""
+     r"|\bvpcEndpointType\s*:\s*['\"]GatewayLoadBalancer['\"]"),
+)
+_AUTO_PROTECTION = _kinds(
+    ("WAF AWS managed rule group",
+     r"[\"']?ManagedRuleGroupStatement[\"']?\s*:|\bmanaged_rule_group_statement\s*\{"
+     r"|\bmanagedRuleGroupStatement\s*:|\bmanaged_rule_group_statement\s*="),
+    ("Shield Advanced protection", _cf_type(r"Shield::Protection")
+     + r"|resource\s+\"aws_shield_protection\"|\bshield\.CfnProtection\("),
+    ("Firewall Manager policy", _cf_type(r"FMS::Policy")
+     + r"|resource\s+\"aws_fms_policy\"|\bfms\.CfnPolicy\("),
+    ("Network Firewall managed threat signatures",
+     r"aws-managed:(?:stateful|stateless)-rulegroup/(?:ThreatSignatures|AttackInfrastructure"
+     r"|BotNet|MalwareDomains|AbusedLegitMalwareDomains)\w*"),
+    ("DNS Firewall AWS managed domain list",
+     r"\bAWSManagedDomains\w+|[\"']?ManagedOwnerName[\"']?\s*:\s*[\"']?Route\s?53"),
+)
+
+
+def egress_paths(repo_path: Path) -> dict[str, str]:
+    """Paths out of a VPC to the internet the IaC declares: kind -> first file."""
+    found = _in_iac(repo_path, _EGRESS)
+    if "NAT gateway" not in found:
+        for rel, text in iac_texts(repo_path):
+            if _CDK_VPC.search(text) and not _NO_NAT.search(text):
+                found.setdefault("NAT gateway", rel)
+                break
+    return found
+
+
+class EgressInspectionMissing(_RepoRule):
+    id = "REPO-034"
+    title = "Traffic leaves the VPC with no inspection"
+    category = "Security"
+    severity = "Low"
+    themes = ("network-exposure",)
+    recommendation = (
+        "Inspect what leaves the VPC: route egress through AWS Network Firewall (or a "
+        "Gateway Load Balancer with inspection appliances), and associate a Route 53 "
+        "Resolver DNS Firewall rule group to block lookups of known-bad domains. A central "
+        "inspection VPC behind a transit gateway works too, with no NAT in this VPC."
+    )
+
+    def run(self, repo_path: Path, language: str = "typescript") -> List[Finding]:
+        egress = egress_paths(repo_path)
+        if not egress or _in_iac(repo_path, _INSPECTION):
+            return []
+        return [self._finding(
+            f"Sends traffic out through {_named(egress)}; searched the IaC for AWS Network "
+            "Firewall, a Route 53 Resolver DNS Firewall association, and a Gateway Load "
+            "Balancer endpoint; found none",
+        )]
+
+
+class AutomatedNetworkProtectionMissing(_RepoRule):
+    id = "REPO-035"
+    title = "Network protection does not update itself"
+    category = "Security"
+    severity = "Low"
+    themes = ("network-exposure",)
+    recommendation = (
+        "Use protection that AWS keeps current: AWS managed rule groups in the WAF web ACL "
+        "(core rule set, known bad inputs, IP reputation), Shield Advanced with automatic "
+        "application layer DDoS mitigation, Firewall Manager policies across accounts, and "
+        "AWS managed threat signature rule groups or managed domain lists in Network "
+        "Firewall and DNS Firewall."
+    )
+
+    def run(self, repo_path: Path, language: str = "typescript") -> List[Finding]:
+        exposed = {**edges(repo_path), **egress_paths(repo_path)}
+        if not exposed or _in_iac(repo_path, _AUTO_PROTECTION):
+            return []
+        return [self._finding(
+            f"Exposes {_named(exposed)}; searched the IaC for a WAF AWS managed rule group, "
+            "Shield Advanced protection, a Firewall Manager policy, and AWS managed threat "
+            "signatures or domain lists in Network Firewall or DNS Firewall; found none",
+        )]
+
+
+_CDK_PUBLIC_PLACEMENT = re.compile(
+    r"\b(?:vpcSubnets\s*:\s*\{|vpc_subnets\s*=\s*(?:ec2\.)?SubnetSelection\(|vpc_subnets\s*="
+    r"\s*\{)[^}]{0,120}?\bsubnet_?[tT]ype\b[\"']?\s*[:=]\s*(?:ec2\.)?SubnetType\.PUBLIC\b"
+)
+# Constructs that belong in a public subnet.
+_PUBLIC_TIER = re.compile(
+    r"LoadBalancer|LoadBalanced|NatGateway|NatInstance|InterfaceVpcEndpoint|VpcEndpoint"
+    r"|Bastion|^ec2\.Vpc|^aws_(?:lb|alb|elb|nat_gateway|route\w*|network_acl\w*|vpc_endpoint\w*"
+    r"|networkfirewall_\w+|eip\w*|subnet\w*|ec2_transit_gateway\w*|globalaccelerator\w*)$"
+    r"|^AWS::(?:ElasticLoadBalancing\w*::\w+|EC2::(?:NatGateway|Route|RouteTable"
+    r"|SubnetRouteTableAssociation|NetworkAcl\w*|SubnetNetworkAclAssociation|VPCEndpoint"
+    r"|EIP\w*|Subnet\w*|TransitGatewayAttachment|TransitGatewayVpcAttachment)"
+    r"|NetworkFirewall::\w+|GlobalAccelerator::\w+)$"
+)
+_TF_SUBNET = re.compile(r"resource\s+\"aws_subnet\"\s+\"(\w+)\"\s*\{")
+_TF_MAPS_PUBLIC_IP = re.compile(r"\bmap_public_ip_on_launch\s*=\s*true\b")
+
+
+def _tf_public_subnets(text: str) -> set[str]:
+    return {
+        m.group(1) for m in _TF_SUBNET.finditer(text)
+        if _TF_MAPS_PUBLIC_IP.search(_braced(text, m.end() - 1))
+    }
+
+
+def _cf_public_workloads(rel: str, text: str) -> List[tuple[str, str]]:
+    """(resource, type) of CloudFormation resources that name a public subnet."""
+    try:
+        doc = parse_template_text(Path(rel), text)
+    except Exception:  # noqa: BLE001 - not a readable template
+        return []
+    resources = doc.get("Resources") if isinstance(doc, dict) else None
+    if not isinstance(resources, dict):
+        return []
+    public = {
+        name for name, body in resources.items()
+        if isinstance(body, dict) and body.get("Type") == "AWS::EC2::Subnet"
+        and str((body.get("Properties") or {}).get("MapPublicIpOnLaunch")).lower() == "true"
+    }
+    out: List[tuple[str, str]] = []
+    for name, body in resources.items():
+        if not public or not isinstance(body, dict):
+            continue
+        rtype = str(body.get("Type", ""))
+        if _PUBLIC_TIER.search(rtype):
+            continue
+        refs = json.dumps(body.get("Properties") or {})
+        if any(re.search(rf"\"{re.escape(sub)}\"", refs) for sub in public):
+            out.append((name, rtype))
+    return out
+
+
+def public_subnet_workloads(repo_path: Path) -> List[tuple[str, int, str]]:
+    """(file, line, what) for each workload the IaC places in a public subnet."""
+    out: List[tuple[str, int, str]] = []
+    for rel, text in iac_texts(repo_path):
+        for match in _CDK_PUBLIC_PLACEMENT.finditer(text):
+            owner = _owner(text, match.start())
+            if owner and not _PUBLIC_TIER.search(owner):
+                out.append((rel, _line_of(text, match.start()), owner))
+        public = _tf_public_subnets(text)
+        if public:
+            for match in re.finditer(r"resource\s+\"(\w+)\"\s+\"(\w+)\"\s*\{", text):
+                rtype = match.group(1)
+                if _PUBLIC_TIER.search(rtype):
+                    continue
+                body = _braced(text, match.end() - 1)
+                if any(re.search(rf"\baws_subnet\.{re.escape(sub)}\b", body) for sub in public):
+                    out.append((rel, _line_of(text, match.start()),
+                                f"{rtype}.{match.group(2)}"))
+        if '"Resources"' in text or "Resources:" in text:
+            for name, rtype in _cf_public_workloads(rel, text):
+                at = text.find(name)
+                out.append((rel, _line_of(text, max(at, 0)), f"{name} ({rtype})"))
+    return out
+
+
+class PublicSubnetWorkload(_RepoRule):
+    id = "REPO-036"
+    title = "A workload sits in a public subnet"
+    category = "Security"
+    severity = "Medium"
+    themes = ("network-exposure",)
+    recommendation = (
+        "Keep public subnets for load balancers, NAT gateways and endpoints. Put instances, "
+        "containers, functions and databases in private subnets (CDK "
+        "SubnetType.PRIVATE_WITH_EGRESS or PRIVATE_ISOLATED) and reach them through the "
+        "load balancer."
+    )
+
+    def run(self, repo_path: Path, language: str = "typescript") -> List[Finding]:
+        found = public_subnet_workloads(repo_path)
+        if not found:
+            return []
+        places = [f"{what} in {rel} (line {line})" for rel, line, what in found]
+        return [self._finding(
+            f"Places {_listed(places)} in a public subnet",
+            file=found[0][0],
+            line=found[0][1],
+        )]
+
+
 REPO_RULES: List[Rule] = [
     RepoTestsMissing(), RepoPipelineMissing(), SingleEnvironment(),
     OrgGuardrailsMissing(), AccountBaselineMissing(), RootUserUnchecked(),
@@ -3344,4 +3562,5 @@ REPO_RULES: List[Rule] = [
     DashboardWorkloadMetricMissing(),
     PermissionBoundaryMissing(), BreakGlassRoleMissing(),
     SecurityFindingsUncorrelated(),
+    EgressInspectionMissing(), AutomatedNetworkProtectionMissing(), PublicSubnetWorkload(),
 ]

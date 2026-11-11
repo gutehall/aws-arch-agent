@@ -15,7 +15,7 @@ Which CDK rules have a template check, and which AWS Foundational Security Best 
 
 ## CDK rules
 
-212 rules: 132 covered, 7 partial, 10 account, 5 cdk-only, 25 advice, 33 repo.
+215 rules: 132 covered, 7 partial, 10 account, 5 cdk-only, 25 advice, 36 repo.
 
 | Rule | Title | Template check | Status | Note |
 | -- | -- | -- | -- | -- |
@@ -231,6 +231,9 @@ Which CDK rules have a template check, and which AWS Foundational Security Best 
 | REPO-031 | IAM roles have no permissions boundary or SCP to cap them |  | `repo` | When the IaC declares an IAM role or user, looks for a permissions boundary (CloudFormation, Terraform, CDK or the cdk.json context) or a service control policy. |
 | REPO-032 | No break-glass role kept apart from the workload's roles |  | `repo` | Looks for an IAM role or Identity Center permission set named for break-glass or emergency access, and for a workload resource that uses it as its role. Org-level: off unless `rules.org`. |
 | REPO-033 | Security findings have no place to meet |  | `repo` | When the IaC turns on GuardDuty, Config, Inspector, Macie or Access Analyzer, looks for Security Hub, Security Lake, or an EventBridge rule with a target on each detector's event source. |
+| REPO-034 | Traffic leaves the VPC with no inspection |  | `repo` | When the IaC declares a NAT gateway, an internet gateway, or a CDK VPC with its default NAT, looks for Network Firewall, a DNS Firewall association, or a Gateway Load Balancer endpoint. |
+| REPO-035 | Network protection does not update itself |  | `repo` | When the IaC has an edge or an egress path, looks for a WAF AWS managed rule group, Shield Advanced, a Firewall Manager policy, or AWS managed Network Firewall or DNS Firewall lists. |
+| REPO-036 | A workload sits in a public subnet |  | `repo` | Looks for CDK constructs placed with SubnetType.PUBLIC, and Terraform or CloudFormation resources that name a subnet that maps public IPs, other than load balancers, NAT and endpoints. |
 
 ## FSBP controls
 

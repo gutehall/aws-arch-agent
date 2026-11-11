@@ -969,5 +969,23 @@
     "negative_py": "guardduty.CfnDetector(self, 'Detector', enable=True)\nsecurityhub.CfnHub(self, 'Hub')",
     "positive_ts": "new guardduty.CfnDetector(this, 'Detector', { enable: true });",
     "positive_py": "guardduty.CfnDetector(self, 'Detector', enable=True)"
+  },
+  "REPO-034": {
+    "negative_ts": "const vpc = new ec2.Vpc(this, 'Vpc', { maxAzs: 2 });\nnew networkfirewall.CfnFirewall(this, 'Fw', { firewallName, firewallPolicyArn, subnetMappings, vpcId });",
+    "negative_py": "vpc = ec2.Vpc(self, 'Vpc', nat_gateways=0)",
+    "positive_ts": "const vpc = new ec2.Vpc(this, 'Vpc', { maxAzs: 2 });",
+    "positive_py": "vpc = ec2.Vpc(self, 'Vpc', max_azs=2)"
+  },
+  "REPO-035": {
+    "negative_ts": "new elbv2.ApplicationLoadBalancer(this, 'Lb', { vpc, internetFacing: true });\nnew shield.CfnProtection(this, 'Shield', { name, resourceArn });",
+    "negative_py": "elbv2.ApplicationLoadBalancer(self, 'Lb', vpc=vpc, internet_facing=True)\nshield.CfnProtection(self, 'Shield', name=name, resource_arn=arn)",
+    "positive_ts": "new elbv2.ApplicationLoadBalancer(this, 'Lb', { vpc, internetFacing: true });",
+    "positive_py": "elbv2.ApplicationLoadBalancer(self, 'Lb', vpc=vpc, internet_facing=True)"
+  },
+  "REPO-036": {
+    "negative_ts": "new lambda.Function(this, 'Fn', { runtime, handler, code, vpc, vpcSubnets: { subnetType: ec2.SubnetType.PRIVATE_WITH_EGRESS } });",
+    "negative_py": "lambda_.Function(self, 'Fn', runtime=runtime, handler='h', code=code, vpc=vpc, vpc_subnets=ec2.SubnetSelection(subnet_type=ec2.SubnetType.PRIVATE_WITH_EGRESS))",
+    "positive_ts": "new lambda.Function(this, 'Fn', { runtime, handler, code, vpc, vpcSubnets: { subnetType: ec2.SubnetType.PUBLIC } });",
+    "positive_py": "lambda_.Function(self, 'Fn', runtime=runtime, handler='h', code=code, vpc=vpc, vpc_subnets=ec2.SubnetSelection(subnet_type=ec2.SubnetType.PUBLIC))"
   }
 }
