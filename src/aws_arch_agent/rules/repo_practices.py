@@ -273,6 +273,21 @@ Compute integrity (SEC 6):
   DockerImageCode.fromEcr with no tag or digest. A digest (@sha256:) or a version tag is
   pinned; CDK fromAsset is pinned by its content hash. Images built from a variable or
   parameter are not judged.
+
+Data classification (SEC 7):
+
+- REPO-039 classification tag: each IaC file that declares a data store (S3 bucket,
+  DynamoDB table, RDS or Aurora, ElastiCache, OpenSearch, EFS, Redshift, DocumentDB,
+  Neptune, Kinesis stream) needs a classification tag key in it (DataClassification,
+  data-classification, data_classification, Classification, Confidentiality or
+  Sensitivity, in any case), unless the whole app is tagged: CDK Tags.of(app), Tags.of(this)
+  or Tags.of(scope) adding such a key, or a Terraform provider default_tags block holding it.
+- REPO-040 controls by sensitivity: a file whose classification tag value is high
+  (confidential, restricted, secret, sensitive, PII, PHI, PCI) needs a customer managed KMS
+  key on its stores (KmsKeyId, KMSMasterKeyID, kms_key_id, kms_master_key_id, kms_key_arn,
+  encryptionKey, encryption_key, a CDK BucketEncryption.KMS or TableEncryption
+  .CUSTOMER_MANAGED). The per-resource encryption and public access checks still apply to
+  every store; this adds the stricter key for the sensitive ones.
 """
 from __future__ import annotations
 
@@ -532,7 +547,24 @@ def iac_texts(repo_path: Path) -> Iterator[tuple[str, str]]:
             continue
         if _TEST_NAME.search(path.name.lower()):
             continue
-        yield "/".join(parts), read_text_safe(path)
+        text = read_text_safe(path)
+        if path.suffix.lower() == ".json" and _saved_report(text):
+            continue
+        yield "/".join(parts), text
+
+
+def _saved_report(text: str) -> bool:
+    """A report or baseline this tool wrote: it quotes evidence, so it is not IaC."""
+    head = text.lstrip()[:1]
+    if head != "{" or ('"findings"' not in text and '"accepted"' not in text):
+        return False
+    try:
+        doc = json.loads(text)
+    except ValueError:
+        return False
+    return isinstance(doc, dict) and "Resources" not in doc and (
+        isinstance(doc.get("findings"), list) or isinstance(doc.get("accepted"), list)
+    )
 
 
 _ORG_POLICY = re.compile(
@@ -3699,6 +3731,140 @@ class MutableImageTag(_RepoRule):
         )]
 
 
+# SEC 7: classification tags (REPO-039) and controls by sensitivity (REPO-040).
+
+_DATA_STORES = _kinds(
+    ("S3 bucket", _cf_type(r"S3::Bucket") + r"|resource\s+\"aws_s3_bucket\""
+     r"|\bs3\.(?:Cfn)?Bucket\("),
+    ("DynamoDB table", _cf_type(r"DynamoDB::(?:Global)?Table")
+     + r"|resource\s+\"aws_dynamodb_table\"|\bdynamodb\.(?:Cfn)?Table(?:V2)?\("),
+    ("RDS database", _cf_type(r"RDS::DB(?:Instance|Cluster)")
+     + r"|resource\s+\"aws_(?:db_instance|rds_cluster)\""
+     r"|\brds\.Cfn(?:DBInstance|DBCluster)\("
+     r"|\b(?:DatabaseInstance|DatabaseCluster|ServerlessCluster)(?:FromSnapshot)?\("),
+    ("ElastiCache", _cf_type(r"ElastiCache::(?:CacheCluster|ReplicationGroup|ServerlessCache)")
+     + r"|resource\s+\"aws_elasticache_(?:cluster|replication_group|serverless_cache)\""
+     r"|\belasticache\.Cfn(?:CacheCluster|ReplicationGroup|ServerlessCache)\("),
+    ("OpenSearch domain", _cf_type(r"OpenSearchService::Domain|Elasticsearch::Domain")
+     + r"|resource\s+\"aws_(?:opensearch|elasticsearch)_domain\""
+     r"|\b(?:opensearch|opensearchservice|es)\.(?:Cfn)?Domain\("),
+    ("EFS file system", _cf_type(r"EFS::FileSystem") + r"|resource\s+\"aws_efs_file_system\""
+     r"|\befs\.(?:Cfn)?FileSystem\("),
+    ("Redshift cluster", _cf_type(r"Redshift::Cluster|RedshiftServerless::Namespace")
+     + r"|resource\s+\"aws_redshift(?:_cluster|serverless_namespace)\""
+     r"|\bredshift\.Cfn(?:Cluster)\("),
+    ("DocumentDB cluster", _cf_type(r"DocDB::DBCluster") + r"|resource\s+\"aws_docdb_cluster\""
+     r"|\bdocdb\.(?:Cfn)?DatabaseCluster\(|\bdocdb\.CfnDBCluster\("),
+    ("Neptune cluster", _cf_type(r"Neptune::DBCluster")
+     + r"|resource\s+\"aws_neptune_cluster\"|\bneptune\.CfnDBCluster\("),
+    ("Kinesis stream", _cf_type(r"Kinesis::Stream") + r"|resource\s+\"aws_kinesis_stream\""
+     r"|\bkinesis\.(?:Cfn)?Stream\("),
+)
+_CLASS_KEY = r"(?:data[-_ ]?classification|classification|confidentiality|sensitivity)"
+# A classification key used as a tag key: CloudFormation Key:, Terraform map key, CDK add().
+_CLASS_TAG = re.compile(
+    rf"[\"']?Key[\"']?\s*:\s*[\"']?{_CLASS_KEY}[\"']?\s*(?:,|$)"
+    rf"|^\s*[\"']?{_CLASS_KEY}[\"']?\s*=\s*\S"
+    rf"|\.add\(\s*['\"]{_CLASS_KEY}['\"]"
+    rf"|[{{,]\s*[\"']?{_CLASS_KEY}[\"']?\s*:\s*['\"]",
+    re.IGNORECASE | re.MULTILINE,
+)
+_APP_TAGS = re.compile(
+    rf"\bTags\.of\(\s*(?:app|this|scope|self)\s*\)\.add\(\s*['\"]{_CLASS_KEY}['\"]",
+    re.IGNORECASE,
+)
+_TF_DEFAULT_TAGS = re.compile(r"\bdefault_tags\s*\{")
+_HIGH_VALUE = r"(?:confidential|restricted|secret|sensitive|pii|phi|pci|highly[-_ ]?\w+)"
+_HIGH_CLASS = re.compile(
+    rf"{_CLASS_KEY}[\"']?\s*(?:[:=,]|\)\.add\()?\s*[^\n]{{0,40}}?['\"]?{_HIGH_VALUE}\b"
+    rf"|[\"']?Key[\"']?\s*:\s*[\"']?{_CLASS_KEY}[\"']?\s*,?\s*\n?\s*[\"']?Value[\"']?\s*:"
+    rf"\s*[\"']?{_HIGH_VALUE}\b",
+    re.IGNORECASE,
+)
+_CMK = re.compile(
+    r"[\"']?(?:KmsKeyId|KMSMasterKeyID|KmsKeyArn|KMSKeyArn)[\"']?\s*:"
+    r"|\b(?:kms_key_id|kms_master_key_id|kms_key_arn|kms_key)\s*="
+    r"|\bencryption_?[kK]ey\s*[:=]|\bBucketEncryption\.KMS\b"
+    r"|\bTableEncryption(?:V2)?\.CUSTOMER_MANAGED\b|\bTableEncryptionV2\.customerManagedKey\("
+)
+
+
+def _app_classified(repo_path: Path) -> bool:
+    for _rel, text in iac_texts(repo_path):
+        if _APP_TAGS.search(text):
+            return True
+        for match in _TF_DEFAULT_TAGS.finditer(text):
+            if _CLASS_TAG.search(_braced(text, match.end() - 1)):
+                return True
+    return False
+
+
+def unclassified_stores(repo_path: Path) -> dict[str, str]:
+    """Files that declare a data store and no classification tag: file -> first store."""
+    out: dict[str, str] = {}
+    files = [
+        (rel, text, kinds) for rel, text in iac_texts(repo_path)
+        if (kinds := [name for name, pattern in _DATA_STORES if pattern.search(text)])
+    ]
+    if not files or _app_classified(repo_path):
+        return out
+    for rel, text, kinds in files:
+        if not _CLASS_TAG.search(text):
+            out[rel] = kinds[0]
+    return out
+
+
+class DataClassificationMissing(_RepoRule):
+    id = "REPO-039"
+    title = "Data stores carry no classification tag"
+    category = "Security"
+    severity = "Low"
+    themes = ("data-protection",)
+    recommendation = (
+        "Tag every data store with its classification (for example DataClassification = "
+        "public, internal, confidential or restricted), or tag the whole app (CDK "
+        "Tags.of(app), Terraform provider default_tags), so the controls and the people "
+        "handling the data follow from its sensitivity. Enforce the key with a tag policy."
+    )
+
+    def run(self, repo_path: Path, language: str = "typescript") -> List[Finding]:
+        found = unclassified_stores(repo_path)
+        if not found:
+            return []
+        places = [f"{kind} in {rel}" for rel, kind in found.items()]
+        return [self._finding(
+            f"Declares {_listed(places)} with no classification tag (DataClassification, "
+            "Classification, Confidentiality or Sensitivity) on the store or the app",
+        )]
+
+
+class SensitiveDataWithoutCmk(_RepoRule):
+    id = "REPO-040"
+    title = "Data classified as sensitive has no customer managed key"
+    category = "Security"
+    severity = "Medium"
+    themes = ("data-protection",)
+    recommendation = (
+        "Give data classified confidential or restricted the stronger controls: encrypt the "
+        "store with a customer managed KMS key whose key policy names who may decrypt, keep "
+        "it private, and log access to it."
+    )
+
+    def run(self, repo_path: Path, language: str = "typescript") -> List[Finding]:
+        found: List[str] = []
+        for rel, text in iac_texts(repo_path):
+            if not any(pattern.search(text) for _name, pattern in _DATA_STORES):
+                continue
+            if _HIGH_CLASS.search(text) and not _CMK.search(text):
+                found.append(rel)
+        if not found:
+            return []
+        return [self._finding(
+            f"Classifies data stores in {_listed(found)} as sensitive and encrypts them with "
+            "no customer managed KMS key",
+        )]
+
+
 REPO_RULES: List[Rule] = [
     RepoTestsMissing(), RepoPipelineMissing(), SingleEnvironment(),
     OrgGuardrailsMissing(), AccountBaselineMissing(), RootUserUnchecked(),
@@ -3715,4 +3881,5 @@ REPO_RULES: List[Rule] = [
     SecurityFindingsUncorrelated(),
     EgressInspectionMissing(), AutomatedNetworkProtectionMissing(), PublicSubnetWorkload(),
     CodeSigningMissing(), MutableImageTag(),
+    DataClassificationMissing(), SensitiveDataWithoutCmk(),
 ]

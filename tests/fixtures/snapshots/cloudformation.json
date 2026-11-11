@@ -222,5 +222,12 @@
     "file": null,
     "line": null,
     "evidence": "Deploys Lambda functions (stack.yaml); searched the IaC for a Lambda code signing config and an AWS Signer Notation profile, and the builds for notation sign or cosign sign; found none for these"
+  },
+  {
+    "id": "REPO-039",
+    "severity": "Low",
+    "file": null,
+    "line": null,
+    "evidence": "Declares S3 bucket in stack.yaml with no classification tag (DataClassification, Classification, Confidentiality or Sensitivity) on the store or the app"
   }
 ]

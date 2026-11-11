@@ -999,5 +999,17 @@
     "negative_py": "task.add_container('App', image=ecs.ContainerImage.from_registry('nginx:1.27.2'))",
     "positive_ts": "taskDef.addContainer('App', { image: ecs.ContainerImage.fromRegistry('nginx:latest') });",
     "positive_py": "task.add_container('App', image=ecs.ContainerImage.from_registry('nginx'))"
+  },
+  "REPO-039": {
+    "negative_ts": "const data = new s3.Bucket(this, 'Data');\nTags.of(data).add('DataClassification', 'internal');",
+    "negative_py": "data = s3.Bucket(self, 'Data')\nTags.of(data).add('DataClassification', 'internal')",
+    "positive_ts": "const data = new s3.Bucket(this, 'Data');",
+    "positive_py": "data = s3.Bucket(self, 'Data')"
+  },
+  "REPO-040": {
+    "negative_ts": "const data = new s3.Bucket(this, 'Data', { encryption: s3.BucketEncryption.KMS, encryptionKey: key });\nTags.of(data).add('DataClassification', 'confidential');",
+    "negative_py": "data = s3.Bucket(self, 'Data', encryption=s3.BucketEncryption.KMS, encryption_key=key)\nTags.of(data).add('DataClassification', 'confidential')",
+    "positive_ts": "const data = new s3.Bucket(this, 'Data');\nTags.of(data).add('DataClassification', 'confidential');",
+    "positive_py": "data = s3.Bucket(self, 'Data')\nTags.of(data).add('DataClassification', 'restricted')"
   }
 }

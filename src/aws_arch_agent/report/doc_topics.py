@@ -1860,6 +1860,18 @@ TOPICS: dict[str, tuple[str, str, str, str]] = {
         "Well-Architected SEC06-BP02: Provision compute from hardened images",
         "/wellarchitected/latest/security-pillar/sec_protect_compute_hardened_images.html",
     ),
+    "data_classification": (
+        "Tagging best practices: data classification tags",
+        "/whitepapers/latest/tagging-best-practices/tagging-best-practices.html",
+        "Well-Architected SEC07-BP01: Understand your data classification scheme",
+        "/wellarchitected/latest/security-pillar/sec_data_classification_identify_data.html",
+    ),
+    "sensitive_data_keys": (
+        "KMS: customer managed keys",
+        "/kms/latest/developerguide/concepts.html",
+        "Well-Architected SEC07-BP02: Apply data protection controls based on data sensitivity",
+        "/wellarchitected/latest/security-pillar/sec_data_classification_define_protection.html",
+    ),
     "org_guardrails": (
         "Service control policies (SCPs)",
         "/organizations/latest/userguide/orgs_manage_policies_scps.html",
@@ -2096,6 +2108,8 @@ RULE_TOPICS: dict[str, str] = {
     "REPO-036": "public_subnet_workloads",
     "REPO-037": "code_signing",
     "REPO-038": "pinned_images",
+    "REPO-039": "data_classification",
+    "REPO-040": "sensitive_data_keys",
     "PERF-001": "graviton_ec2",
     "PERF-002": "caching",
     "PERF-003": "ddb_capacity",

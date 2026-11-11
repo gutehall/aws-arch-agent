@@ -15,7 +15,7 @@ Which CDK rules have a template check, and which AWS Foundational Security Best 
 
 ## CDK rules
 
-217 rules: 132 covered, 7 partial, 10 account, 5 cdk-only, 25 advice, 38 repo.
+219 rules: 132 covered, 7 partial, 10 account, 5 cdk-only, 25 advice, 40 repo.
 
 | Rule | Title | Template check | Status | Note |
 | -- | -- | -- | -- | -- |
@@ -236,6 +236,8 @@ Which CDK rules have a template check, and which AWS Foundational Security Best 
 | REPO-036 | A workload sits in a public subnet |  | `repo` | Looks for CDK constructs placed with SubnetType.PUBLIC, and Terraform or CloudFormation resources that name a subnet that maps public IPs, other than load balancers, NAT and endpoints. |
 | REPO-037 | Deployed code and images are not signed |  | `repo` | When the IaC deploys Lambda functions, looks for a code signing config; when it deploys container images, for an AWS Signer Notation profile or notation or cosign signing in a build. |
 | REPO-038 | A container image is referenced by a mutable tag |  | `repo` | Looks for container images in task definitions, Lambda image functions and CDK container images referenced with no tag or :latest, and no digest. |
+| REPO-039 | Data stores carry no classification tag |  | `repo` | Looks in each IaC file that declares a data store for a classification tag key, or for an app-wide CDK tag or Terraform default_tags holding one. |
+| REPO-040 | Data classified as sensitive has no customer managed key |  | `repo` | Looks in each IaC file whose data stores are tagged confidential, restricted, secret, sensitive, PII, PHI or PCI for a customer managed KMS key. |
 
 ## FSBP controls
 

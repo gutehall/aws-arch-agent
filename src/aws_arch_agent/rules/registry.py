@@ -70,7 +70,7 @@ from aws_arch_agent.rules.sustainability import (
 )
 
 ALL_RULES = [
-    # Security (87 rules: these 71, and REPO-004 to REPO-011 and REPO-031 to REPO-038
+    # Security (89 rules: these 71, and REPO-004 to REPO-011 and REPO-031 to REPO-040
     # in REPO_RULES below)
     IamWildcardAction(),
     IamWildcardResource(),

@@ -213,6 +213,8 @@ RULE_BEST_PRACTICES: dict[str, tuple[str, ...]] = {
     "REPO-036": ("SEC05-BP01",),
     "REPO-037": ("SEC06-BP04",),
     "REPO-038": ("SEC06-BP02",),
+    "REPO-039": ("SEC07-BP01",),
+    "REPO-040": ("SEC07-BP02",),
     # CDK source rules: Performance Efficiency
     "PERF-001": ("PERF02-BP01",),
     "PERF-002": ("PERF03-BP05",),
@@ -539,7 +541,7 @@ NOT_CHECKED: frozenset[str] = frozenset({
     "SEC01-BP03", "SEC01-BP05", "SEC01-BP07", "SEC01-BP08",
     "SEC03-BP01", "SEC03-BP04", "SEC03-BP06", "SEC03-BP08",
     "SEC06-BP03", "SEC06-BP05",
-    "SEC07-BP01", "SEC07-BP02", "SEC07-BP04",
+    "SEC07-BP04",
     "SEC08-BP03",
     "SEC10-BP01", "SEC10-BP02", "SEC10-BP04", "SEC10-BP05", "SEC10-BP07", "SEC10-BP08",
     "SEC11-BP01", "SEC11-BP03", "SEC11-BP04", "SEC11-BP06", "SEC11-BP08",
