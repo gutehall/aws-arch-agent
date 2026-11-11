@@ -15,7 +15,7 @@ Which CDK rules have a template check, and which AWS Foundational Security Best 
 
 ## CDK rules
 
-229 rules: 132 covered, 7 partial, 10 account, 5 cdk-only, 25 advice, 50 repo.
+230 rules: 132 covered, 7 partial, 10 account, 5 cdk-only, 25 advice, 51 repo.
 
 | Rule | Title | Template check | Status | Note |
 | -- | -- | -- | -- | -- |
@@ -248,6 +248,7 @@ Which CDK rules have a template check, and which AWS Foundational Security Best 
 | REPO-048 | Requests are not traced end to end |  | `repo` | When the IaC runs compute, looks for Lambda active tracing, an X-Ray or ADOT collector, Application Signals or a tracing SDK in the code, and for X-Ray tracing on API Gateway REST API stages. |
 | REPO-049 | A fleet has a fixed size |  | `repo` | Names each ECS service with no Application Auto Scaling target on its task count, Auto Scaling group whose minimum equals its maximum or with no scaling policy in the repo, and provisioned DynamoDB table with no auto scaling. |
 | REPO-050 | Scaling reacts only to CPU or memory |  | `repo` | When the repo has scaling policies, fires if every one tracks CPU or memory and none scales on queue depth, request count, latency, errors, another custom metric or a forecast. |
+| REPO-051 | Backups are never restored to test them |  | `repo` | When the IaC backs data up (AWS Backup plan, DynamoDB point-in-time recovery, RDS or Aurora), looks for an AWS Backup restore testing plan, a schedule that calls a restore API, or a restore command in a build. |
 
 ## FSBP controls
 

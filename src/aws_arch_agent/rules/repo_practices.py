@@ -377,6 +377,17 @@ policy pattern. Load testing (REL07-BP04) is REPO-017, which answers REL 12:
   queue depth or a QueueProcessing service, latency, errors, any other custom metric, or
   predictive scaling. DynamoDB utilization policies and schedules are not judged; a step
   policy whose alarm is not found is not counted as CPU.
+
+Backup recovery (REL 9):
+
+- REPO-051 restore test: when the IaC backs data up (an AWS Backup plan, DynamoDB
+  point-in-time recovery, or an RDS or Aurora database, which keeps automated backups by
+  default), something must restore it on a schedule: an AWS Backup restore testing plan
+  (AWS::Backup::RestoreTestingPlan, aws_backup_restore_testing_plan,
+  backup.CfnRestoreTestingPlan), a scheduled rule or schedule in a file that calls a restore
+  API (StartRestoreJob, RestoreDBInstanceFromDBSnapshot, RestoreDBClusterToPointInTime,
+  RestoreTableToPointInTime and the like), or a build that runs aws backup
+  start-restore-job, aws rds restore-db-*, or aws dynamodb restore-table-*.
 """
 from __future__ import annotations
 
@@ -4963,6 +4974,89 @@ class CpuOnlyScaling(_RepoRule):
         )]
 
 
+# REL 9: backups are restored on a schedule (REPO-051).
+
+_BACKUP_SOURCES = _kinds(
+    ("AWS Backup plan", _cf_type(r"Backup::BackupPlan") + r"|resource\s+\"aws_backup_plan\""
+     r"|\bbackup\.(?:Cfn)?BackupPlan\(|\bBackupPlan\.(?:daily|weekly|monthly)\w*\("),
+    ("DynamoDB point-in-time recovery",
+     r"[\"']?PointInTimeRecoveryEnabled[\"']?\s*:\s*[\"']?true\b"
+     r"|\bpoint_in_time_recovery\s*\{[^}]*\benabled\s*=\s*true\b"
+     r"|\bpointInTimeRecovery(?:Specification)?\s*:\s*(?:true|\{)"
+     r"|\bpoint_in_time_recovery\s*=\s*True\b"),
+    ("RDS or Aurora backups", _cf_type(r"RDS::DB(?:Instance|Cluster)")
+     + r"|resource\s+\"aws_(?:db_instance|rds_cluster)\""
+     r"|\brds\.(?:Cfn)?(?:DBInstance|DBCluster|DatabaseInstance|DatabaseCluster)\("
+     r"|\b(?:DatabaseInstance|DatabaseCluster|ServerlessCluster)\("),
+)
+_RESTORE_TESTING = re.compile(
+    _cf_type(r"Backup::RestoreTestingPlan") + r"|resource\s+\"aws_backup_restore_testing_plan\""
+    r"|\bbackup\.CfnRestoreTestingPlan\("
+)
+_RESTORE_CALL = re.compile(
+    r"\b(?:StartRestoreJob|start_restore_job|startRestoreJob"
+    r"|RestoreDBInstanceFromDBSnapshot|restore_db_instance_from_db_snapshot"
+    r"|RestoreDBInstanceToPointInTime|restore_db_instance_to_point_in_time"
+    r"|RestoreDBClusterToPointInTime|restore_db_cluster_to_point_in_time"
+    r"|RestoreDBClusterFromSnapshot|restore_db_cluster_from_snapshot"
+    r"|RestoreTableToPointInTime|restore_table_to_point_in_time"
+    r"|RestoreTableFromBackup|restore_table_from_backup)\b"
+)
+_SCHEDULE = re.compile(
+    r"[\"']?ScheduleExpression[\"']?\s*:|\bschedule_expression\s*=|\bSchedule\.(?:cron|rate|expression)\("
+    + "|" + _cf_type(r"Scheduler::Schedule") + r"|resource\s+\"aws_scheduler_schedule\""
+)
+_RESTORE_COMMAND = re.compile(
+    r"\baws\s+backup\s+start-restore-job\b|\baws\s+rds\s+restore-db-[\w-]+"
+    r"|\baws\s+dynamodb\s+restore-table-[\w-]+"
+)
+
+
+def restore_tests(repo_path: Path) -> dict[str, str]:
+    """Scheduled restores the IaC, code or builds declare: kind -> first place."""
+    found: dict[str, str] = {}
+    texts = list(iac_texts(repo_path))
+    for rel, text in texts:
+        if _RESTORE_TESTING.search(text):
+            found.setdefault("AWS Backup restore testing plan", rel)
+    calls = any(_RESTORE_CALL.search(text) for _rel, text in texts)
+    if calls:
+        calls_in_code = any(
+            _RESTORE_CALL.search(text) for _rel, _name, text in _function_code(repo_path)
+        )
+        for rel, text in texts:
+            if _SCHEDULE.search(text) and (_RESTORE_CALL.search(text) or calls_in_code):
+                found.setdefault("scheduled restore", rel)
+                break
+    for rel, text in build_texts(repo_path):
+        if _RESTORE_COMMAND.search(text):
+            found.setdefault("restore in a build", rel)
+    return found
+
+
+class RestoreTestMissing(_RepoRule):
+    id = "REPO-051"
+    title = "Backups are never restored to test them"
+    category = "Reliability"
+    severity = "Low"
+    themes = ("resilience",)
+    recommendation = (
+        "Prove the backups work: add an AWS Backup restore testing plan that restores recovery "
+        "points on a schedule and validates them, or schedule a job that restores the latest "
+        "snapshot or point in time into a scratch resource, checks it, and deletes it."
+    )
+
+    def run(self, repo_path: Path, language: str = "typescript") -> List[Finding]:
+        sources = _in_iac(repo_path, _BACKUP_SOURCES)
+        if not sources or restore_tests(repo_path):
+            return []
+        return [self._finding(
+            f"Backs up data with {_named(sources)}; searched the IaC for an AWS Backup restore "
+            "testing plan, a schedule that calls a restore API, and the builds for a restore "
+            "command; found none",
+        )]
+
+
 REPO_RULES: List[Rule] = [
     RepoTestsMissing(), RepoPipelineMissing(), SingleEnvironment(),
     OrgGuardrailsMissing(), AccountBaselineMissing(), RootUserUnchecked(),
@@ -4985,4 +5079,5 @@ REPO_RULES: List[Rule] = [
     AlarmMetricUndefined(), LogErrorAnalysisMissing(), AlarmResponseMissing(),
     EndToEndTracingMissing(),
     FixedSizeFleet(), CpuOnlyScaling(),
+    RestoreTestMissing(),
 ]

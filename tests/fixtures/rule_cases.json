@@ -1071,5 +1071,11 @@
     "negative_py": "svc = ecs.FargateService(self, 'Svc', **props)",
     "positive_ts": "const svc = new ecs.FargateService(this, 'Svc', props);\nsvc.autoScaleTaskCount({ maxCapacity: 4 }).scaleOnCpuUtilization('Cpu', { targetUtilizationPercent: 60 });",
     "positive_py": "svc = ecs.FargateService(self, 'Svc', **props)\nscaling = svc.auto_scale_task_count(max_capacity=4)\nscaling.scale_on_cpu_utilization('Cpu', target_utilization_percent=60)\nscaling.scale_on_memory_utilization('Memory', target_utilization_percent=70)"
+  },
+  "REPO-051": {
+    "negative_ts": "new backup.BackupPlan(this, 'Plan', {});\nnew backup.CfnRestoreTestingPlan(this, 'RestoreTest', { restoreTestingPlanName: 'weekly', scheduleExpression: 'cron(0 3 ? * SUN *)', recoveryPointSelection });",
+    "negative_py": "backup.BackupPlan(self, 'Plan')\nbackup.CfnRestoreTestingPlan(self, 'RestoreTest', restore_testing_plan_name='weekly', schedule_expression='cron(0 3 ? * SUN *)', recovery_point_selection=selection)",
+    "positive_ts": "new backup.BackupPlan(this, 'Plan', {});",
+    "positive_py": "backup.BackupPlan(self, 'Plan')"
   }
 }

@@ -1939,6 +1939,12 @@ TOPICS: dict[str, tuple[str, str, str, str]] = {
         "Well-Architected REL07-BP02: Obtain resources upon detection of impairment to a workload",
         "/wellarchitected/latest/reliability-pillar/rel_adapt_to_changes_reactive_adapt_auto.html",
     ),
+    "restore_testing": (
+        "AWS Backup: restore testing",
+        "/aws-backup/latest/devguide/restore-testing.html",
+        "Well-Architected REL09-BP04: Perform periodic recovery of the data to verify backup integrity and processes",
+        "/wellarchitected/latest/reliability-pillar/rel_backing_up_data_periodic_recovery_testing_data.html",
+    ),
     "org_guardrails": (
         "Service control policies (SCPs)",
         "/organizations/latest/userguide/orgs_manage_policies_scps.html",
@@ -2187,6 +2193,7 @@ RULE_TOPICS: dict[str, str] = {
     "REPO-048": "end_to_end_tracing",
     "REPO-049": "demand_scaling",
     "REPO-050": "impairment_scaling",
+    "REPO-051": "restore_testing",
     "PERF-001": "graviton_ec2",
     "PERF-002": "caching",
     "PERF-003": "ddb_capacity",

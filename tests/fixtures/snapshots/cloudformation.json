@@ -264,5 +264,12 @@
     "file": "stack.yaml",
     "line": null,
     "evidence": "Runs Lambda (stack.yaml); searched the IaC for an Auto Scaling or Application Auto Scaling policy, an alarm action that runs automation or a Lambda function, and an EventBridge rule on alarm state changes; found none"
+  },
+  {
+    "id": "REPO-051",
+    "severity": "Low",
+    "file": null,
+    "line": null,
+    "evidence": "Backs up data with RDS or Aurora backups (stack.yaml); searched the IaC for an AWS Backup restore testing plan, a schedule that calls a restore API, and the builds for a restore command; found none"
   }
 ]
