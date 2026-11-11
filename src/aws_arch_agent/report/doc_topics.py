@@ -1848,6 +1848,18 @@ TOPICS: dict[str, tuple[str, str, str, str]] = {
         "Well-Architected SEC05-BP01: Create network layers",
         "/wellarchitected/latest/security-pillar/sec_network_protection_create_layers.html",
     ),
+    "code_signing": (
+        "Lambda: configuring code signing",
+        "/lambda/latest/dg/configuration-codesigning.html",
+        "Well-Architected SEC06-BP04: Validate software integrity",
+        "/wellarchitected/latest/security-pillar/sec_protect_compute_validate_software_integrity.html",
+    ),
+    "pinned_images": (
+        "ECR: preventing image tags from being overwritten",
+        "/AmazonECR/latest/userguide/image-tag-mutability.html",
+        "Well-Architected SEC06-BP02: Provision compute from hardened images",
+        "/wellarchitected/latest/security-pillar/sec_protect_compute_hardened_images.html",
+    ),
     "org_guardrails": (
         "Service control policies (SCPs)",
         "/organizations/latest/userguide/orgs_manage_policies_scps.html",
@@ -2082,6 +2094,8 @@ RULE_TOPICS: dict[str, str] = {
     "REPO-034": "egress_inspection",
     "REPO-035": "automated_network_protection",
     "REPO-036": "public_subnet_workloads",
+    "REPO-037": "code_signing",
+    "REPO-038": "pinned_images",
     "PERF-001": "graviton_ec2",
     "PERF-002": "caching",
     "PERF-003": "ddb_capacity",

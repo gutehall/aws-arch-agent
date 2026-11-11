@@ -259,6 +259,20 @@ Network protection (SEC 5):
   gateway, route, network ACL, endpoint or firewall that names a subnet whose
   map_public_ip_on_launch (MapPublicIpOnLaunch) is true. A subnet id from a variable,
   parameter or lookup is not resolved.
+
+Compute integrity (SEC 6):
+
+- REPO-037 signed code: when the IaC deploys Lambda functions, a code signing config
+  (AWS::Lambda::CodeSigningConfig, aws_lambda_code_signing_config, CDK CodeSigningConfig or
+  codeSigningConfig, CodeSigningConfigArn); when it deploys container images (ECS task
+  definitions, Lambda container images, EKS), an AWS Signer profile for Notation, or a build
+  that runs notation sign or cosign sign. Each kind with no signing is named.
+- REPO-038 pinned images: a container image referenced by a mutable tag. CloudFormation Image
+  and ImageUri values, Terraform image and image_uri strings, and CDK
+  ContainerImage.fromRegistry with no tag or :latest, fromEcrRepository and
+  DockerImageCode.fromEcr with no tag or digest. A digest (@sha256:) or a version tag is
+  pinned; CDK fromAsset is pinned by its content hash. Images built from a variable or
+  parameter are not judged.
 """
 from __future__ import annotations
 
@@ -3548,6 +3562,143 @@ class PublicSubnetWorkload(_RepoRule):
         )]
 
 
+# SEC 6: signed code (REPO-037) and pinned images (REPO-038).
+
+_CODE_SIGNING = re.compile(
+    _cf_type(r"Lambda::CodeSigningConfig")
+    + r"|resource\s+\"aws_lambda_code_signing_config\"|[\"']?CodeSigningConfigArn[\"']?\s*:"
+    r"|\bcode_signing_config_arn\s*=|\bcodeSigningConfig\s*:|\bcode_signing_config\s*="
+    r"|\blambda\.(?:Cfn)?CodeSigningConfig\("
+)
+_ZIP_LAMBDA = re.compile(
+    _cf_type(r"Lambda::Function|Serverless::Function")
+    + r"|resource\s+\"aws_lambda_function\"|\b_?lambda_?\.(?:Cfn)?Function\("
+    r"|\b(?:Nodejs|Python|Go)Function\("
+)
+_CONTAINERS = re.compile(
+    _cf_type(r"ECS::TaskDefinition|EKS::Cluster")
+    + r"|resource\s+\"aws_(?:ecs_task_definition|eks_cluster)\""
+    r"|\bContainerImage\.from\w+\(|\bDockerImage(?:Function|Code)\b|\beks\.Cluster\("
+    r"|[\"']?PackageType[\"']?\s*:\s*[\"']?Image\b|\bpackage_type\s*=\s*\"Image\""
+)
+_IMAGE_SIGNING = re.compile(
+    r"[\"']?PlatformId[\"']?\s*:\s*[\"']?Notation-OCI|\bplatform_id\s*=\s*\"Notation-OCI"
+    r"|\bplatformId\s*:\s*['\"]Notation-OCI|\bPlatform\.NOTATION_OCI|\bnotation\s+sign\b"
+    r"|\bcosign\s+sign\b"
+)
+
+
+def signing_gaps(repo_path: Path) -> dict[str, str]:
+    """Kinds of deployed code with no signing anywhere in the IaC or builds: kind -> file."""
+    lambdas: dict[str, str] = {}
+    containers: dict[str, str] = {}
+    signed_code = signed_images = False
+    for rel, text in iac_texts(repo_path):
+        signed_code = signed_code or bool(_CODE_SIGNING.search(text))
+        signed_images = signed_images or bool(_IMAGE_SIGNING.search(text))
+        if _ZIP_LAMBDA.search(text):
+            lambdas.setdefault("Lambda functions", rel)
+        if _CONTAINERS.search(text):
+            containers.setdefault("container images", rel)
+    if not signed_images:
+        signed_images = any(_IMAGE_SIGNING.search(text) for _rel, text in build_texts(repo_path))
+    gaps: dict[str, str] = {}
+    if lambdas and not signed_code:
+        gaps.update(lambdas)
+    if containers and not signed_images:
+        gaps.update(containers)
+    return gaps
+
+
+class CodeSigningMissing(_RepoRule):
+    id = "REPO-037"
+    title = "Deployed code and images are not signed"
+    category = "Security"
+    severity = "Low"
+    themes = ("security-baseline",)
+    recommendation = (
+        "Check that what runs is what you built: attach a Lambda code signing config with an "
+        "AWS Signer profile (and enforce it), and sign container images with AWS Signer and "
+        "Notation (or cosign) in the build, verifying the signature before deploy."
+    )
+
+    def run(self, repo_path: Path, language: str = "typescript") -> List[Finding]:
+        gaps = signing_gaps(repo_path)
+        if not gaps:
+            return []
+        return [self._finding(
+            f"Deploys {_named(gaps)}; searched the IaC for a Lambda code signing config and "
+            "an AWS Signer Notation profile, and the builds for notation sign or cosign "
+            "sign; found none for these",
+        )]
+
+
+_IMAGE_VALUE = re.compile(
+    r"[\"']?(?:Image|ImageUri|image|image_uri)[\"']?\s*[:=]\s*[\"']([^\"'\s$]+)[\"']"
+    # CloudFormation YAML, unquoted.
+    r"|^[ \t-]*(?:Image|ImageUri)[ \t]*:[ \t]+([^\s\"'#{!$&*|>]+)[ \t]*$",
+    re.MULTILINE,
+)
+_CDK_REGISTRY = re.compile(r"\bContainerImage\.from_?[rR]egistry\(\s*['\"]([^'\"]+)['\"]")
+_CDK_ECR_LATEST = re.compile(
+    r"\b(?:ContainerImage\.from_?[eE]cr_?[rR]epository|DockerImageCode\.from_?[eE]cr)"
+    r"\(\s*[\w.]+\s*\)"
+)
+_REGISTRY_IMAGE = re.compile(r"^[\w.-]+(?::\d+)?(?:/[\w.-]+)*(?::[\w.-]+)?$")
+
+
+def _mutable(image: str) -> bool:
+    """An image reference with no tag, or the latest tag, and no digest."""
+    if "@sha256:" in image or not _REGISTRY_IMAGE.match(image):
+        return False
+    last = image.rsplit("/", 1)[-1]
+    if "/" not in image and "." in last.split(":")[0]:
+        return False  # a bare host or file name, not an image
+    return ":" not in last or last.endswith(":latest")
+
+
+def mutable_images(repo_path: Path) -> List[tuple[str, int, str]]:
+    """(file, line, image) for each container image the IaC references by a mutable tag."""
+    out: List[tuple[str, int, str]] = []
+    for rel, text in iac_texts(repo_path):
+        if not _CONTAINERS.search(text) and not _CDK_REGISTRY.search(text):
+            continue
+        for match in _IMAGE_VALUE.finditer(text):
+            image = match.group(1) or match.group(2)
+            if _mutable(image):
+                out.append((rel, _line_of(text, match.start()), image))
+        for match in _CDK_REGISTRY.finditer(text):
+            if _mutable(match.group(1)):
+                out.append((rel, _line_of(text, match.start()), match.group(1)))
+        for match in _CDK_ECR_LATEST.finditer(text):
+            out.append((rel, _line_of(text, match.start()), "ECR repository, latest tag"))
+    return out
+
+
+class MutableImageTag(_RepoRule):
+    id = "REPO-038"
+    title = "A container image is referenced by a mutable tag"
+    category = "Security"
+    severity = "Medium"
+    themes = ("security-baseline",)
+    recommendation = (
+        "Pin every image to what you scanned and approved: reference it by digest "
+        "(image@sha256:...) or by an immutable version tag in an ECR repository with tag "
+        "immutability on. Never deploy :latest or an untagged image."
+    )
+
+    def run(self, repo_path: Path, language: str = "typescript") -> List[Finding]:
+        found = mutable_images(repo_path)
+        if not found:
+            return []
+        places = [f"{image} in {rel} (line {line})" for rel, line, image in found]
+        return [self._finding(
+            f"References {_listed(places)} by a mutable tag",
+            file=found[0][0],
+            line=found[0][1],
+        )]
+
+
 REPO_RULES: List[Rule] = [
     RepoTestsMissing(), RepoPipelineMissing(), SingleEnvironment(),
     OrgGuardrailsMissing(), AccountBaselineMissing(), RootUserUnchecked(),
@@ -3563,4 +3714,5 @@ REPO_RULES: List[Rule] = [
     PermissionBoundaryMissing(), BreakGlassRoleMissing(),
     SecurityFindingsUncorrelated(),
     EgressInspectionMissing(), AutomatedNetworkProtectionMissing(), PublicSubnetWorkload(),
+    CodeSigningMissing(), MutableImageTag(),
 ]

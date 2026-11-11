@@ -211,6 +211,8 @@ RULE_BEST_PRACTICES: dict[str, tuple[str, ...]] = {
     "REPO-034": ("SEC05-BP03",),
     "REPO-035": ("SEC05-BP04",),
     "REPO-036": ("SEC05-BP01",),
+    "REPO-037": ("SEC06-BP04",),
+    "REPO-038": ("SEC06-BP02",),
     # CDK source rules: Performance Efficiency
     "PERF-001": ("PERF02-BP01",),
     "PERF-002": ("PERF03-BP05",),

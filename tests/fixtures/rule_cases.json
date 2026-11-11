@@ -987,5 +987,17 @@
     "negative_py": "lambda_.Function(self, 'Fn', runtime=runtime, handler='h', code=code, vpc=vpc, vpc_subnets=ec2.SubnetSelection(subnet_type=ec2.SubnetType.PRIVATE_WITH_EGRESS))",
     "positive_ts": "new lambda.Function(this, 'Fn', { runtime, handler, code, vpc, vpcSubnets: { subnetType: ec2.SubnetType.PUBLIC } });",
     "positive_py": "lambda_.Function(self, 'Fn', runtime=runtime, handler='h', code=code, vpc=vpc, vpc_subnets=ec2.SubnetSelection(subnet_type=ec2.SubnetType.PUBLIC))"
+  },
+  "REPO-037": {
+    "negative_ts": "new lambda.Function(this, 'Fn', { runtime, handler: 'index.handler', code, codeSigningConfig: signing });",
+    "negative_py": "lambda_.Function(self, 'Fn', runtime=runtime, handler='index.handler', code=code, code_signing_config=signing)",
+    "positive_ts": "new lambda.Function(this, 'Fn', { runtime, handler: 'index.handler', code });",
+    "positive_py": "lambda_.Function(self, 'Fn', runtime=runtime, handler='index.handler', code=code)"
+  },
+  "REPO-038": {
+    "negative_ts": "taskDef.addContainer('App', { image: ecs.ContainerImage.fromRegistry('nginx:1.27.2') });",
+    "negative_py": "task.add_container('App', image=ecs.ContainerImage.from_registry('nginx:1.27.2'))",
+    "positive_ts": "taskDef.addContainer('App', { image: ecs.ContainerImage.fromRegistry('nginx:latest') });",
+    "positive_py": "task.add_container('App', image=ecs.ContainerImage.from_registry('nginx'))"
   }
 }

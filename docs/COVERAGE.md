@@ -15,7 +15,7 @@ Which CDK rules have a template check, and which AWS Foundational Security Best 
 
 ## CDK rules
 
-215 rules: 132 covered, 7 partial, 10 account, 5 cdk-only, 25 advice, 36 repo.
+217 rules: 132 covered, 7 partial, 10 account, 5 cdk-only, 25 advice, 38 repo.
 
 | Rule | Title | Template check | Status | Note |
 | -- | -- | -- | -- | -- |
@@ -234,6 +234,8 @@ Which CDK rules have a template check, and which AWS Foundational Security Best 
 | REPO-034 | Traffic leaves the VPC with no inspection |  | `repo` | When the IaC declares a NAT gateway, an internet gateway, or a CDK VPC with its default NAT, looks for Network Firewall, a DNS Firewall association, or a Gateway Load Balancer endpoint. |
 | REPO-035 | Network protection does not update itself |  | `repo` | When the IaC has an edge or an egress path, looks for a WAF AWS managed rule group, Shield Advanced, a Firewall Manager policy, or AWS managed Network Firewall or DNS Firewall lists. |
 | REPO-036 | A workload sits in a public subnet |  | `repo` | Looks for CDK constructs placed with SubnetType.PUBLIC, and Terraform or CloudFormation resources that name a subnet that maps public IPs, other than load balancers, NAT and endpoints. |
+| REPO-037 | Deployed code and images are not signed |  | `repo` | When the IaC deploys Lambda functions, looks for a code signing config; when it deploys container images, for an AWS Signer Notation profile or notation or cosign signing in a build. |
+| REPO-038 | A container image is referenced by a mutable tag |  | `repo` | Looks for container images in task definitions, Lambda image functions and CDK container images referenced with no tag or :latest, and no digest. |
 
 ## FSBP controls
 

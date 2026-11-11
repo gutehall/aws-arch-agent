@@ -215,5 +215,12 @@
     "file": null,
     "line": null,
     "evidence": "Runs Lambda (main.tf); searched the IaC for an X-Ray group or sampling rule, CloudWatch Application Signals service level objectives or discovery, and an alarm on an Application Signals or X-Ray metric; found none"
+  },
+  {
+    "id": "REPO-037",
+    "severity": "Low",
+    "file": null,
+    "line": null,
+    "evidence": "Deploys Lambda functions (main.tf); searched the IaC for a Lambda code signing config and an AWS Signer Notation profile, and the builds for notation sign or cosign sign; found none for these"
   }
 ]
