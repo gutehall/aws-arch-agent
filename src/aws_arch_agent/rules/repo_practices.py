@@ -515,6 +515,30 @@ path reads as dev or staging are skipped by all five.
   1.1, an API Gateway domain SecurityPolicy TLS_1_0, or an internet-facing load balancer
   listener on HTTP that forwards instead of redirecting. Only explicit values are read: the
   CloudFront default is HTTP/2, and an unset SslPolicy is the template check's job.
+
+Cost and usage monitoring (COST 3). Cost allocation tags (COST03-BP02) and billing and cost
+management tools (COST03-BP05) are mapped CDK and template checks; these read the rest.
+Workload means compute, a data store or an edge; files whose path reads as dev or staging
+do not count as one.
+
+- REPO-069 detailed cost source (an account-level rule, off unless rules.org or
+  rules.include, like COST-014): workload resources and no Cost and Usage Report or data
+  export (AWS::CUR::ReportDefinition, aws_cur_report_definition, AWS::BCMDataExports::Export,
+  aws_bcmdataexports_export, CDK cur.CfnReportDefinition or bcmdataexports.CfnExport).
+- REPO-070 cost attribution: workload resources, no tag keyed CostCenter (or cost-center,
+  cost_center, CostCentre), BusinessUnit, Project, Product or CostCategory, matched on the
+  key without regard to case (CloudFormation Key, Terraform tags or default_tags, CDK
+  Tags.of(x).add), and no cost category (AWS::CE::CostCategory, aws_ce_cost_category, CDK
+  ce.CfnCostCategory). Owner, Environment and Name keys do not count.
+- REPO-071 organization metric: production compute and no metric named like a unit cost
+  (CostPerRequest, cost_per_tenant, UnitCost) in a metric-name position: MetricName,
+  metric_name or metricName, a metric math label or id, a Terraform log metric filter
+  metric_transformation name, a Powertools add_metric or put_metric name, or an embedded
+  metric format Name. Comments and README text do not count.
+- REPO-072 allocation by workload metrics: production compute and no metric math (an
+  Expression on a CloudFormation or Terraform alarm or dashboard, or a CDK MathExpression in
+  the same file) that reads a cost metric (EstimatedCharges or a unit-cost name) and at
+  least one other metric. When REPO-071 fires, REPO-072 usually fires too.
 """
 from __future__ import annotations
 
@@ -3995,14 +4019,21 @@ _DATA_STORES = _kinds(
      r"|\bkinesis\.(?:Cfn)?Stream\("),
 )
 _CLASS_KEY = r"(?:data[-_ ]?classification|classification|confidentiality|sensitivity)"
-# A classification key used as a tag key: CloudFormation Key:, Terraform map key, CDK add().
-_CLASS_TAG = re.compile(
-    rf"[\"']?Key[\"']?\s*:\s*[\"']?{_CLASS_KEY}[\"']?\s*(?:,|$)"
-    rf"|^\s*[\"']?{_CLASS_KEY}[\"']?\s*=\s*\S"
-    rf"|\.add\(\s*['\"]{_CLASS_KEY}['\"]"
-    rf"|[{{,]\s*[\"']?{_CLASS_KEY}[\"']?\s*:\s*['\"]",
-    re.IGNORECASE | re.MULTILINE,
-)
+
+
+def _tag_key(key: str) -> re.Pattern[str]:
+    """A tag with one of the keys: CloudFormation Key:, Terraform map key, CDK add() or a
+    CDK tags map. The key is matched without regard to case."""
+    return re.compile(
+        rf"[\"']?Key[\"']?\s*:\s*[\"']?{key}[\"']?\s*(?:,|$)"
+        rf"|^\s*[\"']?{key}[\"']?\s*=\s*\S"
+        rf"|\.add\(\s*['\"]{key}['\"]"
+        rf"|[{{,]\s*[\"']?{key}[\"']?\s*:\s*['\"]",
+        re.IGNORECASE | re.MULTILINE,
+    )
+
+
+_CLASS_TAG = _tag_key(_CLASS_KEY)
 _APP_TAGS = re.compile(
     rf"\bTags\.of\(\s*(?:app|this|scope|self)\s*\)\.add\(\s*['\"]{_CLASS_KEY}['\"]",
     re.IGNORECASE,
@@ -6632,6 +6663,209 @@ class OldNetworkProtocol(_RepoRule):
         )]
 
 
+# COST 3: a detailed cost and usage source (REPO-069), cost attribution tags (REPO-070), a
+# unit-cost metric (REPO-071), and costs allocated through workload metrics (REPO-072).
+
+_COST_REPORTS = _kinds(
+    ("cost and usage report", _cf_type(r"CUR::ReportDefinition|BCMDataExports::Export")
+     + r"|resource\s+\"aws_(?:cur_report_definition|bcmdataexports_export)\""
+     r"|\bCfnReportDefinition\(|bcmdataexports\.CfnExport\("),
+)
+_WORKLOAD = _COMPUTE + _DATA_STORES + _EDGES
+_COST_KEY = (
+    r"(?:cost[-_ ]?cent(?:er|re)|business[-_ ]?unit|project|product|cost[-_ ]?category)"
+)
+_COST_TAG = _tag_key(_COST_KEY)
+_COST_CATEGORY = _kinds(
+    ("cost category", _cf_type(r"CE::CostCategory") + r"|resource\s+\"aws_ce_cost_category\""
+     r"|\bce\.CfnCostCategory\("),
+)
+# A metric name that reads as a unit cost: CostPerRequest, cost_per_tenant, UnitCost.
+_UNIT_COST = r"(?i:[\w-]*(?:cost[_-]?per[_-]?\w+|unit[_-]?cost)[\w-]*)"
+_UNIT_COST_NAME = re.compile(_UNIT_COST)
+_UNIT_COST_METRIC = re.compile(
+    rf"[\"']?(?:MetricName|metric_?[nN]ame|[lL]abel|[iI]d)[\"']?\s*[:=]\s*[\"']?{_UNIT_COST}"
+    rf"[\"']?\s*(?:[,;)}}\]]|$)"
+    rf"|\bmetric_transformation\s*\{{[^{{}}]*?\bname\s*=\s*\"{_UNIT_COST}\""
+    rf"|\.(?:add_?[mM]etric|put_?[mM]etric)\(\s*(?:name\s*=\s*)?[\"']{_UNIT_COST}[\"']",
+    re.MULTILINE,
+)
+# Embedded metric format: the metric's Name inside a CloudWatchMetrics directive.
+_EMF_UNIT_COST = re.compile(rf"[\"']Name[\"']\s*:\s*[\"']{_UNIT_COST}[\"']")
+_COST_METRIC_NAMES = frozenset({"EstimatedCharges"})
+_METRIC_NAME_VALUE = re.compile(
+    r"[\"']?(?:MetricName|metric_?[nN]ame)\\?[\"']?\s*[:=]\s*\\?[\"']?([\w.-]+)"
+)
+# A dashboard metric array: ["AWS/Billing", "EstimatedCharges", ...].
+_NAMESPACE_PAIR = re.compile(
+    r"\\?[\"'][A-Za-z0-9]+/[\w/.-]+\\?[\"']\s*,\s*\\?[\"']([\w.-]+)\\?[\"']"
+)
+_CDK_METRIC_HELPER = re.compile(r"\.metric(?:[A-Z]|_[a-z])\w*\(")
+_MATH = re.compile(r"[eE]xpression\\?[\"']?\s*[:=]|\bMathExpression\(")
+_TF_MATH_BLOCK = re.compile(
+    r"resource\s+\"aws_cloudwatch_(?:metric_alarm|dashboard)\"\s+\"[^\"]+\"\s*\{"
+)
+_CF_MATH_TYPE = re.compile(_cf_type(r"CloudWatch::(?:Alarm|Dashboard)"))
+_CF_MATH_TYPES = frozenset({"AWS::CloudWatch::Alarm", "AWS::CloudWatch::Dashboard"})
+
+
+def _in_production_iac(
+    repo_path: Path, kinds: tuple[tuple[str, re.Pattern[str]], ...]
+) -> dict[str, str]:
+    """Each kind declared in IaC whose path does not read as dev or staging: kind -> file."""
+    found: dict[str, str] = {}
+    for rel, text in iac_texts(repo_path):
+        if _production(rel):
+            for name, pattern in kinds:
+                if pattern.search(text):
+                    found.setdefault(name, rel)
+    return found
+
+
+def _cost_name(name: str) -> bool:
+    return name in _COST_METRIC_NAMES or _UNIT_COST_NAME.fullmatch(name) is not None
+
+
+def unit_cost_metric(repo_path: Path) -> str | None:
+    """The first file that names a unit-cost metric in a metric-name position."""
+    for rel, text in iac_texts(repo_path):
+        if _UNIT_COST_METRIC.search(text) or (
+            "CloudWatchMetrics" in text and _EMF_UNIT_COST.search(text)
+        ):
+            return rel
+    return None
+
+
+def _ties_cost_to_workload(block: str) -> bool:
+    """A metric math block that reads a cost metric and a workload metric."""
+    if not _MATH.search(block):
+        return False
+    names = set(_METRIC_NAME_VALUE.findall(block)) | set(_NAMESPACE_PAIR.findall(block))
+    cost = {name for name in names if _cost_name(name)}
+    if not cost and not _UNIT_COST_METRIC.search(block):
+        return False
+    return bool(names - cost) or _CDK_METRIC_HELPER.search(block) is not None
+
+
+def _math_blocks(rel: str, text: str) -> Iterator[str]:
+    """CloudFormation alarms and dashboards, Terraform alarms and dashboards, and a CDK
+    file that builds a MathExpression (its metrics often come from variables)."""
+    if _CF_MATH_TYPE.search(text):
+        for body in _cf_resources(rel, text).values():
+            if body.get("Type") in _CF_MATH_TYPES:
+                yield json.dumps(body)
+    for match in _TF_MATH_BLOCK.finditer(text):
+        yield _braced(text, match.end() - 1)
+    if "MathExpression(" in text:
+        yield text
+
+
+def cost_allocation_math(repo_path: Path) -> str | None:
+    """The first file with metric math over a cost metric and a workload metric."""
+    for rel, text in iac_texts(repo_path):
+        if any(_ties_cost_to_workload(block) for block in _math_blocks(rel, text)):
+            return rel
+    return None
+
+
+class CostReportMissing(_RepoRule):
+    id = "REPO-069"
+    title = "No Cost and Usage Report or data export"
+    category = "Cost"
+    severity = "Low"
+    themes = ("finops",)
+    recommendation = (
+        "Turn on a detailed cost source in the management (payer) account: an AWS Data "
+        "Exports export of CUR 2.0 (or a legacy Cost and Usage Report) with hourly "
+        "granularity and resource IDs, delivered to S3 and queryable with Athena."
+    )
+
+    def run(self, repo_path: Path, language: str = "typescript") -> List[Finding]:
+        workload = _in_production_iac(repo_path, _WORKLOAD)
+        if not workload or _in_iac(repo_path, _COST_REPORTS):
+            return []
+        places = [f"{kind} in {rel}" for kind, rel in workload.items()]
+        return [self._finding(
+            f"Declares {_listed(places)}; searched the IaC for a Cost and Usage Report "
+            "(AWS::CUR::ReportDefinition, aws_cur_report_definition) or a data export "
+            "(AWS::BCMDataExports::Export, aws_bcmdataexports_export); found none",
+        )]
+
+
+class CostAttributionTagMissing(_RepoRule):
+    id = "REPO-070"
+    title = "No cost attribution tag or cost category"
+    category = "Cost"
+    severity = "Low"
+    themes = ("finops",)
+    recommendation = (
+        "Decide how cost is attributed and tag for it: put a CostCenter, BusinessUnit or "
+        "Project tag on every resource (CDK Tags.of(app), Terraform provider default_tags, "
+        "CloudFormation stack tags), activate it as a cost allocation tag, or group costs "
+        "with an AWS Cost Categories rule."
+    )
+
+    def run(self, repo_path: Path, language: str = "typescript") -> List[Finding]:
+        workload = _in_production_iac(repo_path, _WORKLOAD)
+        if not workload or _in_iac(repo_path, _COST_CATEGORY):
+            return []
+        if any(_COST_TAG.search(text) for _rel, text in iac_texts(repo_path)):
+            return []
+        places = [f"{kind} in {rel}" for kind, rel in workload.items()]
+        return [self._finding(
+            f"Declares {_listed(places)}; searched the IaC for a tag keyed CostCenter, "
+            "BusinessUnit, Project, Product or CostCategory and for a cost category "
+            "(AWS::CE::CostCategory, aws_ce_cost_category); found none",
+        )]
+
+
+class UnitCostMetricMissing(_RepoRule):
+    id = "REPO-071"
+    title = "No unit-cost metric for the workload"
+    category = "Cost"
+    severity = "Low"
+    themes = ("finops",)
+    recommendation = (
+        "Publish an organization metric that relates cost to the value the workload "
+        "delivers, such as CostPerRequest, CostPerTenant or CostPerOrder, as a CloudWatch "
+        "metric, metric filter or metric math label, and review it with the business."
+    )
+
+    def run(self, repo_path: Path, language: str = "typescript") -> List[Finding]:
+        compute = _in_production_iac(repo_path, _COMPUTE)
+        if not compute or unit_cost_metric(repo_path):
+            return []
+        places = [f"{kind} in {rel}" for kind, rel in compute.items()]
+        return [self._finding(
+            f"Runs {_listed(places, 4)}; searched the IaC and code for a metric name, metric "
+            "filter, metric math label or embedded metric named like CostPerRequest or "
+            "UnitCost; found none",
+        )]
+
+
+class CostNotAllocatedByWorkload(_RepoRule):
+    id = "REPO-072"
+    title = "Costs are not allocated by workload metrics"
+    category = "Cost"
+    severity = "Low"
+    themes = ("finops",)
+    recommendation = (
+        "Allocate cost by what the workload does: a CloudWatch metric math expression that "
+        "divides a cost metric (EstimatedCharges or a published unit cost) by a workload "
+        "metric such as RequestCount, Invocations or orders, on an alarm or dashboard."
+    )
+
+    def run(self, repo_path: Path, language: str = "typescript") -> List[Finding]:
+        compute = _in_production_iac(repo_path, _COMPUTE)
+        if not compute or cost_allocation_math(repo_path):
+            return []
+        places = [f"{kind} in {rel}" for kind, rel in compute.items()]
+        return [self._finding(
+            f"Runs {_listed(places, 4)}; searched the IaC for metric math that combines a "
+            "cost metric (EstimatedCharges or a unit cost) with a workload metric; found none",
+        )]
+
+
 REPO_RULES: List[Rule] = [
     RepoTestsMissing(), RepoPipelineMissing(), SingleEnvironment(),
     OrgGuardrailsMissing(), AccountBaselineMissing(), RootUserUnchecked(),
@@ -6663,4 +6897,6 @@ REPO_RULES: List[Rule] = [
     PurposeBuiltDataStoreMissing(),
     EdgeLatencyUnwatched(), NetworkMetricsUnused(), SingleHybridLink(), LoadBalancingMissing(),
     OldNetworkProtocol(),
+    CostReportMissing(), CostAttributionTagMissing(), UnitCostMetricMissing(),
+    CostNotAllocatedByWorkload(),
 ]

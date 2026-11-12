@@ -292,5 +292,26 @@
     "file": "stack.yaml",
     "line": null,
     "evidence": "Runs Lambda in stack.yaml; searched the IaC for an alarm on a CPU, memory, duration or concurrency metric, ECS Container Insights, the EKS CloudWatch observability add-on, and the CloudWatch agent; found none"
+  },
+  {
+    "id": "REPO-070",
+    "severity": "Low",
+    "file": null,
+    "line": null,
+    "evidence": "Declares Lambda in stack.yaml, S3 bucket in stack.yaml, RDS database in stack.yaml; searched the IaC for a tag keyed CostCenter, BusinessUnit, Project, Product or CostCategory and for a cost category (AWS::CE::CostCategory, aws_ce_cost_category); found none"
+  },
+  {
+    "id": "REPO-071",
+    "severity": "Low",
+    "file": null,
+    "line": null,
+    "evidence": "Runs Lambda in stack.yaml; searched the IaC and code for a metric name, metric filter, metric math label or embedded metric named like CostPerRequest or UnitCost; found none"
+  },
+  {
+    "id": "REPO-072",
+    "severity": "Low",
+    "file": null,
+    "line": null,
+    "evidence": "Runs Lambda in stack.yaml; searched the IaC for metric math that combines a cost metric (EstimatedCharges or a unit cost) with a workload metric; found none"
   }
 ]

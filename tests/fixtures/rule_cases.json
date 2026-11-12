@@ -1179,5 +1179,29 @@
     "negative_py": "cloudfront.Distribution(self, 'Cdn', default_behavior=b, minimum_protocol_version=cloudfront.SecurityPolicyProtocol.TLS_V1_2_2021)",
     "positive_ts": "new cloudfront.Distribution(this, 'Cdn', { defaultBehavior, httpVersion: cloudfront.HttpVersion.HTTP1_1 });",
     "positive_py": "cloudfront.Distribution(self, 'Cdn', default_behavior=b, minimum_protocol_version=cloudfront.SecurityPolicyProtocol.TLS_V1_2016)"
+  },
+  "REPO-069": {
+    "negative_ts": "new s3.Bucket(this, 'Data');\nnew cur.CfnReportDefinition(this, 'Cur', { reportName: 'cur', timeUnit: 'HOURLY' });",
+    "negative_py": "s3.Bucket(self, 'Data')\naws_bcmdataexports.CfnExport(self, 'Export', export=props)",
+    "positive_ts": "new s3.Bucket(this, 'Data');",
+    "positive_py": "s3.Bucket(self, 'Data')"
+  },
+  "REPO-070": {
+    "negative_ts": "new s3.Bucket(this, 'Data');\nTags.of(app).add('CostCenter', 'cc-1234');",
+    "negative_py": "s3.Bucket(self, 'Data')\nce.CfnCostCategory(self, 'Teams', name='teams', rule_version=v, rules=r)",
+    "positive_ts": "new s3.Bucket(this, 'Data');\nTags.of(app).add('Owner', 'team-a');",
+    "positive_py": "s3.Bucket(self, 'Data')"
+  },
+  "REPO-071": {
+    "negative_ts": "const fn = new lambda.Function(this, 'Fn', { runtime, handler, code });\nnew cloudwatch.Metric({ namespace: 'Shop', metricName: 'CostPerOrder' });",
+    "negative_py": "fn = _lambda.Function(self, 'Fn', runtime=r)\nmetrics.add_metric(name='CostPerTenant', unit=MetricUnit.Count, value=cost)",
+    "positive_ts": "const fn = new lambda.Function(this, 'Fn', { runtime, handler, code });\n// publish CostPerRequest later",
+    "positive_py": "fn = _lambda.Function(self, 'Fn', runtime=r)"
+  },
+  "REPO-072": {
+    "negative_ts": "const fn = new lambda.Function(this, 'Fn', { runtime, handler, code });\nnew cloudwatch.MathExpression({ expression: 'cost / calls', usingMetrics: { cost: new cloudwatch.Metric({ namespace: 'AWS/Billing', metricName: 'EstimatedCharges' }), calls: fn.metricInvocations() } });",
+    "negative_py": "fn = _lambda.Function(self, 'Fn', runtime=r)\ncloudwatch.MathExpression(expression='cost / calls', using_metrics={'cost': cloudwatch.Metric(namespace='AWS/Billing', metric_name='EstimatedCharges'), 'calls': fn.metric_invocations()})",
+    "positive_ts": "const fn = new lambda.Function(this, 'Fn', { runtime, handler, code });\nnew cloudwatch.Alarm(this, 'Bill', { metric: new cloudwatch.Metric({ namespace: 'AWS/Billing', metricName: 'EstimatedCharges' }), threshold: 100, evaluationPeriods: 1 });",
+    "positive_py": "fn = _lambda.Function(self, 'Fn', runtime=r)"
   }
 }

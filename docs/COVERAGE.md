@@ -15,7 +15,7 @@ Which CDK rules have a template check, and which AWS Foundational Security Best 
 
 ## CDK rules
 
-247 rules: 132 covered, 7 partial, 10 account, 5 cdk-only, 25 advice, 68 repo.
+251 rules: 132 covered, 7 partial, 10 account, 5 cdk-only, 25 advice, 72 repo.
 
 | Rule | Title | Template check | Status | Note |
 | -- | -- | -- | -- | -- |
@@ -266,6 +266,10 @@ Which CDK rules have a template check, and which AWS Foundational Security Best 
 | REPO-066 | Dedicated connectivity or VPN has no redundant link |  | `repo` | Fires on exactly one Direct Connect connection or virtual interface with no second one, LAG or VPN backup, and on exactly one VPN connection with one customer gateway and no Direct Connect; no hybrid link passes. |
 | REPO-067 | Traffic is not spread by a load balancer |  | `repo` | Fires on a production EC2 instance with a public IP or Elastic IP when the repo declares no load balancer, and on a target group with exactly one literal target and no Auto Scaling group or ECS service registered. |
 | REPO-068 | Edge uses an older network protocol |  | `repo` | Fires on explicit CloudFront http1.1, a CloudFront viewer minimum below TLSv1.2, a load balancer TLS policy that allows TLS 1.0 or 1.1, an API Gateway domain on TLS_1_0, or an internet-facing HTTP listener that forwards instead of redirecting; dev and staging paths are skipped. |
+| REPO-069 | No Cost and Usage Report or data export |  | `repo` | Fires when production IaC declares compute, a data store or an edge and the repo has no Cost and Usage Report or AWS Data Exports export. Org-level: off unless `rules.org`. |
+| REPO-070 | No cost attribution tag or cost category |  | `repo` | Fires when production IaC declares compute, a data store or an edge and no tag is keyed CostCenter, BusinessUnit, Project, Product or CostCategory (any case) and no Cost Categories rule exists; Owner, Environment and Name keys do not count. |
+| REPO-071 | No unit-cost metric for the workload |  | `repo` | When production IaC runs compute, looks for a metric named like CostPerRequest or UnitCost in a metric-name position (metric name, metric filter, metric math label or id, Powertools or embedded metric format); comments and README text do not count. |
+| REPO-072 | Costs are not allocated by workload metrics |  | `repo` | When production IaC runs compute, looks for metric math on an alarm or dashboard (or a CDK MathExpression) that reads EstimatedCharges or a unit-cost metric and at least one other metric. |
 
 ## FSBP controls
 
