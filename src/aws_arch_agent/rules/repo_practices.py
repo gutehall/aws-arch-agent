@@ -595,6 +595,17 @@ read the rest.
   review/ environment) and nothing tears them down: no destroy or delete step in CI, no
   GitLab on_stop job, no scheduled cleanup in the IaC, no aws-nuke config and no
   decommissioning note that describes the process.
+
+Resource type, size and number (COST 6). Right-sized types (COST06-BP02) and managed
+scaling (COST06-BP03) are mapped checks; these read the rest.
+
+- REPO-088 cost modeling: production workload resources and no cost estimate: no Infracost
+  config or CI step, no cost-estimate tool config, and no estimate note (named or headed
+  cost estimate, cost model, estimated cost or pricing) with an amount or a Pricing
+  Calculator link.
+- REPO-089 shared resources: production IaC creates its own VPC or ECS or EKS cluster and
+  looks up or imports nothing shared, has no AWS RAM share, and says nothing about single
+  tenancy (a Tenancy tag of single or dedicated, or a single-tenant comment).
 """
 from __future__ import annotations
 
@@ -7887,6 +7898,156 @@ class DecommissioningMissing(_RepoRule):
         )]
 
 
+# COST 6: resource type, size and number. Cost modeling (REPO-088) and shared resources
+# (REPO-089).
+
+_INFRACOST_CI = _kinds(("infracost", r"\binfracost\s+(?:breakdown|diff|comment)\b"))
+_INFRACOST_CONFIG = re.compile(r"infracost(?:-usage)?\.ya?ml")
+_COST_TOOL_CONFIG = re.compile(
+    r"cdk-cost[\w.-]*\.(?:json|ya?ml)|\.?cost[-_]estimate[\w.-]*\.(?:json|ya?ml)"
+)
+_ESTIMATE_NAME = re.compile(
+    r"(?:^|[-_. ])(?:cost[-_]?(?:estimates?|models?|modell?ing)|pricing|estimates?)(?:$|[-_. ])"
+)
+_ESTIMATE_HEADING = re.compile(
+    r"(?i).*\b(?:cost[- ](?:estimates?|models?|modell?ing)|estimated[- ]costs?|pricing)\b.*"
+)
+# An estimate states an amount or links the AWS Pricing Calculator.
+_CURRENCY_AMOUNT = re.compile(
+    r"[$€£]\s?\d[\d,]*(?:\.\d+)?"
+    r"|\b(?:USD|EUR|GBP)\s?\d[\d,]*(?:\.\d+)?"
+    r"|\b\d[\d,]*(?:\.\d+)?\s?(?:USD|EUR|GBP)\b"
+    r"|\bcalculator\.aws\b"
+)
+
+
+def cost_estimates(repo_path: Path) -> dict[str, str]:
+    """Each kind of cost estimate the repo holds: kind -> first place."""
+    _builds, found = _tools_in_builds(repo_path, _INFRACOST_CI)
+    for path in walk(repo_path):
+        parts = _rel_parts(path, repo_path)
+        name = path.name.lower()
+        rel = "/".join(parts)
+        if _INFRACOST_CONFIG.fullmatch(name) or ".infracost" in parts[:-1]:
+            found.setdefault("Infracost config", rel)
+        elif _COST_TOOL_CONFIG.fullmatch(name):
+            found.setdefault("cost-estimate config", rel)
+    for rel, text in note_texts(repo_path):
+        stem = rel.rsplit("/", 1)[-1].lower().rsplit(".", 1)[0]
+        if (_ESTIMATE_NAME.search(stem) and _CURRENCY_AMOUNT.search(text)) or any(
+            _CURRENCY_AMOUNT.search(s) for s in _sections(text, _ESTIMATE_HEADING)
+        ):
+            found.setdefault("cost estimate note", rel)
+            break
+    return found
+
+
+_OWN_SHAREABLE = _kinds(
+    ("VPC", _cf_type(r"EC2::VPC") + r"|resource\s+\"aws_vpc\""
+     r"|\bec2\.(?:Vpc|CfnVPC)\(|\bnew\s+(?:Vpc|CfnVPC)\("),
+    ("ECS cluster", _cf_type(r"ECS::Cluster") + r"|resource\s+\"aws_ecs_cluster\""
+     r"|\becs\.(?:Cfn)?Cluster\("),
+    ("EKS cluster", _cf_type(r"EKS::Cluster") + r"|resource\s+\"aws_eks_cluster\""
+     r"|\beks\.(?:Cfn)?Cluster\("),
+)
+_SHARED = _kinds(
+    ("looked-up or imported resource",
+     r"\bVpc\.(?:fromLookup|fromVpcAttributes|from_lookup|from_vpc_attributes)\("
+     r"|\bCluster\.(?:fromClusterAttributes|fromClusterArn|from_cluster_attributes"
+     r"|from_cluster_arn)\("
+     r"|\bBucket\.(?:fromBucket(?:Name|Arn|Attributes)|from_bucket_(?:name|arn|attributes))\("
+     r"|\bSubnet\.(?:fromSubnetId|from_subnet_id)\("
+     r"|\bdata\s+\"aws_(?:vpc|subnets?|ecs_cluster|eks_cluster|s3_bucket)\""
+     r"|\bterraform_remote_state\b"
+     r"|Fn::ImportValue|!ImportValue\b"
+     r"|AWS::SSM::Parameter::Value<\s*AWS::EC2::VPC::Id\s*>"),
+    ("AWS RAM share", _cf_type(r"RAM::ResourceShare")
+     + r"|resource\s+\"aws_ram_resource_(?:share|association)\""
+     r"|\bram\.CfnResourceShare\("),
+)
+_TENANCY_TAG = _tag_key(r"(?:tenancy|tenant[-_ ]?model)")
+_SINGLE_VALUE = re.compile(r"(?i)\b(?:single|dedicated)\b")
+_SINGLE_TENANT_COMMENT = re.compile(
+    r"(?i)(?://|#|/\*|^\s*\*)[^\n]*\b(?:single[- ]tenant|dedicated by design)\b",
+    re.MULTILINE,
+)
+
+
+def _single_tenant(text: str) -> bool:
+    """A Tenancy or tenant-model tag set to single or dedicated, or a comment that says the
+    workload is single-tenant on purpose."""
+    if _SINGLE_TENANT_COMMENT.search(text):
+        return True
+    for match in _TENANCY_TAG.finditer(text):
+        value = "\n".join(text[match.end():match.end() + 120].split("\n")[:2])
+        if _SINGLE_VALUE.search(value):
+            return True
+    return False
+
+
+def shared_resources(repo_path: Path) -> dict[str, str]:
+    """What the IaC shares or says about single tenancy: kind -> first file."""
+    found: dict[str, str] = {}
+    for rel, text in iac_texts(repo_path):
+        for name, pattern in _SHARED:
+            if pattern.search(text):
+                found.setdefault(name, rel)
+        if _single_tenant(text):
+            found.setdefault("single tenancy", rel)
+    return found
+
+
+class CostModelMissing(_RepoRule):
+    id = "REPO-088"
+    title = "No cost estimate for the workload"
+    category = "Cost"
+    severity = "Low"
+    themes = ("finops",)
+    recommendation = (
+        "Estimate what the workload costs before you choose types, sizes and counts: run "
+        "Infracost in CI (infracost breakdown or diff) or write a cost estimate in the repo "
+        "with the expected monthly amount or an AWS Pricing Calculator link, and update it "
+        "when the architecture changes."
+    )
+
+    def run(self, repo_path: Path, language: str = "typescript") -> List[Finding]:
+        places = _workload_places(repo_path)
+        if not places or cost_estimates(repo_path):
+            return []
+        return [self._finding(
+            f"Declares {_listed(places)}; searched CI for infracost breakdown, diff or "
+            "comment, the repo for an Infracost or cost-estimate config, and notes named or "
+            "headed cost estimate, cost model, estimated cost or pricing that give an amount "
+            "or a Pricing Calculator link; found none",
+        )]
+
+
+class SharedResourcesUnused(_RepoRule):
+    id = "REPO-089"
+    title = "Workload creates its own network or cluster instead of sharing"
+    category = "Cost"
+    severity = "Low"
+    themes = ("finops",)
+    recommendation = (
+        "Share what several workloads can use: look up a shared VPC or cluster "
+        "(Vpc.fromLookup, Terraform data sources or remote state, CloudFormation "
+        "ImportValue) or share it through AWS RAM. If the workload must be single-tenant, "
+        "say so with a Tenancy tag of single or dedicated."
+    )
+
+    def run(self, repo_path: Path, language: str = "typescript") -> List[Finding]:
+        own = _in_production_iac(repo_path, _OWN_SHAREABLE)
+        if not own or shared_resources(repo_path):
+            return []
+        created = [f"{kind} in {rel}" for kind, rel in own.items()]
+        return [self._finding(
+            f"Creates its own {_listed(created)}; searched the IaC for a looked-up or "
+            "imported VPC, subnet, cluster or bucket (fromLookup, from*Attributes, Terraform "
+            "data sources or remote state, ImportValue, an SSM VPC id parameter), an AWS RAM "
+            "share, and a Tenancy tag or single-tenant comment; found none",
+        )]
+
+
 REPO_RULES: List[Rule] = [
     RepoTestsMissing(), RepoPipelineMissing(), SingleEnvironment(),
     OrgGuardrailsMissing(), AccountBaselineMissing(), RootUserUnchecked(),
@@ -7926,4 +8087,5 @@ REPO_RULES: List[Rule] = [
     CostPolicyMissing(), CostControlMissing(), BudgetTargetMissing(),
     SharedAccountEnvironments(), BillingAccessOnUser(), ProjectLifecycleUntracked(),
     ResourceLifetimeUntracked(), DecommissioningMissing(),
+    CostModelMissing(), SharedResourcesUnused(),
 ]

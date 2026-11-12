@@ -15,7 +15,7 @@ Which CDK rules have a template check, and which AWS Foundational Security Best 
 
 ## CDK rules
 
-266 rules: 132 covered, 7 partial, 10 account, 5 cdk-only, 25 advice, 87 repo.
+268 rules: 132 covered, 7 partial, 10 account, 5 cdk-only, 25 advice, 89 repo.
 
 | Rule | Title | Template check | Status | Note |
 | -- | -- | -- | -- | -- |
@@ -285,6 +285,8 @@ Which CDK rules have a template check, and which AWS Foundational Security Best 
 | REPO-085 | Temporary stacks have no end date |  | `repo` | Fires on a temporary stack (path or stack id reads as sandbox, test, preview, ephemeral, feature, demo, poc or pr-<n>; long-lived dev and staging are not) with no end-date tag or no environment tag in its file or directory. |
 | REPO-086 | Resources are not tagged with who created and owns them |  | `repo` | Fires when production IaC declares compute, a data store or an edge and no IaC file tags with a created-by key (CreatedBy, ManagedBy, Creator, Source, Repository, Repo, IaC) or no IaC file tags with an owner key (Owner, CostOwner, Team). |
 | REPO-087 | Nothing tears down temporary environments |  | `repo` | Fires when the repo creates temporary environments (a temporary stack as REPO-085, a GitHub workflow that deploys on pull requests, a GitLab review/ environment) and has no destroy step or GitLab on_stop job in CI, no scheduled cleanup in IaC, no aws-nuke config and no decommissioning note. |
+| REPO-088 | No cost estimate for the workload |  | `repo` | Fires when production IaC declares compute, a data store or an edge and the repo has no Infracost config or CI step (infracost breakdown, diff or comment), no cost-estimate tool config, and no note named or headed cost estimate, cost model, estimated cost or pricing that gives an amount or an AWS Pricing Calculator link. |
+| REPO-089 | Workload creates its own network or cluster instead of sharing |  | `repo` | Fires when production IaC creates its own VPC or ECS or EKS cluster and the IaC looks up or imports no shared VPC, subnet, cluster or bucket, has no AWS RAM share, and has no Tenancy tag of single or dedicated or single-tenant comment. |
 
 ## FSBP controls
 

@@ -1293,5 +1293,17 @@
     "negative_py": "AppStack(app, 'PreviewStack')\nevents.Rule(self, 'Teardown', schedule=events.Schedule.cron(hour='3'))",
     "positive_ts": "new AppStack(app, 'SandboxStack');",
     "positive_py": "AppStack(app, 'PreviewStack')"
+  },
+  "REPO-088": {
+    "negative_ts": "new s3.Bucket(this, 'Data');\nnew pipelines.ShellStep('Cost', { commands: ['infracost breakdown --path .'] });",
+    "negative_py": "s3.Bucket(self, 'Data')\npipelines.ShellStep('Cost', commands=['infracost diff --path .'])",
+    "positive_ts": "new s3.Bucket(this, 'Data');",
+    "positive_py": "s3.Bucket(self, 'Data')"
+  },
+  "REPO-089": {
+    "negative_ts": "const vpc = ec2.Vpc.fromLookup(this, 'Shared', { vpcName: 'shared' });\nnew ecs.Cluster(this, 'Cluster', { vpc });",
+    "negative_py": "vpc = ec2.Vpc(self, 'Vpc')\nTags.of(self).add('Tenancy', 'dedicated')",
+    "positive_ts": "const vpc = new ec2.Vpc(this, 'Vpc');\nnew ecs.Cluster(this, 'Cluster', { vpc });",
+    "positive_py": "vpc = ec2.Vpc(self, 'Vpc')"
   }
 }

@@ -355,5 +355,19 @@
     "file": null,
     "line": null,
     "evidence": "Declares Lambda in main.tf, S3 bucket in main.tf, RDS database in main.tf; no created-by or owner tag in the IaC. A created-by tag is keyed CreatedBy, ManagedBy, Creator, Source, Repository, Repo or IaC, an owner tag Owner, CostOwner or Team"
+  },
+  {
+    "id": "REPO-088",
+    "severity": "Low",
+    "file": null,
+    "line": null,
+    "evidence": "Declares Lambda in main.tf, S3 bucket in main.tf, RDS database in main.tf; searched CI for infracost breakdown, diff or comment, the repo for an Infracost or cost-estimate config, and notes named or headed cost estimate, cost model, estimated cost or pricing that give an amount or a Pricing Calculator link; found none"
+  },
+  {
+    "id": "REPO-089",
+    "severity": "Low",
+    "file": null,
+    "line": null,
+    "evidence": "Creates its own VPC in network.tf; searched the IaC for a looked-up or imported VPC, subnet, cluster or bucket (fromLookup, from*Attributes, Terraform data sources or remote state, ImportValue, an SSM VPC id parameter), an AWS RAM share, and a Tenancy tag or single-tenant comment; found none"
   }
 ]

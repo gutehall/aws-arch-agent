@@ -2119,6 +2119,18 @@ TOPICS: dict[str, tuple[str, str, str, str]] = {
         "Well-Architected COST04-BP02: Implement a decommissioning process",
         "/wellarchitected/latest/cost-optimization-pillar/cost_decomissioning_resources_implement_process.html",
     ),
+    "cost_modeling": (
+        "What is AWS Pricing Calculator?",
+        "/pricing-calculator/latest/userguide/what-is-pricing-calculator.html",
+        "Well-Architected COST06-BP01: Perform cost modeling",
+        "/wellarchitected/latest/cost-optimization-pillar/cost_type_size_number_resources_cost_modeling.html",
+    ),
+    "shared_resources": (
+        "Share your VPC subnets with other accounts",
+        "/vpc/latest/userguide/vpc-sharing.html",
+        "Well-Architected COST06-BP04: Consider using shared resources",
+        "/wellarchitected/latest/cost-optimization-pillar/cost_type_size_number_resources_shared.html",
+    ),
     "budget_owner": (
         "Best practices for AWS Budgets",
         "/cost-management/latest/userguide/budgets-best-practices.html",
@@ -2446,6 +2458,8 @@ RULE_TOPICS: dict[str, str] = {
     "REPO-085": "project_lifecycle",
     "REPO-086": "resource_lifetime",
     "REPO-087": "decommission_process",
+    "REPO-088": "cost_modeling",
+    "REPO-089": "shared_resources",
     "PERF-001": "graviton_ec2",
     "PERF-002": "caching",
     "PERF-003": "ddb_capacity",
