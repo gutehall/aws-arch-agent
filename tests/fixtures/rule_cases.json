@@ -1329,5 +1329,17 @@
     "negative_py": "organizations.CfnAccount(self, 'Prod', account_name='prod', email='a@example.com')\nbudgets.CfnBudget(self, 'Ri', budget=budgets.CfnBudget.BudgetDataProperty(budget_type='RI_COVERAGE', time_unit='MONTHLY'))",
     "positive_ts": "new organizations.CfnAccount(this, 'Prod', { accountName: 'prod', email: 'a@example.com' });",
     "positive_py": "organizations.CfnAccount(self, 'Prod', account_name='prod', email='a@example.com')"
+  },
+  "REPO-094": {
+    "negative_ts": "new rds.DatabaseInstance(this, 'Db', { engine, multiAz: false });",
+    "negative_py": "rds.DatabaseInstance(self, 'Db', engine=e, multi_az=True)  # data transfer: 1 TB per month",
+    "positive_ts": "new rds.DatabaseInstance(this, 'Db', { engine, multiAz: true });",
+    "positive_py": "rds.DatabaseInstance(self, 'Db', engine=e, multi_az=True)"
+  },
+  "REPO-095": {
+    "negative_ts": "const vpc = new ec2.Vpc(this, 'V', { natGateways: 0 });\nnew s3.Bucket(this, 'Data');\nnew lambda.Function(this, 'Fn', { runtime, handler, code, vpc });",
+    "negative_py": "vpc = ec2.Vpc(self, 'V')\ns3.Bucket(self, 'Data')\n_lambda.Function(self, 'Fn', runtime=r, handler='h', code=c, vpc=vpc)\nvpc.add_gateway_endpoint('S3', service=ec2.GatewayVpcEndpointAwsService.S3)",
+    "positive_ts": "const vpc = new ec2.Vpc(this, 'V', { natGateways: 1 });\nnew s3.Bucket(this, 'Data');\nnew lambda.Function(this, 'Fn', { runtime, handler, code, vpc });",
+    "positive_py": "vpc = ec2.Vpc(self, 'V')\ns3.Bucket(self, 'Data')\n_lambda.Function(self, 'Fn', runtime=r, handler='h', code=c, vpc=vpc)"
   }
 }

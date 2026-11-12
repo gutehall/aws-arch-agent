@@ -2156,6 +2156,18 @@ TOPICS: dict[str, tuple[str, str, str, str]] = {
         "account level",
         "/wellarchitected/latest/cost-optimization-pillar/cost_pricing_model_master_analysis.html",
     ),
+    "data_transfer_model": (
+        "Replicating objects within and across Regions",
+        "/AmazonS3/latest/userguide/replication.html",
+        "Well-Architected COST08-BP01: Perform data transfer modeling",
+        "/wellarchitected/latest/cost-optimization-pillar/cost_data_transfer_modeling.html",
+    ),
+    "data_transfer_components": (
+        "Gateway endpoints",
+        "/vpc/latest/privatelink/gateway-endpoints.html",
+        "Well-Architected COST08-BP02: Select components to optimize data transfer cost",
+        "/wellarchitected/latest/cost-optimization-pillar/cost_data_transfer_optimized_components.html",
+    ),
     "budget_owner": (
         "Best practices for AWS Budgets",
         "/cost-management/latest/userguide/budgets-best-practices.html",
@@ -2489,6 +2501,8 @@ RULE_TOPICS: dict[str, str] = {
     "REPO-091": "region_cost",
     "REPO-092": "third_party_terms",
     "REPO-093": "management_pricing",
+    "REPO-094": "data_transfer_model",
+    "REPO-095": "data_transfer_components",
     "PERF-001": "graviton_ec2",
     "PERF-002": "caching",
     "PERF-003": "ddb_capacity",

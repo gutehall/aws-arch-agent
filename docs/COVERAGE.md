@@ -15,7 +15,7 @@ Which CDK rules have a template check, and which AWS Foundational Security Best 
 
 ## CDK rules
 
-272 rules: 132 covered, 7 partial, 10 account, 5 cdk-only, 25 advice, 93 repo.
+274 rules: 132 covered, 7 partial, 10 account, 5 cdk-only, 25 advice, 95 repo.
 
 | Rule | Title | Template check | Status | Note |
 | -- | -- | -- | -- | -- |
@@ -291,6 +291,8 @@ Which CDK rules have a template check, and which AWS Foundational Security Best 
 | REPO-091 | Higher-priced Region with no recorded reason |  | `repo` | Fires when production IaC hardcodes a Region priced above us-east-1, us-west-2 and eu-west-1 (CDK env region, Terraform provider region or variable default, CloudFormation StackSet Regions) with no cost, price, latency, residency, sovereignty or compliance comment on or above the line and no Region note that names it with such a reason. |
 | REPO-092 | Marketplace product with no recorded agreement term |  | `repo` | Fires when the IaC uses an AWS Marketplace AMI, product code or Service Catalog Marketplace product and no MarketplaceTerm, ContractTerm, ContractEnd, LicenseTerm or SubscriptionTerm tag and no marketplace, third-party, vendor or licence note gives a term, renewal or date. |
 | REPO-093 | Organization tracks no shared Savings Plans or Reserved Instances |  | `repo` | Fires only on an organization stack (Organizations accounts, OUs or a service control policy) with no Savings Plans or RI utilization or coverage budget, no RI or Savings Plans sharing setting, and no note named or headed savings plan, reserved instance or commitment. |
+| REPO-094 | Data transfer between Availability Zones or Regions is not modeled |  | `repo` | Fires when production IaC creates resources that move data across Availability Zones or Regions (Multi-AZ database or cache, replicated ElastiCache group, zone-aware OpenSearch domain, MSK cluster, Aurora readers, Auto Scaling group, ECS service or EKS node group over several subnets, S3 or DynamoDB replication, AWS Backup copy action, snapshot copy, EFS replication) and there is no DataTransfer, TransferCost or CrossAZTraffic tag, no data-transfer, cross-AZ or egress comment on or above the resource, and no note named or headed for data transfer that gives a size, unit or service. |
+| REPO-095 | Data movers pay for transfer they could avoid |  | `repo` | Fires when a Lambda function, ECS service or EC2 instance in a VPC reaches S3 or DynamoDB through a NAT gateway (explicit, or the CDK default VPC) with no gateway endpoint for it and no single-AZ VPC, or when production IaC copies data to another Region with no recorded reason and no VPC endpoint. |
 
 ## FSBP controls
 

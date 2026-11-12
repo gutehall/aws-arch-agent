@@ -622,6 +622,20 @@ mapped checks; these read the rest.
 - REPO-093 management-account pricing: an organization stack with no Savings Plans or RI
   utilization or coverage budget, no RI or Savings Plans sharing setting, and no
   commitment note.
+
+Data transfer (COST 8). Gateway endpoints and NAT cost (COST08-BP03) are mapped checks;
+these read the rest.
+
+- REPO-094 data transfer modeling: production IaC creates resources that move data across
+  Availability Zones or Regions (a Multi-AZ database, a replicated cache, a zone-aware
+  search domain, MSK, a fleet over several subnets, S3 or DynamoDB replication, an AWS
+  Backup copy action, a snapshot copy, EFS replication) and nothing records the transfer
+  (a DataTransfer, TransferCost or CrossAZTraffic tag, a data-transfer note with a size or
+  a service name, or a data-transfer comment next to the resource).
+- REPO-095 data transfer cost: a Lambda function, ECS service or EC2 instance in a VPC
+  with a NAT gateway, S3 or DynamoDB in the stack and no gateway endpoint for them, in a
+  stack that spans Availability Zones; or a cross-Region copy with no recorded reason and
+  no VPC endpoint.
 """
 from __future__ import annotations
 
@@ -8454,6 +8468,376 @@ class ManagementPricingMissing(_RepoRule):
         )]
 
 
+# COST 8: data transfer. Data transfer modeling (REPO-094) and components chosen for
+# transfer cost (REPO-095).
+
+_TRANSFER_TAG = _tag_key(r"(?:data[-_ ]?transfer|transfer[-_ ]?costs?|cross[-_ ]?az[-_ ]?traffic)")
+_TRANSFER_NAME = re.compile(
+    r"data[-_ ]?transfer|egress|cross[-_ ]?az|network[-_ ]?costs?|transfer[-_ ]?costs?"
+)
+_TRANSFER_HEADING = re.compile(
+    r"(?i)\b(?:data[- ]transfer|egress|cross[- ]az|network costs?|transfer costs?)\b"
+)
+_TRANSFER_DETAIL = re.compile(
+    r"(?i)\b\d+(?:\.\d+)?\s*(?:[KMGTP]B)\b|per month|/\s*month|\$\s*\d"
+    r"|\b(?:S3|RDS|Aurora|DynamoDB|ElastiCache|OpenSearch|MSK|Kafka|EFS|EBS|NAT|CloudFront"
+    r"|Lambda|ECS|EKS|EC2|Backup)\b"
+)
+_TRANSFER_COMMENT = re.compile(
+    r"(?i)(?://|#|/\*|^\s*\*)[^\n]*\b(?:data[- ]transfer|cross[- ]?az|egress)\b"
+)
+_CROSS_AZ_PATTERNS = _kinds(
+    ("Multi-AZ database or cache",
+     r"(?i:[\"']?multi_?az(?:_?enabled)?[\"']?)\s*[:=]\s*[\"']?(?i:true)\b"),
+    ("replicated ElastiCache group",
+     r"(?i:replicas_?per_?(?:node_?group|shard)|num_?cache_?(?:clusters|nodes))[\"']?"
+     r"\s*[:=]\s*[\"']?(?:[2-9]|[1-9]\d)\b"
+     r"|(?i:replicas_?per_?(?:node_?group|shard))[\"']?\s*[:=]\s*[\"']?1\b"
+     r"|(?i:num_?node_?groups)[\"']?\s*[:=]\s*[\"']?(?:[2-9]|[1-9]\d)\b"),
+    ("zone-aware OpenSearch domain",
+     r"(?i:zone_?awareness_?enabled)[\"']?\s*[:=]\s*[\"']?(?i:true)\b"),
+    ("MSK cluster", _cf_type(r"MSK::(?:Cluster|ServerlessCluster)")
+     + r"|resource\s+\"aws_msk_(?:serverless_)?cluster\"|\bmsk\.(?:Cfn)?Cluster\("),
+    ("Aurora cluster with readers",
+     r"\breaders\s*[:=]\s*\[|\bcluster_?instances\s*[:=]\s*[2-9]\b"
+     r"|\bnew\s+rds\.DatabaseCluster\([^)]*\binstances\s*:\s*[2-9]\b"),
+)
+_CROSS_REGION_PATTERNS = _kinds(
+    *((name, pattern.pattern) for name, pattern in _DR_REPLICATION
+      if name != "Elastic Disaster Recovery"),
+    ("snapshot copy to another Region",
+     r"resource\s+\"aws_(?:ebs_snapshot_copy|db_snapshot_copy|ec2_snapshot_copy"
+     r"|db_instance_automated_backups_replication)\""),
+    ("EFS replication", r"resource\s+\"aws_efs_replication_configuration\""
+     r"|\befs\.CfnReplicationConfiguration\(|[\"']?ReplicationConfiguration[\"']?\s*:\s*"
+     r"(?:\{|efs\.)"),
+)
+_FLEET_RESOURCES = {
+    "AWS::AutoScaling::AutoScalingGroup": ("Auto Scaling group", ("VPCZoneIdentifier",)),
+    "AWS::ECS::Service": ("ECS service", ("NetworkConfiguration",)),
+    "AWS::EKS::Nodegroup": ("EKS node group", ("Subnets",)),
+}
+_TF_FLEET_XFER = re.compile(
+    r"resource\s+\"(aws_autoscaling_group|aws_ecs_service|aws_eks_node_group)\"\s+\"([^\"]+)\""
+)
+_TF_FLEET_KIND = {"aws_autoscaling_group": "Auto Scaling group",
+                  "aws_ecs_service": "ECS service", "aws_eks_node_group": "EKS node group"}
+_TF_SUBNET_LIST = re.compile(
+    r"\b(?:vpc_zone_identifier|subnet_ids|subnets)\s*=\s*\[([^\]]*)\]"
+)
+_CDK_FLEET_XFER = re.compile(
+    r"\b(?:autoscaling|ecs|eks)\.(AutoScalingGroup|FargateService|Ec2Service|Nodegroup)\s*\("
+)
+_CDK_FLEET_KIND = {"AutoScalingGroup": "Auto Scaling group", "FargateService": "ECS service",
+                   "Ec2Service": "ECS service", "Nodegroup": "EKS node group"}
+_ONE_AZ = re.compile(
+    r"\bmax_?[aA]zs\s*[:=]\s*1\b"
+    r"|\bavailability_?[zZ]ones\s*[:=]\s*\[\s*['\"][^'\",\]]+['\"]\s*\]"
+)
+
+
+_TRIPLE_QUOTED = re.compile(r'""".*?"""|\'\'\'.*?\'\'\'', re.DOTALL)
+
+
+def _blank_strings(rel: str, text: str) -> str:
+    """Python source without its triple-quoted strings (snippets and docs, not constructs),
+    line numbers kept."""
+    if not rel.endswith(".py"):
+        return text
+    return _TRIPLE_QUOTED.sub(lambda m: "\n" * m.group(0).count("\n"), text)
+
+
+def _hits(pattern: re.Pattern[str], rel: str, text: str) -> Iterator[re.Match[str]]:
+    """Matches of pattern; in Python source only a keyword argument or a constructor call,
+    not a quoted dict key, a template line or text in a message."""
+    for match in pattern.finditer(text):
+        if rel.endswith(".py"):
+            hit = match.group(0)
+            if hit.startswith(("resource", '"', "'")) or ("=" not in hit and "(" not in hit):
+                continue
+        yield match
+
+
+def _list_len(value: object) -> int:
+    return len(value) if isinstance(value, list) else 0
+
+
+def _cf_fleet_spans_subnets(kind_key: str, props: dict) -> bool:
+    if kind_key == "NetworkConfiguration":
+        net = props.get("NetworkConfiguration")
+        vpc = net.get("AwsvpcConfiguration") if isinstance(net, dict) else None
+        return isinstance(vpc, dict) and _list_len(vpc.get("Subnets")) > 1
+    return _list_len(props.get(kind_key)) > 1
+
+
+def _cross_az_sites(rel: str, text: str) -> List[tuple[str, int | None]]:
+    """(kind, line) of each resource in the file that moves data across Availability Zones."""
+    found: List[tuple[str, int | None]] = []
+    text = _blank_strings(rel, text)
+    for kind, pattern in _CROSS_AZ_PATTERNS:
+        for match in _hits(pattern, rel, text):
+            found.append((kind, _line_of(text, match.start())))
+    if len(re.findall(r"[\"']?DBClusterIdentifier[\"']?\s*:", text)) > 1 \
+            or len(re.findall(r"resource\s+\"aws_rds_cluster_instance\"", text)) > 1:
+        first = re.search(r"[\"']?DBClusterIdentifier[\"']?\s*:|aws_rds_cluster_instance", text)
+        found.append(("Aurora cluster with readers",
+                      _line_of(text, first.start()) if first else None))
+    if _CF_FLEET_TYPE.search(text):
+        for name, body in _cf_resources(rel, text).items():
+            kind, key = _FLEET_RESOURCES.get(str(body.get("Type")), ("", ("",)))
+            if kind and _cf_fleet_spans_subnets(key[0], _props(body)):
+                found.append((f"{kind} {name} over several subnets",
+                              _cf_logical_line(text, str(name))))
+    for match in _TF_FLEET_XFER.finditer(text):
+        brace = text.find("{", match.end())
+        block = _braced(text, brace) if brace >= 0 else ""
+        for lst in _TF_SUBNET_LIST.finditer(block):
+            if len([i for i in lst.group(1).split(",") if i.strip()]) > 1:
+                found.append((f"{_TF_FLEET_KIND[match.group(1)]} {match.group(2)} over "
+                              "several subnets", _line_of(text, match.start())))
+                break
+    if not _ONE_AZ.search(text):
+        for match in _CDK_FLEET_XFER.finditer(text):
+            found.append((f"{_CDK_FLEET_KIND[match.group(1)]} over the VPC's Availability "
+                          "Zones", _line_of(text, match.start())))
+    return found
+
+
+def _cross_region_sites(rel: str, text: str) -> List[tuple[str, int | None]]:
+    """(kind, line) of each copy of data to another Region the file declares."""
+    text = _blank_strings(rel, text)
+    return [(kind, _line_of(text, match.start()))
+            for kind, pattern in _CROSS_REGION_PATTERNS for match in _hits(pattern, rel, text)]
+
+
+_CF_FLEET_TYPE = re.compile(_cf_type(r"AutoScaling::AutoScalingGroup|ECS::Service|EKS::Nodegroup"))
+
+
+def _has_transfer_comment(text: str, line: int | None) -> bool:
+    """A data-transfer comment on the line or the one before it."""
+    if not line:
+        return False
+    lines = text.split("\n")
+    nearby = "\n".join(lines[max(line - 2, 0):line])
+    return _TRANSFER_COMMENT.search(nearby) is not None
+
+
+def transfer_recorded(repo_path: Path) -> str | None:
+    """Where the repo records data transfer: a tag in production IaC or a note named or
+    headed for data transfer that gives a size, unit or service. None when absent."""
+    for rel, text in iac_texts(repo_path):
+        if _production(rel) and _TRANSFER_TAG.search(text):
+            return rel
+    for rel, text in note_texts(repo_path):
+        stem = rel.rsplit("/", 1)[-1].lower().rsplit(".", 1)[0]
+        if (_TRANSFER_NAME.search(stem)
+                or any(_TRANSFER_HEADING.search(h.group(2)) for h in _HEADING.finditer(text))) \
+                and _TRANSFER_DETAIL.search(text):
+            return rel
+    return None
+
+
+def _uncommented(sites: List[tuple[str, int | None]], rel: str, text: str) -> List[str]:
+    return [f"{kind} in {rel}:{line}" if line else f"{kind} in {rel}"
+            for kind, line in sites if not _has_transfer_comment(text, line)]
+
+
+def unrecorded_cross_az(repo_path: Path) -> List[str]:
+    """Production resources that move data across Availability Zones or Regions, as
+    "kind in file:line", when nothing records the transfer; else empty."""
+    places: List[str] = []
+    for rel, text in iac_texts(repo_path):
+        if not _production(rel):
+            continue
+        sites = _cross_az_sites(rel, text) + _cross_region_sites(rel, text)
+        places.extend(_uncommented(sites, rel, text))
+    if not places or transfer_recorded(repo_path):
+        return []
+    return places
+
+
+class DataTransferUnmodelled(_RepoRule):
+    id = "REPO-094"
+    title = "Data transfer between Availability Zones or Regions is not modeled"
+    category = "Cost"
+    severity = "Low"
+    themes = ("finops",)
+    recommendation = (
+        "Model what the workload sends across Availability Zones and Regions before it costs "
+        "money: write the expected volume (GB per month) and the price per GB in a "
+        "data-transfer note, or tag the resources with DataTransfer, TransferCost or "
+        "CrossAZTraffic, or leave a data-transfer comment next to each resource."
+    )
+
+    def run(self, repo_path: Path, language: str = "typescript") -> List[Finding]:
+        places = unrecorded_cross_az(repo_path)
+        if not places:
+            return []
+        return [self._finding(
+            f"Moves data across Availability Zones or Regions: {_listed(places)}; searched "
+            "production IaC for a DataTransfer, TransferCost or CrossAZTraffic tag and a "
+            "data-transfer, cross-AZ or egress comment next to each resource, and notes named "
+            "or headed data transfer, egress, cross-AZ or network cost that give a size, "
+            "unit or service; found none",
+        )]
+
+
+_VPC_ENDPOINT = re.compile(
+    _cf_type(r"EC2::VPCEndpoint(?:Service)?") + r"|resource\s+\"aws_vpc_endpoint\""
+    r"|\bec2\.(?:Cfn)?(?:Gateway|Interface)?VpcEndpoint\(|\b(?:Gateway|Interface)VpcEndpoint\("
+    r"|\.add_?(?:[gG]ateway|[iI]nterface)_?[eE]ndpoint\("
+)
+_ENDPOINT_SERVICE = {
+    "S3": re.compile(
+        r"(?i)(?:ServiceName|service_name)[\"']?\s*[:=][^\n]*\.s3\b"
+        r"|GatewayVpcEndpointAwsService\.S3\b|InterfaceVpcEndpointAwsService\.S3\b"
+        r"|add_?(?:gateway|interface)_?endpoint\([^)]*\bS3\b"
+    ),
+    "DynamoDB": re.compile(
+        r"(?i)(?:ServiceName|service_name)[\"']?\s*[:=][^\n]*\.dynamodb\b"
+        r"|GatewayVpcEndpointAwsService\.DYNAMODB\b"
+        r"|add_?(?:gateway|interface)_?endpoint\([^)]*\bDYNAMODB\b"
+    ),
+}
+_ENDPOINT_UNREADABLE = re.compile(
+    r"(?:ServiceName|service_name)[\"']?\s*[:=]\s*(?:var\.|local\.|data\.|!Ref\b|!Sub\b"
+    r"|\{\s*[\"']?Ref\b|[A-Za-z_]\w*\.)"
+)
+_S3_USE = re.compile(
+    _cf_type(r"S3::Bucket") + r"|resource\s+\"aws_s3_bucket\"|\bs3\.(?:Cfn)?Bucket\("
+    r"|\bBucket\.from\w+\(|[\"']s3:"
+)
+_DDB_USE = re.compile(
+    _cf_type(r"DynamoDB::(?:Table|GlobalTable)") + r"|resource\s+\"aws_dynamodb_table\""
+    r"|\bdynamodb\.(?:Cfn)?(?:Table|TableV2|GlobalTable)\(|\bTable\.from\w+\(|[\"']dynamodb:"
+)
+_NAT = re.compile(
+    _cf_type(r"EC2::NatGateway") + r"|resource\s+\"aws_nat_gateway\""
+    r"|\bnat_?[gG]ateways\s*[:=]\s*[1-9]|NatProvider\.gateway|\bnat_gateway_provider\b"
+)
+_CDK_VPC_XFER = re.compile(r"\bec2\.Vpc\(")
+_NO_NAT_XFER = re.compile(r"\bnat_?[gG]ateways\s*[:=]\s*0\b")
+_CF_MOVERS = {
+    "AWS::Lambda::Function": ("Lambda function", "VpcConfig"),
+    "AWS::ECS::Service": ("ECS service", "NetworkConfiguration"),
+    "AWS::EC2::Instance": ("EC2 instance", "SubnetId"),
+}
+_CF_MOVER_TYPE = re.compile(_cf_type(r"Lambda::Function|ECS::Service|EC2::Instance"))
+_TF_MOVER = re.compile(
+    r"resource\s+\"(aws_lambda_function|aws_ecs_service|aws_instance)\"\s+\"([^\"]+)\""
+)
+_TF_MOVER_KIND = {
+    "aws_lambda_function": ("Lambda function", re.compile(r"\bvpc_config\s*\{")),
+    "aws_ecs_service": ("ECS service", re.compile(r"\bnetwork_configuration\s*\{")),
+    "aws_instance": ("EC2 instance", re.compile(r"\bsubnet_id\s*=")),
+}
+_CDK_MOVER = re.compile(
+    r"\b(?:_?lambda_?|lambda_nodejs|nodejs|ec2|ecs|ecs_patterns|ecsPatterns)\."
+    r"(Function|NodejsFunction|PythonFunction|DockerImageFunction|Instance|FargateService"
+    r"|Ec2Service|ApplicationLoadBalancedFargateService|QueueProcessingFargateService)\s*\("
+)
+_CDK_MOVER_KIND = {
+    "Instance": "EC2 instance", "FargateService": "ECS service", "Ec2Service": "ECS service",
+    "ApplicationLoadBalancedFargateService": "ECS service",
+    "QueueProcessingFargateService": "ECS service",
+}
+_CDK_FIRST_ID = re.compile(r"\s*(?:this|self)\s*,\s*['\"]([^'\"]+)['\"]")
+_CDK_VPC_PROP = re.compile(r"\bvpc(?:_?[sS]ubnets)?\b\s*(?:[:=,}]|$)", re.MULTILINE)
+
+
+def _vpc_movers(rel: str, text: str) -> List[tuple[str, str, int | None]]:
+    """(kind, name, line) of each Lambda function, ECS service or EC2 instance in a VPC."""
+    found: List[tuple[str, str, int | None]] = []
+    if _CF_MOVER_TYPE.search(text):
+        for name, body in _cf_resources(rel, text).items():
+            mover = _CF_MOVERS.get(str(body.get("Type")))
+            if mover and _props(body).get(mover[1]):
+                found.append((mover[0], str(name), _cf_logical_line(text, str(name))))
+    for match in _TF_MOVER.finditer(text):
+        brace = text.find("{", match.end())
+        kind, marker = _TF_MOVER_KIND[match.group(1)]
+        if brace >= 0 and marker.search(_braced(text, brace)):
+            found.append((kind, match.group(2), _line_of(text, match.start())))
+    for match in _CDK_MOVER.finditer(text):
+        cls = match.group(1)
+        args = _braced(text, match.end() - 1, "(", ")")
+        named = _CDK_FIRST_ID.match(args)
+        name = named.group(1) if named else cls
+        kind = _CDK_MOVER_KIND.get(cls, "Lambda function")
+        if cls in ("Function", "NodejsFunction", "PythonFunction", "DockerImageFunction",
+                   "Instance") and not _CDK_VPC_PROP.search(args):
+            continue
+        found.append((kind, name, _line_of(text, match.start())))
+    return found
+
+
+def unavoidable_transfer(repo_path: Path) -> List[str]:
+    """Findings for COST08-BP02, as text: VPC data movers behind a NAT gateway with no
+    gateway endpoint for the S3 or DynamoDB they use, and cross-Region copies with no
+    recorded reason and no VPC endpoint."""
+    movers: List[str] = []
+    copies: List[str] = []
+    uses: set[str] = set()
+    nat = endpoint = one_az = False
+    covered: set[str] = set()
+    for rel, text in iac_texts(repo_path):
+        if not _production(rel):
+            continue
+        text = _blank_strings(rel, text)
+        if _S3_USE.search(text):
+            uses.add("S3")
+        if _DDB_USE.search(text):
+            uses.add("DynamoDB")
+        nat = nat or _NAT.search(text) is not None
+        if _CDK_VPC_XFER.search(text) and not _NO_NAT_XFER.search(text):
+            nat = True
+        one_az = one_az or _ONE_AZ.search(text) is not None
+        if _VPC_ENDPOINT.search(text):
+            endpoint = True
+            if _ENDPOINT_UNREADABLE.search(text):
+                covered |= {"S3", "DynamoDB"}
+        for service, pattern in _ENDPOINT_SERVICE.items():
+            if pattern.search(text):
+                covered.add(service)
+        movers.extend(f"{kind} {name} in {rel}:{line}" if line else f"{kind} {name} in {rel}"
+                      for kind, name, line in _vpc_movers(rel, text))
+        copies.extend(_uncommented(_cross_region_sites(rel, text), rel, text))
+    parts: List[str] = []
+    missing = sorted(uses - covered)
+    if movers and nat and missing and not one_az:
+        parts.append(f"{_listed(movers)} in a VPC with a NAT gateway reach "
+                     f"{' and '.join(missing)} with no gateway endpoint for it")
+    if copies and not endpoint and not transfer_recorded(repo_path):
+        parts.append(f"copies data to another Region with no recorded reason: "
+                     f"{_listed(copies)}")
+    return parts
+
+
+class DataTransferNotOptimised(_RepoRule):
+    id = "REPO-095"
+    title = "Data movers pay for transfer they could avoid"
+    category = "Cost"
+    severity = "Low"
+    themes = ("finops",)
+    recommendation = (
+        "Keep data movers off paid paths: add a gateway VPC endpoint for S3 and DynamoDB so "
+        "VPC workloads skip the NAT gateway, or keep the movers in one Availability Zone. "
+        "For a copy to another Region, record the reason (a data-transfer note, tag or "
+        "comment) or reach the service through a VPC endpoint."
+    )
+
+    def run(self, repo_path: Path, language: str = "typescript") -> List[Finding]:
+        parts = unavoidable_transfer(repo_path)
+        if not parts:
+            return []
+        return [self._finding(
+            "; ".join(parts) + "; searched production IaC for an S3 or DynamoDB gateway "
+            "VPC endpoint (AWS::EC2::VPCEndpoint, aws_vpc_endpoint, addGatewayEndpoint), "
+            "any VPC endpoint, a single-AZ VPC, and the data-transfer tag, note or comment "
+            "of REPO-094; found none",
+        )]
+
+
 REPO_RULES: List[Rule] = [
     RepoTestsMissing(), RepoPipelineMissing(), SingleEnvironment(),
     OrgGuardrailsMissing(), AccountBaselineMissing(), RootUserUnchecked(),
@@ -8496,4 +8880,5 @@ REPO_RULES: List[Rule] = [
     CostModelMissing(), SharedResourcesUnused(),
     PricingModelUnanalysed(), RegionNotChosenByCost(), ThirdPartyTermsMissing(),
     ManagementPricingMissing(),
+    DataTransferUnmodelled(), DataTransferNotOptimised(),
 ]
