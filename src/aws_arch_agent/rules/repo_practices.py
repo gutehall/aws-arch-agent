@@ -539,6 +539,30 @@ do not count as one.
   Expression on a CloudFormation or Terraform alarm or dashboard, or a CDK MathExpression in
   the same file) that reads a cost metric (EstimatedCharges or a unit-cost name) and at
   least one other metric. When REPO-071 fires, REPO-072 usually fires too.
+
+Cloud financial management (COST 1). The cost optimization function (COST01-BP03, COST-014,
+account-level) and budgets (COST01-BP05, CF-BUDGET-001) are mapped checks; these read the
+rest. REPO-073 and REPO-074 read only budgets the repo declares (AWS::Budgets::Budget,
+aws_budgets_budget, CDK CfnBudget): a repo with none is COST-014's job.
+
+- REPO-073 ownership: a budget with no Owner, CostOwner or Team tag and no notification
+  subscriber (email address or SNS topic).
+- REPO-074 proactive monitoring: every budget notifies only at 100 percent or more of
+  ACTUAL spend (no FORECASTED notification, no threshold below 100) and there is no Cost
+  Anomaly Detection monitor or subscription. A threshold that is not a literal percentage
+  is taken as an early warning.
+- REPO-075 new releases: production IaC uses a previous-generation type SUST-007 does not
+  report (EC2 m1, m2, c1, t1, cc2, cg1, cr1, hi1, hs1, i2, d2, g2, g3, p2, x1, x1e; RDS
+  db.m1, db.m2; ElastiCache cache.m1, m2, t1, c1) or a deprecated Lambda runtime set
+  literally (nodejs12.x to 16.x, python3.6 to 3.8, java8, dotnetcore3.1, go1.x, ruby2.7),
+  and no dated note reads as a service or architecture review.
+- REPO-076 business value: production compute, no unit-cost metric (as REPO-071) and no
+  budget whose name or tags name a unit (per request, tenant, order, user, transaction).
+- REPO-077 finance and technology, REPO-078 organizational processes and REPO-079 culture:
+  production workload resources and no cost note that names an owner (COST.md, FINOPS.md,
+  docs/cost*.md, or a README or docs section headed Cost, FinOps or Cost ownership).
+  REPO-078 also passes on a pull or merge request template with a cost checklist item.
+  Notes are markdown or text files outside tests; reports this tool saved do not count.
 """
 from __future__ import annotations
 
@@ -6866,6 +6890,451 @@ class CostNotAllocatedByWorkload(_RepoRule):
         )]
 
 
+# COST 1: cloud financial management. Budget ownership (REPO-073), proactive cost monitoring
+# (REPO-074), keeping up with new releases (REPO-075), business value per unit (REPO-076),
+# and a cost-owner note for finance and technology (REPO-077), organizational processes
+# (REPO-078) and culture (REPO-079).
+
+_BUDGET_TYPE = "AWS::Budgets::Budget"
+_CF_BUDGET = re.compile(_cf_type(r"Budgets::Budget"))
+_TF_BUDGET = re.compile(r"resource\s+\"aws_budgets_budget\"\s+\"([^\"]+)\"\s*\{")
+_CDK_BUDGET = re.compile(r"\bCfnBudget\(\s*\w+\s*,\s*['\"]([^'\"]+)['\"]")
+_OWNER_KEY = r"(?:owner|cost[-_ ]?owner|team)"
+_OWNER_TAG = re.compile(
+    _tag_key(_OWNER_KEY).pattern + rf"|\bkey\s*=\s*['\"]{_OWNER_KEY}['\"]",
+    re.IGNORECASE | re.MULTILINE,
+)
+_CDK_OWNER_TAG = re.compile(
+    rf"\bTags\.of\([^()]*\)\.add\(\s*['\"]{_OWNER_KEY}['\"]", re.IGNORECASE
+)
+_SUBSCRIBER = re.compile(
+    r"\bsubscriber_(?:email_addresses|sns_topic_arns)\s*=\s*(?!\[\s*\])\S"
+    r"|\bsubscribers\s*[:=]\s*(?!\[\s*\])\S|\baddress\s*[:=]\s*\S"
+)
+_FORECASTED = re.compile(r"notification_?[tT]ype\s*[:=]\s*['\"]FORECASTED['\"]")
+_ABSOLUTE = re.compile(r"threshold_?[tT]ype\s*[:=]\s*['\"]ABSOLUTE_VALUE['\"]")
+_THRESHOLD_VALUE = re.compile(r"(?<![\w.])threshold\s*[:=]\s*([^\s,;)}\]]+)")
+_ANOMALY_DETECTION = _kinds(
+    ("Cost Anomaly Detection", _cf_type(r"CE::Anomaly(?:Monitor|Subscription)")
+     + r"|resource\s+\"aws_ce_anomaly_(?:monitor|subscription)\""
+     r"|\bCfnAnomaly(?:Monitor|Subscription)\("),
+)
+# A unit of business value: per request, tenant, order, user, customer or transaction.
+_VALUE_UNIT = re.compile(
+    r"(?:(?<![A-Za-z0-9])[Pp]er|(?<=[a-z])Per|PER)[-_ ]?"
+    r"(?i:requests?|tenants?|orders?|users?|customers?|transactions?)(?![a-z])"
+)
+
+
+class _Budget:
+    """A budget declared in IaC: where, whether it names an owner, whether it warns before
+    spend reaches the limit, and its text (name, tags) for a unit of value."""
+
+    def __init__(self, rel: str, name: str, line: int | None, owner: bool, early: bool,
+                 text: str) -> None:
+        self.rel, self.name, self.line = rel, name, line
+        self.owner, self.early, self.text = owner, early, text
+
+
+def _early_threshold(token: object, absolute: bool) -> bool:
+    """A threshold that warns before 100 percent; one that is not a literal percentage
+    (a parameter, or an absolute amount) is taken as an early warning."""
+    if absolute:
+        return True
+    try:
+        return float(str(token).strip("\"'")) < 100
+    except ValueError:
+        return True
+
+
+def _cf_budget(rel: str, text: str, name: str, body: dict) -> _Budget:
+    props = _props(body)
+    tags = props.get("ResourceTags")
+    owner = isinstance(tags, list) and any(
+        isinstance(t, dict) and re.fullmatch(_OWNER_KEY, str(t.get("Key", "")), re.I)
+        for t in tags
+    )
+    early = False
+    entries = props.get("NotificationsWithSubscribers")
+    for entry in entries if isinstance(entries, list) else []:
+        if not isinstance(entry, dict):
+            continue
+        if entry.get("Subscribers"):
+            owner = True
+        note = entry.get("Notification")
+        if not isinstance(note, dict):
+            continue
+        if note.get("NotificationType") == "FORECASTED" or _early_threshold(
+            note.get("Threshold", 100), note.get("ThresholdType") == "ABSOLUTE_VALUE"
+        ):
+            early = True
+    at = text.find(name)
+    data = props.get("Budget")
+    shown = data.get("BudgetName") if isinstance(data, dict) else None
+    return _Budget(rel, shown if isinstance(shown, str) else name,
+                   _line_of(text, at) if at >= 0 else None, owner, early, json.dumps(body))
+
+
+def _text_budget(rel: str, text: str, name: str, at: int, block: str) -> _Budget:
+    owner = bool(_OWNER_TAG.search(block) or _SUBSCRIBER.search(block)
+                 or _CDK_OWNER_TAG.search(text))
+    absolute = _ABSOLUTE.search(block) is not None
+    early = bool(_FORECASTED.search(block)) or any(
+        _early_threshold(token, absolute) for token in _THRESHOLD_VALUE.findall(block)
+    )
+    return _Budget(rel, name, _line_of(text, at), owner, early, block)
+
+
+def budgets(repo_path: Path) -> List[_Budget]:
+    """Every budget the IaC declares: CloudFormation AWS::Budgets::Budget, Terraform
+    aws_budgets_budget and CDK CfnBudget."""
+    found: List[_Budget] = []
+    for rel, text in iac_texts(repo_path):
+        if _CF_BUDGET.search(text):
+            for name, body in _cf_resources(rel, text).items():
+                if body.get("Type") == _BUDGET_TYPE:
+                    found.append(_cf_budget(rel, text, name, body))
+        for match in _TF_BUDGET.finditer(text):
+            block = _braced(text, match.end() - 1)
+            found.append(_text_budget(rel, text, match.group(1), match.start(), block))
+        for match in _CDK_BUDGET.finditer(text):
+            block = _braced(text, text.index("(", match.start()), "(", ")")
+            found.append(_text_budget(rel, text, match.group(1), match.start(), block))
+    return found
+
+
+# Previous-generation types SUST-007 does not report (it reads t2, m3, m4, c3, c4, r3 and r4
+# anywhere in a line), and Lambda runtimes past their deprecation date.
+_SUST_LEGACY = re.compile(r"t2\.|m3\.|m4\.|c3\.|c4\.|r3\.|r4\.")
+_SIZE = r"(?:nano|micro|small|medium|\d*x?large|metal)\b"
+_OLD_TYPE = re.compile(
+    rf"(?<![\w.-])(?:m1|m2|c1|t1|cc2|cg1|cr1|hi1|hs1|i2|d2|g2|g3s?|p2|x1e?)\.{_SIZE}"
+    rf"|\bdb\.(?:m1|m2|m3|m4|r3|r4|t2)\.{_SIZE}"
+    rf"|\bcache\.(?:m1|m2|m3|m4|r3|r4|t1|t2|c1)\.{_SIZE}"
+    r"|\bInstanceClass\.(?:M1|M2|C1|T1|I2|D2|G2|G3S?|P2|X1E?)\b"
+)
+_OLD_RUNTIME = re.compile(
+    r"\b[rR]untime[\"']?\s*[:=]\s*[\"']?"
+    r"((?:nodejs1[246]\.x|python3\.[678]|java8|dotnetcore3\.1|go1\.x|ruby2\.7))(?![\w.])"
+    r"|\bRuntime\.((?:NODEJS_1[246]_X|PYTHON_3_[678]|JAVA_8|DOTNET_CORE_3_1|GO_1_X"
+    r"|RUBY_2_7))\b"
+)
+
+
+def old_generation(repo_path: Path) -> List[tuple[str, str, int]]:
+    """(type or runtime, file, line) of each older instance type or deprecated runtime in
+    production IaC that SUST-007 does not already report."""
+    found: List[tuple[str, str, int]] = []
+    for rel, text in iac_texts(repo_path):
+        if not _production(rel):
+            continue
+        for match in _OLD_TYPE.finditer(text):
+            if not _SUST_LEGACY.search(match.group(0)):
+                found.append((match.group(0), rel, _line_of(text, match.start())))
+        for match in _OLD_RUNTIME.finditer(text):
+            found.append((match.group(1) or match.group(2), rel,
+                          _line_of(text, match.start())))
+    return found
+
+
+# Notes: markdown and text files outside build output, tests and this tool's reports.
+_NOTE_SUFFIXES = frozenset({".md", ".markdown", ".txt", ".rst", ".adoc"})
+_REPORT_TITLE = "# AWS Architecture Review Report"
+_HEADING = re.compile(r"^(#{1,6})[ \t]+(.+?)[ \t#]*$", re.MULTILINE)
+_COST_NAME = re.compile(r"(?:^|[-_. ])(?:costs?|finops|spend(?:ing)?|budgets?)(?:$|[-_. ])")
+_COST_HEADING = re.compile(
+    r"(?i)(?:costs?|finops|cost (?:ownership|owners?|management)|budgets?)"
+)
+_OWNER_NAMED = re.compile(
+    r"(?i)\b(?:owner|contact|responsible|accountable)s?\b[*_ \t]*"
+    r"(?::|\||=|[ \t]-[ \t]|\bis\b|\bare\b)[*_ \t|]*"
+    r"(?P<who>@[\w-]+|[\w.+-]+@[\w-]+\.\w[\w.]*|[A-Za-z][\w.-]*)"
+)
+_NOT_A_NAME = frozenset({
+    "tbd", "todo", "none", "unknown", "n", "nobody", "unassigned", "not", "missing", "x",
+    "xxx", "na", "pending",
+})
+_REVIEW_NAME = re.compile(
+    r"(?:service|architecture|arch|well[-_ ]?architected|tech(?:nology)?)[-_ ]?reviews?"
+)
+_REVIEW_HEADING = re.compile(
+    r"(?i)\b(?:service|architecture|well-architected|technology)\s+reviews?\b"
+)
+_DATE = re.compile(
+    r"\b20\d\d-[01]\d-[0-3]\d\b|\b(?:Jan(?:uary)?|Feb(?:ruary)?|Mar(?:ch)?|Apr(?:il)?|May"
+    r"|June?|July?|Aug(?:ust)?|Sep(?:t(?:ember)?)?|Oct(?:ober)?|Nov(?:ember)?|Dec(?:ember)?)"
+    r"\s+20\d\d\b"
+)
+_PR_TEMPLATE_DIRS = (
+    (".github", "pull_request_template"), (".gitlab", "merge_request_templates"),
+)
+_COST_CHECKBOX = re.compile(
+    r"(?im)^\s*(?:[-*+]|\d+\.)\s+\[[ xX]\][^\n]*\b(?:costs?|budgets?|spend|finops)\b"
+)
+
+
+def note_texts(repo_path: Path) -> Iterator[tuple[str, str]]:
+    """(repo-relative path, text) of each markdown or text note outside tests, skipping
+    reports this tool saved."""
+    for path in walk(repo_path):
+        parts = _rel_parts(path, repo_path)
+        if path.suffix.lower() not in _NOTE_SUFFIXES or _in_test_dir(parts):
+            continue
+        text = read_text_safe(path)
+        if text.lstrip().startswith(_REPORT_TITLE) or _saved_report(text):
+            continue
+        yield "/".join(parts), text
+
+
+def _sections(text: str, wanted: re.Pattern[str]) -> Iterator[str]:
+    """The body under each heading that matches wanted, up to the next heading of the same
+    or a higher level."""
+    heads = list(_HEADING.finditer(text))
+    for i, head in enumerate(heads):
+        if not wanted.fullmatch(head.group(2).strip()):
+            continue
+        end = len(text)
+        for nxt in heads[i + 1:]:
+            if len(nxt.group(1)) <= len(head.group(1)):
+                end = nxt.start()
+                break
+        yield text[head.end():end]
+
+
+def _names_owner(text: str) -> bool:
+    return any(
+        match.group("who").lower().rstrip(".") not in _NOT_A_NAME
+        for match in _OWNER_NAMED.finditer(text)
+    )
+
+
+def _cost_named(parts: tuple[str, ...]) -> bool:
+    stem = parts[-1].lower().rsplit(".", 1)[0]
+    return any(_COST_NAME.search(p) for p in (*(d.lower() for d in parts[:-1]), stem))
+
+
+def cost_owner_note(repo_path: Path) -> str | None:
+    """The first note that is about cost (COST.md, FINOPS.md, docs/cost*.md, or a README or
+    docs heading "Cost", "FinOps" or "Cost ownership") and names an owner."""
+    for rel, text in note_texts(repo_path):
+        parts = tuple(rel.split("/"))
+        if _cost_named(parts) and _names_owner(text):
+            return rel
+        docs = parts[-1].lower().startswith("readme") or any(
+            d.lower() in ("docs", "doc") for d in parts[:-1]
+        )
+        if docs and any(_names_owner(s) for s in _sections(text, _COST_HEADING)):
+            return rel
+    return None
+
+
+def service_review_note(repo_path: Path) -> str | None:
+    """The first dated note whose name or heading reads as a service or architecture
+    review."""
+    for rel, text in note_texts(repo_path):
+        stem = rel.rsplit("/", 1)[-1].lower().rsplit(".", 1)[0]
+        titled = _REVIEW_NAME.search(stem) or any(
+            _REVIEW_HEADING.search(h.group(2)) for h in _HEADING.finditer(text)
+        )
+        if titled and _DATE.search(text):
+            return rel
+    return None
+
+
+def cost_checklist(repo_path: Path) -> str | None:
+    """The first pull or merge request template with a cost checklist item."""
+    for rel, text in note_texts(repo_path):
+        lowered = rel.lower()
+        template = lowered.rsplit("/", 1)[-1].startswith("pull_request_template") or any(
+            lowered.startswith(f"{root}/{sub}") for root, sub in _PR_TEMPLATE_DIRS
+        )
+        if template and _COST_CHECKBOX.search(text):
+            return rel
+    return None
+
+
+_NOTE_SEARCH = (
+    "searched the repo for a cost note (COST.md, FINOPS.md, docs/cost*.md, or a README or "
+    "docs section headed Cost, FinOps or Cost ownership) that names an owner, contact, "
+    "responsible or accountable person or team; found none"
+)
+
+
+def _workload_places(repo_path: Path) -> List[str]:
+    return [f"{kind} in {rel}"
+            for kind, rel in _in_production_iac(repo_path, _WORKLOAD).items()]
+
+
+class BudgetOwnerMissing(_RepoRule):
+    id = "REPO-073"
+    title = "Budget has no named owner"
+    category = "Cost"
+    severity = "Low"
+    themes = ("finops",)
+    recommendation = (
+        "Give each budget an owner who acts on it: tag the budget with Owner, CostOwner or "
+        "Team (CloudFormation ResourceTags, Terraform tags, CDK resourceTags or Tags.of) and "
+        "subscribe that person or team to its notifications by email or SNS topic."
+    )
+
+    def run(self, repo_path: Path, language: str = "typescript") -> List[Finding]:
+        unowned = [b for b in budgets(repo_path) if not b.owner]
+        if not unowned:
+            return []
+        first = unowned[0]
+        places = [f"{b.name} in {b.rel}" for b in unowned]
+        return [self._finding(
+            f"Budget {_listed(places)} has no Owner, CostOwner or Team tag and no "
+            "notification subscriber, so no one is named to act on its spend",
+            file=first.rel, line=first.line,
+        )]
+
+
+class ReactiveCostMonitoring(_RepoRule):
+    id = "REPO-074"
+    title = "Cost is only watched after the budget is spent"
+    category = "Cost"
+    severity = "Low"
+    themes = ("finops",)
+    recommendation = (
+        "Watch cost before it is spent: add a FORECASTED budget notification or an ACTUAL "
+        "one below 100 percent (80 percent is common), and turn on Cost Anomaly Detection "
+        "with an anomaly monitor and subscription."
+    )
+
+    def run(self, repo_path: Path, language: str = "typescript") -> List[Finding]:
+        found = budgets(repo_path)
+        if not found or any(b.early for b in found):
+            return []
+        if _in_iac(repo_path, _ANOMALY_DETECTION):
+            return []
+        first = found[0]
+        places = [f"{b.name} in {b.rel}" for b in found]
+        return [self._finding(
+            f"Budget {_listed(places)} notifies only at 100 percent or more of actual spend "
+            "(no FORECASTED notification, no threshold below 100); searched the IaC for "
+            "Cost Anomaly Detection (AWS::CE::AnomalyMonitor, aws_ce_anomaly_monitor); "
+            "found none",
+            file=first.rel, line=first.line,
+        )]
+
+
+class OldGenerationResources(_RepoRule):
+    id = "REPO-075"
+    title = "Workload uses a previous-generation type or deprecated runtime"
+    category = "Cost"
+    severity = "Low"
+    themes = ("finops",)
+    recommendation = (
+        "Review new AWS releases on a schedule and move off previous-generation instance, "
+        "database and cache types and deprecated Lambda runtimes; record each review in a "
+        "dated service review note."
+    )
+
+    def run(self, repo_path: Path, language: str = "typescript") -> List[Finding]:
+        found = old_generation(repo_path)
+        if not found or service_review_note(repo_path):
+            return []
+        _kind, rel, line = found[0]
+        places = [f"{kind} in {where}:{at}" for kind, where, at in found]
+        return [self._finding(
+            f"Uses {_listed(places, 4)}; searched the repo for a dated service or "
+            "architecture review note; found none",
+            file=rel, line=line,
+        )]
+
+
+class BusinessValueUnquantified(_RepoRule):
+    id = "REPO-076"
+    title = "Spend is not tied to a unit of business value"
+    category = "Cost"
+    severity = "Low"
+    themes = ("finops",)
+    recommendation = (
+        "State what the spend buys: name a budget per unit of value (per request, tenant, "
+        "order or user) or publish a unit-cost metric such as CostPerOrder, and report it "
+        "with the business outcome it supports."
+    )
+
+    def run(self, repo_path: Path, language: str = "typescript") -> List[Finding]:
+        compute = _in_production_iac(repo_path, _COMPUTE)
+        if not compute or unit_cost_metric(repo_path):
+            return []
+        if any(_VALUE_UNIT.search(b.text) for b in budgets(repo_path)):
+            return []
+        places = [f"{kind} in {rel}" for kind, rel in compute.items()]
+        return [self._finding(
+            f"Runs {_listed(places, 4)}; searched the IaC for a budget named per request, "
+            "tenant, order, user or transaction and for a unit-cost metric; found none",
+        )]
+
+
+class FinanceTechPartnershipMissing(_RepoRule):
+    id = "REPO-077"
+    title = "No named cost owner links finance and engineering"
+    category = "Cost"
+    severity = "Low"
+    themes = ("finops",)
+    recommendation = (
+        "Write down who owns this workload's cost with finance: a COST.md or a Cost section "
+        "in the README that names the engineering owner and the finance contact, and how "
+        "often they review spend together."
+    )
+
+    def run(self, repo_path: Path, language: str = "typescript") -> List[Finding]:
+        places = _workload_places(repo_path)
+        if not places or cost_owner_note(repo_path):
+            return []
+        return [self._finding(
+            f"Declares {_listed(places)}; no finance or engineering contact is named: "
+            f"{_NOTE_SEARCH}",
+        )]
+
+
+class CostAwareProcessMissing(_RepoRule):
+    id = "REPO-078"
+    title = "Cost is not part of the change process"
+    category = "Cost"
+    severity = "Low"
+    themes = ("finops",)
+    recommendation = (
+        "Make cost a step in how changes are made: add a cost checklist item to the pull "
+        "request template (expected cost impact, budget checked) or a COST.md that names "
+        "who reviews cost for changes."
+    )
+
+    def run(self, repo_path: Path, language: str = "typescript") -> List[Finding]:
+        places = _workload_places(repo_path)
+        if not places or cost_checklist(repo_path) or cost_owner_note(repo_path):
+            return []
+        return [self._finding(
+            f"Declares {_listed(places)}; searched pull and merge request templates for a "
+            f"cost checklist item; found none; {_NOTE_SEARCH}",
+        )]
+
+
+class CostAwareCultureMissing(_RepoRule):
+    id = "REPO-079"
+    title = "No cost guidance for the team"
+    category = "Cost"
+    severity = "Low"
+    themes = ("finops",)
+    recommendation = (
+        "Give the team a place to learn what the workload costs: a COST.md or FINOPS.md "
+        "that names the cost owner, links the cost dashboards and budgets, and shares cost "
+        "wins and goals."
+    )
+
+    def run(self, repo_path: Path, language: str = "typescript") -> List[Finding]:
+        places = _workload_places(repo_path)
+        if not places or cost_owner_note(repo_path):
+            return []
+        return [self._finding(
+            f"Declares {_listed(places)}; the team has no shared cost guidance: "
+            f"{_NOTE_SEARCH}",
+        )]
+
+
 REPO_RULES: List[Rule] = [
     RepoTestsMissing(), RepoPipelineMissing(), SingleEnvironment(),
     OrgGuardrailsMissing(), AccountBaselineMissing(), RootUserUnchecked(),
@@ -6899,4 +7368,7 @@ REPO_RULES: List[Rule] = [
     OldNetworkProtocol(),
     CostReportMissing(), CostAttributionTagMissing(), UnitCostMetricMissing(),
     CostNotAllocatedByWorkload(),
+    BudgetOwnerMissing(), ReactiveCostMonitoring(), OldGenerationResources(),
+    BusinessValueUnquantified(), FinanceTechPartnershipMissing(), CostAwareProcessMissing(),
+    CostAwareCultureMissing(),
 ]

@@ -15,7 +15,7 @@ Which CDK rules have a template check, and which AWS Foundational Security Best 
 
 ## CDK rules
 
-251 rules: 132 covered, 7 partial, 10 account, 5 cdk-only, 25 advice, 72 repo.
+258 rules: 132 covered, 7 partial, 10 account, 5 cdk-only, 25 advice, 79 repo.
 
 | Rule | Title | Template check | Status | Note |
 | -- | -- | -- | -- | -- |
@@ -270,6 +270,13 @@ Which CDK rules have a template check, and which AWS Foundational Security Best 
 | REPO-070 | No cost attribution tag or cost category |  | `repo` | Fires when production IaC declares compute, a data store or an edge and no tag is keyed CostCenter, BusinessUnit, Project, Product or CostCategory (any case) and no Cost Categories rule exists; Owner, Environment and Name keys do not count. |
 | REPO-071 | No unit-cost metric for the workload |  | `repo` | When production IaC runs compute, looks for a metric named like CostPerRequest or UnitCost in a metric-name position (metric name, metric filter, metric math label or id, Powertools or embedded metric format); comments and README text do not count. |
 | REPO-072 | Costs are not allocated by workload metrics |  | `repo` | When production IaC runs compute, looks for metric math on an alarm or dashboard (or a CDK MathExpression) that reads EstimatedCharges or a unit-cost metric and at least one other metric. |
+| REPO-073 | Budget has no named owner |  | `repo` | Fires on a budget the IaC declares with no Owner, CostOwner or Team tag and no notification subscriber; a repo with no budget passes (COST-014 is the account-level check). |
+| REPO-074 | Cost is only watched after the budget is spent |  | `repo` | Fires when every declared budget notifies only at 100 percent or more of actual spend (no FORECASTED notification, no threshold below 100) and there is no Cost Anomaly Detection monitor or subscription; a repo with no budget passes. |
+| REPO-075 | Workload uses a previous-generation type or deprecated runtime |  | `repo` | Fires on previous-generation EC2, RDS and ElastiCache types SUST-007 does not report, and on deprecated Lambda runtimes set literally, in production IaC; a dated service or architecture review note passes. |
+| REPO-076 | Spend is not tied to a unit of business value |  | `repo` | Fires when production IaC runs compute and there is no unit-cost metric (as REPO-071) and no budget named per request, tenant, order, user or transaction. |
+| REPO-077 | No named cost owner links finance and engineering |  | `repo` | Fires when production IaC declares compute, a data store or an edge and no cost note (COST.md, FINOPS.md, docs/cost*.md, or a README or docs section headed Cost, FinOps or Cost ownership) names an owner. |
+| REPO-078 | Cost is not part of the change process |  | `repo` | As REPO-077; a pull or merge request template with a cost checklist item also passes. |
+| REPO-079 | No cost guidance for the team |  | `repo` | As REPO-077: production workload resources and no cost note that names an owner. |
 
 ## FSBP controls
 

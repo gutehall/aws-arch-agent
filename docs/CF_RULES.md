@@ -4,7 +4,7 @@ This document provides a comprehensive list of all rules checked by AWS Arch Age
 
 ## Overview
 
-AWS Arch Agent checks **251 static analysis rules** and **283 template checks** across all 6 AWS Well-Architected Framework pillars. 139 of the 251 CDK rules (55%) have a template check, so they also run for CloudFormation, Terraform and synthesised CDK. [COVERAGE.md](COVERAGE.md) gives the reason for each of the others.
+AWS Arch Agent checks **258 static analysis rules** and **283 template checks** across all 6 AWS Well-Architected Framework pillars. 139 of the 258 CDK rules (54%) have a template check, so they also run for CloudFormation, Terraform and synthesised CDK. [COVERAGE.md](COVERAGE.md) gives the reason for each of the others.
 
 ## Static Analysis Rules (V1 & V2 Modes)
 
@@ -324,7 +324,7 @@ These rules run on your CDK TypeScript/Python code and execute in both V1 and V2
 - REPO-067: Traffic is not spread by a load balancer
 - REPO-068: Edge uses an older network protocol
 
-### Cost Optimization (22 rules)
+### Cost Optimization (29 rules)
 
 **Resource Right-Sizing:**
 - COST-002: Compute resources may miss autoscaling
@@ -359,6 +359,15 @@ These rules run on your CDK TypeScript/Python code and execute in both V1 and V2
 - REPO-070: No cost attribution tag or cost category
 - REPO-071: No unit-cost metric for the workload
 - REPO-072: Costs are not allocated by workload metrics
+
+**Cloud financial management (repo-level, COST 1):**
+- REPO-073: Budget has no named owner
+- REPO-074: Cost is only watched after the budget is spent
+- REPO-075: Workload uses a previous-generation type or deprecated runtime
+- REPO-076: Spend is not tied to a unit of business value
+- REPO-077: No named cost owner links finance and engineering
+- REPO-078: Cost is not part of the change process
+- REPO-079: No cost guidance for the team
 
 ### Best Practices (5 rules)
 
@@ -1117,6 +1126,13 @@ Every rule has one or more themes, which cut across pillars: `finops`, `security
 | REPO-070 | finops |
 | REPO-071 | finops |
 | REPO-072 | finops |
+| REPO-073 | finops |
+| REPO-074 | finops |
+| REPO-075 | finops |
+| REPO-076 | finops |
+| REPO-077 | finops |
+| REPO-078 | finops |
+| REPO-079 | finops |
 | SEC-001 | identity |
 | SEC-002 | identity |
 | SEC-003 | network-exposure |

@@ -313,5 +313,33 @@
     "file": null,
     "line": null,
     "evidence": "Runs Lambda in main.tf; searched the IaC for metric math that combines a cost metric (EstimatedCharges or a unit cost) with a workload metric; found none"
+  },
+  {
+    "id": "REPO-076",
+    "severity": "Low",
+    "file": null,
+    "line": null,
+    "evidence": "Runs Lambda in main.tf; searched the IaC for a budget named per request, tenant, order, user or transaction and for a unit-cost metric; found none"
+  },
+  {
+    "id": "REPO-077",
+    "severity": "Low",
+    "file": null,
+    "line": null,
+    "evidence": "Declares Lambda in main.tf, S3 bucket in main.tf, RDS database in main.tf; no finance or engineering contact is named: searched the repo for a cost note (COST.md, FINOPS.md, docs/cost*.md, or a README or docs section headed Cost, FinOps or Cost ownership) that names an owner, contact, responsible or accountable person or team; found none"
+  },
+  {
+    "id": "REPO-078",
+    "severity": "Low",
+    "file": null,
+    "line": null,
+    "evidence": "Declares Lambda in main.tf, S3 bucket in main.tf, RDS database in main.tf; searched pull and merge request templates for a cost checklist item; found none; searched the repo for a cost note (COST.md, FINOPS.md, docs/cost*.md, or a README or docs section headed Cost, FinOps or Cost ownership) that names an owner, contact, responsible or accountable person or team; found none"
+  },
+  {
+    "id": "REPO-079",
+    "severity": "Low",
+    "file": null,
+    "line": null,
+    "evidence": "Declares Lambda in main.tf, S3 bucket in main.tf, RDS database in main.tf; the team has no shared cost guidance: searched the repo for a cost note (COST.md, FINOPS.md, docs/cost*.md, or a README or docs section headed Cost, FinOps or Cost ownership) that names an owner, contact, responsible or accountable person or team; found none"
   }
 ]
