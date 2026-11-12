@@ -2131,6 +2131,31 @@ TOPICS: dict[str, tuple[str, str, str, str]] = {
         "Well-Architected COST06-BP04: Consider using shared resources",
         "/wellarchitected/latest/cost-optimization-pillar/cost_type_size_number_resources_shared.html",
     ),
+    "pricing_model_analysis": (
+        "Amazon EC2 billing and purchasing options",
+        "/AWSEC2/latest/UserGuide/instance-purchasing-options.html",
+        "Well-Architected COST07-BP01: Perform pricing model analysis",
+        "/wellarchitected/latest/cost-optimization-pillar/cost_pricing_model_analysis.html",
+    ),
+    "region_cost": (
+        "AWS Regions",
+        "/global-infrastructure/latest/regions/aws-regions.html",
+        "Well-Architected COST07-BP02: Choose Regions based on cost",
+        "/wellarchitected/latest/cost-optimization-pillar/cost_pricing_model_region_cost.html",
+    ),
+    "third_party_terms": (
+        "Private offers in AWS Marketplace",
+        "/marketplace/latest/buyerguide/buyer-private-offers.html",
+        "Well-Architected COST07-BP03: Select third-party agreements with cost-efficient terms",
+        "/wellarchitected/latest/cost-optimization-pillar/cost_pricing_model_third_party.html",
+    ),
+    "management_pricing": (
+        "What are Savings Plans?",
+        "/savingsplans/latest/userguide/what-is-savings-plans.html",
+        "Well-Architected COST07-BP05: Perform pricing model analysis at the management "
+        "account level",
+        "/wellarchitected/latest/cost-optimization-pillar/cost_pricing_model_master_analysis.html",
+    ),
     "budget_owner": (
         "Best practices for AWS Budgets",
         "/cost-management/latest/userguide/budgets-best-practices.html",
@@ -2460,6 +2485,10 @@ RULE_TOPICS: dict[str, str] = {
     "REPO-087": "decommission_process",
     "REPO-088": "cost_modeling",
     "REPO-089": "shared_resources",
+    "REPO-090": "pricing_model_analysis",
+    "REPO-091": "region_cost",
+    "REPO-092": "third_party_terms",
+    "REPO-093": "management_pricing",
     "PERF-001": "graviton_ec2",
     "PERF-002": "caching",
     "PERF-003": "ddb_capacity",

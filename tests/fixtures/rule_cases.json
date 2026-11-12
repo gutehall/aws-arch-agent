@@ -1305,5 +1305,29 @@
     "negative_py": "vpc = ec2.Vpc(self, 'Vpc')\nTags.of(self).add('Tenancy', 'dedicated')",
     "positive_ts": "const vpc = new ec2.Vpc(this, 'Vpc');\nnew ecs.Cluster(this, 'Cluster', { vpc });",
     "positive_py": "vpc = ec2.Vpc(self, 'Vpc')"
+  },
+  "REPO-090": {
+    "negative_ts": "new autoscaling.AutoScalingGroup(this, 'Web', { vpc, spotPrice: '0.05' });",
+    "negative_py": "eks.Nodegroup(self, 'Workers', cluster=cluster, capacity_type=eks.CapacityType.SPOT)",
+    "positive_ts": "new autoscaling.AutoScalingGroup(this, 'Web', { vpc, minCapacity: 2, maxCapacity: 6 });",
+    "positive_py": "eks.Nodegroup(self, 'Workers', cluster=cluster)"
+  },
+  "REPO-091": {
+    "negative_ts": "new AppStack(app, 'App', { env: { region: process.env.CDK_DEFAULT_REGION } });",
+    "negative_py": "AppStack(app, 'App', env=cdk.Environment(region='sa-east-1'))  # latency for users in Brazil",
+    "positive_ts": "new AppStack(app, 'App', { env: { region: 'sa-east-1' } });",
+    "positive_py": "AppStack(app, 'App', env=cdk.Environment(region='ap-northeast-1'))"
+  },
+  "REPO-092": {
+    "negative_ts": "const ami = ec2.MachineImage.lookup({ name: 'fw-*', owners: ['aws-marketplace'] });\nTags.of(this).add('ContractEnd', '2027-06-30');",
+    "negative_py": "ami = ec2.MachineImage.lookup(name='al2023-*', owners=['amazon'])",
+    "positive_ts": "const ami = ec2.MachineImage.lookup({ name: 'fw-*', owners: ['aws-marketplace'] });",
+    "positive_py": "ami = ec2.MachineImage.lookup(name='fw-*', owners=['aws-marketplace'])"
+  },
+  "REPO-093": {
+    "negative_ts": "new organizations.CfnAccount(this, 'Prod', { accountName: 'prod', email: 'a@example.com' });\nnew budgets.CfnBudget(this, 'Sp', { budget: { budgetType: 'SAVINGS_PLANS_UTILIZATION', timeUnit: 'MONTHLY' } });",
+    "negative_py": "organizations.CfnAccount(self, 'Prod', account_name='prod', email='a@example.com')\nbudgets.CfnBudget(self, 'Ri', budget=budgets.CfnBudget.BudgetDataProperty(budget_type='RI_COVERAGE', time_unit='MONTHLY'))",
+    "positive_ts": "new organizations.CfnAccount(this, 'Prod', { accountName: 'prod', email: 'a@example.com' });",
+    "positive_py": "organizations.CfnAccount(self, 'Prod', account_name='prod', email='a@example.com')"
   }
 }

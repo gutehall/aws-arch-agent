@@ -15,7 +15,7 @@ Which CDK rules have a template check, and which AWS Foundational Security Best 
 
 ## CDK rules
 
-268 rules: 132 covered, 7 partial, 10 account, 5 cdk-only, 25 advice, 89 repo.
+272 rules: 132 covered, 7 partial, 10 account, 5 cdk-only, 25 advice, 93 repo.
 
 | Rule | Title | Template check | Status | Note |
 | -- | -- | -- | -- | -- |
@@ -287,6 +287,10 @@ Which CDK rules have a template check, and which AWS Foundational Security Best 
 | REPO-087 | Nothing tears down temporary environments |  | `repo` | Fires when the repo creates temporary environments (a temporary stack as REPO-085, a GitHub workflow that deploys on pull requests, a GitLab review/ environment) and has no destroy step or GitLab on_stop job in CI, no scheduled cleanup in IaC, no aws-nuke config and no decommissioning note. |
 | REPO-088 | No cost estimate for the workload |  | `repo` | Fires when production IaC declares compute, a data store or an edge and the repo has no Infracost config or CI step (infracost breakdown, diff or comment), no cost-estimate tool config, and no note named or headed cost estimate, cost model, estimated cost or pricing that gives an amount or an AWS Pricing Calculator link. |
 | REPO-089 | Workload creates its own network or cluster instead of sharing |  | `repo` | Fires when production IaC creates its own VPC or ECS or EKS cluster and the IaC looks up or imports no shared VPC, subnet, cluster or bucket, has no AWS RAM share, and has no Tenancy tag of single or dedicated or single-tenant comment. |
+| REPO-090 | No pricing model chosen for the compute fleet |  | `repo` | Fires on a production Auto Scaling group, ECS service, EKS node group or Batch compute environment when production IaC has no Spot setting (mixed instances below 100 percent on demand, Spot allocation strategy or price, spot market type, FARGATE_SPOT, SPOT capacity type) and no PricingModel, Commitment or SavingsPlan tag, and no note is named or headed pricing model, savings plan, reserved instance or commitment. |
+| REPO-091 | Higher-priced Region with no recorded reason |  | `repo` | Fires when production IaC hardcodes a Region priced above us-east-1, us-west-2 and eu-west-1 (CDK env region, Terraform provider region or variable default, CloudFormation StackSet Regions) with no cost, price, latency, residency, sovereignty or compliance comment on or above the line and no Region note that names it with such a reason. |
+| REPO-092 | Marketplace product with no recorded agreement term |  | `repo` | Fires when the IaC uses an AWS Marketplace AMI, product code or Service Catalog Marketplace product and no MarketplaceTerm, ContractTerm, ContractEnd, LicenseTerm or SubscriptionTerm tag and no marketplace, third-party, vendor or licence note gives a term, renewal or date. |
+| REPO-093 | Organization tracks no shared Savings Plans or Reserved Instances |  | `repo` | Fires only on an organization stack (Organizations accounts, OUs or a service control policy) with no Savings Plans or RI utilization or coverage budget, no RI or Savings Plans sharing setting, and no note named or headed savings plan, reserved instance or commitment. |
 
 ## FSBP controls
 

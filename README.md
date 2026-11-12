@@ -4,7 +4,7 @@ Local-first AWS architecture review for infrastructure code. It scans **CDK** (T
 
 No AWS credentials. No cloud calls. LLM output is optional.
 
-> Early-stage: 268 static rules and 283 template checks are implemented and tested. 139 of the 268 CDK rules (52%) have a template check, so they also run for CloudFormation, Terraform and synthesised CDK. [docs/COVERAGE.md](docs/COVERAGE.md) gives the reason for each of the others. Expect some false positives and negatives, and API changes.
+> Early-stage: 272 static rules and 283 template checks are implemented and tested. 139 of the 272 CDK rules (51%) have a template check, so they also run for CloudFormation, Terraform and synthesised CDK. [docs/COVERAGE.md](docs/COVERAGE.md) gives the reason for each of the others. Expect some false positives and negatives, and API changes.
 
 ## Install
 
@@ -55,7 +55,7 @@ Each finding has a severity, a pillar, a file and line, evidence, a recommendati
 | **Reliability** | 61 | Missing DLQs, no backups, single-AZ, no health checks, untraced requests, fixed-size fleets |
 | **Operational Excellence** | 38 | No logging, alarms, tracing, KPI metrics, log and trace analysis, test gates, or rollback |
 | **Performance Efficiency** | 28 | No caching, oversized instances, no Graviton, no compute metrics or dynamic scaling, data kept on the instance, unwatched edge latency, no load balancer, single VPN or Direct Connect link, old protocols |
-| **Cost Optimization** | 39 | No autoscaling, NAT costs, no lifecycle policies, no cost report, cost attribution tags or unit-cost metrics, unowned or reactive budgets, previous-generation types, no named cost owner, no cost policy or control, budgets with no target, shared prod and dev accounts, billing on IAM users, temporary stacks with no end date, untagged creator or owner, nothing tears down temporary environments, no cost estimate, a VPC or cluster per workload |
+| **Cost Optimization** | 43 | No autoscaling, NAT costs, no lifecycle policies, no cost report, cost attribution tags or unit-cost metrics, unowned or reactive budgets, previous-generation types, no named cost owner, no cost policy or control, budgets with no target, shared prod and dev accounts, billing on IAM users, temporary stacks with no end date, untagged creator or owner, nothing tears down temporary environments, no cost estimate, a VPC or cluster per workload, fleets with no pricing model, a higher-priced Region with no reason, Marketplace products with no term, no shared commitment tracking in an organization |
 | **Sustainability** | 7 | No Spot, right-sizing |
 | **Best Practices** | 5 | Tags, Secrets Manager, CDK Aspects |
 

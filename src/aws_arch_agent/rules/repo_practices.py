@@ -606,6 +606,22 @@ scaling (COST06-BP03) are mapped checks; these read the rest.
 - REPO-089 shared resources: production IaC creates its own VPC or ECS or EKS cluster and
   looks up or imports nothing shared, has no AWS RAM share, and says nothing about single
   tenancy (a Tenancy tag of single or dedicated, or a single-tenant comment).
+
+Pricing models (COST 7). Spot and commitment advice for single resources (COST07-BP04) is
+mapped checks; these read the rest.
+
+- REPO-090 pricing model analysis: a production Auto Scaling group, ECS service, EKS node
+  group or Batch compute environment, no Spot setting in production IaC, and no recorded
+  commitment (a pricing-model, savings plan or reserved instance note, or a PricingModel,
+  Commitment or SavingsPlan tag).
+- REPO-091 Region by cost: production IaC hardcodes a Region priced above us-east-1,
+  us-west-2 and eu-west-1, with no comment next to it and no Region note that names it and
+  gives a reason (cost, latency, residency, sovereignty or compliance).
+- REPO-092 third-party terms: the IaC uses an AWS Marketplace image or product and no
+  contract-term tag or vendor or licence note gives the term.
+- REPO-093 management-account pricing: an organization stack with no Savings Plans or RI
+  utilization or coverage budget, no RI or Savings Plans sharing setting, and no
+  commitment note.
 """
 from __future__ import annotations
 
@@ -8048,6 +8064,396 @@ class SharedResourcesUnused(_RepoRule):
         )]
 
 
+# COST 7: pricing models. Pricing model analysis (REPO-090), Region by cost (REPO-091),
+# third-party terms (REPO-092) and management-account pricing (REPO-093).
+
+_CF_PRICED_FLEET = {
+    "AWS::EKS::Nodegroup": "EKS node group",
+    "AWS::Batch::ComputeEnvironment": "Batch compute environment",
+}
+_CF_PRICED_FLEET_TYPE = re.compile(_cf_type(r"EKS::Nodegroup|Batch::ComputeEnvironment"))
+_TF_PRICED_FLEET = re.compile(
+    r"resource\s+\"(aws_eks_node_group|aws_batch_compute_environment)\"\s+\"([^\"]+)\""
+)
+_CDK_PRICED_FLEET = re.compile(
+    r"\b(?:new\s+)?(?:\w+\.)?(Nodegroup|CfnNodegroup|ManagedEc2EcsComputeEnvironment"
+    r"|ManagedEc2EksComputeEnvironment|FargateComputeEnvironment|CfnComputeEnvironment)"
+    + _CDK_ID
+    + r"|\.add_?[nN]odegroup_?[cC]apacity\(\s*['\"]([^'\"]+)['\"]"
+)
+_FLEET_KIND = {
+    "ecs": "ECS service", "asg": "Auto Scaling group",
+    "aws_eks_node_group": "EKS node group", "Nodegroup": "EKS node group",
+    "CfnNodegroup": "EKS node group",
+}
+# A Spot setting anywhere in production IaC: mixed instances below 100 percent on demand, a
+# Spot allocation strategy, a launch template market type of spot, a Spot price, a
+# FARGATE_SPOT capacity provider, an EKS or Batch SPOT capacity type, or Spot draining.
+_SPOT = re.compile(
+    r"(?i:on_?demand_?percentage_?above_?base_?capacity)[\"']?\s*[:=]\s*[\"']?"
+    r"(?!100\b)\d{1,2}\b"
+    r"|(?i:spot_?allocation_?strategy)[\"']?\s*[:=]"
+    r"|(?i:market_?type)[\"']?\s*[:=]\s*[\"']?(?i:spot)\b"
+    r"|(?i:spot_?price)[\"']?\s*[:=]"
+    r"|(?:[\"']|[:=]\s*)FARGATE_SPOT\b"
+    r"|(?i:capacity_?type)[\"']?\s*[:=]\s*(?:[\"']|(?:\w+\.)?CapacityType\.)?SPOT\b"
+    r"|\b[tT]ype[\"']?\s*[:=]\s*[\"']?SPOT[\"']?\s*(?:,|$)"
+    r"|\bspot\s*[:=]\s*(?:true|True)\b"
+    r"|(?i:spot_?instance_?draining)\s*[:=]\s*(?:true|True)\b",
+    re.MULTILINE,
+)
+_COMMITMENT_TAG = _tag_key(r"(?:pricing[-_ ]?model|commitment|savings[-_ ]?plans?)")
+_PRICING_NAME = re.compile(
+    r"pricing[-_ ]?models?|savings[-_ ]?plans?|reserved[-_ ]?instances?|commitments?"
+)
+_PRICING_HEADING = re.compile(
+    r"(?i)\b(?:pricing[- ]models?|savings[- ]plans?|reserved[- ]instances?|commitments?)\b"
+)
+_COMMITMENT_NAME = re.compile(r"savings[-_ ]?plans?|reserved[-_ ]?instances?|commitments?")
+_COMMITMENT_HEADING = re.compile(
+    r"(?i)\b(?:savings[- ]plans?|reserved[- ]instances?|commitments?)\b"
+)
+
+
+def _titled_note(repo_path: Path, name: re.Pattern[str],
+                 heading: re.Pattern[str]) -> str | None:
+    """The first note whose file name or a heading matches."""
+    for rel, text in note_texts(repo_path):
+        stem = rel.rsplit("/", 1)[-1].lower().rsplit(".", 1)[0]
+        if name.search(stem) or any(heading.search(h.group(2)) for h in _HEADING.finditer(text)):
+            return rel
+    return None
+
+
+def _priced_fleets(rel: str, text: str) -> List[tuple[str, str, int | None]]:
+    """(kind, name, line) of EKS node groups and Batch compute environments."""
+    found: List[tuple[str, str, int | None]] = []
+    if _CF_PRICED_FLEET_TYPE.search(text):
+        for name, body in _cf_resources(rel, text).items():
+            kind = _CF_PRICED_FLEET.get(str(body.get("Type")))
+            if kind:
+                found.append((kind, str(name), _cf_logical_line(text, str(name))))
+    for match in _TF_PRICED_FLEET.finditer(text):
+        kind = _FLEET_KIND.get(match.group(1), "Batch compute environment")
+        found.append((kind, match.group(2), _line_of(text, match.start())))
+    for match in _CDK_PRICED_FLEET.finditer(text):
+        cls, name, added = match.groups()
+        kind = _FLEET_KIND.get(cls or "Nodegroup", "Batch compute environment")
+        found.append((kind, name or added, _line_of(text, match.start())))
+    return found
+
+
+def unpriced_fleets(repo_path: Path) -> List[str]:
+    """Production fleets, as "kind name in file:line", when production IaC has no Spot
+    setting and no commitment tag and no note records a pricing model; else empty."""
+    fleets, _signals = scan_fleets(repo_path)
+    places = [f"{_FLEET_KIND[check]} {name} in {rel}:{line}" if line else
+              f"{_FLEET_KIND[check]} {name} in {rel}"
+              for check, name, rel, line, _size in fleets
+              if check in ("ecs", "asg") and _production(rel)]
+    for rel, text in iac_texts(repo_path):
+        if not _production(rel):
+            continue
+        if _SPOT.search(text) or _COMMITMENT_TAG.search(text):
+            return []
+        places.extend(f"{kind} {name} in {rel}:{line}" if line else f"{kind} {name} in {rel}"
+                      for kind, name, line in _priced_fleets(rel, text))
+    if not places or _titled_note(repo_path, _PRICING_NAME, _PRICING_HEADING):
+        return []
+    return places
+
+
+class PricingModelUnanalysed(_RepoRule):
+    id = "REPO-090"
+    title = "No pricing model chosen for the compute fleet"
+    category = "Cost"
+    severity = "Low"
+    themes = ("finops",)
+    recommendation = (
+        "Decide the pricing model for each fleet: run interruption-tolerant capacity on Spot "
+        "(mixed instances, FARGATE_SPOT, an EKS or Batch SPOT capacity type) and cover the "
+        "steady baseline with Savings Plans or Reserved Instances. Record the choice in a "
+        "pricing model note or a PricingModel tag."
+    )
+
+    def run(self, repo_path: Path, language: str = "typescript") -> List[Finding]:
+        places = unpriced_fleets(repo_path)
+        if not places:
+            return []
+        return [self._finding(
+            f"Fleets on demand: {_listed(places)}; searched production IaC for a Spot setting "
+            "(mixed instances below 100 percent on demand, Spot allocation strategy or price, "
+            "spot market type, FARGATE_SPOT, SPOT capacity type) and a PricingModel, "
+            "Commitment or SavingsPlan tag, and the repo for a note named or headed pricing "
+            "model, savings plan, reserved instance or commitment; found none",
+        )]
+
+
+# Regions priced above us-east-1, us-west-2 and eu-west-1 for common compute (EC2
+# on-demand, Fargate) in the AWS Price List.
+HIGHER_PRICED_REGIONS = (
+    "sa-east-1", "ap-east-1", "af-south-1", "me-south-1", "me-central-1", "ap-northeast-1",
+    "ap-northeast-3", "ap-southeast-2", "ap-southeast-4", "ap-southeast-5", "eu-central-2",
+    "eu-south-2", "il-central-1", "mx-central-1", "ca-west-1",
+)
+_HIGH = "|".join(re.escape(r) for r in HIGHER_PRICED_REGIONS)
+_CODE_REGION = re.compile(rf"\b\w*(?:region|Region|REGION)\s*[:=]\s*['\"]({_HIGH})['\"]")
+_TF_REGION_BLOCK = re.compile(r"(?:provider\s+\"aws\"|variable\s+\"[^\"]+\")\s*\{")
+_TF_REGION = re.compile(rf"(?m)^\s*(?:region|default)\s*=\s*\"({_HIGH})\"")
+_STACKSET_TYPE = re.compile(_cf_type(r"CloudFormation::StackSet"))
+_REGION_REASON = re.compile(
+    r"(?i)\b(?:costs?|prices?|pricing|latency|residency|sovereignty|compliance)\b"
+)
+_REASON_COMMENT = re.compile(
+    r"(?i)(?://|#|/\*|^\s*\*)[^\n]*\b(?:costs?|prices?|pricing|latency|residency"
+    r"|sovereignty|compliance)\b"
+)
+_REGION_HEADING = re.compile(r"(?i).*\bregions?\b.*")
+
+
+def _stackset_regions(rel: str, text: str) -> Iterator[tuple[str, int]]:
+    for body in _cf_resources(rel, text).values():
+        if body.get("Type") != "AWS::CloudFormation::StackSet":
+            continue
+        groups = _props(body).get("StackInstancesGroup")
+        for group in groups if isinstance(groups, list) else ():
+            regions = group.get("Regions") if isinstance(group, dict) else None
+            for region in regions if isinstance(regions, list) else ():
+                if region in HIGHER_PRICED_REGIONS:
+                    yield region, _line_of(text, text.find(str(region)))
+
+
+def _region_literals(rel: str, text: str) -> Iterator[tuple[str, int]]:
+    """(region, line) of each higher-priced Region literal: CDK env or region props,
+    Terraform provider or variable defaults, CloudFormation StackSet Regions."""
+    suffix = rel.rsplit(".", 1)[-1].lower()
+    if suffix in ("ts", "js", "py"):
+        for match in _CODE_REGION.finditer(text):
+            yield match.group(1), _line_of(text, match.start(1))
+    elif suffix == "tf":
+        for block in _TF_REGION_BLOCK.finditer(text):
+            start = block.end() - 1
+            for match in _TF_REGION.finditer(_braced(text, start)):
+                yield match.group(1), _line_of(text, start + 1 + match.start(1))
+    elif _STACKSET_TYPE.search(text):
+        yield from _stackset_regions(rel, text)
+
+
+def _commented(text: str, line: int) -> bool:
+    lines = text.splitlines()
+    near = lines[max(line - 2, 0):line]
+    return any(_REASON_COMMENT.search(item) for item in near)
+
+
+def _region_noted(repo_path: Path) -> set[str]:
+    """Regions a note names under a Region heading or in a Region-named note, with a
+    reason (cost, price, latency, residency, sovereignty or compliance)."""
+    noted: set[str] = set()
+    for rel, text in note_texts(repo_path):
+        stem = rel.rsplit("/", 1)[-1].lower().rsplit(".", 1)[0]
+        bodies = [text] if "region" in stem else []
+        bodies += [m.group(0) + body for m, body in zip(
+            (h for h in _HEADING.finditer(text) if _REGION_HEADING.fullmatch(h.group(2))),
+            _sections(text, _REGION_HEADING),
+        )]
+        for body in bodies:
+            if _REGION_REASON.search(body):
+                noted.update(r for r in HIGHER_PRICED_REGIONS if r in body)
+    return noted
+
+
+def costly_regions(repo_path: Path) -> List[tuple[str, str, int]]:
+    """(region, file, line) of each higher-priced Region hardcoded in production IaC with
+    no reason given in a comment beside it or in a Region note."""
+    found = [
+        (region, rel, line)
+        for rel, text in iac_texts(repo_path) if _production(rel)
+        for region, line in _region_literals(rel, text) if not _commented(text, line)
+    ]
+    if not found:
+        return []
+    noted = _region_noted(repo_path)
+    return [hit for hit in found if hit[0] not in noted]
+
+
+class RegionNotChosenByCost(_RepoRule):
+    id = "REPO-091"
+    title = "Higher-priced Region with no recorded reason"
+    category = "Cost"
+    severity = "Low"
+    themes = ("finops",)
+    recommendation = (
+        "Compare Region prices before you pin a workload: us-east-1, us-west-2 and eu-west-1 "
+        "cost less for most compute. If latency, data residency or compliance needs the "
+        "Region, say so in a comment beside it or in a Region note, or take the Region from "
+        "a parameter or variable."
+    )
+
+    def run(self, repo_path: Path, language: str = "typescript") -> List[Finding]:
+        hits = costly_regions(repo_path)
+        if not hits:
+            return []
+        places = [f"{region} at {rel}:{line}" for region, rel, line in hits]
+        return [self._finding(
+            f"Hardcodes {_listed(places)}, priced above us-east-1, us-west-2 and eu-west-1; "
+            "searched for a cost, price, latency, residency, sovereignty or compliance comment "
+            "on or above the line and a Region note that names it with a reason; found none",
+        )]
+
+
+_MARKETPLACE_OWNER = re.compile(r"[\"']aws-marketplace[\"']")
+_TF_AMI = re.compile(r"data\s+\"aws_ami\"\s+\"([^\"]+)\"\s*\{")
+_CDK_LOOKUP = re.compile(r"\b(?:MachineImage\.lookup|machine_image\.lookup|LookupMachineImage)\(")
+_PRODUCT_CODE = re.compile(
+    r"[\"']?\b(?:ProductCodes?|product_codes?|productCodes?)[\"']?\s*[:=]\s*[\[{\"'\w]"
+    r"|\bname\s*=\s*\"product-code(?:\.type)?\""
+)
+_MARKETPLACE_PRODUCT = re.compile(
+    _cf_type(r"ServiceCatalog::CloudFormationProvisionedProduct")
+)
+_PROD_ID = re.compile(r"[\"']?ProductId[\"']?\s*:\s*[\"']?prod-\w")
+_TERM_TAG = _tag_key(
+    r"(?:(?:marketplace|contract|licen[cs]e|subscription)[-_ ]?term|contract[-_ ]?end)"
+)
+_VENDOR_NAME = re.compile(r"marketplace|third[-_ ]?party|vendors?|licen[cs]es?")
+_VENDOR_HEADING = re.compile(
+    r"(?i).*\b(?:marketplace|third[- ]party|vendors?|licen[cs](?:es?|ing))\b.*"
+)
+_TERM_WORDS = re.compile(
+    r"(?i)\b(?:terms?|contracts?|renewals?|renews?|annual(?:ly)?|12-month|36-month)\b"
+)
+
+
+def marketplace_uses(repo_path: Path) -> List[str]:
+    """Each AWS Marketplace image or product in the IaC, as "what in file:line"."""
+    found: List[str] = []
+    for rel, text in iac_texts(repo_path):
+        for match in _TF_AMI.finditer(text):
+            block = _braced(text, match.end() - 1)
+            if _MARKETPLACE_OWNER.search(block) or _PRODUCT_CODE.search(block):
+                found.append(f"Marketplace AMI {match.group(1)} in {rel}:"
+                             f"{_line_of(text, match.start())}")
+        for match in _CDK_LOOKUP.finditer(text):
+            args = _braced(text, match.end() - 1, "(", ")")
+            if _MARKETPLACE_OWNER.search(args):
+                found.append(f"Marketplace AMI lookup in {rel}:{_line_of(text, match.start())}")
+        if not _TF_AMI.search(text):
+            for match in _PRODUCT_CODE.finditer(text):
+                found.append(f"product code in {rel}:{_line_of(text, match.start())}")
+        if _MARKETPLACE_PRODUCT.search(text):
+            for match in _PROD_ID.finditer(text):
+                found.append(f"Marketplace product in {rel}:{_line_of(text, match.start())}")
+    return found
+
+
+def marketplace_terms(repo_path: Path) -> str | None:
+    """The first place that records a third-party term: a term tag in the IaC, or a
+    marketplace, third-party, vendor or licence note that gives a term or a date."""
+    for rel, text in iac_texts(repo_path):
+        if _TERM_TAG.search(text):
+            return rel
+    for rel, text in note_texts(repo_path):
+        stem = rel.rsplit("/", 1)[-1].lower().rsplit(".", 1)[0]
+        bodies = [text] if _VENDOR_NAME.search(stem) else []
+        bodies += list(_sections(text, _VENDOR_HEADING))
+        if any(_TERM_WORDS.search(b) or _DATE.search(b) for b in bodies):
+            return rel
+    return None
+
+
+class ThirdPartyTermsMissing(_RepoRule):
+    id = "REPO-092"
+    title = "Marketplace product with no recorded agreement term"
+    category = "Cost"
+    severity = "Low"
+    themes = ("finops",)
+    recommendation = (
+        "Record the agreement for each AWS Marketplace product: the contract or subscription "
+        "term, renewal date and pricing (hourly, annual or a private offer) in a "
+        "MarketplaceTerm or ContractEnd tag or a vendor note, and review it before renewal."
+    )
+
+    def run(self, repo_path: Path, language: str = "typescript") -> List[Finding]:
+        uses = marketplace_uses(repo_path)
+        if not uses or marketplace_terms(repo_path):
+            return []
+        return [self._finding(
+            f"Uses {_listed(uses)}; searched the IaC for a MarketplaceTerm, ContractTerm, "
+            "ContractEnd, LicenseTerm or SubscriptionTerm tag and the repo for a marketplace, "
+            "third-party, vendor or licence note that gives a term, renewal or date; found "
+            "none",
+        )]
+
+
+_COMMITMENT_BUDGET = re.compile(
+    r"(?i:budget_?type)[\"']?\s*[:=]\s*[\"']?"
+    r"(?:SAVINGS_PLANS_(?:UTILIZATION|COVERAGE)|RI_(?:UTILIZATION|COVERAGE))\b"
+)
+_DISCOUNT_SHARING = re.compile(
+    r"(?i)\b(?:discount|ri|sp|ri[-_/]?sp|savings[-_ ]?plans?|reserved[-_ ]?instances?)"
+    r"[-_ ]?sharing[\"']?\s*[:=]"
+)
+# An organization stack: Organizations accounts, OUs or service control policies. The
+# CloudFormation type must sit in a Type key, so a file that only names it is not one.
+_ORG_STACK_UNITS = re.compile(
+    _cf_type(r"Organizations::(?:Account|OrganizationalUnit)")
+    + r"|resource\s+\"aws_organizations_(?:account|organizational_unit)\""
+    r"|organizations\.Cfn(?:Account|OrganizationalUnit)\("
+)
+_ORG_STACK_POLICY = re.compile(
+    _cf_type(r"Organizations::Policy")
+    + r"|resource\s+\"aws_organizations_policy\"|organizations\.CfnPolicy\("
+)
+
+
+def org_stack(repo_path: Path) -> List[str]:
+    """Where the IaC declares Organizations accounts or OUs or a service control policy, as
+    "kind in file"; empty for an application stack."""
+    found: dict[str, str] = {}
+    for rel, text in iac_texts(repo_path):
+        if _ORG_STACK_UNITS.search(text):
+            found.setdefault("Organizations account or OU", rel)
+        if _ORG_STACK_POLICY.search(text) and (
+            "SERVICE_CONTROL_POLICY" in text or not _OTHER_POLICY_TYPE.search(text)
+        ):
+            found.setdefault("service control policy", rel)
+    return [f"{kind} in {rel}" for kind, rel in found.items()]
+
+
+def tracked_commitments(repo_path: Path) -> str | None:
+    """The first place that tracks shared commitments: a Savings Plans or RI utilization or
+    coverage budget, a discount sharing setting, or a commitment note."""
+    for rel, text in iac_texts(repo_path):
+        if _COMMITMENT_BUDGET.search(text) or _DISCOUNT_SHARING.search(text):
+            return rel
+    return _titled_note(repo_path, _COMMITMENT_NAME, _COMMITMENT_HEADING)
+
+
+class ManagementPricingMissing(_RepoRule):
+    id = "REPO-093"
+    title = "Organization tracks no shared Savings Plans or Reserved Instances"
+    category = "Cost"
+    severity = "Low"
+    themes = ("finops",)
+    recommendation = (
+        "Analyse commitments in the management account: buy Savings Plans and Reserved "
+        "Instances there so discounts are shared across accounts, and add an AWS Budgets "
+        "budget of type SAVINGS_PLANS_UTILIZATION or RI_COVERAGE (or the other two) to "
+        "watch them."
+    )
+
+    def run(self, repo_path: Path, language: str = "typescript") -> List[Finding]:
+        places = org_stack(repo_path)
+        if not places or tracked_commitments(repo_path):
+            return []
+        return [self._finding(
+            f"Organization stack ({_listed(places)}); searched the IaC for a budget of type "
+            "SAVINGS_PLANS_UTILIZATION, SAVINGS_PLANS_COVERAGE, RI_UTILIZATION or RI_COVERAGE "
+            "and an RI or Savings Plans sharing setting, and the repo for a note named or "
+            "headed savings plan, reserved instance or commitment; found none",
+        )]
+
+
 REPO_RULES: List[Rule] = [
     RepoTestsMissing(), RepoPipelineMissing(), SingleEnvironment(),
     OrgGuardrailsMissing(), AccountBaselineMissing(), RootUserUnchecked(),
@@ -8088,4 +8494,6 @@ REPO_RULES: List[Rule] = [
     SharedAccountEnvironments(), BillingAccessOnUser(), ProjectLifecycleUntracked(),
     ResourceLifetimeUntracked(), DecommissioningMissing(),
     CostModelMissing(), SharedResourcesUnused(),
+    PricingModelUnanalysed(), RegionNotChosenByCost(), ThirdPartyTermsMissing(),
+    ManagementPricingMissing(),
 ]

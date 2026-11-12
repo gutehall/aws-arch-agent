@@ -178,7 +178,7 @@ ALL_RULES = [
     S3VersioningMissing(),
     VpcSingleAz(),
     LambdaDirectInvoke(),
-    # Cost Optimization (39 rules: these 18, and REPO-069 to REPO-089 in REPO_RULES)
+    # Cost Optimization (43 rules: these 18, and REPO-069 to REPO-093 in REPO_RULES)
     LogRetentionNeverExpire(),
     MissingAutoscalingHint(),
     DynamoDbAutoscalingMissing(),
