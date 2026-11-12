@@ -15,7 +15,7 @@ Which CDK rules have a template check, and which AWS Foundational Security Best 
 
 ## CDK rules
 
-258 rules: 132 covered, 7 partial, 10 account, 5 cdk-only, 25 advice, 79 repo.
+264 rules: 132 covered, 7 partial, 10 account, 5 cdk-only, 25 advice, 85 repo.
 
 | Rule | Title | Template check | Status | Note |
 | -- | -- | -- | -- | -- |
@@ -277,6 +277,12 @@ Which CDK rules have a template check, and which AWS Foundational Security Best 
 | REPO-077 | No named cost owner links finance and engineering |  | `repo` | Fires when production IaC declares compute, a data store or an edge and no cost note (COST.md, FINOPS.md, docs/cost*.md, or a README or docs section headed Cost, FinOps or Cost ownership) names an owner. |
 | REPO-078 | Cost is not part of the change process |  | `repo` | As REPO-077; a pull or merge request template with a cost checklist item also passes. |
 | REPO-079 | No cost guidance for the team |  | `repo` | As REPO-077: production workload resources and no cost note that names an owner. |
+| REPO-080 | No policy governs what the organization may spend |  | `repo` | Fires when production IaC declares compute, a data store or an edge and there is no service control policy and no policy that Denies ec2:RunInstances or sagemaker:Create* or sets a condition on ec2:InstanceType, sagemaker:InstanceTypes, rds:DatabaseClass or aws:RequestedRegion. Org-level: off unless `rules.org`. |
+| REPO-081 | Nothing limits what the workload can spend |  | `repo` | Fires when production IaC declares compute, a data store or an edge and there is no cost policy (as REPO-080), no permissions boundary and no AWS Budgets action. |
+| REPO-082 | Budget sets no target amount |  | `repo` | Fires when the IaC declares budgets and none sets a limit amount or a limit per period; a repo with no budget passes (COST-014 is the account-level check). |
+| REPO-083 | Production and non-production share an account |  | `repo` | Fires when the repo declares compute, a data store or an edge, deploys production and dev or staging, and has no Organizations account or OU, no StackSets deployment targets and fewer than two distinct literal account ids. |
+| REPO-084 | Billing access is granted to an IAM user |  | `repo` | Fires when billing actions (aws-portal, billing, ce, budgets, cur) or a Billing managed policy are granted to an IAM user directly; a group or role passes. |
+| REPO-085 | Temporary stacks have no end date |  | `repo` | Fires on a temporary stack (path or stack id reads as sandbox, test, preview, ephemeral, feature, demo, poc or pr-<n>; long-lived dev and staging are not) with no end-date tag or no environment tag in its file or directory. |
 
 ## FSBP controls
 

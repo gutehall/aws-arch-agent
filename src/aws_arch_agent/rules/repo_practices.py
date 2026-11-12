@@ -563,6 +563,25 @@ aws_budgets_budget, CDK CfnBudget): a repo with none is COST-014's job.
   docs/cost*.md, or a README or docs section headed Cost, FinOps or Cost ownership).
   REPO-078 also passes on a pull or merge request template with a cost checklist item.
   Notes are markdown or text files outside tests; reports this tool saved do not count.
+
+Usage governance (COST 2). A cost policy is a service control policy, or any policy that
+Denies an expensive choice: ec2:RunInstances or sagemaker:Create*, or a condition on
+ec2:InstanceType, sagemaker:InstanceTypes, rds:DatabaseClass or aws:RequestedRegion.
+
+- REPO-080 policies (account-level, off unless rules.org): production workload resources
+  and no cost policy in the IaC.
+- REPO-081 cost controls: production workload resources and no cost policy, no
+  permissions boundary and no AWS Budgets action.
+- REPO-082 goals and targets: budgets are declared and none sets a limit or planned limits.
+  A repo with no budget is COST-014's job.
+- REPO-083 account structure: the repo declares workload resources and deploys production
+  and dev or staging (as REPO-003 finds them), and nothing shows separate accounts: no Organizations account or OU, no
+  StackSets account targets, and fewer than two distinct literal account ids.
+- REPO-084 groups and roles: billing access (aws-portal, billing, ce, budgets, cur actions,
+  the Billing or AWSBillingReadOnlyAccess managed policy) granted to an IAM user directly.
+- REPO-085 project lifecycle: a temporary stack (path or stack id reads as sandbox, test,
+  preview, ephemeral, feature, demo, poc or pr-<n>; long-lived dev and staging are not) with no end-date tag (ExpiryDate,
+  DeleteAfter, ttl and the like) or no environment tag, in its file or its directory.
 """
 from __future__ import annotations
 
@@ -7335,6 +7354,374 @@ class CostAwareCultureMissing(_RepoRule):
         )]
 
 
+# COST 2: usage governance. Cost policies (REPO-080, account-level), cost controls
+# (REPO-081), goals and targets (REPO-082), account structure (REPO-083), billing access
+# through groups and roles (REPO-084), and project lifecycle tags (REPO-085).
+
+_DENY = re.compile(
+    r"[\"']?[eE]ffect[\"']?\s*[:=]\s*[\"']Deny[\"']|\bEffect\.DENY\b"
+)
+_EXPENSIVE = re.compile(
+    r"[\"']?(?:ec2:RunInstances|sagemaker:Create[\w*]*|ec2:InstanceType|sagemaker:InstanceTypes"
+    r"|rds:DatabaseClass|aws:RequestedRegion)[\"']?"
+)
+# How far around a Deny the action or condition key may sit: one policy statement.
+_DENY_WINDOW = 600
+_BUDGET_ACTION = re.compile(
+    _cf_type(r"Budgets::BudgetsAction") + r"|resource\s+\"aws_budgets_budget_action\""
+    r"|\bCfnBudgetsAction\("
+)
+_COST_POLICY_SEARCH = (
+    "a service control policy or a policy that Denies ec2:RunInstances or "
+    "sagemaker:Create* or sets a condition on ec2:InstanceType, sagemaker:InstanceTypes, "
+    "rds:DatabaseClass or aws:RequestedRegion"
+)
+
+
+def cost_policies(repo_path: Path) -> dict[str, str]:
+    """Policies that govern what may be spent: kind -> first file. A service control
+    policy, or any policy that Denies an expensive choice (instance types, regions)."""
+    found: dict[str, str] = {}
+    scp = org_guardrails(repo_path).get("service control policy")
+    if scp:
+        found["service control policy"] = scp
+    for rel, text in iac_texts(repo_path):
+        for match in _DENY.finditer(text):
+            near = text[max(match.start() - _DENY_WINDOW, 0):match.end() + _DENY_WINDOW]
+            if _EXPENSIVE.search(near):
+                found.setdefault("cost deny policy", rel)
+                break
+    return found
+
+
+class CostPolicyMissing(_RepoRule):
+    id = "REPO-080"
+    title = "No policy governs what the organization may spend"
+    category = "Cost"
+    severity = "Low"
+    themes = ("finops",)
+    recommendation = (
+        "Turn the organization's cost rules into policy: a service control policy or a "
+        "permissions boundary that Denies instance types, database classes and Regions the "
+        "organization has not approved (conditions on ec2:InstanceType, rds:DatabaseClass, "
+        "sagemaker:InstanceTypes and aws:RequestedRegion)."
+    )
+
+    def run(self, repo_path: Path, language: str = "typescript") -> List[Finding]:
+        places = _workload_places(repo_path)
+        if not places or cost_policies(repo_path):
+            return []
+        return [self._finding(
+            f"Declares {_listed(places)}; searched the IaC for {_COST_POLICY_SEARCH}; "
+            "found none",
+        )]
+
+
+class CostControlMissing(_RepoRule):
+    id = "REPO-081"
+    title = "Nothing limits what the workload can spend"
+    category = "Cost"
+    severity = "Low"
+    themes = ("finops",)
+    recommendation = (
+        "Put a control in front of spend: a permissions boundary on the workload's roles "
+        "or a service control policy that Denies unapproved instance types and Regions, or "
+        "an AWS Budgets action that applies a deny policy or stops instances when a budget "
+        "is exceeded."
+    )
+
+    def run(self, repo_path: Path, language: str = "typescript") -> List[Finding]:
+        places = _workload_places(repo_path)
+        if not places or cost_policies(repo_path):
+            return []
+        for _rel, text in iac_texts(repo_path):
+            if _BOUNDARY.search(text) or _BUDGET_ACTION.search(text):
+                return []
+        return [self._finding(
+            f"Declares {_listed(places)}; searched the IaC for {_COST_POLICY_SEARCH}, a "
+            "permissions boundary (PermissionsBoundary, permissions_boundary, CDK "
+            "PermissionsBoundary.of) and an AWS Budgets action (AWS::Budgets::BudgetsAction, "
+            "aws_budgets_budget_action, CfnBudgetsAction); found none",
+        )]
+
+
+_BUDGET_TARGET = re.compile(
+    r"\b(?:budget_?limit|limit_amount|planned_?budget_?limits|planned_limit)\b", re.IGNORECASE
+)
+
+
+class BudgetTargetMissing(_RepoRule):
+    id = "REPO-082"
+    title = "Budget sets no target amount"
+    category = "Cost"
+    severity = "Low"
+    themes = ("finops",)
+    recommendation = (
+        "Give each budget a goal: set a limit amount (BudgetLimit, limit_amount, "
+        "budgetLimit) or planned limits per period, agreed with the cost owner, and review "
+        "it as usage changes."
+    )
+
+    def run(self, repo_path: Path, language: str = "typescript") -> List[Finding]:
+        found = budgets(repo_path)
+        if not found or any(_BUDGET_TARGET.search(b.text) for b in found):
+            return []
+        first = found[0]
+        places = [f"{b.name} in {b.rel}" for b in found]
+        return [self._finding(
+            f"Budget {_listed(places)} sets no limit amount (BudgetLimit, limit_amount, "
+            "budgetLimit) and no planned limits (PlannedBudgetLimits, planned_limit)",
+            file=first.rel, line=first.line,
+        )]
+
+
+_ACCOUNT_ID = re.compile(
+    r"\b(?i:account(?:_?id)?)[\"']?\s*[:=]\s*[\"'](\d{12})[\"']"
+    r"|\barn:aws[\w-]*:iam::(\d{12}):role/"
+)
+_ALLOWED_ACCOUNTS = re.compile(r"\ballowed_account_ids\s*=\s*\[([^\]]*)\]")
+_STACKSET_TARGETS = re.compile(
+    r"[\"']?(?:DeploymentTargets|deploymentTargets|deployment_targets)[\"']?\s*[:=]"
+)
+_TF_WORKSPACE = re.compile(r"\bterraform\.workspace\s*==\s*\"([\w-]+)\"")
+
+
+def account_split(repo_path: Path) -> str | None:
+    """What shows that environments run in separate accounts, or None."""
+    ids: set[str] = set()
+    texts = list(iac_texts(repo_path))
+    for path in walk(repo_path):
+        if path.name.lower().endswith((".tfvars", ".tfvars.json")):
+            parts = _rel_parts(path, repo_path)
+            if not _in_test_dir(parts):
+                texts.append(("/".join(parts), read_text_safe(path)))
+    for rel, text in texts:
+        if _ORG_UNITS.search(text):
+            return f"Organizations account or OU in {rel}"
+        if _STACKSET_TARGETS.search(text):
+            return f"StackSets deployment targets in {rel}"
+        for match in _ACCOUNT_ID.finditer(text):
+            ids.add(match.group(1) or match.group(2))
+        for match in _ALLOWED_ACCOUNTS.finditer(text):
+            ids.update(re.findall(r"\d{12}", match.group(1)))
+    if len(ids) >= 2:
+        return f"{len(ids)} account ids"
+    return None
+
+
+def deployed_environments(repo_path: Path) -> dict[str, str]:
+    """Environments as REPO-003 finds them, plus Terraform workspace names compared in code."""
+    found = environments_found(repo_path)
+    for rel, text in iac_texts(repo_path):
+        if rel.endswith(".tf"):
+            for match in _TF_WORKSPACE.finditer(text):
+                env = from_words(match.group(1))
+                if env is not None:
+                    found.setdefault(env, f"{rel} workspace {match.group(1)}")
+    return found
+
+
+class SharedAccountEnvironments(_RepoRule):
+    id = "REPO-083"
+    title = "Production and non-production share an account"
+    category = "Cost"
+    severity = "Medium"
+    themes = ("finops",)
+    recommendation = (
+        "Run production and non-production in separate AWS accounts under AWS "
+        "Organizations, with one OU per environment, so cost, quotas and access are kept "
+        "apart: set a literal account per CDK stage, a provider assume_role or "
+        "allowed_account_ids per Terraform environment, or StackSets deployment targets."
+    )
+
+    def run(self, repo_path: Path, language: str = "typescript") -> List[Finding]:
+        found = deployed_environments(repo_path)
+        if "prod" not in found or not ({"dev", "staging"} & found.keys()):
+            return []
+        if not _in_iac(repo_path, _WORKLOAD):
+            return []
+        if account_split(repo_path):
+            return []
+        seen = ", ".join(f"{env} ({where})" for env, where in sorted(found.items()))
+        return [self._finding(
+            f"Deploys {seen}; searched the IaC for Organizations accounts or OUs, StackSets "
+            "deployment targets, and distinct literal account ids (CDK env account, "
+            "Terraform assume_role role_arn or allowed_account_ids); found fewer than two",
+        )]
+
+
+_BILLING = re.compile(
+    r"[\"'](?:aws-portal|billing|ce|budgets|cur):[\w*]+[\"']"
+    r"|[\"']account:\w*Billing\w*[\"']"
+    r"|\bjob-function/Billing\b|\bAWSBillingReadOnlyAccess\b"
+)
+_CDK_USER = re.compile(
+    r"\b(\w+)\s*=\s*(?:new\s+)?iam\.User\(|(?<![\w.])(?:new\s+)?iam\.User\("
+)
+_CDK_USER_GRANT = r"\b{var}\.(?:add_?[mM]anaged_?[pP]olicy|add_?[tT]o_?(?:[pP]rincipal_?)?" \
+    r"[pP]olicy|attach_?[iI]nline_?[pP]olicy)\("
+_TF_USER_GRANT = re.compile(
+    r"resource\s+\"(aws_iam_user_policy(?:_attachment)?)\"\s+\"([^\"]+)\"\s*\{"
+)
+_TF_IAM_POLICY_REF = re.compile(
+    r"\b(data\.aws_iam_policy_document|aws_iam_policy)\.([\w-]+)\."
+)
+
+
+def _tf_named_block(text: str, ref: str, name: str) -> str:
+    kind = "data" if ref.startswith("data.") else "resource"
+    block_type = ref.split(".")[-1]
+    match = re.search(rf"{kind}\s+\"{block_type}\"\s+\"{re.escape(name)}\"\s*\{{", text)
+    return _braced(text, match.end() - 1) if match else ""
+
+
+def _cdk_named(text: str, ident: str) -> str:
+    """The constructor call a CDK variable is assigned, e.g. a Policy for attachInlinePolicy."""
+    match = re.search(rf"\b{re.escape(ident)}\s*=\s*(?:new\s+)?[\w.]+\(", text)
+    return _braced(text, match.end() - 1, "(", ")") if match else ""
+
+
+def user_billing_grants(repo_path: Path) -> List[tuple[str, str, int]]:
+    """(IAM user, file, line) for each user granted billing access directly."""
+    found: List[tuple[str, str, int]] = []
+    for rel, text in iac_texts(repo_path):
+        for name, body in _cf_resources(rel, text).items():
+            kind, props = body.get("Type"), _props(body)
+            granted = (
+                kind == "AWS::IAM::User"
+                and _BILLING.search(json.dumps([props.get("Policies"),
+                                                props.get("ManagedPolicyArns")]))
+            ) or (
+                kind in ("AWS::IAM::Policy", "AWS::IAM::ManagedPolicy") and props.get("Users")
+                and _BILLING.search(json.dumps(props.get("PolicyDocument")))
+            )
+            if granted:
+                at = text.find(f'"{name}"')
+                at = at if at >= 0 else text.find(name)
+                found.append((name, rel, _line_of(text, at)))
+        for match in _TF_USER_GRANT.finditer(text):
+            block = _braced(text, match.end() - 1)
+            linked = "".join(_tf_named_block(text, ref, name)
+                             for ref, name in _TF_IAM_POLICY_REF.findall(block))
+            if _BILLING.search(block + linked):
+                found.append((f"{match.group(1)}.{match.group(2)}", rel,
+                              _line_of(text, match.start())))
+        for match in _CDK_USER.finditer(text):
+            args = _braced(text, text.index("(", match.start()), "(", ")")
+            grants = [args]
+            var = match.group(1)
+            if var:
+                for call in re.finditer(_CDK_USER_GRANT.format(var=re.escape(var)), text):
+                    arg = _braced(text, call.end() - 1, "(", ")")
+                    grants.append(arg + _cdk_named(text, arg.strip()))
+            if any(_BILLING.search(g) for g in grants):
+                found.append((var or "iam.User", rel, _line_of(text, match.start())))
+    return found
+
+
+class BillingAccessOnUser(_RepoRule):
+    id = "REPO-084"
+    title = "Billing access is granted to an IAM user"
+    category = "Cost"
+    severity = "Low"
+    themes = ("identity",)
+    recommendation = (
+        "Grant billing and cost access through groups or roles, not to individual IAM "
+        "users: put the Billing or AWSBillingReadOnlyAccess policy on an IAM group or an "
+        "IAM Identity Center permission set for the finance and cost owner roles."
+    )
+
+    def run(self, repo_path: Path, language: str = "typescript") -> List[Finding]:
+        found = user_billing_grants(repo_path)
+        if not found:
+            return []
+        _user, rel, line = found[0]
+        places = [f"{user} in {where}:{at}" for user, where, at in found]
+        return [self._finding(
+            f"Grants billing access (aws-portal, billing, ce, budgets or cur actions, or a "
+            f"Billing managed policy) directly to {_listed(places)}",
+            file=rel, line=line,
+        )]
+
+
+# Long-lived dev and staging environments are not temporary; these names are.
+_TEMP_WORDS = frozenset({
+    "preview", "ephemeral", "feature", "sandbox", "test", "tmp", "temp", "scratch", "demo",
+    "poc", "spike", "experiment",
+})
+_DECLARES = re.compile(
+    _cf_type(r"\w+::\w+") + r"|resource\s+\"aws_\w+\"|\b\w*(?:Stack|Stage)\("
+    # A CDK construct: new s3.Bucket(this, ...), s3.Bucket(self, ...).
+    r"|\b\w+\.[A-Z]\w*\(\s*(?:this|self|scope)\s*,"
+)
+_END_DATE_TAG = _tag_key(
+    r"(?:expiry[-_ ]?date|expiry|expires|expiration|end[-_ ]?date|delete[-_ ]?after|ttl)"
+)
+_ENV_TAG = _tag_key(r"(?:environment|env|stage)")
+
+
+def _temporary(name: str) -> bool:
+    env = from_words(name)
+    if env == "prod":
+        return False
+    spaced = re.sub(r"([a-z0-9])([A-Z])", r"\1 \2", name).lower()
+    if _TEMP_WORDS & set(re.split(r"[^a-z0-9]+", spaced)):
+        return True
+    # A pull request preview: pr-12, pr12, PR_12.
+    return re.search(r"(?:^|[^a-z0-9])pr[-_]?\d+(?![a-z])", spaced) is not None
+
+
+def temporary_stacks(repo_path: Path) -> List[tuple[str, bool, bool]]:
+    """(place, has end-date tag, has environment tag) for each temporary stack. Tags count
+    when set in the stack's file or in an IaC file in the same directory."""
+    texts = list(iac_texts(repo_path))
+    by_dir: dict[str, str] = {}
+    for rel, text in texts:
+        by_dir[rel.rpartition("/")[0]] = by_dir.get(rel.rpartition("/")[0], "") + "\n" + text
+    found: List[tuple[str, bool, bool]] = []
+    for rel, text in texts:
+        if not _DECLARES.search(text):
+            continue
+        places = [rel] if _temporary(rel) else [
+            f"{rel} stack {m.group(2)}" for m in _STACK_ID.finditer(text)
+            if rel.endswith((".ts", ".js", ".py")) and _temporary(m.group(2))
+        ]
+        if not places:
+            continue
+        tags = text if not _temporary(rel) else by_dir[rel.rpartition("/")[0]]
+        end, env = bool(_END_DATE_TAG.search(tags)), bool(_ENV_TAG.search(tags))
+        found.extend((place, end, env) for place in places)
+    return found
+
+
+class ProjectLifecycleUntracked(_RepoRule):
+    id = "REPO-085"
+    title = "Temporary stacks have no end date"
+    category = "Cost"
+    severity = "Low"
+    themes = ("finops",)
+    recommendation = (
+        "Tag every temporary stack (sandbox, test, preview, feature branch, pull request) with an "
+        "end date (ExpiryDate or DeleteAfter) and its environment, and remove or review "
+        "stacks past that date on a schedule."
+    )
+
+    def run(self, repo_path: Path, language: str = "typescript") -> List[Finding]:
+        untracked = []
+        for place, end, env in temporary_stacks(repo_path):
+            missing = [what for what, has in (("end-date", end), ("environment", env))
+                       if not has]
+            if missing:
+                untracked.append(f"{place} (no {' or '.join(missing)} tag)")
+        if not untracked:
+            return []
+        return [self._finding(
+            f"Temporary stack {_listed(untracked, 4)}; an end-date tag is keyed ExpiryDate, "
+            "Expiry, Expires, Expiration, EndDate, DeleteAfter or ttl, an environment tag "
+            "Environment, Env or Stage",
+        )]
+
+
 REPO_RULES: List[Rule] = [
     RepoTestsMissing(), RepoPipelineMissing(), SingleEnvironment(),
     OrgGuardrailsMissing(), AccountBaselineMissing(), RootUserUnchecked(),
@@ -7371,4 +7758,6 @@ REPO_RULES: List[Rule] = [
     BudgetOwnerMissing(), ReactiveCostMonitoring(), OldGenerationResources(),
     BusinessValueUnquantified(), FinanceTechPartnershipMissing(), CostAwareProcessMissing(),
     CostAwareCultureMissing(),
+    CostPolicyMissing(), CostControlMissing(), BudgetTargetMissing(),
+    SharedAccountEnvironments(), BillingAccessOnUser(), ProjectLifecycleUntracked(),
 ]

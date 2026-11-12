@@ -271,7 +271,7 @@ def _languages_to_scan(language: str) -> list[str]:
 # Account controls an app stack does not own. Off unless rules.org or rules.include.
 ORG_RULE_IDS = frozenset({
     "SEC-026", "SEC-027", "OPS-001", "OPS-014", "COST-014", "REPO-004", "REPO-007", "REPO-008",
-    "REPO-012", "REPO-032", "REPO-069",
+    "REPO-012", "REPO-032", "REPO-069", "REPO-080",
 })
 
 

@@ -4,7 +4,7 @@ Local-first AWS architecture review for infrastructure code. It scans **CDK** (T
 
 No AWS credentials. No cloud calls. LLM output is optional.
 
-> Early-stage: 258 static rules and 283 template checks are implemented and tested. 139 of the 258 CDK rules (54%) have a template check, so they also run for CloudFormation, Terraform and synthesised CDK. [docs/COVERAGE.md](docs/COVERAGE.md) gives the reason for each of the others. Expect some false positives and negatives, and API changes.
+> Early-stage: 264 static rules and 283 template checks are implemented and tested. 139 of the 264 CDK rules (53%) have a template check, so they also run for CloudFormation, Terraform and synthesised CDK. [docs/COVERAGE.md](docs/COVERAGE.md) gives the reason for each of the others. Expect some false positives and negatives, and API changes.
 
 ## Install
 
@@ -55,7 +55,7 @@ Each finding has a severity, a pillar, a file and line, evidence, a recommendati
 | **Reliability** | 61 | Missing DLQs, no backups, single-AZ, no health checks, untraced requests, fixed-size fleets |
 | **Operational Excellence** | 38 | No logging, alarms, tracing, KPI metrics, log and trace analysis, test gates, or rollback |
 | **Performance Efficiency** | 28 | No caching, oversized instances, no Graviton, no compute metrics or dynamic scaling, data kept on the instance, unwatched edge latency, no load balancer, single VPN or Direct Connect link, old protocols |
-| **Cost Optimization** | 29 | No autoscaling, NAT costs, no lifecycle policies, no cost report, cost attribution tags or unit-cost metrics, unowned or reactive budgets, previous-generation types, no named cost owner |
+| **Cost Optimization** | 35 | No autoscaling, NAT costs, no lifecycle policies, no cost report, cost attribution tags or unit-cost metrics, unowned or reactive budgets, previous-generation types, no named cost owner, no cost policy or control, budgets with no target, shared prod and dev accounts, billing on IAM users, temporary stacks with no end date |
 | **Sustainability** | 7 | No Spot, right-sizing |
 | **Best Practices** | 5 | Tags, Secrets Manager, CDK Aspects |
 

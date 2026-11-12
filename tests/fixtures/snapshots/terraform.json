@@ -341,5 +341,12 @@
     "file": null,
     "line": null,
     "evidence": "Declares Lambda in main.tf, S3 bucket in main.tf, RDS database in main.tf; the team has no shared cost guidance: searched the repo for a cost note (COST.md, FINOPS.md, docs/cost*.md, or a README or docs section headed Cost, FinOps or Cost ownership) that names an owner, contact, responsible or accountable person or team; found none"
+  },
+  {
+    "id": "REPO-081",
+    "severity": "Low",
+    "file": null,
+    "line": null,
+    "evidence": "Declares Lambda in main.tf, S3 bucket in main.tf, RDS database in main.tf; searched the IaC for a service control policy or a policy that Denies ec2:RunInstances or sagemaker:Create* or sets a condition on ec2:InstanceType, sagemaker:InstanceTypes, rds:DatabaseClass or aws:RequestedRegion, a permissions boundary (PermissionsBoundary, permissions_boundary, CDK PermissionsBoundary.of) and an AWS Budgets action (AWS::Budgets::BudgetsAction, aws_budgets_budget_action, CfnBudgetsAction); found none"
   }
 ]
