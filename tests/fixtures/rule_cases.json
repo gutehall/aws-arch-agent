@@ -1143,5 +1143,11 @@
     "negative_py": "ec2.Instance(self, 'Web', vpc=vpc, machine_image=ami, instance_type=ec2.InstanceType('m7g.large'))",
     "positive_ts": "new ec2.Instance(this, 'Trainer', { vpc, machineImage, instanceType: new ec2.InstanceType('p4d.24xlarge') });",
     "positive_py": "ec2.Instance(self, 'Trainer', vpc=vpc, machine_image=ami, instance_type=ec2.InstanceType.of(ec2.InstanceClass.G5, ec2.InstanceSize.XLARGE))"
+  },
+  "REPO-063": {
+    "negative_ts": "const host = new ec2.Instance(this, 'Db', { vpc, instanceType, machineImage });\nnew ec2.Volume(this, 'Data', { availabilityZone: 'eu-west-1a', size });\nnew rds.DatabaseInstance(this, 'Rds', { engine, vpc });",
+    "negative_py": "ec2.Instance(self, 'Web', vpc=vpc, instance_type=t, machine_image=ami)",
+    "positive_ts": "const host = new ec2.Instance(this, 'Db', { vpc, instanceType, machineImage });\nnew ec2.Volume(this, 'Data', { availabilityZone: 'eu-west-1a', size });",
+    "positive_py": "host = ec2.Instance(self, 'Db', vpc=vpc, instance_type=t, machine_image=ami)\nhost.user_data.add_commands('dnf install -y mysql-server')"
   }
 }

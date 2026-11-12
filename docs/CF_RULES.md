@@ -4,7 +4,7 @@ This document provides a comprehensive list of all rules checked by AWS Arch Age
 
 ## Overview
 
-AWS Arch Agent checks **241 static analysis rules** and **283 template checks** across all 6 AWS Well-Architected Framework pillars. 139 of the 241 CDK rules (58%) have a template check, so they also run for CloudFormation, Terraform and synthesised CDK. [COVERAGE.md](COVERAGE.md) gives the reason for each of the others.
+AWS Arch Agent checks **242 static analysis rules** and **283 template checks** across all 6 AWS Well-Architected Framework pillars. 139 of the 242 CDK rules (57%) have a template check, so they also run for CloudFormation, Terraform and synthesised CDK. [COVERAGE.md](COVERAGE.md) gives the reason for each of the others.
 
 ## Static Analysis Rules (V1 & V2 Modes)
 
@@ -278,7 +278,7 @@ These rules run on your CDK TypeScript/Python code and execute in both V1 and V2
 - REPO-029: Workload traces are not analyzed
 - REPO-030: Dashboards show no workload metric
 
-### Performance Efficiency (22 rules)
+### Performance Efficiency (23 rules)
 
 **Compute Optimization:**
 - PERF-001: Compute may not use Graviton/ARM
@@ -313,6 +313,9 @@ These rules run on your CDK TypeScript/Python code and execute in both V1 and V2
 - REPO-060: Compute utilization metrics are not collected
 - REPO-061: Compute does not scale with demand
 - REPO-062: Accelerator utilization is not watched
+
+**Data management (repo-level, PERF 3):**
+- REPO-063: Data lives on the instance, not in a purpose-built store
 
 ### Cost Optimization (18 rules)
 
@@ -1091,6 +1094,7 @@ Every rule has one or more themes, which cut across pillars: `finops`, `security
 | REPO-060 | observability |
 | REPO-061 | finops |
 | REPO-062 | finops |
+| REPO-063 | resilience |
 | SEC-001 | identity |
 | SEC-002 | identity |
 | SEC-003 | network-exposure |

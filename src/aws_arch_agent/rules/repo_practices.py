@@ -474,6 +474,21 @@ Files whose path reads as dev or staging are skipped by REPO-060 and REPO-061.
   Batch compute environment or SageMaker resource, and no alarm on a GPU or Neuron core
   utilization metric (nvidia_smi_utilization_gpu, GPUUtilization, GPUMemoryUtilization,
   neuroncore_utilization, NeuronCoreUtilization, Container Insights GPU metrics).
+
+Data management (PERF 3). Access patterns, store configuration, metrics and caching
+(PERF03-BP02 to BP05) are mapped CDK and template checks; this reads the rest.
+
+- REPO-063 purpose-built data store: production IaC keeps data only on instance-attached
+  storage: an EBS data volume or attachment (AWS::EC2::Volume, AWS::EC2::VolumeAttachment,
+  aws_ebs_volume, aws_volume_attachment, CDK Volume or CfnVolumeAttachment), a block device
+  on a non-root device name or a Terraform ebs_block_device, an instance store (ephemeral)
+  mapping, or user data or an SSM document that installs or runs a database engine on the
+  host (mysql-server, mariadb-server, postgresql, mongodb, redis, cassandra, elasticsearch,
+  opensearch, through a package manager, systemctl, or docker run of a postgres, mysql,
+  mariadb, mongo or redis image). It passes when the repo declares any managed data store
+  (S3, DynamoDB, RDS or Aurora, ElastiCache, MemoryDB, DocumentDB, Neptune, Keyspaces,
+  OpenSearch Service, Timestream, Redshift, EFS or FSx), and when nothing keeps data on the
+  instance. Files whose path reads as dev or staging are skipped.
 """
 from __future__ import annotations
 
@@ -5954,6 +5969,104 @@ class AcceleratorUtilizationUnwatched(_RepoRule):
         )]
 
 
+# PERF 3: a purpose-built data store rather than data on the instance (REPO-063).
+
+_HOST_DATA_STORAGE = _kinds(
+    ("EBS data volume",
+     _cf_type(r"EC2::Volume(?:Attachment)?")
+     + r"|resource\s+\"aws_(?:ebs_volume|volume_attachment)\""
+     r"|\bec2\.(?:Cfn)?Volume(?:Attachment)?\("),
+    ("block device on a non-root device name",
+     rf"[\"']?(?:DeviceName|deviceName|device_name)[\"']?\s*[:=]\s*[\"']?{_ROOT_DEVICE}"
+     r"|\bebs_block_device\s*\{"),
+    ("instance store volume",
+     r"[\"']?(?:VirtualName|virtual_name)[\"']?\s*[:=]\s*[\"']?ephemeral\d"
+     r"|\bephemeral_block_device\s*\{|\bBlockDeviceVolume\.ephemeral\("),
+)
+# User data or an SSM document: where a host is told to install or run software.
+_HOST_SETUP = re.compile(
+    r"\bUserData\b|\buser_data\b|\buserData\b|\badd_?[cC]ommands\("
+    r"|AWS::SSM::Document\b|resource\s+\"aws_ssm_document\"|\bssm\.CfnDocument\("
+)
+_DB_ENGINE = (
+    r"mysql-server|mariadb\d*-server|postgresql\d*-server|postgresql(?:-\d+)?(?=\s|$|['\";&\\])"
+    r"|mongodb-org|mongodb-server|redis\d*(?:-server)?|cassandra|elasticsearch|opensearch"
+)
+# The rest of one shell command: it stops at a newline (also \n inside a JSON string), ; & |.
+_ONE_COMMAND = r"(?:[^\n\\;&|]|\\(?!n))*?"
+# A command starts a line, also one written as \n inside a JSON string.
+_DB_ON_HOST = re.compile(
+    r"(?:\b|(?<=\\n))(?:apt-get|apt|yum|dnf|apk|zypper|amazon-linux-extras)\s+(?:-\S+\s+)*"
+    r"(?:install|add)\s+" + _ONE_COMMAND + r"(?<![\w./-])(" + _DB_ENGINE + r")(?![\w.-])"
+    r"|(?:\b|(?<=\\n))systemctl\s+(?:enable|start|restart)\s+(?:--now\s+)?"
+    r"(mysqld|mariadb|postgresql|mongod|redis(?:-server)?|cassandra|elasticsearch|opensearch)\b"
+    r"|(?:\b|(?<=\\n))docker\s+run\s+" + _ONE_COMMAND
+    + r"(?<=\s)(?:library/)?(postgres|mysql|mariadb|mongo|redis)(?::[\w.-]+)?(?=\s|$|['\";&\\])",
+    re.MULTILINE,
+)
+_MANAGED_DATA_STORES = (
+    *_DATA_STORES,
+    *_kinds(
+        ("DynamoDB table", _cf_type(r"Serverless::SimpleTable")),
+        ("MemoryDB cluster", _cf_type(r"MemoryDB::Cluster")
+         + r"|resource\s+\"aws_memorydb_cluster\"|\bmemorydb\.(?:alpha\.)?(?:Cfn)?Cluster\("),
+        ("Keyspaces table", _cf_type(r"Cassandra::(?:Keyspace|Table)")
+         + r"|resource\s+\"aws_keyspaces_(?:keyspace|table)\""
+         r"|\bcassandra\.Cfn(?:Keyspace|Table)\("),
+        ("Timestream database", _cf_type(r"Timestream::(?:Database|Table)")
+         + r"|resource\s+\"aws_timestreamwrite_(?:database|table)\""
+         r"|\btimestream\.Cfn(?:Database|Table)\("),
+        ("FSx file system", _cf_type(r"FSx::FileSystem")
+         + r"|resource\s+\"aws_fsx_\w+_file_system\"|\bfsx\.(?:Cfn|Lustre)?FileSystem\("),
+        ("ElastiCache", r"\belasticache\.(?:alpha\.)?(?:ServerlessCache|ReplicationGroup)\("),
+    ),
+)
+
+
+def host_data_storage(repo_path: Path) -> List[tuple[str, str, int]]:
+    """Production data kept on the instance: (kind, file, line), first per kind and file."""
+    found: List[tuple[str, str, int]] = []
+    for rel, text in iac_texts(repo_path):
+        if not _production(rel):
+            continue
+        for kind, pattern in _HOST_DATA_STORAGE:
+            if match := pattern.search(text):
+                found.append((kind, rel, _line_of(text, match.start())))
+        if _HOST_SETUP.search(text) and (match := _DB_ON_HOST.search(text)):
+            engine = next(group for group in match.groups() if group)
+            found.append((f"{engine} on the host", rel, _line_of(text, match.start())))
+    return found
+
+
+class PurposeBuiltDataStoreMissing(_RepoRule):
+    id = "REPO-063"
+    title = "Data lives on the instance, not in a purpose-built store"
+    category = "Performance Efficiency"
+    severity = "Low"
+    themes = ("resilience",)
+    recommendation = (
+        "Pick a managed data store built for the access pattern instead of keeping data on "
+        "instance volumes or running a database engine on the host: RDS or Aurora for "
+        "relational data, DynamoDB for key-value access, ElastiCache or MemoryDB for "
+        "in-memory data, OpenSearch Service for search, S3 for objects, and EFS or FSx for "
+        "shared files."
+    )
+
+    def run(self, repo_path: Path, language: str = "typescript") -> List[Finding]:
+        found = host_data_storage(repo_path)
+        if not found or _in_iac(repo_path, _MANAGED_DATA_STORES):
+            return []
+        places = [f"{kind} at {rel}:{line}" for kind, rel, line in found]
+        return [self._finding(
+            f"Keeps data on the instance: {_listed(places, 4)}; searched the IaC for a "
+            "managed data store (S3, DynamoDB, RDS or Aurora, ElastiCache, MemoryDB, "
+            "DocumentDB, Neptune, Keyspaces, OpenSearch Service, Timestream, Redshift, EFS, "
+            "FSx); found none",
+            file=found[0][1],
+            line=found[0][2],
+        )]
+
+
 REPO_RULES: List[Rule] = [
     RepoTestsMissing(), RepoPipelineMissing(), SingleEnvironment(),
     OrgGuardrailsMissing(), AccountBaselineMissing(), RootUserUnchecked(),
@@ -5982,4 +6095,5 @@ REPO_RULES: List[Rule] = [
     SingleLocationRecoveryMissing(),
     StaticStabilityMissing(), AvailabilityTargetMissing(), AvailabilityNotificationMissing(),
     ComputeMetricsMissing(), StaticComputeFleet(), AcceleratorUtilizationUnwatched(),
+    PurposeBuiltDataStoreMissing(),
 ]

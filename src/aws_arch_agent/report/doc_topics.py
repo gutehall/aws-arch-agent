@@ -995,7 +995,7 @@ TOPICS: dict[str, tuple[str, str, str, str]] = {
     "kinesis_efo": (
         "Kinesis Data Streams: enhanced fan-out",
         "/streams/latest/dev/enhanced-consumers.html",
-        "Well-Architected PERF03-BP01: Use a purpose-built data store that best supports your data access and storage requirements",
+        "Well-Architected PERF03-BP01: Use a purpose-built data store",
         "/wellarchitected/latest/performance-efficiency-pillar/perf_data_use_purpose_built_data_store.html",
     ),
     "kinesis_encryption": (
@@ -1437,7 +1437,7 @@ TOPICS: dict[str, tuple[str, str, str, str]] = {
     "rds_proxy": (
         "Amazon RDS Proxy",
         "/AmazonRDS/latest/UserGuide/rds-proxy.html",
-        "Well-Architected PERF03-BP01: Use a purpose-built data store that best supports your data access and storage requirements",
+        "Well-Architected PERF03-BP01: Use a purpose-built data store",
         "/wellarchitected/latest/performance-efficiency-pillar/perf_data_use_purpose_built_data_store.html",
     ),
     "rds_public": (
@@ -1449,7 +1449,7 @@ TOPICS: dict[str, tuple[str, str, str, str]] = {
     "rds_replicas": (
         "RDS: read replicas",
         "/AmazonRDS/latest/UserGuide/USER_ReadRepl.html",
-        "Well-Architected PERF03-BP01: Use a purpose-built data store that best supports your data access and storage requirements",
+        "Well-Architected PERF03-BP01: Use a purpose-built data store",
         "/wellarchitected/latest/performance-efficiency-pillar/perf_data_use_purpose_built_data_store.html",
     ),
     "rds_reserved": (
@@ -2011,6 +2011,12 @@ TOPICS: dict[str, tuple[str, str, str, str]] = {
         "Well-Architected PERF02-BP06: Use optimized hardware-based compute accelerators",
         "/wellarchitected/latest/performance-efficiency-pillar/perf_compute_hardware_compute_accelerators.html",
     ),
+    "purpose_built_data_store": (
+        "AWS Decision Guides: choosing an AWS database service",
+        "/decision-guides/latest/decision-guides/databases-on-aws-how-to-choose.html",
+        "Well-Architected PERF03-BP01: Use a purpose-built data store",
+        "/wellarchitected/latest/performance-efficiency-pillar/perf_data_use_purpose_built_data_store.html",
+    ),
     "org_guardrails": (
         "Service control policies (SCPs)",
         "/organizations/latest/userguide/orgs_manage_policies_scps.html",
@@ -2271,6 +2277,7 @@ RULE_TOPICS: dict[str, str] = {
     "REPO-060": "compute_metrics",
     "REPO-061": "dynamic_scaling",
     "REPO-062": "accelerator_utilization",
+    "REPO-063": "purpose_built_data_store",
     "PERF-001": "graviton_ec2",
     "PERF-002": "caching",
     "PERF-003": "ddb_capacity",

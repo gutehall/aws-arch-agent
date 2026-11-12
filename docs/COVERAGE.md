@@ -15,7 +15,7 @@ Which CDK rules have a template check, and which AWS Foundational Security Best 
 
 ## CDK rules
 
-241 rules: 132 covered, 7 partial, 10 account, 5 cdk-only, 25 advice, 62 repo.
+242 rules: 132 covered, 7 partial, 10 account, 5 cdk-only, 25 advice, 63 repo.
 
 | Rule | Title | Template check | Status | Note |
 | -- | -- | -- | -- | -- |
@@ -260,6 +260,7 @@ Which CDK rules have a template check, and which AWS Foundational Security Best 
 | REPO-060 | Compute utilization metrics are not collected |  | `repo` | When production IaC runs compute, looks for an alarm on a CPU, memory, duration or concurrency metric, ECS Container Insights, the EKS CloudWatch observability add-on, or the CloudWatch agent; dev and staging paths are skipped. |
 | REPO-061 | Compute does not scale with demand |  | `repo` | Fires on a production ECS service when the repo has no ECS scaling target with a scaling policy, and on an Auto Scaling group with a fixed size or no scaling policy; a schedule alone does not count, and serverless-only stacks pass. |
 | REPO-062 | Accelerator utilization is not watched |  | `repo` | When a GPU, Inferentia, Trainium or other accelerated instance type sits on an instance, launch template, Auto Scaling group, EKS node group, Batch or SageMaker resource, looks for an alarm on a GPU or Neuron core utilization metric. |
+| REPO-063 | Data lives on the instance, not in a purpose-built store |  | `repo` | Fires when production IaC keeps data on an EBS data volume, a non-root or instance store block device, or a database engine installed or run by user data or an SSM document, and the repo declares no managed data store (S3, DynamoDB, RDS or Aurora, ElastiCache, MemoryDB, DocumentDB, Neptune, Keyspaces, OpenSearch Service, Timestream, Redshift, EFS, FSx); dev and staging paths are skipped. |
 
 ## FSBP controls
 
