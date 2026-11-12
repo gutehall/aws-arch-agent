@@ -1149,5 +1149,35 @@
     "negative_py": "ec2.Instance(self, 'Web', vpc=vpc, instance_type=t, machine_image=ami)",
     "positive_ts": "const host = new ec2.Instance(this, 'Db', { vpc, instanceType, machineImage });\nnew ec2.Volume(this, 'Data', { availabilityZone: 'eu-west-1a', size });",
     "positive_py": "host = ec2.Instance(self, 'Db', vpc=vpc, instance_type=t, machine_image=ami)\nhost.user_data.add_commands('dnf install -y mysql-server')"
+  },
+  "REPO-064": {
+    "negative_ts": "const api = new apigateway.RestApi(this, 'Api');\nnew cloudwatch.Alarm(this, 'Slow', { metric: api.metricLatency(), threshold: 500, evaluationPeriods: 3 });",
+    "negative_py": "api = apigw.RestApi(self, 'Api')\ncloudwatch.Alarm(self, 'Slow', metric=api.metric_latency(), threshold=500, evaluation_periods=3)",
+    "positive_ts": "const api = new apigateway.RestApi(this, 'Api');\nnew cloudwatch.Alarm(this, 'Errors', { metric: api.metricServerError(), threshold: 1, evaluationPeriods: 1 });",
+    "positive_py": "api = apigw.RestApi(self, 'Api')"
+  },
+  "REPO-065": {
+    "negative_ts": "const api = new apigateway.RestApi(this, 'Api');\nconst vpc = new ec2.Vpc(this, 'Vpc');\nvpc.addFlowLog('Flow');",
+    "negative_py": "api = apigw.RestApi(self, 'Api')\ncloudwatch.Alarm(self, 'Slow', metric=api.metric_latency(), threshold=500, evaluation_periods=3)",
+    "positive_ts": "const api = new apigateway.RestApi(this, 'Api');\nnew cloudwatch.Alarm(this, 'Slow', { metric: api.metricLatency(), threshold: props.latencyMs, evaluationPeriods: 3 });",
+    "positive_py": "api = apigw.RestApi(self, 'Api')"
+  },
+  "REPO-066": {
+    "negative_ts": "new ec2.VpnConnection(this, 'Vpn', { vpc, ip: '203.0.113.10' });\nnew ec2.VpnConnection(this, 'Vpn2', { vpc, ip: '203.0.113.11' });",
+    "negative_py": "ec2.Vpc(self, 'Vpc', vpn_connections={'office': ec2.VpnConnectionOptions(ip='203.0.113.10'), 'backup': ec2.VpnConnectionOptions(ip='203.0.113.11')})",
+    "positive_ts": "new ec2.VpnConnection(this, 'Vpn', { vpc, ip: '203.0.113.10' });",
+    "positive_py": "ec2.Vpc(self, 'Vpc', vpn_connections={'office': ec2.VpnConnectionOptions(ip='203.0.113.10')})"
+  },
+  "REPO-067": {
+    "negative_ts": "new ec2.Instance(this, 'Web', { vpc, instanceType, machineImage, vpcSubnets: { subnetType: ec2.SubnetType.PUBLIC } });\nnew elbv2.ApplicationLoadBalancer(this, 'Lb', { vpc, internetFacing: true });",
+    "negative_py": "ec2.Instance(self, 'Web', vpc=vpc, instance_type=t, machine_image=ami)",
+    "positive_ts": "new ec2.Instance(this, 'Web', { vpc, instanceType, machineImage, vpcSubnets: { subnetType: ec2.SubnetType.PUBLIC } });",
+    "positive_py": "ec2.Instance(self, 'Web', vpc=vpc, instance_type=t, machine_image=ami, associate_public_ip_address=True)"
+  },
+  "REPO-068": {
+    "negative_ts": "new cloudfront.Distribution(this, 'Cdn', { defaultBehavior, httpVersion: cloudfront.HttpVersion.HTTP2_AND_3, minimumProtocolVersion: cloudfront.SecurityPolicyProtocol.TLS_V1_2_2021 });",
+    "negative_py": "cloudfront.Distribution(self, 'Cdn', default_behavior=b, minimum_protocol_version=cloudfront.SecurityPolicyProtocol.TLS_V1_2_2021)",
+    "positive_ts": "new cloudfront.Distribution(this, 'Cdn', { defaultBehavior, httpVersion: cloudfront.HttpVersion.HTTP1_1 });",
+    "positive_py": "cloudfront.Distribution(self, 'Cdn', default_behavior=b, minimum_protocol_version=cloudfront.SecurityPolicyProtocol.TLS_V1_2016)"
   }
 }

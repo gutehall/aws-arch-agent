@@ -233,7 +233,7 @@ ALL_RULES = [
     AlarmEscalationMissing(),
     *REPO_RULES,  # repo-level: tests, pipeline, guardrails, incidents, app security, testing,
     # observability, deployment risk, telemetry analysis
-    # Performance Efficiency (23 rules: these 19, and REPO-060 to REPO-063 in REPO_RULES)
+    # Performance Efficiency (28 rules: these 19, and REPO-060 to REPO-068 in REPO_RULES)
     GravitonNotUsed(),
     CachingHint(),
     DynamoDbProvisionedCapacity(),

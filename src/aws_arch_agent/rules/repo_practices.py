@@ -489,6 +489,32 @@ Data management (PERF 3). Access patterns, store configuration, metrics and cach
   (S3, DynamoDB, RDS or Aurora, ElastiCache, MemoryDB, DocumentDB, Neptune, Keyspaces,
   OpenSearch Service, Timestream, Redshift, EFS or FSx), and when nothing keeps data on the
   instance. Files whose path reads as dev or staging are skipped.
+
+Networking (PERF 4). Evaluating networking features (PERF04-BP02) and choosing the
+workload's location (PERF04-BP06) are mapped CDK checks; these read the rest. Files whose
+path reads as dev or staging are skipped by all five.
+
+- REPO-064 edge latency: a load balancer, API Gateway or CloudFront distribution (as
+  REPO-019) and no alarm on TargetResponseTime, Latency, IntegrationLatency or OriginLatency
+  (or the CDK metricLatency, metricIntegrationLatency, metricOriginLatency or
+  metrics.targetResponseTime helper). Error and 5xx alarms do not count.
+- REPO-065 tuning on metrics: an edge and neither VPC Flow Logs (AWS::EC2::FlowLog,
+  aws_flow_log, CDK FlowLog, addFlowLog or flowLogs) nor a latency alarm with a literal
+  numeric threshold (a parameter, variable or anomaly band is not one).
+- REPO-066 redundant hybrid links: exactly one Direct Connect connection or virtual
+  interface with no second one, no LAG and no VPN; or exactly one VPN connection (CDK
+  VpnConnection, addVpnConnection or one vpnConnections entry) on at most one customer
+  gateway and no Direct Connect. A Terraform block with count or for_each counts as two.
+- REPO-067 load balancing: an EC2 instance with a public IP (AssociatePublicIpAddress,
+  associate_public_ip_address, CDK associatePublicIpAddress or a PUBLIC subnet type) or an
+  Elastic IP when the repo declares no load balancer; and a target group with exactly one
+  literal target (CloudFormation Targets, one aws_lb_target_group_attachment, one CDK
+  InstanceTarget or IpTarget) and no Auto Scaling group or ECS service registered with it.
+- REPO-068 network protocols: CloudFront HttpVersion http1.1, a CloudFront viewer
+  MinimumProtocolVersion below TLSv1.2, a load balancer SslPolicy that allows TLS 1.0 or
+  1.1, an API Gateway domain SecurityPolicy TLS_1_0, or an internet-facing load balancer
+  listener on HTTP that forwards instead of redirecting. Only explicit values are read: the
+  CloudFront default is HTTP/2, and an unset SslPolicy is the template check's job.
 """
 from __future__ import annotations
 
@@ -6067,6 +6093,545 @@ class PurposeBuiltDataStoreMissing(_RepoRule):
         )]
 
 
+# PERF 4: networking. Edge latency watched (REPO-064), redundant dedicated connectivity
+# (REPO-066), load balancing (REPO-067), modern protocols (REPO-068), and network
+# configuration tuned on metrics (REPO-065).
+
+
+def _cf_resources(rel: str, text: str) -> dict[str, dict]:
+    """The Resources of a readable CloudFormation template: logical id -> body."""
+    try:
+        doc = parse_template_text(Path(rel), text)
+    except Exception:  # noqa: BLE001 - not a readable template
+        return {}
+    resources = doc.get("Resources") if isinstance(doc, dict) else None
+    if not isinstance(resources, dict):
+        return {}
+    return {name: body for name, body in resources.items() if isinstance(body, dict)}
+
+
+def _props(body: dict) -> dict:
+    props = body.get("Properties")
+    return props if isinstance(props, dict) else {}
+
+
+def production_edges(repo_path: Path) -> dict[str, str]:
+    """User-facing endpoints (as edges()) in files whose path does not read as dev or
+    staging: kind -> first file."""
+    found: dict[str, str] = {}
+    for rel, text in iac_texts(repo_path):
+        if not _production(rel):
+            continue
+        for name, pattern in _EDGES:
+            if pattern.search(text):
+                found.setdefault(name, rel)
+        if _SAM_TRANSFORM.search(text) and _SAM_API_EVENT.search(text):
+            found.setdefault("API Gateway", rel)
+    return found
+
+
+_LATENCY_NAMES = r"TargetResponseTime|Latency|IntegrationLatency|OriginLatency"
+_CDK_LATENCY_METRIC = (
+    r"\.metric(?:Latency|IntegrationLatency|OriginLatency|TargetResponseTime)\("
+    r"|\.metric_(?:latency|integration_latency|origin_latency|target_response_time)\("
+    r"|\.metrics\.(?:targetResponseTime|target_response_time)\("
+)
+_LATENCY_METRIC = re.compile(_metric_named(_LATENCY_NAMES) + "|" + _CDK_LATENCY_METRIC)
+_TF_ALARM_BLOCK = re.compile(
+    r"resource\s+\"aws_cloudwatch_metric_alarm\"\s+\"[^\"]+\"\s*\{"
+)
+_CDK_ALARM_CALL = re.compile(
+    r"\bcloudwatch\.Alarm\(|\bnew\s+Alarm\(|\.create_?[Aa]larm\("
+)
+# A threshold set to a number; a variable, parameter or anomaly band is not one.
+_NUMERIC_THRESHOLD = re.compile(
+    r"(?<![\w.])[\"']?(?:Threshold|threshold)[\"']?\s*[:=]\s*[\"']?-?\d+(?:\.\d+)?[\"']?"
+    r"(?![\w.])"
+)
+_LATENCY_NAME_SET = frozenset(_LATENCY_NAMES.split("|"))
+_CF_ALARM_TYPE = re.compile(_cf_type(r"CloudWatch::Alarm"))
+
+
+def _number(value: object) -> bool:
+    if isinstance(value, bool):
+        return False
+    if isinstance(value, (int, float)):
+        return True
+    return isinstance(value, str) and re.fullmatch(r"-?\d+(?:\.\d+)?", value) is not None
+
+
+def _cf_latency_threshold(rel: str, text: str) -> bool:
+    """A CloudFormation alarm on an edge latency metric with a numeric Threshold."""
+    for body in _cf_resources(rel, text).values():
+        if body.get("Type") != "AWS::CloudWatch::Alarm":
+            continue
+        props = _props(body)
+        names = {props.get("MetricName")}
+        for query in props.get("Metrics") or ():
+            stat = query.get("MetricStat") if isinstance(query, dict) else None
+            metric = stat.get("Metric") if isinstance(stat, dict) else None
+            if isinstance(metric, dict):
+                names.add(metric.get("MetricName"))
+        if names & _LATENCY_NAME_SET and _number(props.get("Threshold")):
+            return True
+    return False
+
+
+def _latency_threshold(rel: str, text: str) -> bool:
+    """An alarm in the text on an edge latency metric with a literal numeric threshold."""
+    if _CF_ALARM_TYPE.search(text) and _cf_latency_threshold(rel, text):
+        return True
+    for match in _TF_ALARM_BLOCK.finditer(text):
+        body = _braced(text, match.end() - 1)
+        if _LATENCY_METRIC.search(body) and _NUMERIC_THRESHOLD.search(body):
+            return True
+    # A CDK alarm often takes its metric from a variable: the caller found a latency metric
+    # in the file, so a number in the alarm's own arguments is enough.
+    for match in _CDK_ALARM_CALL.finditer(text):
+        if _NUMERIC_THRESHOLD.search(_braced(text, match.end() - 1, "(", ")")):
+            return True
+    return False
+
+
+def latency_alarms(repo_path: Path) -> tuple[str | None, str | None]:
+    """The first file with an alarm on an edge latency metric, and the first file where such
+    an alarm has a literal numeric threshold."""
+    alarm = fixed = None
+    for rel, text in iac_texts(repo_path):
+        if not _TYPED_ALARM.search(text) or not _LATENCY_METRIC.search(text):
+            continue
+        alarm = alarm or rel
+        if fixed is None and _latency_threshold(rel, text):
+            fixed = rel
+            break
+    return alarm, fixed
+
+
+class EdgeLatencyUnwatched(_RepoRule):
+    id = "REPO-064"
+    title = "Network latency at the edge is not watched"
+    category = "Performance Efficiency"
+    severity = "Low"
+    themes = ("observability",)
+    recommendation = (
+        "Alarm on the latency users see at the edge: TargetResponseTime on an Application "
+        "Load Balancer, Latency and IntegrationLatency on API Gateway, and OriginLatency on "
+        "CloudFront, so a slow network path or origin shows up before users report it."
+    )
+
+    def run(self, repo_path: Path, language: str = "typescript") -> List[Finding]:
+        found = production_edges(repo_path)
+        if not found or latency_alarms(repo_path)[0]:
+            return []
+        places = [f"{kind} in {rel}" for kind, rel in found.items()]
+        return [self._finding(
+            f"Serves users through {_listed(places)}; searched the IaC for an alarm on "
+            "TargetResponseTime, Latency, IntegrationLatency or OriginLatency; found none",
+        )]
+
+
+_FLOW_LOGS = _kinds(
+    ("VPC Flow Logs", _cf_type(r"EC2::FlowLog") + r"|resource\s+\"aws_flow_log\""
+     r"|\bec2\.(?:Cfn)?FlowLog\(|\.add_?[fF]low_?[lL]og\("
+     r"|\bflow_?[lL]ogs[\"']?\s*[:=]\s*[{\[(]"),
+)
+
+
+class NetworkMetricsUnused(_RepoRule):
+    id = "REPO-065"
+    title = "Network configuration is not tuned on metrics"
+    category = "Performance Efficiency"
+    severity = "Low"
+    themes = ("observability",)
+    recommendation = (
+        "Collect the network metrics needed to tune the configuration: turn on VPC Flow Logs "
+        "to see traffic patterns, and alarm on edge latency (TargetResponseTime, Latency, "
+        "OriginLatency) with a fixed threshold taken from the performance target, then "
+        "revisit the network design when it is breached."
+    )
+
+    def run(self, repo_path: Path, language: str = "typescript") -> List[Finding]:
+        found = production_edges(repo_path)
+        if not found or _in_iac(repo_path, _FLOW_LOGS):
+            return []
+        alarm, fixed = latency_alarms(repo_path)
+        if fixed:
+            return []
+        latency = (
+            f"the latency alarm in {alarm} has no numeric threshold" if alarm
+            else "no alarm on an edge latency metric"
+        )
+        places = [f"{kind} in {rel}" for kind, rel in found.items()]
+        return [self._finding(
+            f"Serves users through {_listed(places)}; {latency}, and no VPC Flow Logs "
+            "(AWS::EC2::FlowLog, aws_flow_log, CDK FlowLog or addFlowLog)",
+        )]
+
+
+def _counted(text: str, pattern: re.Pattern[str]) -> int:
+    """Declarations of a resource; a Terraform block with count or for_each counts as two."""
+    total = 0
+    for match in pattern.finditer(text):
+        total += 1
+        if match.group(0).rstrip().endswith("{") and re.search(
+            r"^\s*(?:count|for_each)\s*=", _braced(text, match.end() - 1), re.MULTILINE
+        ):
+            total += 1
+    return total
+
+
+_DX_CONNECTION = re.compile(
+    _cf_type(r"DirectConnect::Connection")
+    + r"|resource\s+\"aws_dx_connection\"\s+\"[^\"]+\"\s*\{"
+)
+_DX_LAG = re.compile(_cf_type(r"DirectConnect::Lag") + r"|resource\s+\"aws_dx_lag\"")
+_DX_INTERFACE = re.compile(
+    _cf_type(r"DirectConnect::\w*VirtualInterface")
+    + r"|resource\s+\"aws_dx_(?:hosted_)?(?:private|public|transit)_virtual_interface\""
+    r"\s+\"[^\"]+\"\s*\{"
+)
+_VPN_CONNECTION = re.compile(
+    _cf_type(r"EC2::VPNConnection") + r"|resource\s+\"aws_vpn_connection\"\s+\"[^\"]+\"\s*\{"
+    r"|\bec2\.(?:Cfn)?VpnConnection\(|\.add_?[vV]pn_?[cC]onnection\("
+)
+_CUSTOMER_GATEWAY = re.compile(
+    _cf_type(r"EC2::CustomerGateway") + r"|resource\s+\"aws_customer_gateway\"\s+\"[^\"]+\"\s*\{"
+)
+_CDK_VPN_OPTIONS = re.compile(r"\bvpn_?[cC]onnections[\"']?\s*[:=]\s*\{")
+_CDK_VPN_IP = re.compile(r"[\"']?\bip[\"']?\s*[:=]")
+
+
+def hybrid_links(repo_path: Path) -> dict[str, tuple[int, str]]:
+    """Dedicated and VPN links in production IaC: kind -> (declarations, first file)."""
+    counts: dict[str, tuple[int, str]] = {}
+
+    def add(kind: str, n: int, rel: str) -> None:
+        if n:
+            old = counts.get(kind, (0, rel))
+            counts[kind] = (old[0] + n, old[1])
+
+    for rel, text in iac_texts(repo_path):
+        if not _production(rel):
+            continue
+        add("Direct Connect connection", _counted(text, _DX_CONNECTION), rel)
+        add("Direct Connect LAG", len(_DX_LAG.findall(text)), rel)
+        add("Direct Connect virtual interface", _counted(text, _DX_INTERFACE), rel)
+        add("VPN connection", _counted(text, _VPN_CONNECTION), rel)
+        add("customer gateway", _counted(text, _CUSTOMER_GATEWAY), rel)
+        for match in _CDK_VPN_OPTIONS.finditer(text):
+            add("VPN connection", len(_CDK_VPN_IP.findall(_braced(text, match.end() - 1))), rel)
+    return counts
+
+
+class SingleHybridLink(_RepoRule):
+    id = "REPO-066"
+    title = "Dedicated connectivity or VPN has no redundant link"
+    category = "Performance Efficiency"
+    severity = "Medium"
+    themes = ("resilience",)
+    recommendation = (
+        "Give the link to the on-premises network a second path: a second Direct Connect "
+        "connection at another location or a LAG, or a Site-to-Site VPN as backup to Direct "
+        "Connect, and a second VPN connection on a second customer gateway device."
+    )
+
+    def run(self, repo_path: Path, language: str = "typescript") -> List[Finding]:
+        links = hybrid_links(repo_path)
+
+        def n(kind: str) -> int:
+            return links.get(kind, (0, ""))[0]
+
+        dx, vif = n("Direct Connect connection"), n("Direct Connect virtual interface")
+        vpn, lag = n("VPN connection"), n("Direct Connect LAG")
+        if (dx or vif) and dx <= 1 and vif <= 1 and not lag and not vpn:
+            kind = "Direct Connect connection" if dx else "Direct Connect virtual interface"
+            return [self._finding(
+                f"Declares one {kind} in {links[kind][1]}; searched the IaC for a second "
+                "Direct Connect connection or virtual interface, a LAG, and a Site-to-Site "
+                "VPN backup; found none",
+                file=links[kind][1],
+            )]
+        if vpn == 1 and not (dx or vif or lag) and n("customer gateway") <= 1:
+            return [self._finding(
+                f"Declares one VPN connection in {links['VPN connection'][1]}; searched the "
+                "IaC for a second VPN connection on another customer gateway and for Direct "
+                "Connect; found none",
+                file=links["VPN connection"][1],
+            )]
+        return []
+
+
+_LOAD_BALANCERS = _kinds(
+    ("load balancer",
+     _cf_type(r"ElasticLoadBalancing(?:V2)?::LoadBalancer")
+     + r"|resource\s+\"aws_(?:lb|alb|elb)\""
+     r"|\b(?:Application|Network)LoadBalancer\(|\belb\.(?:Cfn)?LoadBalancer\("
+     r"|\b(?:Application|Network)LoadBalanced\w+\(|\belbv2\.CfnLoadBalancer\("),
+)
+_TF_INSTANCE = re.compile(r"resource\s+\"aws_instance\"\s+\"([^\"]+)\"\s*\{")
+_TF_PUBLIC_IP = re.compile(r"\bassociate_public_ip_address\s*=\s*true\b")
+_TF_EIP = re.compile(r"resource\s+\"aws_eip(?:_association)?\"\s+\"[^\"]+\"\s*\{")
+_TF_EIP_INSTANCE = re.compile(r"\binstance(?:_id)?\s*=\s*aws_instance\.([\w-]+)\.id\b")
+_CDK_INSTANCE = re.compile(r"\bec2\.Instance\(")
+_CDK_PUBLIC = re.compile(
+    r"\bassociate_?[pP]ublic_?[iI]p_?[aA]ddress\s*[:=]\s*(?:true|True)\b"
+    r"|\bsubnet_?[tT]ype\s*[:=]\s*(?:\w+\.)*SubnetType\.PUBLIC\b"
+)
+_CDK_EIP = re.compile(r"\bec2\.CfnEIP(?:Association)?\(")
+_CF_INSTANCE_TYPE = re.compile(_cf_type(r"EC2::Instance"))
+
+
+def _cf_public_instances(rel: str, text: str) -> List[str]:
+    resources = _cf_resources(rel, text)
+    public: List[str] = []
+    for name, body in resources.items():
+        if body.get("Type") != "AWS::EC2::Instance":
+            continue
+        enis = _props(body).get("NetworkInterfaces")
+        if any(isinstance(eni, dict) and str(eni.get("AssociatePublicIpAddress")).lower()
+               == "true" for eni in (enis if isinstance(enis, list) else ())):
+            public.append(name)
+    for body in resources.values():
+        if body.get("Type") in ("AWS::EC2::EIP", "AWS::EC2::EIPAssociation"):
+            target = _props(body).get("InstanceId")
+            ref = target.get("Ref") if isinstance(target, dict) else None
+            if ref in resources and ref not in public:
+                public.append(ref)
+    return public
+
+
+def public_instances(repo_path: Path) -> List[tuple[str, str]]:
+    """Production EC2 instances with a public IP or an Elastic IP: (instance, file)."""
+    found: List[tuple[str, str]] = []
+    for rel, text in iac_texts(repo_path):
+        if not _production(rel):
+            continue
+        if _CF_INSTANCE_TYPE.search(text):
+            found.extend((name, rel) for name in _cf_public_instances(rel, text))
+        eip_targets = {
+            m.group(1) for e in _TF_EIP.finditer(text)
+            for m in [_TF_EIP_INSTANCE.search(_braced(text, e.end() - 1))] if m
+        }
+        for match in _TF_INSTANCE.finditer(text):
+            name = match.group(1)
+            if name in eip_targets or _TF_PUBLIC_IP.search(_braced(text, match.end() - 1)):
+                found.append((f"aws_instance.{name}", rel))
+        eip = _CDK_EIP.search(text)
+        for match in _CDK_INSTANCE.finditer(text):
+            if eip or _CDK_PUBLIC.search(_braced(text, match.end() - 1, "(", ")")):
+                found.append((f"ec2.Instance at line {_line_of(text, match.start())}", rel))
+    return found
+
+
+_CF_TARGET_GROUP = re.compile(_cf_type(r"ElasticLoadBalancingV2::TargetGroup"))
+_TF_TG_ATTACHMENT = re.compile(
+    r"resource\s+\"aws_lb_target_group_attachment\"\s+\"[^\"]+\"\s*\{"
+)
+_TF_TG_REF = re.compile(r"\btarget_group_arn\s*=\s*(aws_lb_target_group\.[\w-]+)\.arn\b")
+_CDK_TARGETS_LIST = re.compile(r"\btargets[\"']?\s*[:=]\s*\[")
+_CDK_LITERAL_TARGET = re.compile(
+    r"(?:new\s+)?(?:\w+\.)*(?:InstanceIdTarget|InstanceTarget|IpTarget)\("
+)
+
+
+def _cf_single_targets(rel: str, text: str) -> List[str]:
+    resources = _cf_resources(rel, text)
+    fleets = json.dumps([
+        _props(body) for body in resources.values()
+        if body.get("Type") in ("AWS::AutoScaling::AutoScalingGroup", "AWS::ECS::Service")
+    ], default=str)
+    return [
+        name for name, body in resources.items()
+        if body.get("Type") == "AWS::ElasticLoadBalancingV2::TargetGroup"
+        and isinstance(_props(body).get("Targets"), list)
+        and len(_props(body)["Targets"]) == 1
+        and f'"{name}"' not in fleets
+    ]
+
+
+def single_targets(repo_path: Path) -> List[tuple[str, str]]:
+    """Production target groups with exactly one literal target: (target group, file)."""
+    found: List[tuple[str, str]] = []
+    texts = [(rel, text) for rel, text in iac_texts(repo_path) if _production(rel)]
+    tf_attachments: dict[str, tuple[int, str]] = {}
+    fleets = "\n".join(
+        _braced(text, m.end() - 1) for _, text in texts for m in re.finditer(
+            r"resource\s+\"aws_(?:autoscaling_group|autoscaling_attachment|ecs_service)\""
+            r"\s+\"[^\"]+\"\s*\{", text)
+    )
+    for rel, text in texts:
+        if _CF_TARGET_GROUP.search(text):
+            found.extend((name, rel) for name in _cf_single_targets(rel, text))
+        for match in _TF_TG_ATTACHMENT.finditer(text):
+            body = _braced(text, match.end() - 1)
+            ref = _TF_TG_REF.search(body)
+            if ref:
+                many = 2 if re.search(r"^\s*(?:count|for_each)\s*=", body, re.MULTILINE) else 1
+                n, first = tf_attachments.get(ref.group(1), (0, rel))
+                tf_attachments[ref.group(1)] = (n + many, first)
+        for match in _CDK_TARGETS_LIST.finditer(text):
+            body = _braced(text, match.end() - 1, "[", "]")
+            targets = list(_CDK_LITERAL_TARGET.finditer(body))
+            if len(targets) != 1:
+                continue
+            call = targets[0]
+            close = call.end() + len(_braced(body, call.end() - 1, "(", ")")) + 1
+            rest = body[:call.start()] + body[close:]
+            if not rest.strip(" \t\r\n,"):
+                found.append((f"target list at line {_line_of(text, match.start())}", rel))
+    for group, (n, rel) in tf_attachments.items():
+        if n == 1 and f"{group}.arn" not in fleets:
+            found.append((group, rel))
+    return found
+
+
+class LoadBalancingMissing(_RepoRule):
+    id = "REPO-067"
+    title = "Traffic is not spread by a load balancer"
+    category = "Performance Efficiency"
+    severity = "Medium"
+    themes = ("resilience",)
+    recommendation = (
+        "Put an Application or Network Load Balancer in front of the compute and register "
+        "more than one target (an Auto Scaling group or ECS service rather than one "
+        "instance), so load spreads across targets and Availability Zones instead of "
+        "landing on one public instance."
+    )
+
+    def run(self, repo_path: Path, language: str = "typescript") -> List[Finding]:
+        places: List[str] = []
+        public = public_instances(repo_path)
+        if public and not _in_iac(repo_path, _LOAD_BALANCERS):
+            places += [f"internet-facing EC2 instance {name} in {rel}" for name, rel in public]
+        places += [f"target group {name} with one target in {rel}"
+                   for name, rel in single_targets(repo_path)]
+        if not places:
+            return []
+        return [self._finding(
+            f"Serves traffic from {_listed(places, 4)}; a load balancer with more than one "
+            "target spreads load, and none was found for these",
+        )]
+
+
+_OLD_PROTOCOLS = _kinds(
+    ("CloudFront HTTP/1.1 only",
+     r"[\"']?(?:HttpVersion|http_?[vV]ersion)[\"']?\s*[:=]\s*"
+     r"(?:[\"']?http1\.1[\"']?(?![\w.])|(?:\w+\.)*HttpVersion\.HTTP1_1\b)"),
+    ("CloudFront viewer TLS below 1.2",
+     r"[\"']?(?:MinimumProtocolVersion|minimum_?[pP]rotocol_?[vV]ersion)[\"']?\s*[:=]\s*"
+     r"(?:[\"']?(?:SSLv3|TLSv1\.1_2016|TLSv1_2016|TLSv1)[\"']?(?![\w.])"
+     r"|(?:\w+\.)*SecurityPolicyProtocol\.(?:SSL_V3|TLS_V1|TLS_V1_2016|TLS_V1_1_2016)\b)"),
+    ("load balancer TLS policy below 1.2",
+     r"[\"']?(?:SslPolicy|ssl_?[pP]olicy)[\"']?\s*[:=]\s*"
+     r"(?:[\"']?ELBSecurityPolicy-(?:2015-05|2016-08|FS-2018-06|TLS-1-[01]-[\w-]+"
+     r"|FS-1-1-[\w-]+|TLS13-1-[01]-[\w-]+)(?![\w-])"
+     r"|(?:\w+\.)*SslPolicy\.(?:LEGACY|RECOMMENDED|TLS11|TLS13_10|TLS13_11|FORWARD_SECRECY"
+     r"|FORWARD_SECRECY_TLS11)\b)"),
+    ("API Gateway domain on TLS 1.0",
+     r"[\"']?(?:SecurityPolicy|security_?[pP]olicy)[\"']?\s*[:=]\s*"
+     r"(?:[\"']?TLS_1_0\b|(?:\w+\.)*SecurityPolicy\.TLS_1_0\b)"),
+)
+_CF_LISTENER_TYPE = re.compile(_cf_type(r"ElasticLoadBalancingV2::Listener"))
+_TF_LISTENER = re.compile(r"resource\s+\"aws_(?:lb|alb)_listener\"\s+\"[^\"]+\"\s*\{")
+_TF_LB = re.compile(r"resource\s+\"aws_(?:lb|alb)\"\s+\"([^\"]+)\"\s*\{")
+_CDK_PUBLIC_ALB = re.compile(r"\binternet_?[fF]acing\s*[:=]\s*(?:true|True)\b")
+_CDK_ADD_LISTENER = re.compile(r"\.add_?[lL]istener\(")
+_CDK_HTTP_LISTENER = re.compile(
+    r"\bport\s*[:=]\s*80\b|\bApplicationProtocol\.HTTP\b(?!S)"
+)
+_REDIRECT = re.compile(r"\bredirect\b|\.add_?[rR]edirect\(", re.IGNORECASE)
+
+
+def _cf_http_forwards(rel: str, text: str) -> List[str]:
+    resources = _cf_resources(rel, text)
+    found: List[str] = []
+    for name, body in resources.items():
+        if body.get("Type") != "AWS::ElasticLoadBalancingV2::Listener":
+            continue
+        props = _props(body)
+        actions = props.get("DefaultActions")
+        if props.get("Protocol") != "HTTP" or not isinstance(actions, list):
+            continue
+        if not any(isinstance(a, dict) and a.get("Type") == "forward" for a in actions):
+            continue
+        arn = props.get("LoadBalancerArn")
+        lb = resources.get(str(arn.get("Ref"))) if isinstance(arn, dict) else None
+        if not lb:
+            continue
+        lb_props = _props(lb)
+        if lb_props.get("Scheme") == "internal" or lb_props.get("Type") in (
+            "network", "gateway"
+        ):
+            continue
+        found.append(name)
+    return found
+
+
+def _tf_http_forwards(text: str) -> List[str]:
+    lbs = {m.group(1): _braced(text, m.end() - 1) for m in _TF_LB.finditer(text)}
+    found: List[str] = []
+    for match in _TF_LISTENER.finditer(text):
+        body = _braced(text, match.end() - 1)
+        if not re.search(r"\bprotocol\s*=\s*\"HTTP\"", body) or "redirect" in body:
+            continue
+        if not re.search(r"\btype\s*=\s*\"forward\"", body):
+            continue
+        ref = re.search(r"\bload_balancer_arn\s*=\s*aws_(?:lb|alb)\.([\w-]+)\.arn\b", body)
+        lb = lbs.get(ref.group(1)) if ref else None
+        if lb is None or re.search(r"\binternal\s*=\s*true\b", lb) or re.search(
+            r"\bload_balancer_type\s*=\s*\"(?:network|gateway)\"", lb
+        ):
+            continue
+        found.append(f"listener at line {_line_of(text, match.start())}")
+    return found
+
+
+def old_protocols(repo_path: Path) -> List[tuple[str, str, int]]:
+    """Production edges on older protocols: (kind, file, line)."""
+    found: List[tuple[str, str, int]] = []
+    for rel, text in iac_texts(repo_path):
+        if not _production(rel):
+            continue
+        for kind, pattern in _OLD_PROTOCOLS:
+            if match := pattern.search(text):
+                found.append((kind, rel, _line_of(text, match.start())))
+        http = "internet-facing load balancer forwarding plain HTTP"
+        if _CF_LISTENER_TYPE.search(text) and _cf_http_forwards(rel, text):
+            found.append((http, rel, 0))
+        if _TF_LISTENER.search(text) and _tf_http_forwards(text):
+            found.append((http, rel, 0))
+        if _CDK_PUBLIC_ALB.search(text) and not _REDIRECT.search(text):
+            for match in _CDK_ADD_LISTENER.finditer(text):
+                if _CDK_HTTP_LISTENER.search(_braced(text, match.end() - 1, "(", ")")):
+                    found.append((http, rel, _line_of(text, match.start())))
+                    break
+    return found
+
+
+class OldNetworkProtocol(_RepoRule):
+    id = "REPO-068"
+    title = "Edge uses an older network protocol"
+    category = "Performance Efficiency"
+    severity = "Medium"
+    themes = ("network-exposure",)
+    recommendation = (
+        "Serve users over current protocols: let CloudFront use HTTP/2 or HTTP/3 (http2and3), "
+        "set the viewer minimum protocol to TLSv1.2_2021, use a TLS 1.2 or 1.3 load balancer "
+        "policy such as ELBSecurityPolicy-TLS13-1-2-2021-06, set API Gateway domains to "
+        "TLS_1_2, and redirect HTTP listeners on public load balancers to HTTPS."
+    )
+
+    def run(self, repo_path: Path, language: str = "typescript") -> List[Finding]:
+        found = old_protocols(repo_path)
+        if not found:
+            return []
+        places = [f"{kind} at {rel}:{line}" if line else f"{kind} in {rel}"
+                  for kind, rel, line in found]
+        return [self._finding(
+            f"Uses older protocols: {_listed(places, 4)}",
+        )]
+
+
 REPO_RULES: List[Rule] = [
     RepoTestsMissing(), RepoPipelineMissing(), SingleEnvironment(),
     OrgGuardrailsMissing(), AccountBaselineMissing(), RootUserUnchecked(),
@@ -6096,4 +6661,6 @@ REPO_RULES: List[Rule] = [
     StaticStabilityMissing(), AvailabilityTargetMissing(), AvailabilityNotificationMissing(),
     ComputeMetricsMissing(), StaticComputeFleet(), AcceleratorUtilizationUnwatched(),
     PurposeBuiltDataStoreMissing(),
+    EdgeLatencyUnwatched(), NetworkMetricsUnused(), SingleHybridLink(), LoadBalancingMissing(),
+    OldNetworkProtocol(),
 ]

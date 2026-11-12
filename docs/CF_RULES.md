@@ -4,7 +4,7 @@ This document provides a comprehensive list of all rules checked by AWS Arch Age
 
 ## Overview
 
-AWS Arch Agent checks **242 static analysis rules** and **283 template checks** across all 6 AWS Well-Architected Framework pillars. 139 of the 242 CDK rules (57%) have a template check, so they also run for CloudFormation, Terraform and synthesised CDK. [COVERAGE.md](COVERAGE.md) gives the reason for each of the others.
+AWS Arch Agent checks **247 static analysis rules** and **283 template checks** across all 6 AWS Well-Architected Framework pillars. 139 of the 247 CDK rules (56%) have a template check, so they also run for CloudFormation, Terraform and synthesised CDK. [COVERAGE.md](COVERAGE.md) gives the reason for each of the others.
 
 ## Static Analysis Rules (V1 & V2 Modes)
 
@@ -278,7 +278,7 @@ These rules run on your CDK TypeScript/Python code and execute in both V1 and V2
 - REPO-029: Workload traces are not analyzed
 - REPO-030: Dashboards show no workload metric
 
-### Performance Efficiency (23 rules)
+### Performance Efficiency (28 rules)
 
 **Compute Optimization:**
 - PERF-001: Compute may not use Graviton/ARM
@@ -316,6 +316,13 @@ These rules run on your CDK TypeScript/Python code and execute in both V1 and V2
 
 **Data management (repo-level, PERF 3):**
 - REPO-063: Data lives on the instance, not in a purpose-built store
+
+**Networking (repo-level, PERF 4):**
+- REPO-064: Network latency at the edge is not watched
+- REPO-065: Network configuration is not tuned on metrics
+- REPO-066: Dedicated connectivity or VPN has no redundant link
+- REPO-067: Traffic is not spread by a load balancer
+- REPO-068: Edge uses an older network protocol
 
 ### Cost Optimization (18 rules)
 
@@ -1095,6 +1102,11 @@ Every rule has one or more themes, which cut across pillars: `finops`, `security
 | REPO-061 | finops |
 | REPO-062 | finops |
 | REPO-063 | resilience |
+| REPO-064 | observability |
+| REPO-065 | observability |
+| REPO-066 | resilience |
+| REPO-067 | resilience |
+| REPO-068 | network-exposure |
 | SEC-001 | identity |
 | SEC-002 | identity |
 | SEC-003 | network-exposure |

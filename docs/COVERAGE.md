@@ -15,7 +15,7 @@ Which CDK rules have a template check, and which AWS Foundational Security Best 
 
 ## CDK rules
 
-242 rules: 132 covered, 7 partial, 10 account, 5 cdk-only, 25 advice, 63 repo.
+247 rules: 132 covered, 7 partial, 10 account, 5 cdk-only, 25 advice, 68 repo.
 
 | Rule | Title | Template check | Status | Note |
 | -- | -- | -- | -- | -- |
@@ -261,6 +261,11 @@ Which CDK rules have a template check, and which AWS Foundational Security Best 
 | REPO-061 | Compute does not scale with demand |  | `repo` | Fires on a production ECS service when the repo has no ECS scaling target with a scaling policy, and on an Auto Scaling group with a fixed size or no scaling policy; a schedule alone does not count, and serverless-only stacks pass. |
 | REPO-062 | Accelerator utilization is not watched |  | `repo` | When a GPU, Inferentia, Trainium or other accelerated instance type sits on an instance, launch template, Auto Scaling group, EKS node group, Batch or SageMaker resource, looks for an alarm on a GPU or Neuron core utilization metric. |
 | REPO-063 | Data lives on the instance, not in a purpose-built store |  | `repo` | Fires when production IaC keeps data on an EBS data volume, a non-root or instance store block device, or a database engine installed or run by user data or an SSM document, and the repo declares no managed data store (S3, DynamoDB, RDS or Aurora, ElastiCache, MemoryDB, DocumentDB, Neptune, Keyspaces, OpenSearch Service, Timestream, Redshift, EFS, FSx); dev and staging paths are skipped. |
+| REPO-064 | Network latency at the edge is not watched |  | `repo` | When production IaC declares a load balancer, API Gateway or CloudFront distribution, looks for an alarm on TargetResponseTime, Latency, IntegrationLatency or OriginLatency; error and 5xx alarms do not count. |
+| REPO-065 | Network configuration is not tuned on metrics |  | `repo` | When production IaC declares an edge, looks for VPC Flow Logs or a latency alarm with a literal numeric threshold; a parameter, variable or anomaly band does not count. |
+| REPO-066 | Dedicated connectivity or VPN has no redundant link |  | `repo` | Fires on exactly one Direct Connect connection or virtual interface with no second one, LAG or VPN backup, and on exactly one VPN connection with one customer gateway and no Direct Connect; no hybrid link passes. |
+| REPO-067 | Traffic is not spread by a load balancer |  | `repo` | Fires on a production EC2 instance with a public IP or Elastic IP when the repo declares no load balancer, and on a target group with exactly one literal target and no Auto Scaling group or ECS service registered. |
+| REPO-068 | Edge uses an older network protocol |  | `repo` | Fires on explicit CloudFront http1.1, a CloudFront viewer minimum below TLSv1.2, a load balancer TLS policy that allows TLS 1.0 or 1.1, an API Gateway domain on TLS_1_0, or an internet-facing HTTP listener that forwards instead of redirecting; dev and staging paths are skipped. |
 
 ## FSBP controls
 
