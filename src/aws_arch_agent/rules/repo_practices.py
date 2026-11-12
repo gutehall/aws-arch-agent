@@ -4069,7 +4069,7 @@ class CodeSigningMissing(_RepoRule):
 _IMAGE_VALUE = re.compile(
     r"[\"']?(?:Image|ImageUri|image|image_uri)[\"']?\s*[:=]\s*[\"']([^\"'\s$]+)[\"']"
     # CloudFormation YAML, unquoted.
-    r"|^[ \t-]*(?:Image|ImageUri)[ \t]*:[ \t]+([^\s\"'#{!$&*|>]+)[ \t]*$",
+    r"|^[ \t-]*(?:Image|ImageUri)[ \t]*:[ \t]+([^\s\"'#{!$&*|>]+)[ \t\r]*$",
     re.MULTILINE,
 )
 _CDK_REGISTRY = re.compile(r"\bContainerImage\.from_?[rR]egistry\(\s*['\"]([^'\"]+)['\"]")

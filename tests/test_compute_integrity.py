@@ -195,3 +195,13 @@ def test_sec6_rules_map_and_run_by_default() -> None:
     assert well_architected.best_practices_of("REPO-037") == ("SEC06-BP04",)
     assert well_architected.best_practices_of("REPO-038") == ("SEC06-BP02",)
     assert not {"REPO-037", "REPO-038"} & ORG_RULE_IDS
+
+
+def test_cloudformation_yaml_unquoted_image_with_crlf_line_endings(tmp_path: Path) -> None:
+    path = tmp_path / "prod" / "template.yaml"
+    path.parent.mkdir(parents=True)
+    path.write_bytes(
+        b"Resources:\r\n  Task:\r\n    Type: AWS::ECS::TaskDefinition\r\n    Properties:\r\n"
+        b"      ContainerDefinitions:\r\n        - Name: app\r\n          Image: nginx:latest\r\n"
+    )
+    assert [image for _rel, _line, image in mutable_images(tmp_path)] == ["nginx:latest"]
