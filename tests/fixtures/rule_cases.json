@@ -1353,5 +1353,35 @@
     "negative_py": "apigateway.RestApi(self, 'Api', deploy_options=apigateway.StageOptions(throttling_rate_limit=100))",
     "positive_ts": "new apigateway.RestApi(this, 'Api');",
     "positive_py": "apigateway.RestApi(self, 'Api')"
+  },
+  "REPO-098": {
+    "negative_ts": "const answer = 42;",
+    "negative_py": "answer = 42",
+    "positive_ts": "new lambda.Function(this, 'Fn', { runtime, handler, code });",
+    "positive_py": "_lambda.Function(self, 'Fn', runtime=r, handler='h', code=c)"
+  },
+  "REPO-101": {
+    "negative_ts": "const answer = 42;",
+    "negative_py": "answer = 42",
+    "positive_ts": "new lambda.Function(this, 'Fn', { runtime, handler, code });",
+    "positive_py": "_lambda.Function(self, 'Fn', runtime=r, handler='h', code=c)"
+  },
+  "REPO-099": {
+    "negative_ts": "const vol = new ec2.Volume(this, 'Vol', { availabilityZone: 'a', size: Size.gibibytes(10) });\nvol.grantAttachVolume(role);",
+    "negative_py": "vol = ec2.Volume(self, 'Vol', availability_zone='a', size=Size.gibibytes(10))\nvol.grant_attach_volume(role)",
+    "positive_ts": "const vol = new ec2.Volume(this, 'Vol', { availabilityZone: 'a', size: Size.gibibytes(10) });",
+    "positive_py": "vol = ec2.Volume(self, 'Vol', availability_zone='a', size=Size.gibibytes(10))"
+  },
+  "REPO-100": {
+    "negative_ts": "new cloudfront.Distribution(this, 'Cdn', { priceClass: cloudfront.PriceClass.PRICE_CLASS_100, defaultBehavior });\nnew Stack(app, 'S', { env: { region: 'eu-west-1' } });",
+    "negative_py": "cloudfront.Distribution(self, 'Cdn', price_class=cloudfront.PriceClass.PRICE_CLASS_100, default_behavior=b)\nStack(app, 'S', env=Environment(region='eu-west-1'))",
+    "positive_ts": "new cloudfront.Distribution(this, 'Cdn', { priceClass: cloudfront.PriceClass.PRICE_CLASS_100, defaultBehavior });\nnew Stack(app, 'S', { env: { region: 'ap-southeast-2' } });",
+    "positive_py": "cloudfront.Distribution(self, 'Cdn', price_class=cloudfront.PriceClass.PRICE_CLASS_100, default_behavior=b)\nStack(app, 'S', env=Environment(region='ap-southeast-2'))"
+  },
+  "REPO-102": {
+    "negative_ts": "new apigateway.RestApi(this, 'Api', { deployOptions: { throttlingRateLimit: 100 } });",
+    "negative_py": "apigateway.RestApi(self, 'Api', deploy_options=apigateway.StageOptions(throttling_rate_limit=100))",
+    "positive_ts": "new apigateway.RestApi(this, 'Api');",
+    "positive_py": "apigateway.RestApi(self, 'Api')"
   }
 }

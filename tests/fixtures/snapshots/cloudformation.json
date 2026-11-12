@@ -376,5 +376,19 @@
     "file": "stack.yaml",
     "line": null,
     "evidence": "Runs Lambda (stack.yaml); searched production IaC for a scheduled scaling action, a demand metric (queue depth, request count, invocations, concurrency) used to scale or alarm, and notes named or headed demand, traffic, usage pattern, load profile or capacity plan that give a rate, volume or calendar pattern; found none"
+  },
+  {
+    "id": "REPO-098",
+    "severity": "Low",
+    "file": null,
+    "line": null,
+    "evidence": "Runs Lambda (stack.yaml), S3 bucket (stack.yaml), RDS database (stack.yaml); searched notes named or headed SLA, SLO, service level, availability target or reliability target for a sustainability tradeoff (carbon, energy, idle capacity, utilization, right-sizing, scale to zero, off-hours); found none"
+  },
+  {
+    "id": "REPO-101",
+    "severity": "Low",
+    "file": null,
+    "line": null,
+    "evidence": "Runs Lambda (stack.yaml), S3 bucket (stack.yaml), RDS database (stack.yaml); searched notes named or headed developer environment, workstation, CI runners, build agents or team resources for how they are sized and shut down (right-sizing, auto-stop, idle, schedule, hibernation, on-demand, Spot); found none"
   }
 ]

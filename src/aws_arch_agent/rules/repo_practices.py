@@ -648,6 +648,23 @@ rest.
 - REPO-097 buffer or throttle: production IaC with an API Gateway API and no throttle,
   usage plan, WAF rate-based rule or reserved concurrency; or a Lambda function invoked
   directly by SNS or S3 with no queue, stream or event bus and no reserved concurrency.
+
+Aligning resources to demand (SUS 2). Right-sizing to demand (SUS02-BP01) is a mapped check;
+these read the rest.
+
+- REPO-098 SLAs: production workload and no note named or headed SLA, SLO, service level,
+  availability target or reliability target that weighs it against sustainability (idle
+  capacity, utilization, right-sizing, scale to zero, off-hours).
+- REPO-099 unused assets: an EBS volume, load balancer, target group, NAT gateway or network
+  interface in production IaC whose name nothing else in the repo refers to.
+- REPO-100 geographic placement: a CloudFront price class that does not cover the Region a
+  literal stack Region, S3 origin, load balancer or API domain names, with no comment or
+  placement note giving a reason.
+- REPO-101 team resources: production workload and no note on developer environments,
+  workstations, CI runners or build agents that says how they are sized and shut down.
+- REPO-102 demand curve: the REPO-097 gaps (an API with no throttle, a directly triggered
+  Lambda function with no queue or reserved concurrency), read as spikes that drive
+  over-provisioning.
 """
 from __future__ import annotations
 
@@ -9036,6 +9053,358 @@ class DemandUnbuffered(_RepoRule):
         )]
 
 
+# SUS 2: aligning cloud resources to demand. SLAs (REPO-098), unused assets (REPO-099),
+# geographic placement (REPO-100), team resources (REPO-101), and flattening the demand curve
+# (REPO-102, which shares its detection with REPO-097).
+
+
+def production_workload(repo_path: Path) -> dict[str, str]:
+    """Compute, data stores and user-facing endpoints in production IaC: kind -> first file.
+    In Python source, text inside a quoted string does not count."""
+    found: dict[str, str] = {}
+    for rel, text in iac_texts(repo_path):
+        if not _production(rel):
+            continue
+        text = _blank_strings(rel, text)
+        for kind, pattern in _WORKLOAD:
+            if _live(pattern, rel, text):
+                found.setdefault(kind, rel)
+        if _SAM_TRANSFORM.search(text) and _SAM_API_EVENT.search(text):
+            found.setdefault("API Gateway", rel)
+    return found
+
+
+def _note_with(
+    repo_path: Path, name: re.Pattern[str], heading: re.Pattern[str], body: re.Pattern[str]
+) -> str | None:
+    """The first note that is named (file stem) or headed (section) for a topic and whose
+    text, or section, matches body."""
+    for rel, text in note_texts(repo_path):
+        stem = rel.rsplit("/", 1)[-1].lower().rsplit(".", 1)[0]
+        if name.search(stem) and body.search(text):
+            return rel
+        if any(body.search(section) for section in _sections(text, heading)):
+            return rel
+    return None
+
+
+_SLA_NAME = re.compile(
+    r"(?:^|[-_. ])(?:slas?|slos?|service[-_ ]?levels?|availability[-_ ]?targets?"
+    r"|reliability[-_ ]?targets?)(?:$|[-_. ])"
+)
+_SLA_HEADING = re.compile(
+    r"(?i).*\b(?:slas?|slos?|service[- ]levels?(?:[- ](?:agreements?|objectives?))?"
+    r"|availability[- ]targets?|reliability[- ]targets?)\b.*"
+)
+_SUSTAINABILITY_WORD = re.compile(
+    r"(?i)sustainab|carbon|energy|emissions?|\bidle\b|utili[sz]ation|right-?siz"
+    r"|scale[- ]to[- ]zero|off-hours"
+)
+
+
+class SlaIgnoresSustainability(_RepoRule):
+    id = "REPO-098"
+    title = "Service levels are not aligned with sustainability goals"
+    category = "Sustainability"
+    severity = "Low"
+    themes = ("sustainability", "finops")
+    recommendation = (
+        "Write the service-level or availability target down in a note (an SLA, SLO or "
+        "availability target) and record what it costs in resources: which tiers can scale to "
+        "zero or run smaller off-hours, and where a lower target lets you cut idle capacity "
+        "and energy use."
+    )
+
+    def run(self, repo_path: Path, language: str = "typescript") -> List[Finding]:
+        workload = production_workload(repo_path)
+        if not workload:
+            return []
+        if _note_with(repo_path, _SLA_NAME, _SLA_HEADING, _SUSTAINABILITY_WORD):
+            return []
+        return [self._finding(
+            f"Runs {_named(workload)}; searched notes named or headed SLA, SLO, service level, "
+            "availability target or reliability target for a sustainability tradeoff (carbon, "
+            "energy, idle capacity, utilization, right-sizing, scale to zero, off-hours); "
+            "found none",
+        )]
+
+
+# Assets that cost to keep and that nothing in the repo refers to. Elastic IPs are COST-012
+# and CF-EIP-001.
+_UNUSED_KINDS = (
+    ("EBS volume", "EC2::Volume", ("aws_ebs_volume",), r"ec2\.(?:Cfn)?Volume"),
+    ("load balancer", "ElasticLoadBalancingV2::LoadBalancer", ("aws_lb", "aws_alb"),
+     r"(?:elbv2|elb|elasticloadbalancingv2)\.(?:Cfn)?(?:Application|Network)?LoadBalancer"),
+    ("target group", "ElasticLoadBalancingV2::TargetGroup", ("aws_lb_target_group",
+                                                            "aws_alb_target_group"),
+     r"(?:elbv2|elb|elasticloadbalancingv2)\.(?:Cfn)?(?:Application|Network)?TargetGroup"),
+    ("NAT gateway", "EC2::NatGateway", ("aws_nat_gateway",), r"ec2\.CfnNatGateway"),
+    ("network interface", "EC2::NetworkInterface", ("aws_network_interface",),
+     r"ec2\.(?:Cfn)?NetworkInterface"),
+)
+_CFN_SUFFIXES = (".json", ".yaml", ".yml", ".template")
+_CDK_ASSIGNED = re.compile(
+    r"^\s*(?:(?:export\s+)?(?:const|let|var)\s+|(?:this|self)\.|(?:public|private|protected"
+    r"|readonly)\s+)*(\w+)\s*(?::[^=\n]+)?=\s*$"
+)
+
+
+def _word_count(name: str, text: str) -> int:
+    return len(re.findall(rf"(?<![\w$.-]){re.escape(name)}(?![\w-])", text))
+
+
+def _cdk_unused(rel: str, text: str, kind: str, pattern: str) -> Iterator[tuple[str, int]]:
+    for match in re.finditer(rf"\b{pattern}\(", text):
+        if rel.endswith(".py") and not _live(re.compile(re.escape(match.group(0))), rel, text):
+            continue
+        start = text.rfind("\n", 0, match.start()) + 1
+        prefix = re.sub(r"\bnew\s+$", "", text[start:match.start()])
+        assigned = _CDK_ASSIGNED.match(prefix)
+        if assigned:
+            if _word_count(assigned.group(1), text) <= 1:
+                yield assigned.group(1), _line_of(text, match.start())
+        elif not prefix.strip():
+            before = text[:start].rstrip()
+            if not before or before[-1] not in "=(,[:?|&+":
+                yield "created and not assigned", _line_of(text, match.start())
+
+
+def unused_assets(repo_path: Path) -> List[str]:
+    """Provisioned assets in production IaC whose name nothing refers to, as
+    "kind name (file:line)"."""
+    files = [(rel, _blank_strings(rel, text)) for rel, text in iac_texts(repo_path)
+             if _production(rel)]
+    corpus = "\n".join(text for _, text in files)
+    found: List[str] = []
+    for rel, text in files:
+        suffix = "." + rel.rsplit(".", 1)[-1].lower()
+        for kind, cfn_type, tf_types, cdk in _UNUSED_KINDS:
+            if suffix in _CFN_SUFFIXES:
+                for name, body in _cf_resources(rel, text).items():
+                    if body.get("Type") == f"AWS::{cfn_type}" and _word_count(name, text) <= 1:
+                        found.append(f"{kind} {name} ({rel}:{_line_of(text, text.find(name))})")
+            elif suffix == ".tf":
+                for match in re.finditer(
+                    rf"resource\s+\"({'|'.join(tf_types)})\"\s+\"(\w+)\"", text
+                ):
+                    ref = rf"\b{match.group(1)}\.{match.group(2)}\b"
+                    if not re.search(ref, corpus):
+                        found.append(f"{kind} {match.group(2)} "
+                                     f"({rel}:{_line_of(text, match.start())})")
+            elif suffix in (".ts", ".js", ".py"):
+                found.extend(f"{kind} {name} ({rel}:{line})"
+                             for name, line in _cdk_unused(rel, text, kind, cdk))
+    return found
+
+
+class UnusedAssets(_RepoRule):
+    id = "REPO-099"
+    title = "Provisioned assets nothing uses"
+    category = "Sustainability"
+    severity = "Low"
+    themes = ("sustainability", "finops")
+    recommendation = (
+        "Remove assets nothing refers to, or wire them in: attach or delete the volume, add "
+        "a listener or delete the load balancer, register or delete the target group, add a "
+        "route or delete the NAT gateway, and attach or delete the network interface."
+    )
+
+    def run(self, repo_path: Path, language: str = "typescript") -> List[Finding]:
+        found = unused_assets(repo_path)
+        if not found:
+            return []
+        return [self._finding(
+            f"Provisions {_listed(found, 4)} and no other IaC in the repo refers to the name "
+            "(no attachment, listener, route or reference); an idle asset still draws "
+            "resources and energy"
+        )]
+
+
+_PRICE_CLASS = re.compile(
+    r"(?:PriceClass|price_class|priceClass)[\"']?\s*[:=]\s*[\"']?(?:[\w.]*?\.)?"
+    r"(?:PriceClass_|PRICE_CLASS_)(100|200|All|ALL)\b"
+)
+_REGION_NAME = r"[a-z]{2}-[a-z]+-\d"
+_CODE_STACK_REGION = re.compile(rf"\bregion[\"']?\s*[:=]\s*[\"']({_REGION_NAME})[\"']")
+_TF_PROVIDER = re.compile(r"provider\s+\"aws\"\s*\{")
+_TF_STACK_REGION = re.compile(rf"(?m)^\s*region\s*=\s*\"({_REGION_NAME})\"")
+_ORIGIN_REGION = re.compile(
+    rf"\.s3(?:-website)?[.-]({_REGION_NAME})\.amazonaws\.com"
+    rf"|\.({_REGION_NAME})\.elb\.amazonaws\.com"
+    rf"|\.execute-api\.({_REGION_NAME})\.amazonaws\.com"
+)
+_OCEANIA = ("ap-southeast-2", "ap-southeast-4", "ap-southeast-6")
+_PLACEMENT_REASON = (
+    r"\b(?:latency|audience|users?|customers?|viewers?|traffic|placement|geograph\w*"
+    r"|residency|sovereignty|compliance|costs?|because|since|due to)\b"
+)
+_PLACEMENT_COMMENT = re.compile(rf"(?i)(?://|#|/\*|^\s*\*)[^\n]*{_PLACEMENT_REASON}")
+_PLACEMENT_BODY = re.compile(f"(?i){_PLACEMENT_REASON}")
+_PLACEMENT_NAME = re.compile(
+    r"(?:placement|latency|edge|regions?|geograph\w*|price[-_ ]?class|cloudfront)"
+)
+_PLACEMENT_HEADING = re.compile(
+    r"(?i).*\b(?:placement|latency|edge|regions?|geograph\w*|price[- ]class|cloudfront)\b.*"
+)
+_PRICE_CLASS_AREAS = {
+    "100": "North America, Europe and Israel", "200": "North America, Europe, Israel, Asia, "
+    "the Middle East and Africa",
+}
+
+
+def _price_class_covers(price_class: str, region: str) -> bool:
+    if price_class == "ALL":
+        return True
+    if region.startswith(("us-", "ca-", "mx-", "eu-", "il-")):
+        return True
+    if price_class == "200":
+        return not region.startswith("sa-") and region not in _OCEANIA
+    return False
+
+
+def _commented_with_reason(text: str, line: int) -> bool:
+    lines = text.splitlines()
+    return any(_PLACEMENT_COMMENT.search(item) for item in lines[max(line - 2, 0):line])
+
+
+def _placement_regions(rel: str, text: str) -> Iterator[tuple[str, int]]:
+    """(region, line) of each literal Region: a CDK env or region prop, a Terraform provider
+    without an alias, and a Region inside an S3, load balancer or API Gateway domain."""
+    suffix = rel.rsplit(".", 1)[-1].lower()
+    if suffix in ("ts", "js", "py"):
+        for match in _CODE_STACK_REGION.finditer(text):
+            if _live(re.compile(re.escape(match.group(0))), rel, text):
+                yield match.group(1), _line_of(text, match.start(1))
+    elif suffix == "tf":
+        for block in _TF_PROVIDER.finditer(text):
+            body = _braced(text, block.end() - 1)
+            if re.search(r"\balias\s*=", body):
+                continue
+            for match in _TF_STACK_REGION.finditer(body):
+                yield match.group(1), _line_of(text, block.end() + match.start(1))
+    for match in _ORIGIN_REGION.finditer(text):
+        yield next(g for g in match.groups() if g), _line_of(text, match.start())
+
+
+def placement_mismatches(repo_path: Path) -> List[str]:
+    """Each literal Region outside the CloudFront price class of the same repo, with no
+    comment or note giving a reason, as a sentence part."""
+    classes: List[tuple[str, str, int]] = []
+    regions: List[tuple[str, str, int, bool]] = []
+    for rel, text in iac_texts(repo_path):
+        if not _production(rel):
+            continue
+        text = _blank_strings(rel, text)
+        for match in _PRICE_CLASS.finditer(text):
+            line = _line_of(text, match.start())
+            if not _commented_with_reason(text, line):
+                classes.append((match.group(1).upper(), rel, line))
+        for region, line in _placement_regions(rel, text):
+            regions.append((region, rel, line, _commented_with_reason(text, line)))
+    found = [
+        f"PriceClass_{'All' if pc == 'ALL' else pc} at {crel}:{cline} serves "
+        f"{_PRICE_CLASS_AREAS[pc]}, but the stack uses {region} at {rrel}:{rline}"
+        for pc, crel, cline in classes
+        for region, rrel, rline, explained in regions
+        if not explained and not _price_class_covers(pc, region)
+    ]
+    if found and _note_with(
+        repo_path, _PLACEMENT_NAME, _PLACEMENT_HEADING, _PLACEMENT_BODY
+    ):
+        return []
+    return found
+
+
+class GeographicPlacementMismatch(_RepoRule):
+    id = "REPO-100"
+    title = "CloudFront price class and stack Region disagree"
+    category = "Sustainability"
+    severity = "Low"
+    themes = ("sustainability", "finops")
+    recommendation = (
+        "Place the workload close to the users and match the edge to it: pick the price class "
+        "that covers the Region the origin runs in (PriceClass_All for South America or "
+        "Oceania), or move the stack to a Region near its users. If the split is deliberate, "
+        "say why in a comment beside it or in a placement note."
+    )
+
+    def run(self, repo_path: Path, language: str = "typescript") -> List[Finding]:
+        found = placement_mismatches(repo_path)
+        if not found:
+            return []
+        return [self._finding(
+            f"{_listed(found, 2)}; searched for a comment on or above either line and a note "
+            "named or headed placement, latency, edge or region that gives a reason; found "
+            "none. Traffic from outside the covered areas travels farther than it needs to"
+        )]
+
+
+_TEAM_NAME = re.compile(
+    r"(?:dev(?:eloper)?[-_ ]?(?:env(?:ironment)?s?|tooling|workstations?)|workstations?"
+    r"|ci[-_ ]?runners?|build[-_ ]?agents?|team[-_ ]?resources?)"
+)
+_TEAM_HEADING = re.compile(
+    r"(?i).*\b(?:dev(?:eloper)?[- ]env(?:ironment)?s?|developer[- ]tooling|workstations?"
+    r"|ci[- ]runners?|build[- ]agents?|team[- ]resources?|cloud[- ]dev\w*)\b.*"
+)
+_TEAM_SIZING = re.compile(
+    r"(?i)right-?siz|auto-?[- ]?stop|\bidle\b|shut[- ]?(?:s )?down|scale[- ]down|schedul"
+    r"|hibernat|on-demand|\bspot\b"
+)
+
+
+class TeamResourcesUnsized(_RepoRule):
+    id = "REPO-101"
+    title = "Team resources are not sized for the work"
+    category = "Sustainability"
+    severity = "Low"
+    themes = ("sustainability", "finops")
+    recommendation = (
+        "Add a note named or headed developer environments, workstations, CI runners or build "
+        "agents that says how they are sized for the work and when they shut down: "
+        "right-sized instances, auto-stop or hibernation when idle, a schedule, on-demand "
+        "or Spot runners."
+    )
+
+    def run(self, repo_path: Path, language: str = "typescript") -> List[Finding]:
+        workload = production_workload(repo_path)
+        if not workload:
+            return []
+        if _note_with(repo_path, _TEAM_NAME, _TEAM_HEADING, _TEAM_SIZING):
+            return []
+        return [self._finding(
+            f"Runs {_named(workload)}; searched notes named or headed developer environment, "
+            "workstation, CI runners, build agents or team resources for how they are sized "
+            "and shut down (right-sizing, auto-stop, idle, schedule, hibernation, on-demand, "
+            "Spot); found none",
+        )]
+
+
+class DemandCurveNotFlattened(_RepoRule):
+    id = "REPO-102"
+    title = "Demand spikes reach the workload unflattened"
+    category = "Sustainability"
+    severity = "Low"
+    themes = ("sustainability", "finops")
+    recommendation = (
+        "Flatten the demand curve so you do not provision for the spike: throttle the API (a "
+        "stage or usage plan throttle, or a WAF rate-based rule), put an SQS queue, Kinesis "
+        "stream or EventBridge bus between a trigger and the Lambda function, or cap the "
+        "function with reserved concurrency."
+    )
+
+    def run(self, repo_path: Path, language: str = "typescript") -> List[Finding]:
+        found, _ = unbuffered_demand(repo_path)
+        if not found:
+            return []
+        return [self._finding(
+            f"Takes demand straight to the workload: {_listed(found)}; searched production "
+            "IaC for a throttle, usage plan, WAF rate-based rule, reserved or provisioned "
+            "concurrency, and a queue, stream or event bus; found none. Unflattened spikes "
+            "drive over-provisioned, idle capacity"
+        )]
+
+
 REPO_RULES: List[Rule] = [
     RepoTestsMissing(), RepoPipelineMissing(), SingleEnvironment(),
     OrgGuardrailsMissing(), AccountBaselineMissing(), RootUserUnchecked(),
@@ -9080,4 +9449,6 @@ REPO_RULES: List[Rule] = [
     ManagementPricingMissing(),
     DataTransferUnmodelled(), DataTransferNotOptimised(),
     DemandNotAnalysed(), DemandUnbuffered(),
+    SlaIgnoresSustainability(), UnusedAssets(), GeographicPlacementMismatch(),
+    TeamResourcesUnsized(), DemandCurveNotFlattened(),
 ]

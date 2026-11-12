@@ -15,7 +15,7 @@ Which CDK rules have a template check, and which AWS Foundational Security Best 
 
 ## CDK rules
 
-276 rules: 132 covered, 7 partial, 10 account, 5 cdk-only, 25 advice, 97 repo.
+281 rules: 132 covered, 7 partial, 10 account, 5 cdk-only, 25 advice, 102 repo.
 
 | Rule | Title | Template check | Status | Note |
 | -- | -- | -- | -- | -- |
@@ -295,6 +295,11 @@ Which CDK rules have a template check, and which AWS Foundational Security Best 
 | REPO-095 | Data movers pay for transfer they could avoid |  | `repo` | Fires when a Lambda function, ECS service or EC2 instance in a VPC reaches S3 or DynamoDB through a NAT gateway (explicit, or the CDK default VPC) with no gateway endpoint for it and no single-AZ VPC, or when production IaC copies data to another Region with no recorded reason and no VPC endpoint. |
 | REPO-096 | Workload demand is not analysed |  | `repo` | Fires when production IaC has compute (Lambda, ECS service, EKS cluster, EC2 or Auto Scaling group, App Runner) and no scheduled scaling action, no demand metric (queue depth, request count, invocations, concurrency) used to scale or alarm, and no note named or headed demand, traffic, usage pattern, load profile or capacity plan that gives a rate, volume or calendar pattern. CPU and memory alone do not count. |
 | REPO-097 | Demand has no buffer or throttle |  | `repo` | Fires when production IaC has an API Gateway API and no stage or usage plan throttle, no WAF rate-based rule and no Lambda reserved concurrency, or a Lambda function invoked directly by SNS or S3 with no SQS queue, Kinesis stream or EventBridge bus and no reserved or provisioned concurrency. |
+| REPO-098 | Service levels are not aligned with sustainability goals |  | `repo` | Fires when production IaC has workload resources and no note named or headed SLA, SLO, service level, availability target or reliability target mentions a sustainability word (sustainability, carbon, energy, emissions, idle, utilization, right-sizing, scale to zero, off-hours). |
+| REPO-099 | Provisioned assets nothing uses |  | `repo` | Fires when production IaC provisions an EBS volume, load balancer, target group, NAT gateway or network interface whose name no other IaC in the repo refers to (no attachment, listener, route or reference). Elastic IPs stay with COST-012 and CF-EIP-001. |
+| REPO-100 | CloudFront price class and stack Region disagree |  | `repo` | Fires when a CloudFront price class does not cover a literal Region in the same repo (a CDK env or region prop, an unaliased Terraform provider, or a Region in an S3, load balancer or API Gateway domain) and there is no comment beside either line and no note named or headed placement, latency, edge or region that gives a reason. |
+| REPO-101 | Team resources are not sized for the work |  | `repo` | Fires when production IaC has workload resources and no note named or headed developer environment, workstation, CI runners, build agents or team resources mentions sizing or a shutdown (right-sizing, auto-stop, idle, schedule, hibernation, on-demand, Spot). |
+| REPO-102 | Demand spikes reach the workload unflattened |  | `repo` | Fires on the same gaps as REPO-097: production IaC with an API Gateway API and no throttle, usage plan, WAF rate-based rule or reserved concurrency, or a Lambda function invoked directly by SNS or S3 with no queue, stream or event bus and no reserved or provisioned concurrency. |
 
 ## FSBP controls
 

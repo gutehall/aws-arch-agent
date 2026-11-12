@@ -2180,6 +2180,38 @@ TOPICS: dict[str, tuple[str, str, str, str]] = {
         "Well-Architected COST09-BP02: Implement a buffer or throttle to manage demand",
         "/wellarchitected/latest/cost-optimization-pillar/cost_manage_demand_resources_buffer_throttle.html",
     ),
+    "sla_sustainability": (
+        "Understanding availability needs",
+        "/wellarchitected/latest/reliability-pillar/understanding-availability-needs.html",
+        "Well-Architected SUS02-BP02: Align SLAs with sustainability goals",
+        "/wellarchitected/latest/sustainability-pillar/sus_sus_user_a3.html",
+    ),
+    "unused_assets": (
+        "Delete an Amazon EBS volume",
+        "/ebs/latest/userguide/ebs-deleting-volume.html",
+        "Well-Architected SUS02-BP03: Stop the creation and maintenance of unused assets",
+        "/wellarchitected/latest/sustainability-pillar/sus_sus_user_a4.html",
+    ),
+    "geographic_placement": (
+        "Specify values for a CloudFront web distribution",
+        "/AmazonCloudFront/latest/DeveloperGuide/distribution-web-values-specify.html",
+        "Well-Architected SUS02-BP04: Optimize geographic placement of workloads based on "
+        "their networking requirements",
+        "/wellarchitected/latest/sustainability-pillar/sus_sus_user_a5.html",
+    ),
+    "team_resources": (
+        "Stop and start Amazon EC2 instances",
+        "/AWSEC2/latest/UserGuide/Stop_Start.html",
+        "Well-Architected SUS02-BP05: Optimize team member resources for activities performed",
+        "/wellarchitected/latest/sustainability-pillar/sus_sus_user_a6.html",
+    ),
+    "demand_curve": (
+        "Throttle requests to your REST APIs for better throughput",
+        "/apigateway/latest/developerguide/api-gateway-request-throttling.html",
+        "Well-Architected SUS02-BP06: Implement buffering or throttling to flatten the demand "
+        "curve",
+        "/wellarchitected/latest/sustainability-pillar/sus_sus_user_a7.html",
+    ),
     "budget_owner": (
         "Best practices for AWS Budgets",
         "/cost-management/latest/userguide/budgets-best-practices.html",
@@ -2517,6 +2549,11 @@ RULE_TOPICS: dict[str, str] = {
     "REPO-095": "data_transfer_components",
     "REPO-096": "demand_analysis",
     "REPO-097": "demand_throttle",
+    "REPO-098": "sla_sustainability",
+    "REPO-099": "unused_assets",
+    "REPO-100": "geographic_placement",
+    "REPO-101": "team_resources",
+    "REPO-102": "demand_curve",
     "PERF-001": "graviton_ec2",
     "PERF-002": "caching",
     "PERF-003": "ddb_capacity",
