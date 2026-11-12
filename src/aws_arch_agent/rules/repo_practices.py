@@ -582,6 +582,19 @@ ec2:InstanceType, sagemaker:InstanceTypes, rds:DatabaseClass or aws:RequestedReg
 - REPO-085 project lifecycle: a temporary stack (path or stack id reads as sandbox, test,
   preview, ephemeral, feature, demo, poc or pr-<n>; long-lived dev and staging are not) with no end-date tag (ExpiryDate,
   DeleteAfter, ttl and the like) or no environment tag, in its file or its directory.
+
+Decommissioning (COST 4). Unused Elastic IPs (COST04-BP03), ECR lifecycle policies
+(COST04-BP04) and S3 lifecycle and log retention (COST04-BP05) are mapped checks; these
+read the rest.
+
+- REPO-086 track resources: production workload resources and no created-by tag
+  (CreatedBy, ManagedBy, Creator, Source, Repository, Repo, IaC) or no owner tag (Owner,
+  CostOwner, Team) anywhere in the IaC. A tag in any IaC file counts for every resource.
+- REPO-087 decommissioning process: the repo creates temporary environments (a temporary
+  stack as REPO-085 finds it, a GitHub workflow that deploys on pull requests, a GitLab
+  review/ environment) and nothing tears them down: no destroy or delete step in CI, no
+  GitLab on_stop job, no scheduled cleanup in the IaC, no aws-nuke config and no
+  decommissioning note that describes the process.
 """
 from __future__ import annotations
 
@@ -7722,6 +7735,158 @@ class ProjectLifecycleUntracked(_RepoRule):
         )]
 
 
+# COST 4: decommissioning. Tracking resources over their lifetime (REPO-086) and a
+# decommissioning process for temporary environments (REPO-087).
+
+_CREATED_BY_TAG = _tag_key(r"(?:created[-_ ]?by|managed[-_ ]?by|creator|iac)")
+# Terraform modules and some resources take source, repository and repo arguments, so a
+# lowercase unquoted one is not a tag; a quoted or capitalized key is.
+_SOURCE_KEY = r"(?i:source|repository|repo)"
+_SOURCE_TAG = re.compile(
+    rf"[\"']?Key[\"']?\s*:\s*[\"']?{_SOURCE_KEY}[\"']?\s*(?:,|$)"
+    rf"|^\s*(?:[\"']{_SOURCE_KEY}[\"']|Source|Repository|Repo|SOURCE|REPOSITORY|REPO)"
+    r"\s*=\s*\S"
+    rf"|\.add\(\s*['\"]{_SOURCE_KEY}['\"]"
+    rf"|[{{,]\s*[\"']?{_SOURCE_KEY}[\"']?\s*:\s*['\"]",
+    re.MULTILINE,
+)
+_PR_TRIGGER = re.compile(
+    r"^\s*(?:-\s*)?[\"']?pull_request(?:_target)?[\"']?\s*:?\s*(?:#.*)?$"
+    r"|^\s*[\"']?on[\"']?\s*:[^\n]*\bpull_request",
+    re.MULTILINE,
+)
+_ENV_DEPLOY = re.compile(
+    r"\bcdk\s+deploy\b|\bterraform(?:\s+-chdir=\S+)?\s+apply\b(?![^\n]*\s-destroy\b)"
+    r"|\bsam\s+deploy\b|\baws\s+cloudformation\s+(?:deploy|create-stack)\b"
+    r"|\b(?:serverless|sls)\s+deploy\b"
+)
+# A deploy limited to pushes or to one branch is not a per-pull-request environment.
+_MAIN_ONLY = re.compile(
+    r"github\.event_name\s*==\s*['\"]push['\"]|github\.ref\s*==\s*['\"]refs/heads/"
+)
+_REVIEW_ENV = re.compile(r"^\s*(?:environment|name)\s*:\s*[\"']?review/", re.MULTILINE)
+_TEARDOWN = _kinds(
+    ("cdk destroy", r"\bcdk\s+destroy\b"),
+    ("terraform destroy",
+     r"\bterraform(?:\s+-chdir=\S+)?\s+(?:destroy\b|apply\b[^\n]*\s-destroy\b)"
+     r"|\bterragrunt\s+(?:run-all\s+)?destroy\b"),
+    ("sam delete", r"\bsam\s+delete\b"),
+    ("aws cloudformation delete-stack", r"\baws\s+cloudformation\s+delete-stack\b"),
+    ("serverless remove", r"\b(?:serverless|sls)\s+remove\b"),
+    ("GitLab stop job", r"\bon_stop\s*:|\baction\s*:\s*[\"']?stop\b"),
+)
+_CLEANUP_WORD = re.compile(
+    r"(?i)(?:clean[-_ ]?up|tear[-_ ]?down|decommission|expire[ds]?(?![a-z])|nuke)"
+)
+_NUKE_CONFIG = re.compile(r"(?:aws[-_.])?nuke[\w.-]*\.ya?ml")
+_DECOMMISSION_NAME = re.compile(
+    r"(?:^|[-_. ])(?:decommission\w*|tear[-_]?down|clean[-_]?up|offboarding)(?:$|[-_. ])"
+)
+_DECOMMISSION_HEADING = re.compile(
+    r"(?i).*\b(?:decommission\w*|tear[- ]?down|clean[- ]?up|offboarding)\b.*"
+)
+# A note describes the process when it says what is removed and how.
+_DECOMMISSION_STEP = re.compile(
+    r"(?i)\b(?:destroy|delete|remove|tear[- ]?down|terminate|nuke|decommission)\w*"
+)
+
+
+def created_environments(repo_path: Path) -> List[str]:
+    """Places that create review or temporary environments: temporary stacks (as REPO-085),
+    GitHub workflows that deploy on pull requests, and GitLab review environments."""
+    places = [place for place, _end, _env in temporary_stacks(repo_path)]
+    for rel, text in build_texts(repo_path):
+        lowered = rel.lower()
+        if lowered.startswith(".github/workflows/"):
+            if (_PR_TRIGGER.search(text) and _ENV_DEPLOY.search(text)
+                    and not _MAIN_ONLY.search(text)):
+                places.append(f"{rel} (deploys on pull requests)")
+        elif lowered.endswith(".gitlab-ci.yml") and _REVIEW_ENV.search(text):
+            places.append(f"{rel} (review/ environment)")
+    return places
+
+
+def decommissioning(repo_path: Path) -> dict[str, str]:
+    """Each way the repo tears environments down: kind -> first place."""
+    _builds, found = _tools_in_builds(repo_path, _TEARDOWN)
+    scheduled = [(rel, text) for rel, text in iac_texts(repo_path) if _SCHEDULE.search(text)]
+    cleanup = next((rel for rel, text in scheduled if _CLEANUP_WORD.search(text)), None)
+    if cleanup is None and scheduled and any(
+        _CLEANUP_WORD.search(text) for _rel, _name, text in _function_code(repo_path)
+    ):
+        cleanup = scheduled[0][0]
+    if cleanup:
+        found.setdefault("scheduled cleanup", cleanup)
+    for path in walk(repo_path):
+        if _NUKE_CONFIG.fullmatch(path.name.lower()):
+            found.setdefault("aws-nuke config", "/".join(_rel_parts(path, repo_path)))
+            break
+    for rel, text in note_texts(repo_path):
+        stem = rel.rsplit("/", 1)[-1].lower().rsplit(".", 1)[0]
+        if (_DECOMMISSION_NAME.search(stem) and _DECOMMISSION_STEP.search(text)) or any(
+            _DECOMMISSION_STEP.search(s) for s in _sections(text, _DECOMMISSION_HEADING)
+        ):
+            found.setdefault("decommissioning note", rel)
+            break
+    return found
+
+
+class ResourceLifetimeUntracked(_RepoRule):
+    id = "REPO-086"
+    title = "Resources are not tagged with who created and owns them"
+    category = "Cost"
+    severity = "Low"
+    themes = ("finops",)
+    recommendation = (
+        "Tag every resource with where it came from and who owns it, so you can find "
+        "and remove what is no longer used: a CreatedBy, ManagedBy or Repository tag and an "
+        "Owner or Team tag (CDK Tags.of(app), Terraform provider default_tags, "
+        "CloudFormation stack tags)."
+    )
+
+    def run(self, repo_path: Path, language: str = "typescript") -> List[Finding]:
+        places = _workload_places(repo_path)
+        if not places:
+            return []
+        texts = [text for _rel, text in iac_texts(repo_path)]
+        created = any(_CREATED_BY_TAG.search(t) or _SOURCE_TAG.search(t) for t in texts)
+        owner = any(_OWNER_TAG.search(t) for t in texts)
+        missing = [what for what, has in (("created-by", created), ("owner", owner))
+                   if not has]
+        if not missing:
+            return []
+        return [self._finding(
+            f"Declares {_listed(places)}; no {' or '.join(missing)} tag in the IaC. A "
+            "created-by tag is keyed CreatedBy, ManagedBy, Creator, Source, Repository, Repo "
+            "or IaC, an owner tag Owner, CostOwner or Team",
+        )]
+
+
+class DecommissioningMissing(_RepoRule):
+    id = "REPO-087"
+    title = "Nothing tears down temporary environments"
+    category = "Cost"
+    severity = "Low"
+    themes = ("finops",)
+    recommendation = (
+        "Remove review and temporary environments when they are done: a CI job that runs "
+        "cdk destroy, terraform destroy, sam delete or aws cloudformation delete-stack when "
+        "the pull request closes (a GitLab environment with on_stop), a scheduled cleanup "
+        "of stacks past their end date, or a written decommissioning procedure."
+    )
+
+    def run(self, repo_path: Path, language: str = "typescript") -> List[Finding]:
+        created = created_environments(repo_path)
+        if not created or decommissioning(repo_path):
+            return []
+        return [self._finding(
+            f"Creates temporary environments: {_listed(created, 4)}; searched CI for cdk "
+            "destroy, terraform destroy, sam delete, aws cloudformation delete-stack, "
+            "serverless remove or a GitLab on_stop job, the IaC for a scheduled cleanup, "
+            "the repo for an aws-nuke config and a decommissioning note; found none",
+        )]
+
+
 REPO_RULES: List[Rule] = [
     RepoTestsMissing(), RepoPipelineMissing(), SingleEnvironment(),
     OrgGuardrailsMissing(), AccountBaselineMissing(), RootUserUnchecked(),
@@ -7760,4 +7925,5 @@ REPO_RULES: List[Rule] = [
     CostAwareCultureMissing(),
     CostPolicyMissing(), CostControlMissing(), BudgetTargetMissing(),
     SharedAccountEnvironments(), BillingAccessOnUser(), ProjectLifecycleUntracked(),
+    ResourceLifetimeUntracked(), DecommissioningMissing(),
 ]

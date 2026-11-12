@@ -1281,5 +1281,17 @@
     "negative_py": "AppStack(app, 'SandboxStack')\nTags.of(app).add('DeleteAfter', '2026-12-31')\nTags.of(app).add('env', 'sandbox')",
     "positive_ts": "new AppStack(app, 'SandboxStack');\nTags.of(app).add('Environment', 'sandbox');",
     "positive_py": "AppStack(app, 'PreviewStack')"
+  },
+  "REPO-086": {
+    "negative_ts": "new s3.Bucket(this, 'Data');\nTags.of(app).add('CreatedBy', 'cdk');\nTags.of(app).add('Owner', 'platform');",
+    "negative_py": "s3.Bucket(self, 'Data')\nTags.of(app).add('Repository', 'org/app')\nTags.of(app).add('Team', 'platform')",
+    "positive_ts": "new s3.Bucket(this, 'Data');\nTags.of(app).add('Owner', 'platform');",
+    "positive_py": "s3.Bucket(self, 'Data')"
+  },
+  "REPO-087": {
+    "negative_ts": "new AppStack(app, 'SandboxStack');\nnew events.Rule(this, 'Cleanup', { schedule: events.Schedule.rate(cdk.Duration.days(1)) });",
+    "negative_py": "AppStack(app, 'PreviewStack')\nevents.Rule(self, 'Teardown', schedule=events.Schedule.cron(hour='3'))",
+    "positive_ts": "new AppStack(app, 'SandboxStack');",
+    "positive_py": "AppStack(app, 'PreviewStack')"
   }
 }

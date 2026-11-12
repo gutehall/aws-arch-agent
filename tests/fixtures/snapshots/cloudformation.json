@@ -348,5 +348,12 @@
     "file": null,
     "line": null,
     "evidence": "Declares Lambda in stack.yaml, S3 bucket in stack.yaml, RDS database in stack.yaml; searched the IaC for a service control policy or a policy that Denies ec2:RunInstances or sagemaker:Create* or sets a condition on ec2:InstanceType, sagemaker:InstanceTypes, rds:DatabaseClass or aws:RequestedRegion, a permissions boundary (PermissionsBoundary, permissions_boundary, CDK PermissionsBoundary.of) and an AWS Budgets action (AWS::Budgets::BudgetsAction, aws_budgets_budget_action, CfnBudgetsAction); found none"
+  },
+  {
+    "id": "REPO-086",
+    "severity": "Low",
+    "file": null,
+    "line": null,
+    "evidence": "Declares Lambda in stack.yaml, S3 bucket in stack.yaml, RDS database in stack.yaml; no created-by or owner tag in the IaC. A created-by tag is keyed CreatedBy, ManagedBy, Creator, Source, Repository, Repo or IaC, an owner tag Owner, CostOwner or Team"
   }
 ]

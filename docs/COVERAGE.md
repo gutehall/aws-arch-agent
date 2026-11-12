@@ -15,7 +15,7 @@ Which CDK rules have a template check, and which AWS Foundational Security Best 
 
 ## CDK rules
 
-264 rules: 132 covered, 7 partial, 10 account, 5 cdk-only, 25 advice, 85 repo.
+266 rules: 132 covered, 7 partial, 10 account, 5 cdk-only, 25 advice, 87 repo.
 
 | Rule | Title | Template check | Status | Note |
 | -- | -- | -- | -- | -- |
@@ -283,6 +283,8 @@ Which CDK rules have a template check, and which AWS Foundational Security Best 
 | REPO-083 | Production and non-production share an account |  | `repo` | Fires when the repo declares compute, a data store or an edge, deploys production and dev or staging, and has no Organizations account or OU, no StackSets deployment targets and fewer than two distinct literal account ids. |
 | REPO-084 | Billing access is granted to an IAM user |  | `repo` | Fires when billing actions (aws-portal, billing, ce, budgets, cur) or a Billing managed policy are granted to an IAM user directly; a group or role passes. |
 | REPO-085 | Temporary stacks have no end date |  | `repo` | Fires on a temporary stack (path or stack id reads as sandbox, test, preview, ephemeral, feature, demo, poc or pr-<n>; long-lived dev and staging are not) with no end-date tag or no environment tag in its file or directory. |
+| REPO-086 | Resources are not tagged with who created and owns them |  | `repo` | Fires when production IaC declares compute, a data store or an edge and no IaC file tags with a created-by key (CreatedBy, ManagedBy, Creator, Source, Repository, Repo, IaC) or no IaC file tags with an owner key (Owner, CostOwner, Team). |
+| REPO-087 | Nothing tears down temporary environments |  | `repo` | Fires when the repo creates temporary environments (a temporary stack as REPO-085, a GitHub workflow that deploys on pull requests, a GitLab review/ environment) and has no destroy step or GitLab on_stop job in CI, no scheduled cleanup in IaC, no aws-nuke config and no decommissioning note. |
 
 ## FSBP controls
 

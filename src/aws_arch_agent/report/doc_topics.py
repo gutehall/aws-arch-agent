@@ -2107,6 +2107,18 @@ TOPICS: dict[str, tuple[str, str, str, str]] = {
         "Well-Architected COST02-BP06: Track project lifecycle",
         "/wellarchitected/latest/cost-optimization-pillar/cost_govern_usage_track_lifecycle.html",
     ),
+    "resource_lifetime": (
+        "Tagging your AWS resources",
+        "/tag-editor/latest/userguide/tagging.html",
+        "Well-Architected COST04-BP01: Track resources over their lifetime",
+        "/wellarchitected/latest/cost-optimization-pillar/cost_decomissioning_resources_track.html",
+    ),
+    "decommission_process": (
+        "cdk destroy",
+        "/cdk/v2/guide/ref-cli-cmd-destroy.html",
+        "Well-Architected COST04-BP02: Implement a decommissioning process",
+        "/wellarchitected/latest/cost-optimization-pillar/cost_decomissioning_resources_implement_process.html",
+    ),
     "budget_owner": (
         "Best practices for AWS Budgets",
         "/cost-management/latest/userguide/budgets-best-practices.html",
@@ -2432,6 +2444,8 @@ RULE_TOPICS: dict[str, str] = {
     "REPO-083": "account_structure",
     "REPO-084": "billing_access",
     "REPO-085": "project_lifecycle",
+    "REPO-086": "resource_lifetime",
+    "REPO-087": "decommission_process",
     "PERF-001": "graviton_ec2",
     "PERF-002": "caching",
     "PERF-003": "ddb_capacity",
