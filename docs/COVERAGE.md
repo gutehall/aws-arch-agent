@@ -15,7 +15,7 @@ Which CDK rules have a template check, and which AWS Foundational Security Best 
 
 ## CDK rules
 
-281 rules: 132 covered, 7 partial, 10 account, 5 cdk-only, 25 advice, 102 repo.
+285 rules: 132 covered, 7 partial, 10 account, 5 cdk-only, 25 advice, 106 repo.
 
 | Rule | Title | Template check | Status | Note |
 | -- | -- | -- | -- | -- |
@@ -300,6 +300,10 @@ Which CDK rules have a template check, and which AWS Foundational Security Best 
 | REPO-100 | CloudFront price class and stack Region disagree |  | `repo` | Fires when a CloudFront price class does not cover a literal Region in the same repo (a CDK env or region prop, an unaliased Terraform provider, or a Region in an S3, load balancer or API Gateway domain) and there is no comment beside either line and no note named or headed placement, latency, edge or region that gives a reason. |
 | REPO-101 | Team resources are not sized for the work |  | `repo` | Fires when production IaC has workload resources and no note named or headed developer environment, workstation, CI runners, build agents or team resources mentions sizing or a shutdown (right-sizing, auto-stop, idle, schedule, hibernation, on-demand, Spot). |
 | REPO-102 | Demand spikes reach the workload unflattened |  | `repo` | Fires on the same gaps as REPO-097: production IaC with an API Gateway API and no throttle, usage plan, WAF rate-based rule or reserved concurrency, or a Lambda function invoked directly by SNS or S3 with no queue, stream or event bus and no reserved or provisioned concurrency. |
+| REPO-103 | Workload components with no use |  | `repo` | Fires when production IaC declares an ECS service at desired count 0, an Auto Scaling group with a maximum of 0, a Lambda function with reserved concurrency 0, an EventBridge rule that is disabled or has no target, an SNS topic with no subscription and no reference, or a Lambda function whose name appears nowhere else in the IaC. EBS volumes, load balancers, target groups, NAT gateways and network interfaces stay with REPO-099. |
+| REPO-104 | Compute at its resource ceiling with no profile of the code |  | `repo` | Fires when a Lambda function (10240 MB, or 900 s with 3008 MB or more) or an ECS/Fargate task definition (16384 CPU units, 122880 MiB, or the largest memory for its CPU size) sits at its ceiling and the repo has no CodeGuru Profiler, Lambda Insights, AWS Lambda Power Tuning or note on a load test or profile with figures. |
+| REPO-105 | Impact on end-user devices is not addressed |  | `repo` | Fires when the repo builds for end-user devices (Android, iOS, Flutter, React Native, Expo, Capacitor or Cordova sources, or IaC for an IoT fleet, a Pinpoint app or an Amplify mobile app) and has no Device Farm project, no `aws devicefarm` build step and no note on supported devices, minimum OS, battery, energy or hardware lifecycle. Silent for a server-side workload. |
+| REPO-106 | Storage is not matched to the data access pattern |  | `repo` | Fires on the same gap as REPO-063: production data kept only on instance volumes, instance store or a database engine run on the host, with no managed data store in the IaC. |
 
 ## FSBP controls
 

@@ -390,5 +390,12 @@
     "file": null,
     "line": null,
     "evidence": "Runs Lambda (stack.yaml), S3 bucket (stack.yaml), RDS database (stack.yaml); searched notes named or headed developer environment, workstation, CI runners, build agents or team resources for how they are sized and shut down (right-sizing, auto-stop, idle, schedule, hibernation, on-demand, Spot); found none"
+  },
+  {
+    "id": "REPO-103",
+    "severity": "Low",
+    "file": null,
+    "line": null,
+    "evidence": "Declares Lambda function Worker with nothing triggering or referring to it (stack.yaml:34); nothing in the IaC gives it work, so it only adds to what the workload runs and maintains"
   }
 ]

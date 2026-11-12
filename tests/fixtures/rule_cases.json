@@ -1383,5 +1383,29 @@
     "negative_py": "apigateway.RestApi(self, 'Api', deploy_options=apigateway.StageOptions(throttling_rate_limit=100))",
     "positive_ts": "new apigateway.RestApi(this, 'Api');",
     "positive_py": "apigateway.RestApi(self, 'Api')"
+  },
+  "REPO-103": {
+    "negative_ts": "const topic = new sns.Topic(this, 'T');\ntopic.addSubscription(sub);",
+    "negative_py": "topic = sns.Topic(self, 'T')\ntopic.add_subscription(sub)",
+    "positive_ts": "new ecs.FargateService(this, 'Svc', { cluster, taskDefinition, desiredCount: 0 });",
+    "positive_py": "ecs.FargateService(self, 'Svc', cluster=c, task_definition=t, desired_count=0)"
+  },
+  "REPO-104": {
+    "negative_ts": "new lambda.Function(this, 'Fn', { runtime, handler, code, memorySize: 1024 });",
+    "negative_py": "_lambda.Function(self, 'Fn', runtime=r, handler='h', code=c, memory_size=1024)",
+    "positive_ts": "new lambda.Function(this, 'Fn', { runtime, handler, code, memorySize: 10240 });",
+    "positive_py": "_lambda.Function(self, 'Fn', runtime=r, handler='h', code=c, memory_size=10240)"
+  },
+  "REPO-105": {
+    "negative_ts": "const answer = 42;",
+    "negative_py": "answer = 42",
+    "positive_ts": "new iot.CfnThing(this, 'Sensor');",
+    "positive_py": "iot.CfnThing(self, 'Sensor')"
+  },
+  "REPO-106": {
+    "negative_ts": "const host = new ec2.Instance(this, 'Db', { vpc, instanceType, machineImage });\nnew ec2.Volume(this, 'Data', { availabilityZone: 'eu-west-1a', size });\nnew rds.DatabaseInstance(this, 'Rds', { engine, vpc });",
+    "negative_py": "ec2.Instance(self, 'Web', vpc=vpc, instance_type=t, machine_image=ami)",
+    "positive_ts": "const host = new ec2.Instance(this, 'Db', { vpc, instanceType, machineImage });\nnew ec2.Volume(this, 'Data', { availabilityZone: 'eu-west-1a', size });",
+    "positive_py": "host = ec2.Instance(self, 'Db', vpc=vpc, instance_type=t, machine_image=ami)\nhost.user_data.add_commands('dnf install -y mysql-server')"
   }
 }

@@ -2212,6 +2212,32 @@ TOPICS: dict[str, tuple[str, str, str, str]] = {
         "curve",
         "/wellarchitected/latest/sustainability-pillar/sus_sus_user_a7.html",
     ),
+    "unused_components": (
+        "Disabling or deleting a rule in Amazon EventBridge",
+        "/eventbridge/latest/userguide/eb-delete-rule.html",
+        "Well-Architected SUS03-BP02: Remove or refactor workload components with low or no use",
+        "/wellarchitected/latest/sustainability-pillar/sus_sus_software_a3.html",
+    ),
+    "hot_code": (
+        "What is Amazon CodeGuru Profiler?",
+        "/codeguru/latest/profiler-ug/what-is-codeguru-profiler.html",
+        "Well-Architected SUS03-BP03: Optimize areas of code that consume the most time or "
+        "resources",
+        "/wellarchitected/latest/sustainability-pillar/sus_sus_software_a4.html",
+    ),
+    "device_impact": (
+        "What is AWS Device Farm?",
+        "/devicefarm/latest/developerguide/welcome.html",
+        "Well-Architected SUS03-BP04: Optimize impact on devices and equipment",
+        "/wellarchitected/latest/sustainability-pillar/sus_sus_software_a5.html",
+    ),
+    "data_access_pattern": (
+        "Managing the lifecycle of objects",
+        "/AmazonS3/latest/userguide/object-lifecycle-mgmt.html",
+        "Well-Architected SUS03-BP05: Use software patterns and architectures that best "
+        "support data access and storage patterns",
+        "/wellarchitected/latest/sustainability-pillar/sus_sus_software_a6.html",
+    ),
     "budget_owner": (
         "Best practices for AWS Budgets",
         "/cost-management/latest/userguide/budgets-best-practices.html",
@@ -2554,6 +2580,10 @@ RULE_TOPICS: dict[str, str] = {
     "REPO-100": "geographic_placement",
     "REPO-101": "team_resources",
     "REPO-102": "demand_curve",
+    "REPO-103": "unused_components",
+    "REPO-104": "hot_code",
+    "REPO-105": "device_impact",
+    "REPO-106": "data_access_pattern",
     "PERF-001": "graviton_ec2",
     "PERF-002": "caching",
     "PERF-003": "ddb_capacity",

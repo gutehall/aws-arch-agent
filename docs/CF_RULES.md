@@ -4,7 +4,7 @@ This document provides a comprehensive list of all rules checked by AWS Arch Age
 
 ## Overview
 
-AWS Arch Agent checks **281 static analysis rules** and **283 template checks** across all 6 AWS Well-Architected Framework pillars. 139 of the 281 CDK rules (49%) have a template check, so they also run for CloudFormation, Terraform and synthesised CDK. [COVERAGE.md](COVERAGE.md) gives the reason for each of the others.
+AWS Arch Agent checks **285 static analysis rules** and **283 template checks** across all 6 AWS Well-Architected Framework pillars. 139 of the 285 CDK rules (49%) have a template check, so they also run for CloudFormation, Terraform and synthesised CDK. [COVERAGE.md](COVERAGE.md) gives the reason for each of the others.
 
 ## Static Analysis Rules (V1 & V2 Modes)
 
@@ -407,7 +407,7 @@ These rules run on your CDK TypeScript/Python code and execute in both V1 and V2
 - BP-004: CDK Aspects not used for policy enforcement
 - BP-005: CDK context not used for environment-specific config
 
-### Sustainability (12 rules)
+### Sustainability (16 rules)
 
 - SUST-001: Spot instances not considered for batch/non-critical workloads
 - SUST-002: Resource right-sizing opportunities detected
@@ -423,6 +423,12 @@ These rules run on your CDK TypeScript/Python code and execute in both V1 and V2
 - REPO-100: CloudFront price class and stack Region disagree
 - REPO-101: Team resources are not sized for the work
 - REPO-102: Demand spikes reach the workload unflattened
+
+**Software and architecture patterns (repo-level, SUS 3):**
+- REPO-103: Workload components with no use
+- REPO-104: Compute at its resource ceiling with no profile of the code
+- REPO-105: Impact on end-user devices is not addressed
+- REPO-106: Storage is not matched to the data access pattern
 
 ---
 
@@ -1194,6 +1200,10 @@ Every rule has one or more themes, which cut across pillars: `finops`, `security
 | REPO-100 | sustainability, finops |
 | REPO-101 | sustainability, finops |
 | REPO-102 | sustainability, finops |
+| REPO-103 | sustainability, finops |
+| REPO-104 | sustainability, finops |
+| REPO-105 | sustainability, finops |
+| REPO-106 | sustainability, finops |
 | SEC-001 | identity |
 | SEC-002 | identity |
 | SEC-003 | network-exposure |

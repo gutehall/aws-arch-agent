@@ -665,6 +665,23 @@ these read the rest.
 - REPO-102 demand curve: the REPO-097 gaps (an API with no throttle, a directly triggered
   Lambda function with no queue or reserved concurrency), read as spikes that drive
   over-provisioning.
+
+Software and architecture patterns (SUS 3). Reading the sustainability pillar's SUS 3
+questions: SUS03-BP01 is a mapped check; these read the rest.
+
+- REPO-103 unused components: production IaC with an ECS service at desired count 0, an Auto
+  Scaling group with a maximum of 0, a Lambda function with reserved concurrency 0, an
+  EventBridge rule that is disabled or has no target, an SNS topic with no subscription, or a
+  Lambda function nothing triggers or refers to.
+- REPO-104 hot code: a Lambda function at 10240 MB (or 900 s with 3008 MB or more) or an ECS
+  task at the Fargate maximum, with no CodeGuru Profiler, Lambda Insights, Power Tuning or
+  note on a load test or profile that gives numbers.
+- REPO-105 devices: the repo builds for end-user devices (a mobile app or an IoT fleet) and
+  has no Device Farm setup and no note on supported devices, minimum OS, battery or hardware
+  lifecycle.
+- REPO-106 data access patterns: the REPO-063 gap (data kept on instance volumes or a database
+  engine run on the host, with no managed data store), read as a mismatch of storage to the
+  access pattern.
 """
 from __future__ import annotations
 
@@ -6221,6 +6238,22 @@ def host_data_storage(repo_path: Path) -> List[tuple[str, str, int]]:
     return found
 
 
+_MANAGED_SEARCHED = (
+    "managed data store (S3, DynamoDB, RDS or Aurora, ElastiCache, MemoryDB, "
+    "DocumentDB, Neptune, Keyspaces, OpenSearch Service, Timestream, Redshift, EFS, "
+    "FSx)"
+)
+
+
+def unmanaged_host_data(repo_path: Path) -> List[tuple[str, str, int]]:
+    """Production data kept on the instance, when the IaC declares no managed data store
+    (REPO-063 and REPO-106)."""
+    found = host_data_storage(repo_path)
+    if not found or _in_iac(repo_path, _MANAGED_DATA_STORES):
+        return []
+    return found
+
+
 class PurposeBuiltDataStoreMissing(_RepoRule):
     id = "REPO-063"
     title = "Data lives on the instance, not in a purpose-built store"
@@ -6236,15 +6269,13 @@ class PurposeBuiltDataStoreMissing(_RepoRule):
     )
 
     def run(self, repo_path: Path, language: str = "typescript") -> List[Finding]:
-        found = host_data_storage(repo_path)
-        if not found or _in_iac(repo_path, _MANAGED_DATA_STORES):
+        found = unmanaged_host_data(repo_path)
+        if not found:
             return []
         places = [f"{kind} at {rel}:{line}" for kind, rel, line in found]
         return [self._finding(
             f"Keeps data on the instance: {_listed(places, 4)}; searched the IaC for a "
-            "managed data store (S3, DynamoDB, RDS or Aurora, ElastiCache, MemoryDB, "
-            "DocumentDB, Neptune, Keyspaces, OpenSearch Service, Timestream, Redshift, EFS, "
-            "FSx); found none",
+            f"{_MANAGED_SEARCHED}; found none",
             file=found[0][1],
             line=found[0][2],
         )]
@@ -9405,6 +9436,556 @@ class DemandCurveNotFlattened(_RepoRule):
         )]
 
 
+# SUS 3: software and architecture patterns. Components nothing uses (REPO-103), code at its
+# resource ceiling with no profile (REPO-104), end-user devices (REPO-105), and data access
+# patterns (REPO-106, which shares its detection with REPO-063).
+
+
+def _refs(name: str, text: str) -> int:
+    """How often name appears as a whole word (a dotted reference such as self.name counts)."""
+    return len(re.findall(rf"(?<![\w$-]){re.escape(name)}(?![\w-])", text))
+
+
+def _is_zero(value: object) -> bool:
+    return not isinstance(value, bool) and isinstance(value, (int, str)) and str(value) == "0"
+
+
+def _named_once(name: str, literal: object, corpus: str) -> bool:
+    """Whether the logical id and a literal resource name (when there is a plain one) each
+    appear only where they are defined."""
+    if _refs(name, corpus) > 1:
+        return False
+    return (not isinstance(literal, str) or "$" in literal or literal == name
+            or _refs(literal, corpus) <= 1)
+
+
+def _tf_resources(text: str, types: str) -> Iterator[tuple[str, str, str, int]]:
+    """(type, name, body, line) of each Terraform resource of the types (a regex)."""
+    for match in re.finditer(rf"resource\s+\"({types})\"\s+\"(\w+)\"\s*\{{", text):
+        yield (match.group(1), match.group(2), _braced(text, match.end() - 1),
+               _line_of(text, match.start()))
+
+
+def _cdk_constructs(rel: str, text: str, pattern: str) -> Iterator[tuple[str, str, str, int]]:
+    """(variable it is assigned to or "", construct id, arguments, line) of each live call
+    of a CDK construct."""
+    for match in re.finditer(pattern, text):
+        if rel.endswith(".py") and not _live(re.compile(re.escape(match.group(0))), rel, text):
+            continue
+        start = text.rfind("\n", 0, match.start()) + 1
+        prefix = re.sub(r"(?:\bnew\s+)?[\w.]*$", "", text[start:match.start()])
+        assigned = _CDK_ASSIGNED.match(prefix)
+        args = _braced(text, match.end() - 1, "(", ")")
+        ident = re.match(r"\s*[\w.]+\s*,\s*['\"]([^'\"]+)['\"]", args)
+        yield (assigned.group(1) if assigned else "", ident.group(1) if ident else "",
+               args, _line_of(text, match.start()))
+
+
+def _cdk_zero(keys: str, args: str) -> bool:
+    return bool(re.search(rf"\b(?:{keys})[\"']?\s*[:=]\s*[\"']?0[\"']?(?![\w.])", args))
+
+
+def _arg_literal(keys: str, args: str) -> str | None:
+    match = re.search(rf"\b(?:{keys})[\"']?\s*[:=]\s*['\"]([^'\"$]+)['\"]", args)
+    return match.group(1) if match else None
+
+
+_CDK_DISUSED = (
+    ("ECS service", r"\b\w*(?:Fargate|Ec2)Service\(|\becs\.CfnService\("),
+    ("Auto Scaling group", r"\b(?:\w+\.)?(?:Cfn)?AutoScalingGroup\("),
+    ("Lambda function", r"\b\w*lambda\w*\.(?:Cfn)?Function\(|\b(?:Nodejs|Python|Go|DockerImage)"
+     r"Function\("),
+    ("EventBridge rule", r"\b\w*events\.(?:Cfn)?Rule\("),
+    ("SNS topic", r"\b\w*sns\.(?:Cfn)?Topic\("),
+)
+_CF_DISUSED_TYPES = {
+    "AWS::ECS::Service": "ECS service", "AWS::AutoScaling::AutoScalingGroup": "Auto Scaling group",
+    "AWS::Lambda::Function": "Lambda function", "AWS::Events::Rule": "EventBridge rule",
+    "AWS::SNS::Topic": "SNS topic",
+}
+_TF_DISUSED_TYPES = (
+    "aws_ecs_service|aws_autoscaling_group|aws_lambda_function|aws_cloudwatch_event_rule"
+    "|aws_sns_topic"
+)
+_TF_KIND = {
+    "aws_ecs_service": "ECS service", "aws_autoscaling_group": "Auto Scaling group",
+    "aws_lambda_function": "Lambda function", "aws_cloudwatch_event_rule": "EventBridge rule",
+    "aws_sns_topic": "SNS topic",
+}
+_UNTRIGGERED = "nothing triggering or referring to it"
+
+
+def _cf_disused(rel: str, text: str, corpus: str) -> Iterator[str]:
+    for name, body in _cf_resources(rel, text).items():
+        kind = _CF_DISUSED_TYPES.get(str(body.get("Type")))
+        if not kind:
+            continue
+        props = _props(body)
+        why = None
+        if kind == "ECS service" and _is_zero(props.get("DesiredCount")):
+            why = "desired count 0"
+        elif kind == "Auto Scaling group" and _is_zero(props.get("MaxSize")):
+            why = "maximum size 0"
+        elif kind == "Lambda function":
+            if _is_zero(props.get("ReservedConcurrentExecutions")):
+                why = "reserved concurrency 0"
+            elif _named_once(name, props.get("FunctionName"), corpus):
+                why = _UNTRIGGERED
+        elif kind == "EventBridge rule":
+            if props.get("State") == "DISABLED":
+                why = "state DISABLED"
+            elif not props.get("Targets"):
+                why = "no targets"
+        elif kind == "SNS topic" and not props.get("Subscription") and _named_once(
+            name, props.get("TopicName"), corpus
+        ):
+            why = "no subscription and no reference"
+        if why:
+            yield f"{kind} {name} with {why} ({rel}:{_line_of(text, text.find(name))})"
+
+
+def _tf_disused(rel: str, text: str, corpus: str) -> Iterator[str]:
+    for rtype, name, body, line in _tf_resources(text, _TF_DISUSED_TYPES):
+        kind = _TF_KIND[rtype]
+        referenced = bool(re.search(rf"\b{rtype}\.{name}\b", corpus))
+        found_name = re.search(r"(?m)^\s*(?:function_name|name)\s*=\s*\"([^\"$]+)\"", body)
+        literal = found_name if found_name and found_name.group(1) != name else None
+        why = None
+        if kind == "ECS service" and re.search(r"(?m)^\s*desired_count\s*=\s*0\s*$", body):
+            why = "desired count 0"
+        elif kind == "Auto Scaling group" and re.search(r"(?m)^\s*max_size\s*=\s*0\s*$", body):
+            why = "maximum size 0"
+        elif kind == "Lambda function":
+            if re.search(r"(?m)^\s*reserved_concurrent_executions\s*=\s*0\s*$", body):
+                why = "reserved concurrency 0"
+            elif not referenced and (not literal or _refs(literal.group(1), corpus) <= 1):
+                why = _UNTRIGGERED
+        elif kind == "EventBridge rule":
+            if re.search(r"(?m)^\s*is_enabled\s*=\s*false\b|^\s*state\s*=\s*\"DISABLED\"", body):
+                why = "state DISABLED"
+            elif not referenced:
+                why = "no targets"
+        elif kind == "SNS topic" and not referenced and (
+            not literal or _refs(literal.group(1), corpus) <= 1
+        ):
+            why = "no subscription and no reference"
+        if why:
+            yield f"{kind} {name} with {why} ({rel}:{line})"
+
+
+def _cdk_disused(rel: str, text: str, corpus: str) -> Iterator[str]:
+    for kind, pattern in _CDK_DISUSED:
+        for var, ident, args, line in _cdk_constructs(rel, text, pattern):
+            name = var or ident or "(unnamed)"
+            why = None
+            if kind == "ECS service" and _cdk_zero("desiredCount|desired_count", args):
+                why = "desired count 0"
+            elif kind == "Auto Scaling group" and _cdk_zero(
+                "maxCapacity|max_capacity|maxSize|max_size", args
+            ):
+                why = "maximum size 0"
+            elif kind == "Lambda function":
+                literal = _arg_literal("functionName|function_name", args)
+                if _cdk_zero("reservedConcurrentExecutions|reserved_concurrent_executions", args):
+                    why = "reserved concurrency 0"
+                elif (not var or _refs(var, corpus) == 1) and (
+                    not ident or _refs(ident, corpus) <= 1
+                ) and (not literal or _refs(literal, corpus) <= 1):
+                    why = _UNTRIGGERED
+            elif kind == "EventBridge rule":
+                if re.search(r"\benabled[\"']?\s*[:=]\s*(?:false|False)\b|DISABLED", args):
+                    why = "disabled"
+                elif not re.search(r"\btargets[\"']?\s*[:=]", args) and (
+                    not var or _refs(var, corpus) == 1
+                ):
+                    why = "no targets"
+            elif kind == "SNS topic" and var and _refs(var, corpus) == 1:
+                literal = _arg_literal("topicName|topic_name", args)
+                if not literal or _refs(literal, corpus) <= 1:
+                    why = "no subscription and no reference"
+            if why:
+                yield f"{kind} {name} with {why} ({rel}:{line})"
+
+
+def disused_components(repo_path: Path) -> List[str]:
+    """Components in production IaC with a clear no-use signal, as "kind name with reason
+    (file:line)". REPO-099's assets are not repeated here."""
+    everything = list(iac_texts(repo_path))
+    corpus = "\n".join(text for _, text in everything)
+    found: List[str] = []
+    for rel, text in everything:
+        if not _production(rel):
+            continue
+        text = _blank_strings(rel, text)
+        suffix = "." + rel.rsplit(".", 1)[-1].lower()
+        if suffix in _CFN_SUFFIXES:
+            found.extend(_cf_disused(rel, text, corpus))
+        elif suffix == ".tf":
+            found.extend(_tf_disused(rel, text, corpus))
+        else:
+            found.extend(_cdk_disused(rel, text, corpus))
+    return found
+
+
+class UnusedComponents(_RepoRule):
+    id = "REPO-103"
+    title = "Workload components with no use"
+    category = "Sustainability"
+    severity = "Low"
+    themes = ("sustainability", "finops")
+    recommendation = (
+        "Remove components that do nothing, or wire them in: delete an ECS service at desired "
+        "count 0, an Auto Scaling group with a maximum of 0, a function with reserved "
+        "concurrency 0, a disabled or target-less EventBridge rule, a topic with no "
+        "subscriber and a function nothing triggers; or give each a trigger, target or "
+        "subscriber and a use."
+    )
+
+    def run(self, repo_path: Path, language: str = "typescript") -> List[Finding]:
+        found = disused_components(repo_path)
+        if not found:
+            return []
+        return [self._finding(
+            f"Declares {_listed(found, 4)}; nothing in the IaC gives it work, so it only adds "
+            "to what the workload runs and maintains"
+        )]
+
+
+_PROFILER_IN_IAC = _kinds(
+    ("CodeGuru Profiler", _cf_type(r"CodeGuruProfiler::ProfilingGroup")
+     + r"|resource\s+\"aws_codeguruprofiler_profiling_group\"|\bcodeguruprofiler\."),
+    ("Lambda Insights", r"\b(?:lambdaInsightsVersion|LambdaInsightsVersion|insights_version"
+     r"|LambdaInsightsExtension(?:-Arm64)?|lambda_insights_extension)\b"),
+    ("AWS Lambda Power Tuning", r"aws-lambda-power-tuning"),
+)
+_LOAD_NAME = re.compile(
+    r"(?:^|[-_. ])(?:load[-_ ]?tests?|(?:performance|perf)[-_ ]?(?:profiles?|profiling|tests?)"
+    r"|profiling|benchmarks?|capacity[-_ ]?tests?)(?:$|[-_. ])"
+)
+_LOAD_HEADING = re.compile(
+    r"(?i).*\b(?:load[- ]test\w*|(?:performance|perf)[- ]profil\w*|profiling|benchmark\w*"
+    r"|capacity[- ]test\w*)\b.*"
+)
+_NUMBER_UNIT = re.compile(
+    r"(?i)\b\d[\d,.]*\s*(?:ms|milliseconds?|seconds?|secs?|MB|GB|MiB|GiB|rps|req/s"
+    r"|requests?)(?![a-z])"
+)
+# Fargate task sizes: vCPU units -> the largest memory (MiB) that size takes.
+_FARGATE_MAX = {256: 2048, 512: 4096, 1024: 8192, 2048: 16384, 4096: 30720, 8192: 61440,
+                16384: 122880}
+_MEM_KEY = r"(?:MemorySize|memorySize|memory_size)"
+_TASK_MEM_KEY = r"(?:Memory|memory|memoryLimitMiB|memory_limit_mib)"
+_NUM = r"[\"']?\s*[:=]\s*[\"']?(\d+)"
+
+
+def _lambda_ceiling(memory: int | None, timeout: int | None) -> str | None:
+    if memory == 10240:
+        return "memory 10240 MB"
+    if timeout == 900 and memory is not None and memory >= 3008:
+        return f"timeout 900 s with memory {memory} MB"
+    return None
+
+
+def _task_ceiling(cpu: int | None, memory: int | None) -> str | None:
+    if cpu == 16384 or (cpu in _FARGATE_MAX and memory == _FARGATE_MAX[cpu]):
+        return f"cpu {cpu} with memory {memory} MiB"
+    if memory == 122880:
+        return f"memory 122880 MiB with cpu {cpu}"
+    return None
+
+
+def _int(match: re.Match[str] | None) -> int | None:
+    return int(match.group(1)) if match else None
+
+
+def _timeout_seconds(text: str) -> int | None:
+    match = re.search(
+        r"\b(?:Timeout|timeout)[\"']?\s*[:=]\s*(?:[\"']?(\d+)[\"']?(?![\w.(])"
+        r"|[\w.]*Duration\.(seconds|minutes)\((\d+)\))", text
+    )
+    if not match:
+        return None
+    if match.group(1):
+        return int(match.group(1))
+    return int(match.group(3)) * (60 if match.group(2) == "minutes" else 1)
+
+
+def _ceilings_in_body(body: str, lambda_like: bool) -> str | None:
+    if lambda_like:
+        return _lambda_ceiling(_int(re.search(rf"\b{_MEM_KEY}{_NUM}", body)),
+                               _timeout_seconds(body))
+    return _task_ceiling(_int(re.search(rf"\b(?:Cpu|cpu){_NUM}", body)),
+                         _int(re.search(rf"\b{_TASK_MEM_KEY}{_NUM}", body)))
+
+
+_CDK_CEILING = (
+    (True, r"\b\w*lambda\w*\.(?:Cfn)?Function\(|\b(?:Nodejs|Python|Go|DockerImage)Function\("),
+    (False, r"\b\w*Fargate\w*(?:Service|TaskDefinition)\(|\becs\.CfnTaskDefinition\("),
+)
+
+
+def _digits(value: object) -> int | None:
+    return int(str(value)) if str(value).isdigit() else None
+
+
+def resource_ceilings(repo_path: Path) -> List[str]:
+    """Lambda functions and ECS/Fargate tasks sized at the platform maximum in production
+    IaC, as "kind name at value (file:line)"."""
+    found: List[str] = []
+    for rel, text in iac_texts(repo_path):
+        if not _production(rel):
+            continue
+        text = _blank_strings(rel, text)
+        suffix = "." + rel.rsplit(".", 1)[-1].lower()
+        if suffix in _CFN_SUFFIXES:
+            for name, body in _cf_resources(rel, text).items():
+                kind = str(body.get("Type"))
+                props = _props(body)
+                if kind in ("AWS::Lambda::Function", "AWS::Serverless::Function"):
+                    hit = _lambda_ceiling(_digits(props.get("MemorySize")),
+                                          _digits(props.get("Timeout")))
+                    label = "Lambda function"
+                elif kind == "AWS::ECS::TaskDefinition":
+                    hit = _task_ceiling(_digits(props.get("Cpu")), _digits(props.get("Memory")))
+                    label = "ECS task definition"
+                else:
+                    continue
+                if hit:
+                    found.append(f"{label} {name} at {hit} ({rel}:"
+                                 f"{_line_of(text, text.find(name))})")
+        elif suffix == ".tf":
+            for rtype, name, block, line in _tf_resources(
+                text, "aws_lambda_function|aws_ecs_task_definition"
+            ):
+                lambda_like = rtype == "aws_lambda_function"
+                if hit := _ceilings_in_body(block, lambda_like):
+                    label = "Lambda function" if lambda_like else "ECS task definition"
+                    found.append(f"{label} {name} at {hit} ({rel}:{line})")
+        else:
+            for lambda_like, pattern in _CDK_CEILING:
+                for var, ident, args, line in _cdk_constructs(rel, text, pattern):
+                    if hit := _ceilings_in_body(args, lambda_like):
+                        label = "Lambda function" if lambda_like else "ECS task definition"
+                        found.append(f"{label} {var or ident or '(unnamed)'} at {hit} "
+                                     f"({rel}:{line})")
+    return found
+
+
+def profiling_evidence(repo_path: Path) -> str | None:
+    """The first profiler, Lambda Insights, Power Tuning or load-test note the repo has."""
+    for rel, text in iac_texts(repo_path):
+        text = _blank_strings(rel, text)
+        for name, pattern in _PROFILER_IN_IAC:
+            if _live(pattern, rel, text):
+                return f"{name} in {rel}"
+    if note := _note_with(repo_path, _LOAD_NAME, _LOAD_HEADING, _NUMBER_UNIT):
+        return f"note {note}"
+    return None
+
+
+class HotCodeUnprofiled(_RepoRule):
+    id = "REPO-104"
+    title = "Compute at its resource ceiling with no profile of the code"
+    category = "Sustainability"
+    severity = "Low"
+    themes = ("sustainability", "finops")
+    recommendation = (
+        "Measure where the time and memory go before sizing to the maximum: enable CodeGuru "
+        "Profiler or Lambda Insights, run AWS Lambda Power Tuning, or record a load test or "
+        "profile with numbers (latency, memory, requests per second) in a note. Then fix the "
+        "hot code path instead of adding more resources."
+    )
+
+    def run(self, repo_path: Path, language: str = "typescript") -> List[Finding]:
+        found = resource_ceilings(repo_path)
+        if not found or profiling_evidence(repo_path):
+            return []
+        return [self._finding(
+            f"Sized at the platform maximum: {_listed(found, 4)}; searched the IaC for CodeGuru "
+            "Profiler, Lambda Insights and AWS Lambda Power Tuning, and notes named or headed "
+            "load test, performance profile, profiling, benchmark or capacity test with "
+            "figures (ms, seconds, MB, GB, rps, requests); found none",
+        )]
+
+
+_MOBILE_DIR_SUFFIXES = (".xcodeproj", ".xcworkspace")
+_MOBILE_FILES = {
+    "androidmanifest.xml": "Android app (AndroidManifest.xml)",
+    "info.plist": "iOS app (Info.plist)",
+}
+_MOBILE_CONFIG = re.compile(r"capacitor\.config\.(?:ts|js|json)", re.IGNORECASE)
+_MOBILE_PACKAGES = ("react-native", "expo", "@capacitor/core", "cordova")
+_DEVICE_IAC = _kinds(
+    ("AWS IoT thing", _cf_type(r"IoT::(?:Thing|ProvisioningTemplate)")
+     + r"|resource\s+\"aws_iot_(?:thing|provisioning_template)\""
+     r"|\biot\.Cfn(?:Thing|ProvisioningTemplate)\("),
+    ("Pinpoint app", _cf_type(r"Pinpoint::App") + r"|resource\s+\"aws_pinpoint_app\""
+     r"|\bpinpoint\.CfnApp\("),
+)
+_AMPLIFY_APP = re.compile(
+    _cf_type(r"Amplify::App") + r"|resource\s+\"aws_amplify_app\"|\bamplify\.CfnApp\("
+)
+_MOBILE_WORD = re.compile(r"(?i)\b(?:ios|android|react[- ]native|flutter|mobile)\b")
+_DEVICE_TESTING = _kinds(
+    ("AWS Device Farm", _cf_type(r"DeviceFarm::(?:Project|DevicePool|InstanceProfile)")
+     + r"|resource\s+\"aws_devicefarm_\w+\"|\bdevicefarm\."),
+)
+_DEVICE_CI = (("AWS Device Farm step", re.compile(r"\baws\s+devicefarm\b")),)
+_DEVICE_NAME = re.compile(
+    r"(?:^|[-_. ])(?:devices?[-_ ]?(?:support|matrix|matrices|lifecycle)|supported[-_ ]devices"
+    r"|minimum[-_ ]os|min[-_ ]os|battery|energy|hardware[-_ ]lifecycle|equipment)(?:$|[-_. ])"
+)
+_DEVICE_HEADING = re.compile(
+    r"(?i).*\b(?:device[- ]support|supported[- ]devices?|device[- ]matri(?:x|ces)"
+    r"|minimum[- ]os|battery|energy|hardware[- ]lifecycle|equipment)\b.*"
+)
+
+
+def _json_keys(text: str, *sections: str) -> set[str]:
+    try:
+        doc = json.loads(text)
+    except ValueError:
+        return set()
+    if not isinstance(doc, dict):
+        return set()
+    keys: set[str] = set()
+    for section in sections:
+        value = doc.get(section)
+        if isinstance(value, dict):
+            keys.update(value)
+    return keys
+
+
+def _amplify_is_mobile(rel: str, text: str) -> bool:
+    for match in _AMPLIFY_APP.finditer(text):
+        if not _live(re.compile(re.escape(match.group(0))), rel, text):
+            continue
+        if rel.endswith(_CFN_SUFFIXES):
+            for body in _cf_resources(rel, text).values():
+                if body.get("Type") == "AWS::Amplify::App" and _MOBILE_WORD.search(
+                    json.dumps(_props(body), default=str)
+                ):
+                    return True
+        elif rel.endswith(".tf"):
+            if any(_MOBILE_WORD.search(body)
+                   for _t, _n, body, _l in _tf_resources(text, "aws_amplify_app")):
+                return True
+        elif any(_MOBILE_WORD.search(args)
+                 for _v, _i, args, _l in _cdk_constructs(rel, text, r"\bamplify\.CfnApp\(")):
+            return True
+    return False
+
+
+def device_targets(repo_path: Path) -> dict[str, str]:
+    """What the repo builds for end-user devices or a device fleet: kind -> first file."""
+    found: dict[str, str] = {}
+    for path in walk(repo_path):
+        parts = _rel_parts(path, repo_path)
+        if _in_test_dir(parts):
+            continue
+        rel, name = "/".join(parts), path.name.lower()
+        if any(p.endswith(_MOBILE_DIR_SUFFIXES) for p in parts[:-1]):
+            found.setdefault("iOS project (Xcode)", rel)
+        elif name in _MOBILE_FILES:
+            found.setdefault(_MOBILE_FILES[name], rel)
+        elif _MOBILE_CONFIG.fullmatch(name):
+            found.setdefault("Capacitor app", rel)
+        elif name == "config.xml" and "<widget" in read_text_safe(path):
+            found.setdefault("Cordova app", rel)
+        elif name == "pubspec.yaml" and re.search(
+            r"(?m)^\s*flutter\s*:|sdk\s*:\s*flutter", read_text_safe(path)
+        ):
+            found.setdefault("Flutter app", rel)
+        elif name in ("package.json", "app.json"):
+            text = read_text_safe(path)
+            if _saved_report(text):
+                continue
+            if name == "app.json" and '"expo"' in text:
+                found.setdefault("Expo app", rel)
+            elif name == "package.json":
+                keys = _json_keys(text, "dependencies", "devDependencies")
+                if hit := next((k for k in _MOBILE_PACKAGES if k in keys), None):
+                    found.setdefault(f"mobile app ({hit})", rel)
+    for rel, text in iac_texts(repo_path):
+        if not _production(rel):
+            continue
+        text = _blank_strings(rel, text)
+        for kind, pattern in _DEVICE_IAC:
+            if _live(pattern, rel, text):
+                found.setdefault(kind, rel)
+        if _amplify_is_mobile(rel, text):
+            found.setdefault("Amplify mobile app", rel)
+    return found
+
+
+def device_testing(repo_path: Path) -> str | None:
+    """The first Device Farm setup, CI step or device note the repo has."""
+    for rel, text in iac_texts(repo_path):
+        text = _blank_strings(rel, text)
+        for name, pattern in _DEVICE_TESTING:
+            if _live(pattern, rel, text):
+                return f"{name} in {rel}"
+    _builds, steps = _tools_in_builds(repo_path, _DEVICE_CI)
+    for name, where in steps.items():
+        return f"{name} in {where}"
+    if note := _note_with(repo_path, _DEVICE_NAME, _DEVICE_HEADING, re.compile(r"\S")):
+        return f"note {note}"
+    return None
+
+
+class DeviceImpactUnaddressed(_RepoRule):
+    id = "REPO-105"
+    title = "Impact on end-user devices is not addressed"
+    category = "Sustainability"
+    severity = "Low"
+    themes = ("sustainability", "finops")
+    recommendation = (
+        "Test on the devices your users have and record the decision: add AWS Device Farm to "
+        "the pipeline, and write a note on the supported devices and minimum OS, on battery "
+        "and energy use, and on how long you keep fleet hardware in service so you do not "
+        "force users to replace devices early."
+    )
+
+    def run(self, repo_path: Path, language: str = "typescript") -> List[Finding]:
+        found = device_targets(repo_path)
+        if not found or device_testing(repo_path):
+            return []
+        return [self._finding(
+            f"Builds for end-user devices: {_named(found)}; searched the IaC for Device Farm, "
+            "the build steps for `aws devicefarm`, and notes named or headed device support, "
+            "supported devices, device matrix, minimum OS, battery, energy, hardware lifecycle "
+            "or equipment; found none",
+        )]
+
+
+class DataAccessPatternMismatch(_RepoRule):
+    id = "REPO-106"
+    title = "Storage is not matched to the data access pattern"
+    category = "Sustainability"
+    severity = "Low"
+    themes = ("sustainability", "finops")
+    recommendation = (
+        "Match storage to how the data is read and written, and use managed services that "
+        "scale to use instead of idle capacity attached to a host: DynamoDB or Aurora "
+        "Serverless for variable key-value or relational access, S3 with lifecycle tiers for "
+        "objects, ElastiCache for hot reads, OpenSearch Service for search, and EFS for "
+        "shared files."
+    )
+
+    def run(self, repo_path: Path, language: str = "typescript") -> List[Finding]:
+        found = unmanaged_host_data(repo_path)
+        if not found:
+            return []
+        places = [f"{kind} at {rel}:{line}" for kind, rel, line in found]
+        return [self._finding(
+            f"Keeps data on host-attached capacity: {_listed(places, 4)}; the volume is "
+            "provisioned whether or not it is used and does not follow the access pattern. "
+            f"Searched the IaC for a {_MANAGED_SEARCHED} that scales to use; found none",
+            file=found[0][1],
+            line=found[0][2],
+        )]
+
+
 REPO_RULES: List[Rule] = [
     RepoTestsMissing(), RepoPipelineMissing(), SingleEnvironment(),
     OrgGuardrailsMissing(), AccountBaselineMissing(), RootUserUnchecked(),
@@ -9451,4 +10032,6 @@ REPO_RULES: List[Rule] = [
     DemandNotAnalysed(), DemandUnbuffered(),
     SlaIgnoresSustainability(), UnusedAssets(), GeographicPlacementMismatch(),
     TeamResourcesUnsized(), DemandCurveNotFlattened(),
+    UnusedComponents(), HotCodeUnprofiled(), DeviceImpactUnaddressed(),
+    DataAccessPatternMismatch(),
 ]
