@@ -636,6 +636,18 @@ these read the rest.
   with a NAT gateway, S3 or DynamoDB in the stack and no gateway endpoint for them, in a
   stack that spans Availability Zones; or a cross-Region copy with no recorded reason and
   no VPC endpoint.
+
+Demand management (COST 9). Scaling on demand (COST09-BP03) is mapped checks; these read the
+rest.
+
+- REPO-096 demand analysis: production compute and no demand signal: no scheduled scaling
+  action, no demand metric (queue depth, request rate, concurrency) used to scale or
+  alarm, and no demand note (named or headed demand, traffic, usage pattern, load profile
+  or capacity plan) that gives a rate, a volume or a calendar pattern. CPU and memory alone
+  are utilization, not demand.
+- REPO-097 buffer or throttle: production IaC with an API Gateway API and no throttle,
+  usage plan, WAF rate-based rule or reserved concurrency; or a Lambda function invoked
+  directly by SNS or S3 with no queue, stream or event bus and no reserved concurrency.
 """
 from __future__ import annotations
 
@@ -8838,6 +8850,192 @@ class DataTransferNotOptimised(_RepoRule):
         )]
 
 
+# COST 9: demand management. Demand analysis (REPO-096) and a buffer or throttle on what
+# takes demand (REPO-097).
+
+_SCHEDULED_SCALING = re.compile(
+    _cf_type(r"AutoScaling::ScheduledAction") + r"|resource\s+\"aws_(?:autoscaling_schedule"
+    r"|appautoscaling_scheduled_action)\""
+    r"|[\"']?ScheduledActions[\"']?\s*[:=]|\bscheduled_action\s*\{"
+    r"|\.(?:scaleOnSchedule|scale_on_schedule)\(|\b(?:autoscaling|appscaling|applicationautoscaling)"
+    r"\.Schedule\.|\b(?:SetDesiredCapacity|PutScheduledUpdateGroupAction"
+    r"|RegisterScalableTarget)\b|(?m:^\s*type\s*:\s*[\"']?cron\b)"
+)
+_DEMAND_METRICS = (
+    r"ApproximateNumberOfMessagesVisible|ApproximateAgeOfOldestMessage|RequestCount"
+    r"|RequestCountPerTarget|ALBRequestCountPerTarget|Invocations|ConcurrentExecutions"
+    r"|IncomingRequests|NumberOfMessagesSent"
+)
+_DEMAND_SIGNAL = re.compile(
+    _metric_named(_DEMAND_METRICS)
+    + r"|[\"']?PredefinedMetricType[\"']?\s*[:=]\s*[\"']?ALBRequestCountPerTarget\b"
+    r"|\bpredefined_metric_type\s*=\s*\"ALBRequestCountPerTarget\""
+    r"|\.(?:metric_?(?:[aA]pproximate_?(?:[nN]umber_?[oO]f_?[mM]essages_?[vV]isible"
+    r"|[aA]ge_?[oO]f_?[oO]ldest_?[mM]essage)|[rR]equest_?[cC]ount|[iI]nvocations"
+    r"|[cC]oncurrent_?[eE]xecutions|[cC]ount)"
+    r"|scaleOnRequestCount|scale_on_request_count)\("
+    r"|\bQueueProcessing(?:Fargate|Ec2)Service\("
+)
+_DEMAND_NAME = re.compile(
+    r"(?i)(?:demand|traffic|usage[-_ ]?patterns?|load[-_ ]?profiles?|capacity[-_ ]?plan(?:ning)?)"
+)
+_DEMAND_HEADING = re.compile(
+    r"(?i).*\b(?:demand|traffic|usage[-_ ]?patterns?|load[-_ ]?profiles?"
+    r"|capacity[-_ ]?plan(?:ning)?)\b.*"
+)
+_DEMAND_FACT = re.compile(
+    r"(?i)\d[\d,.]*\s*(?:k|m)?\s*(?:requests?|reqs?|rps|rpm|tps|users?|visitors|messages"
+    r"|events|invocations|peak\b|per[ \t]+(?:day|hour|second|minute|month)\b"
+    r"|/(?:day|hour|s|sec|min|month)\b)"
+    r"|\bpeaks?\b[^\n]{0,40}\d|\b(?:weekdays?|weekends?|month-end|seasonal|seasons?"
+    r"|business[ \t]+hours)\b"
+)
+
+
+def _live(pattern: re.Pattern[str], rel: str, text: str) -> bool:
+    """Whether pattern matches; in Python source not inside a quoted string on its line."""
+    for match in pattern.finditer(text):
+        if not rel.endswith(".py"):
+            return True
+        prefix = text[text.rfind("\n", 0, match.start()) + 1:match.start()]
+        if prefix.count("'") % 2 == 0 and prefix.count('"') % 2 == 0:
+            return True
+    return False
+
+
+def _demand_note(repo_path: Path) -> str | None:
+    """The first note about demand that gives a rate, a volume or a calendar pattern."""
+    for rel, text in note_texts(repo_path):
+        stem = rel.rsplit("/", 1)[-1].lower().rsplit(".", 1)[0]
+        if _DEMAND_NAME.search(stem) and _DEMAND_FACT.search(text):
+            return rel
+        if any(_DEMAND_FACT.search(body) for body in _sections(text, _DEMAND_HEADING)):
+            return rel
+    return None
+
+
+def demand_gaps(repo_path: Path) -> tuple[dict[str, str], bool]:
+    """Production compute (kind -> first file), and whether any demand signal exists."""
+    compute: dict[str, str] = {}
+    signal = False
+    for rel, text in iac_texts(repo_path):
+        if not _production(rel):
+            continue
+        text = _blank_strings(rel, text)
+        for kind, pattern in _COMPUTE:
+            if _live(pattern, rel, text):
+                compute.setdefault(kind, rel)
+        signal = signal or _live(_SCHEDULED_SCALING, rel, text) or _live(_DEMAND_SIGNAL, rel, text)
+    return compute, signal or _demand_note(repo_path) is not None
+
+
+class DemandNotAnalysed(_RepoRule):
+    id = "REPO-096"
+    title = "Workload demand is not analysed"
+    category = "Cost"
+    severity = "Low"
+    themes = ("finops",)
+    recommendation = (
+        "Analyse the demand the workload serves: scale on it (a scheduled scaling action for "
+        "a known peak, or target tracking on request count per target or queue depth), alarm "
+        "or chart request rate, queue depth or concurrency, or write a demand note with "
+        "requests per second, peak hours and the weekday, month-end or seasonal pattern."
+    )
+
+    def run(self, repo_path: Path, language: str = "typescript") -> List[Finding]:
+        compute, signal = demand_gaps(repo_path)
+        if not compute or signal:
+            return []
+        return [self._finding(
+            f"Runs {_named(compute)}; searched production IaC for a scheduled scaling action, "
+            "a demand metric (queue depth, request count, invocations, concurrency) used to "
+            "scale or alarm, and notes named or headed demand, traffic, usage pattern, load "
+            "profile or capacity plan that give a rate, volume or calendar pattern; found none",
+            file=next(iter(compute.values())),
+        )]
+
+
+_API_THROTTLE = dict(_LEVERS)
+_LIMITERS = (
+    _API_THROTTLE["Lambda reserved concurrency"], _API_THROTTLE["API Gateway throttle"],
+    _API_THROTTLE["WAF rate-based rule"],
+)
+_PROVISIONED = re.compile(
+    r"[\"']?Provisioned(?:Concurrent|Concurrency)\w*[\"']?\s*[:=]"
+    r"|\bprovisioned_(?:concurrent_executions|concurrency)\w*\s*[={]"
+    r"|\bprovisioned(?:Concurrent|Concurrency)\w*\s*:"
+)
+_BUFFERS = (
+    _API_THROTTLE["Lambda reserved concurrency"], _PROVISIONED,
+    re.compile(
+        _cf_type(r"SQS::Queue|Kinesis::Stream|Events::EventBus|Pipes::Pipe")
+        + r"|resource\s+\"aws_(?:sqs_queue|kinesis_stream|cloudwatch_event_bus)\""
+        r"|\b(?:sqs\.(?:Cfn)?Queue|kinesis\.(?:Cfn)?Stream|events\.EventBus)\("
+        r"|\bQueue\(|\bSqsEventSource\("
+    ),
+)
+_API_GATEWAY = dict(_EDGES)["API Gateway"]
+_DIRECT_TRIGGERS = _kinds(
+    ("SNS subscription to Lambda",
+     r"[\"']?[pP]rotocol[\"']?\s*[:=]\s*[\"']?lambda\b|\bLambdaSubscription\("
+     r"|\bSnsEventSource\(|[pP]rincipal[\"']?\s*[:=]\s*[\"']sns\.amazonaws\.com"),
+    ("S3 notification to Lambda",
+     r"\bs3n\.LambdaDestination\(|\bS3EventSource(?:V2)?\(|LambdaFunctionConfigurations"
+     r"|\blambda_function\s*\{"),
+)
+
+
+def unbuffered_demand(repo_path: Path) -> tuple[List[str], bool]:
+    """What takes demand with nothing to absorb or limit it, as "kind in file", and whether
+    anything was found that takes demand."""
+    apis: List[str] = []
+    triggers: List[str] = []
+    limiter = buffer = False
+    for rel, text in iac_texts(repo_path):
+        if not _production(rel):
+            continue
+        text = _blank_strings(rel, text)
+        if _live(_API_GATEWAY, rel, text) or (
+            _SAM_TRANSFORM.search(text) and _SAM_API_EVENT.search(text)
+        ):
+            apis.append(f"API Gateway API in {rel}")
+        triggers.extend(f"{kind} in {rel}" for kind, pattern in _DIRECT_TRIGGERS
+                        if _live(pattern, rel, text))
+        limiter = limiter or any(_live(p, rel, text) for p in _LIMITERS)
+        buffer = buffer or any(_live(p, rel, text) for p in _BUFFERS)
+    found: List[str] = []
+    if apis and not limiter:
+        found.extend(apis)
+    if triggers and not buffer:
+        found.extend(triggers)
+    return found, bool(apis or triggers)
+
+
+class DemandUnbuffered(_RepoRule):
+    id = "REPO-097"
+    title = "Demand has no buffer or throttle"
+    category = "Cost"
+    severity = "Low"
+    themes = ("finops",)
+    recommendation = (
+        "Smooth demand before it sets the bill: throttle the API (a stage or usage plan "
+        "throttle, or a WAF rate-based rule), put an SQS queue, Kinesis stream or EventBridge "
+        "bus between a trigger and the Lambda function that handles it, or cap the function "
+        "with reserved concurrency."
+    )
+
+    def run(self, repo_path: Path, language: str = "typescript") -> List[Finding]:
+        found, _ = unbuffered_demand(repo_path)
+        if not found:
+            return []
+        return [self._finding(
+            f"Takes demand with nothing to absorb or limit it: {_listed(found)}; searched "
+            "production IaC for an API Gateway throttle or usage plan, a WAF rate-based rule, "
+            "Lambda reserved or provisioned concurrency, and an SQS queue, Kinesis stream or "
+            "EventBridge bus; found none",
+        )]
+
+
 REPO_RULES: List[Rule] = [
     RepoTestsMissing(), RepoPipelineMissing(), SingleEnvironment(),
     OrgGuardrailsMissing(), AccountBaselineMissing(), RootUserUnchecked(),
@@ -8881,4 +9079,5 @@ REPO_RULES: List[Rule] = [
     PricingModelUnanalysed(), RegionNotChosenByCost(), ThirdPartyTermsMissing(),
     ManagementPricingMissing(),
     DataTransferUnmodelled(), DataTransferNotOptimised(),
+    DemandNotAnalysed(), DemandUnbuffered(),
 ]

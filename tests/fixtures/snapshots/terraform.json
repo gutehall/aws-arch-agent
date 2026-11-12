@@ -369,5 +369,12 @@
     "file": null,
     "line": null,
     "evidence": "Creates its own VPC in network.tf; searched the IaC for a looked-up or imported VPC, subnet, cluster or bucket (fromLookup, from*Attributes, Terraform data sources or remote state, ImportValue, an SSM VPC id parameter), an AWS RAM share, and a Tenancy tag or single-tenant comment; found none"
+  },
+  {
+    "id": "REPO-096",
+    "severity": "Low",
+    "file": "main.tf",
+    "line": null,
+    "evidence": "Runs Lambda (main.tf); searched production IaC for a scheduled scaling action, a demand metric (queue depth, request count, invocations, concurrency) used to scale or alarm, and notes named or headed demand, traffic, usage pattern, load profile or capacity plan that give a rate, volume or calendar pattern; found none"
   }
 ]

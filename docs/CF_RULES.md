@@ -4,7 +4,7 @@ This document provides a comprehensive list of all rules checked by AWS Arch Age
 
 ## Overview
 
-AWS Arch Agent checks **274 static analysis rules** and **283 template checks** across all 6 AWS Well-Architected Framework pillars. 139 of the 274 CDK rules (51%) have a template check, so they also run for CloudFormation, Terraform and synthesised CDK. [COVERAGE.md](COVERAGE.md) gives the reason for each of the others.
+AWS Arch Agent checks **276 static analysis rules** and **283 template checks** across all 6 AWS Well-Architected Framework pillars. 139 of the 276 CDK rules (50%) have a template check, so they also run for CloudFormation, Terraform and synthesised CDK. [COVERAGE.md](COVERAGE.md) gives the reason for each of the others.
 
 ## Static Analysis Rules (V1 & V2 Modes)
 
@@ -324,7 +324,7 @@ These rules run on your CDK TypeScript/Python code and execute in both V1 and V2
 - REPO-067: Traffic is not spread by a load balancer
 - REPO-068: Edge uses an older network protocol
 
-### Cost Optimization (45 rules)
+### Cost Optimization (47 rules)
 
 **Resource Right-Sizing:**
 - COST-002: Compute resources may miss autoscaling
@@ -394,6 +394,10 @@ These rules run on your CDK TypeScript/Python code and execute in both V1 and V2
 **Data transfer (repo-level, COST 8):**
 - REPO-094: Data transfer between Availability Zones or Regions is not modeled
 - REPO-095: Data movers pay for transfer they could avoid
+
+**Demand management (repo-level, COST 9):**
+- REPO-096: Workload demand is not analysed
+- REPO-097: Demand has no buffer or throttle
 
 ### Best Practices (5 rules)
 
@@ -1175,6 +1179,8 @@ Every rule has one or more themes, which cut across pillars: `finops`, `security
 | REPO-093 | finops |
 | REPO-094 | finops |
 | REPO-095 | finops |
+| REPO-096 | finops |
+| REPO-097 | finops |
 | SEC-001 | identity |
 | SEC-002 | identity |
 | SEC-003 | network-exposure |

@@ -15,7 +15,7 @@ Which CDK rules have a template check, and which AWS Foundational Security Best 
 
 ## CDK rules
 
-274 rules: 132 covered, 7 partial, 10 account, 5 cdk-only, 25 advice, 95 repo.
+276 rules: 132 covered, 7 partial, 10 account, 5 cdk-only, 25 advice, 97 repo.
 
 | Rule | Title | Template check | Status | Note |
 | -- | -- | -- | -- | -- |
@@ -293,6 +293,8 @@ Which CDK rules have a template check, and which AWS Foundational Security Best 
 | REPO-093 | Organization tracks no shared Savings Plans or Reserved Instances |  | `repo` | Fires only on an organization stack (Organizations accounts, OUs or a service control policy) with no Savings Plans or RI utilization or coverage budget, no RI or Savings Plans sharing setting, and no note named or headed savings plan, reserved instance or commitment. |
 | REPO-094 | Data transfer between Availability Zones or Regions is not modeled |  | `repo` | Fires when production IaC creates resources that move data across Availability Zones or Regions (Multi-AZ database or cache, replicated ElastiCache group, zone-aware OpenSearch domain, MSK cluster, Aurora readers, Auto Scaling group, ECS service or EKS node group over several subnets, S3 or DynamoDB replication, AWS Backup copy action, snapshot copy, EFS replication) and there is no DataTransfer, TransferCost or CrossAZTraffic tag, no data-transfer, cross-AZ or egress comment on or above the resource, and no note named or headed for data transfer that gives a size, unit or service. |
 | REPO-095 | Data movers pay for transfer they could avoid |  | `repo` | Fires when a Lambda function, ECS service or EC2 instance in a VPC reaches S3 or DynamoDB through a NAT gateway (explicit, or the CDK default VPC) with no gateway endpoint for it and no single-AZ VPC, or when production IaC copies data to another Region with no recorded reason and no VPC endpoint. |
+| REPO-096 | Workload demand is not analysed |  | `repo` | Fires when production IaC has compute (Lambda, ECS service, EKS cluster, EC2 or Auto Scaling group, App Runner) and no scheduled scaling action, no demand metric (queue depth, request count, invocations, concurrency) used to scale or alarm, and no note named or headed demand, traffic, usage pattern, load profile or capacity plan that gives a rate, volume or calendar pattern. CPU and memory alone do not count. |
+| REPO-097 | Demand has no buffer or throttle |  | `repo` | Fires when production IaC has an API Gateway API and no stage or usage plan throttle, no WAF rate-based rule and no Lambda reserved concurrency, or a Lambda function invoked directly by SNS or S3 with no SQS queue, Kinesis stream or EventBridge bus and no reserved or provisioned concurrency. |
 
 ## FSBP controls
 

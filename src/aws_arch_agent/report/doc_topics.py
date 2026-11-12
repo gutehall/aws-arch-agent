@@ -2168,6 +2168,18 @@ TOPICS: dict[str, tuple[str, str, str, str]] = {
         "Well-Architected COST08-BP02: Select components to optimize data transfer cost",
         "/wellarchitected/latest/cost-optimization-pillar/cost_data_transfer_optimized_components.html",
     ),
+    "demand_analysis": (
+        "Target tracking scaling policies for Amazon EC2 Auto Scaling",
+        "/autoscaling/ec2/userguide/as-scaling-target-tracking.html",
+        "Well-Architected COST09-BP01: Perform an analysis on the workload demand",
+        "/wellarchitected/latest/cost-optimization-pillar/cost_manage_demand_resources_cost_analysis.html",
+    ),
+    "demand_throttle": (
+        "Throttle requests to your REST APIs for better throughput",
+        "/apigateway/latest/developerguide/api-gateway-request-throttling.html",
+        "Well-Architected COST09-BP02: Implement a buffer or throttle to manage demand",
+        "/wellarchitected/latest/cost-optimization-pillar/cost_manage_demand_resources_buffer_throttle.html",
+    ),
     "budget_owner": (
         "Best practices for AWS Budgets",
         "/cost-management/latest/userguide/budgets-best-practices.html",
@@ -2503,6 +2515,8 @@ RULE_TOPICS: dict[str, str] = {
     "REPO-093": "management_pricing",
     "REPO-094": "data_transfer_model",
     "REPO-095": "data_transfer_components",
+    "REPO-096": "demand_analysis",
+    "REPO-097": "demand_throttle",
     "PERF-001": "graviton_ec2",
     "PERF-002": "caching",
     "PERF-003": "ddb_capacity",

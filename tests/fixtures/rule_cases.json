@@ -1341,5 +1341,17 @@
     "negative_py": "vpc = ec2.Vpc(self, 'V')\ns3.Bucket(self, 'Data')\n_lambda.Function(self, 'Fn', runtime=r, handler='h', code=c, vpc=vpc)\nvpc.add_gateway_endpoint('S3', service=ec2.GatewayVpcEndpointAwsService.S3)",
     "positive_ts": "const vpc = new ec2.Vpc(this, 'V', { natGateways: 1 });\nnew s3.Bucket(this, 'Data');\nnew lambda.Function(this, 'Fn', { runtime, handler, code, vpc });",
     "positive_py": "vpc = ec2.Vpc(self, 'V')\ns3.Bucket(self, 'Data')\n_lambda.Function(self, 'Fn', runtime=r, handler='h', code=c, vpc=vpc)"
+  },
+  "REPO-096": {
+    "negative_ts": "new lambda.Function(this, 'Fn', { runtime, handler, code });\nconst t = fn.addAutoScaling();\nt.scaleOnSchedule('Peak', { schedule: autoscaling.Schedule.cron({ hour: '8' }), minCapacity: 4 });",
+    "negative_py": "_lambda.Function(self, 'Fn', runtime=r, handler='h', code=c)\nscalable.scale_on_schedule('Peak', schedule=appscaling.Schedule.cron(hour='8'), min_capacity=4)",
+    "positive_ts": "new lambda.Function(this, 'Fn', { runtime, handler, code });",
+    "positive_py": "_lambda.Function(self, 'Fn', runtime=r, handler='h', code=c)"
+  },
+  "REPO-097": {
+    "negative_ts": "new apigateway.RestApi(this, 'Api', { deployOptions: { throttlingRateLimit: 100 } });",
+    "negative_py": "apigateway.RestApi(self, 'Api', deploy_options=apigateway.StageOptions(throttling_rate_limit=100))",
+    "positive_ts": "new apigateway.RestApi(this, 'Api');",
+    "positive_py": "apigateway.RestApi(self, 'Api')"
   }
 }
