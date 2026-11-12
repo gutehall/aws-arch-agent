@@ -4,7 +4,7 @@ Local-first AWS architecture review for infrastructure code. It scans **CDK** (T
 
 No AWS credentials. No cloud calls. LLM output is optional.
 
-> Early-stage: 238 static rules and 283 template checks are implemented and tested. 139 of the 238 CDK rules (58%) have a template check, so they also run for CloudFormation, Terraform and synthesised CDK. [docs/COVERAGE.md](docs/COVERAGE.md) gives the reason for each of the others. Expect some false positives and negatives, and API changes.
+> Early-stage: 241 static rules and 283 template checks are implemented and tested. 139 of the 241 CDK rules (58%) have a template check, so they also run for CloudFormation, Terraform and synthesised CDK. [docs/COVERAGE.md](docs/COVERAGE.md) gives the reason for each of the others. Expect some false positives and negatives, and API changes.
 
 ## Install
 
@@ -54,7 +54,7 @@ Each finding has a severity, a pillar, a file and line, evidence, a recommendati
 | **Security** | 90 | Missing encryption, public access, hardcoded secrets, no MFA |
 | **Reliability** | 61 | Missing DLQs, no backups, single-AZ, no health checks, untraced requests, fixed-size fleets |
 | **Operational Excellence** | 38 | No logging, alarms, tracing, KPI metrics, log and trace analysis, test gates, or rollback |
-| **Performance Efficiency** | 19 | No caching, oversized instances, no Graviton |
+| **Performance Efficiency** | 22 | No caching, oversized instances, no Graviton, no compute metrics or dynamic scaling |
 | **Cost Optimization** | 18 | No autoscaling, NAT costs, no lifecycle policies |
 | **Sustainability** | 7 | No Spot, right-sizing |
 | **Best Practices** | 5 | Tags, Secrets Manager, CDK Aspects |

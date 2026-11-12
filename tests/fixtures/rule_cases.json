@@ -1125,5 +1125,23 @@
     "negative_py": "_lambda.Function(self, 'Fn', runtime=r, handler='h', code=c)\nchatbot.SlackChannelConfiguration(self, 'Chat', slack_channel_configuration_name='ops', slack_workspace_id='T1', slack_channel_id='C1')",
     "positive_ts": "new lambda.Function(this, 'Fn', { runtime, handler, code });\nnew cloudwatch.Alarm(this, 'Errors', { metric, threshold: 1, evaluationPeriods: 1 });",
     "positive_py": "_lambda.Function(self, 'Fn', runtime=r, handler='h', code=c)"
+  },
+  "REPO-060": {
+    "negative_ts": "const service = new ecs.FargateService(this, 'Api', { cluster, taskDefinition });\nnew cloudwatch.Alarm(this, 'Cpu', { metric: service.metricCpuUtilization(), threshold: 80, evaluationPeriods: 3 });",
+    "negative_py": "fn = _lambda.Function(self, 'Fn', runtime=r, handler='h', code=c)\ncloudwatch.Alarm(self, 'Slow', metric=fn.metric_duration(), threshold=1000, evaluation_periods=3)",
+    "positive_ts": "new ecs.FargateService(this, 'Api', { cluster, taskDefinition });\nnew ecs.Cluster(this, 'Cluster', { vpc, containerInsights: false });",
+    "positive_py": "_lambda.Function(self, 'Fn', runtime=r, handler='h', code=c)"
+  },
+  "REPO-061": {
+    "negative_ts": "const service = new ecs.FargateService(this, 'Api', { cluster, taskDefinition });\nconst tasks = service.autoScaleTaskCount({ minCapacity: 2, maxCapacity: 10 });\ntasks.scaleOnCpuUtilization('Cpu', { targetUtilizationPercent: 60 });",
+    "negative_py": "asg = autoscaling.AutoScalingGroup(self, 'Web', vpc=vpc, min_capacity=2, max_capacity=6)\nasg.scale_on_request_count('Rps', target_requests_per_minute=1000)",
+    "positive_ts": "new ecs.FargateService(this, 'Api', { cluster, taskDefinition, desiredCount: 3 });",
+    "positive_py": "autoscaling.AutoScalingGroup(self, 'Web', vpc=vpc, min_capacity=2, max_capacity=6)"
+  },
+  "REPO-062": {
+    "negative_ts": "new ec2.Instance(this, 'Trainer', { vpc, machineImage, instanceType: new ec2.InstanceType('g5.xlarge') });\nnew cloudwatch.Alarm(this, 'Gpu', { metric: new cloudwatch.Metric({ namespace: 'CWAgent', metricName: 'nvidia_smi_utilization_gpu' }), threshold: 20, evaluationPeriods: 6 });",
+    "negative_py": "ec2.Instance(self, 'Web', vpc=vpc, machine_image=ami, instance_type=ec2.InstanceType('m7g.large'))",
+    "positive_ts": "new ec2.Instance(this, 'Trainer', { vpc, machineImage, instanceType: new ec2.InstanceType('p4d.24xlarge') });",
+    "positive_py": "ec2.Instance(self, 'Trainer', vpc=vpc, machine_image=ami, instance_type=ec2.InstanceType.of(ec2.InstanceClass.G5, ec2.InstanceSize.XLARGE))"
   }
 }

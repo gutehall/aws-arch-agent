@@ -451,6 +451,29 @@ APIs apart.
   ARN or SnsAction, or in a template a Ref or GetAtt of an SNS topic), an Incident Manager
   response plan, an AWS Chatbot (Amazon Q Developer in chat applications) configuration, or
   an EventBridge rule on AWS Health events with a target.
+
+Compute selection and use (PERF 2). Picking the best compute option, instance size and
+Graviton (PERF02-BP01, BP02, BP04) are mapped CDK and template checks; these read the rest.
+Files whose path reads as dev or staging are skipped by REPO-060 and REPO-061.
+
+- REPO-060 compute metrics: production compute (as REPO-059) and nothing collects its
+  utilization: no alarm whose metric name is CPUUtilization, MemoryUtilization, Duration or
+  ConcurrentExecutions (or a CDK metricCpuUtilization, metricMemoryUtilization,
+  metricDuration or metricConcurrentExecutions helper), no ECS Container Insights (cluster
+  setting containerInsights enabled or enhanced, CDK containerInsights or
+  containerInsightsV2), no EKS CloudWatch observability add-on, and no CloudWatch agent
+  (its package or SSM config parameter, or CloudWatchAgentServerPolicy).
+- REPO-061 dynamic scaling: a production ECS service (not DAEMON) when the repo has no ECS
+  scalable target with a scaling policy, and an Auto Scaling group whose literal minimum
+  equals its maximum or when the repo has no scaling policy (a scheduled action alone does
+  not scale with demand). It shares the fleet scan with REPO-049; Lambda and other
+  serverless compute have no fleet and pass.
+- REPO-062 accelerators: an accelerated instance type (p, g, gr, inf, trn, dl, f and vt
+  families written as family.size, also as SageMaker ml. types, or a CDK InstanceClass)
+  in a file that declares an instance, launch template, Auto Scaling group, EKS node group,
+  Batch compute environment or SageMaker resource, and no alarm on a GPU or Neuron core
+  utilization metric (nvidia_smi_utilization_gpu, GPUUtilization, GPUMemoryUtilization,
+  neuroncore_utilization, NeuronCoreUtilization, Container Insights GPU metrics).
 """
 from __future__ import annotations
 
@@ -4819,18 +4842,36 @@ def _cdk_fleets(text: str) -> List[tuple[str, str, int | None, int | None]]:
     return found
 
 
-def fixed_fleets(repo_path: Path) -> List[tuple[str, str, int | None, str]]:
-    """Fleets that cannot grow on demand: (fleet, file, line, why)."""
+_SCALING_SIGNALS = (
+    ("ecs_target", _ECS_SCALABLE_TARGET),
+    ("asg_scaling", _ASG_SCALING),
+    ("table_scaling", _DYNAMODB_AUTOSCALING),
+    ("policy", re.compile(_SCALING_POLICY)),
+)
+
+
+def scan_fleets(
+    repo_path: Path,
+) -> tuple[List[tuple[str, str, str, int | None, int | None]], frozenset[str]]:
+    """Fleets in the IaC as (check, name, file, line, fixed size), and the repo-wide scaling
+    signals found (ecs_target, asg_scaling, table_scaling, policy). REPO-049 and REPO-061."""
     candidates: List[tuple[str, str, str, int | None, int | None]] = []
-    ecs_target = asg_policy = table_scaling = False
+    signals: set[str] = set()
     for rel, text in iac_texts(repo_path):
-        ecs_target = ecs_target or bool(_ECS_SCALABLE_TARGET.search(text))
-        asg_policy = asg_policy or bool(_ASG_SCALING.search(text))
-        table_scaling = table_scaling or bool(_DYNAMODB_AUTOSCALING.search(text))
+        signals.update(name for name, pattern in _SCALING_SIGNALS if pattern.search(text))
         fleets = _tf_fleets(text) + _cdk_fleets(text)
         if _CF_FLEET.search(text):
             fleets += _cf_fleets(rel, text)
         candidates.extend((check, name, rel, line, size) for check, name, line, size in fleets)
+    return candidates, frozenset(signals)
+
+
+def fixed_fleets(repo_path: Path) -> List[tuple[str, str, int | None, str]]:
+    """Fleets that cannot grow on demand: (fleet, file, line, why)."""
+    candidates, signals = scan_fleets(repo_path)
+    ecs_target = "ecs_target" in signals
+    asg_policy = "asg_scaling" in signals
+    table_scaling = "table_scaling" in signals
     found: List[tuple[str, str, int | None, str]] = []
     for check, name, rel, line, size in candidates:
         if check == "ecs" and not ecs_target:
@@ -5723,6 +5764,196 @@ class AvailabilityNotificationMissing(_RepoRule):
         )]
 
 
+# PERF 2: compute metrics collected (REPO-060), compute that scales dynamically (REPO-061),
+# and accelerators whose utilization is watched (REPO-062).
+
+
+def _metric_named(names: str) -> str:
+    """A metric name key (MetricName, metric_name, metricName) set to one of the names."""
+    return rf"[\"']?(?:MetricName|metric_?[nN]ame)[\"']?\s*[:=]\s*[\"']?(?:{names})\b"
+
+
+def _production(rel: str) -> bool:
+    return from_words(rel) not in ("dev", "staging")
+
+
+_COMPUTE_METRIC = re.compile(
+    _metric_named(r"CPUUtilization|MemoryUtilization|Duration|ConcurrentExecutions")
+    + r"|\.metric_?(?:[cC]pu_?[uU]tilization|[mM]emory_?[uU]tilization|[dD]uration"
+    r"|[cC]oncurrent_?[eE]xecutions)\("
+)
+_COMPUTE_METRIC_COLLECTORS = _kinds(
+    ("ECS Container Insights",
+     r"\bcontainerInsights\b[\"']?[^{}\[\]]{0,80}?\b[vV]alue[\"']?\s*[:=]\s*[\"']?"
+     r"(?:enabled|enhanced)\b"
+     r"|\bcontainer_?[iI]nsights(?:_?V2|_v2)?\s*[:=]\s*"
+     r"(?:true|True|(?:\w+\.)*ContainerInsights\.(?:ENABLED|ENHANCED))\b"),
+    ("EKS CloudWatch observability add-on",
+     r"[\"']?(?:AddonName|addon_name|addonName)[\"']?\s*[:=]\s*[\"']?"
+     r"amazon-cloudwatch-observability\b"),
+    ("CloudWatch agent",
+     r"\bamazon-cloudwatch-agent\b|\bCloudWatchAgentServerPolicy\b"
+     r"|\bAmazonCloudWatch-[\w-]+\b"),
+)
+
+
+def compute_metric_collection(repo_path: Path) -> dict[str, str]:
+    """What collects compute utilization metrics: kind -> first file."""
+    found = _in_iac(repo_path, _COMPUTE_METRIC_COLLECTORS)
+    for rel, text in iac_texts(repo_path):
+        if _TYPED_ALARM.search(text) and _COMPUTE_METRIC.search(text):
+            found.setdefault("alarm on a compute utilization metric", rel)
+            break
+    return found
+
+
+class ComputeMetricsMissing(_RepoRule):
+    id = "REPO-060"
+    title = "Compute utilization metrics are not collected"
+    category = "Performance Efficiency"
+    severity = "Low"
+    themes = ("observability",)
+    recommendation = (
+        "Collect and watch how busy the compute is: alarm on CPU and memory utilization for "
+        "instances and ECS services and on duration and concurrency for Lambda functions, "
+        "turn on ECS Container Insights or the EKS CloudWatch observability add-on, and run "
+        "the CloudWatch agent on instances for memory and disk metrics."
+    )
+
+    def run(self, repo_path: Path, language: str = "typescript") -> List[Finding]:
+        compute: dict[str, str] = {}
+        for rel, text in iac_texts(repo_path):
+            if _production(rel):
+                for name, pattern in _COMPUTE:
+                    if pattern.search(text):
+                        compute.setdefault(name, rel)
+        if not compute or compute_metric_collection(repo_path):
+            return []
+        places = [f"{kind} in {rel}" for kind, rel in compute.items()]
+        return [self._finding(
+            f"Runs {_listed(places, 4)}; searched the IaC for an alarm on a CPU, memory, "
+            "duration or concurrency metric, ECS Container Insights, the EKS CloudWatch "
+            "observability add-on, and the CloudWatch agent; found none",
+            file=next(iter(compute.values())),
+        )]
+
+
+def static_fleets(repo_path: Path) -> List[tuple[str, str, int | None, str]]:
+    """Production ECS services and Auto Scaling groups with no scaling policy: (fleet, file,
+    line, why)."""
+    candidates, signals = scan_fleets(repo_path)
+    policy = "policy" in signals
+    found: List[tuple[str, str, int | None, str]] = []
+    for check, name, rel, line, size in candidates:
+        if not _production(rel):
+            continue
+        if check == "ecs" and not ("ecs_target" in signals and policy):
+            fleet, why = f"ECS service {name}", "no scaling policy on its task count"
+        elif check == "asg" and size is not None:
+            fleet, why = f"Auto Scaling group {name}", f"minimum and maximum size both {size}"
+        elif check == "asg" and not policy:
+            fleet, why = f"Auto Scaling group {name}", "no scaling policy in the repo"
+        else:
+            continue
+        found.append((fleet, rel, line, why))
+    return found
+
+
+class StaticComputeFleet(_RepoRule):
+    id = "REPO-061"
+    title = "Compute does not scale with demand"
+    category = "Performance Efficiency"
+    severity = "Medium"
+    themes = ("finops",)
+    recommendation = (
+        "Scale compute with the load instead of a fixed count: register each ECS service's "
+        "desired task count with Application Auto Scaling and attach a target tracking "
+        "policy, and give each Auto Scaling group a maximum above its minimum and a target "
+        "tracking or predictive scaling policy on the metric that tracks demand."
+    )
+
+    def run(self, repo_path: Path, language: str = "typescript") -> List[Finding]:
+        fleets = static_fleets(repo_path)
+        if not fleets:
+            return []
+        places = [f"{fleet} at {rel}:{line} ({why})" if line else f"{fleet} in {rel} ({why})"
+                  for fleet, rel, line, why in fleets]
+        return [self._finding(
+            f"Production compute that does not scale dynamically: {_listed(places, 4)}",
+            file=fleets[0][1],
+            line=fleets[0][2],
+        )]
+
+
+# An accelerated instance type: GPU (p, g, gr), Inferentia, Trainium, Gaudi (dl), FPGA (f)
+# and video transcoding (vt) families, alone or as a SageMaker ml. type.
+_ACCELERATOR_TYPE = re.compile(
+    r"(?<![\w.-])(?:ml\.)?((?:p[2-6]|g[3-6]|gr6|inf[12]|trn[12]|dl[12]|f[12]|vt1)[a-z]*"
+    r"(?:-[a-z0-9]+)?\.(?:\d*xlarge|large|medium|small|metal(?:-\d+xl)?))(?![\w.-])"
+    r"|\bInstanceClass\.((?:P[2-6]|G[3-6]|INF[12]|TRN[12]|DL[12]|F1|VT1)[A-Z0-9_]*)\b"
+)
+_ACCELERATOR_HOSTS = re.compile(
+    _cf_type(r"EC2::Instance|EC2::LaunchTemplate|AutoScaling::LaunchConfiguration"
+             r"|AutoScaling::AutoScalingGroup|EKS::Nodegroup|Batch::ComputeEnvironment"
+             r"|SageMaker::\w+")
+    + r"|resource\s+\"aws_(?:instance|launch_template|launch_configuration|autoscaling_group"
+    r"|eks_node_group|batch_compute_environment|sagemaker_\w+)\""
+    r"|\b(?:ec2\.)?(?:Cfn)?(?:Instance|LaunchTemplate)\(|\b(?:Cfn)?AutoScalingGroup\("
+    r"|\b(?:Cfn)?Nodegroup\(|\.add_?[nN]odegroup_?[cC]apacity\("
+    r"|\.add_?[aA]uto_?[sS]caling_?[gG]roup_?[cC]apacity\(|\b(?:Cfn|Managed)?ComputeEnvironment\("
+    r"|\bsagemaker\.(?:alpha\.)?(?:Cfn)?\w+\("
+)
+_ACCELERATOR_ALARM_METRIC = re.compile(_metric_named(
+    r"nvidia_smi_utilization_gpu|nvidia_smi_utilization_memory|GPUUtilization"
+    r"|GPUMemoryUtilization|neuroncore_utilization|NeuronCoreUtilization"
+    r"|node_gpu_utilization|container_gpu_utilization|DCGM_FI_DEV_GPU_UTIL"
+))
+
+
+def accelerators(repo_path: Path) -> dict[str, str]:
+    """Accelerated instance types on compute resources: type -> first file."""
+    found: dict[str, str] = {}
+    for rel, text in iac_texts(repo_path):
+        if not _ACCELERATOR_HOSTS.search(text):
+            continue
+        for match in _ACCELERATOR_TYPE.finditer(text):
+            found.setdefault(match.group(1) or f"InstanceClass.{match.group(2)}", rel)
+    return found
+
+
+def accelerator_alarm(repo_path: Path) -> str | None:
+    """The first file with an alarm on a GPU or Neuron core utilization metric."""
+    for rel, text in iac_texts(repo_path):
+        if _TYPED_ALARM.search(text) and _ACCELERATOR_ALARM_METRIC.search(text):
+            return rel
+    return None
+
+
+class AcceleratorUtilizationUnwatched(_RepoRule):
+    id = "REPO-062"
+    title = "Accelerator utilization is not watched"
+    category = "Performance Efficiency"
+    severity = "Low"
+    themes = ("finops",)
+    recommendation = (
+        "Watch how busy the accelerators are: publish GPU metrics with the CloudWatch agent "
+        "NVIDIA collector or Container Insights, or Neuron core metrics with the Neuron "
+        "monitor, alarm on GPU or Neuron core utilization, and move work that leaves the "
+        "accelerators idle to a smaller or a general purpose instance."
+    )
+
+    def run(self, repo_path: Path, language: str = "typescript") -> List[Finding]:
+        found = accelerators(repo_path)
+        if not found or accelerator_alarm(repo_path):
+            return []
+        places = [f"{kind} in {rel}" for kind, rel in found.items()]
+        return [self._finding(
+            f"Runs accelerated instances ({_listed(places, 4)}); searched the IaC for an alarm "
+            "on a GPU or Neuron core utilization metric; found none",
+            file=next(iter(found.values())),
+        )]
+
+
 REPO_RULES: List[Rule] = [
     RepoTestsMissing(), RepoPipelineMissing(), SingleEnvironment(),
     OrgGuardrailsMissing(), AccountBaselineMissing(), RootUserUnchecked(),
@@ -5750,4 +5981,5 @@ REPO_RULES: List[Rule] = [
     DisasterRecoveryDrift(),
     SingleLocationRecoveryMissing(),
     StaticStabilityMissing(), AvailabilityTargetMissing(), AvailabilityNotificationMissing(),
+    ComputeMetricsMissing(), StaticComputeFleet(), AcceleratorUtilizationUnwatched(),
 ]

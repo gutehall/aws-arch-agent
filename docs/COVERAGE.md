@@ -15,7 +15,7 @@ Which CDK rules have a template check, and which AWS Foundational Security Best 
 
 ## CDK rules
 
-238 rules: 132 covered, 7 partial, 10 account, 5 cdk-only, 25 advice, 59 repo.
+241 rules: 132 covered, 7 partial, 10 account, 5 cdk-only, 25 advice, 62 repo.
 
 | Rule | Title | Template check | Status | Note |
 | -- | -- | -- | -- | -- |
@@ -257,6 +257,9 @@ Which CDK rules have a template check, and which AWS Foundational Security Best 
 | REPO-057 | Capacity has no headroom to survive a failure |  | `repo` | Fires on a production Auto Scaling group or ECS scaling target whose literal minimum is 1 (CDK default included), or an ECS service with a desired count of 1 and no scaling target; dev and staging paths are skipped. |
 | REPO-058 | No availability target on the user-facing edge |  | `repo` | When the IaC declares an API, load balancer or CloudFront distribution, looks for an alarm on an edge error or latency metric or an Application Signals service level objective; canaries and health checks do not count. |
 | REPO-059 | No one is notified when availability drops |  | `repo` | When compute runs, looks for an alarm that notifies an SNS topic, an Incident Manager response plan, an AWS Chatbot configuration, or an EventBridge rule on AWS Health events with a target. |
+| REPO-060 | Compute utilization metrics are not collected |  | `repo` | When production IaC runs compute, looks for an alarm on a CPU, memory, duration or concurrency metric, ECS Container Insights, the EKS CloudWatch observability add-on, or the CloudWatch agent; dev and staging paths are skipped. |
+| REPO-061 | Compute does not scale with demand |  | `repo` | Fires on a production ECS service when the repo has no ECS scaling target with a scaling policy, and on an Auto Scaling group with a fixed size or no scaling policy; a schedule alone does not count, and serverless-only stacks pass. |
+| REPO-062 | Accelerator utilization is not watched |  | `repo` | When a GPU, Inferentia, Trainium or other accelerated instance type sits on an instance, launch template, Auto Scaling group, EKS node group, Batch or SageMaker resource, looks for an alarm on a GPU or Neuron core utilization metric. |
 
 ## FSBP controls
 
