@@ -278,5 +278,12 @@
     "file": null,
     "line": null,
     "evidence": "Runs S3 bucket (main.tf), RDS database (main.tf), Lambda (main.tf); searched the IaC for a Resilience Hub resiliency policy and for a recovery time or recovery point objective tag or context key; found none"
+  },
+  {
+    "id": "REPO-059",
+    "severity": "Low",
+    "file": "main.tf",
+    "line": null,
+    "evidence": "Runs Lambda (main.tf); searched the IaC for an alarm action that notifies an SNS topic, an Incident Manager response plan, an AWS Chatbot configuration, and an EventBridge rule on AWS Health events with a target; found none"
   }
 ]

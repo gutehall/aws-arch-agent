@@ -15,7 +15,7 @@ Which CDK rules have a template check, and which AWS Foundational Security Best 
 
 ## CDK rules
 
-235 rules: 132 covered, 7 partial, 10 account, 5 cdk-only, 25 advice, 56 repo.
+238 rules: 132 covered, 7 partial, 10 account, 5 cdk-only, 25 advice, 59 repo.
 
 | Rule | Title | Template check | Status | Note |
 | -- | -- | -- | -- | -- |
@@ -254,6 +254,9 @@ Which CDK rules have a template check, and which AWS Foundational Security Best 
 | REPO-054 | Disaster recovery is never tested |  | `repo` | When data is copied to another Region, looks for a fault injection experiment, a failover or recovery drill in a build, a readiness check, or a scheduled restore test. |
 | REPO-055 | The DR Region can drift from the primary |  | `repo` | When data is copied to another Region, looks for StackSets, a readiness check or resource set, a Config aggregator, drift detection in a build, or one stack or module deployed to two Regions. |
 | REPO-056 | A standalone instance is not rebuilt when it fails |  | `repo` | When the IaC runs a standalone EC2 instance, looks for an Auto Scaling group, an alarm that recovers or reboots the instance, an AWS Backup plan, or a restore test; an instance with automatic recovery turned off always fires. |
+| REPO-057 | Capacity has no headroom to survive a failure |  | `repo` | Fires on a production Auto Scaling group or ECS scaling target whose literal minimum is 1 (CDK default included), or an ECS service with a desired count of 1 and no scaling target; dev and staging paths are skipped. |
+| REPO-058 | No availability target on the user-facing edge |  | `repo` | When the IaC declares an API, load balancer or CloudFront distribution, looks for an alarm on an edge error or latency metric or an Application Signals service level objective; canaries and health checks do not count. |
+| REPO-059 | No one is notified when availability drops |  | `repo` | When compute runs, looks for an alarm that notifies an SNS topic, an Incident Manager response plan, an AWS Chatbot configuration, or an EventBridge rule on AWS Health events with a target. |
 
 ## FSBP controls
 

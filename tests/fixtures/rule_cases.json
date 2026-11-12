@@ -1107,5 +1107,23 @@
     "negative_py": "ec2.Instance(self, 'Box', vpc=vpc, instance_type=t, machine_image=ami)\nautoscaling.AutoScalingGroup(self, 'Fleet', vpc=vpc, instance_type=t, machine_image=ami)",
     "positive_ts": "new ec2.Instance(this, 'Box', { vpc, instanceType, machineImage });",
     "positive_py": "ec2.Instance(self, 'Box', vpc=vpc, instance_type=t, machine_image=ami)"
+  },
+  "REPO-057": {
+    "negative_ts": "const asg = new autoscaling.AutoScalingGroup(this, 'Fleet', { vpc, instanceType, machineImage, minCapacity: 2, maxCapacity: 6 });\nconst scaling = service.autoScaleTaskCount({ minCapacity: 2, maxCapacity: 10 });",
+    "negative_py": "autoscaling.AutoScalingGroup(self, 'Fleet', vpc=vpc, instance_type=t, machine_image=ami, min_capacity=3, max_capacity=9)",
+    "positive_ts": "const asg = new autoscaling.AutoScalingGroup(this, 'Fleet', { vpc, instanceType, machineImage, maxCapacity: 4 });",
+    "positive_py": "autoscaling.AutoScalingGroup(self, 'Fleet', vpc=vpc, instance_type=t, machine_image=ami, min_capacity=1, max_capacity=4)"
+  },
+  "REPO-058": {
+    "negative_ts": "const api = new apigateway.RestApi(this, 'Api');\nnew cloudwatch.Alarm(this, 'Errors', { metric: api.metricServerError(), threshold: 1, evaluationPeriods: 1 });",
+    "negative_py": "api = apigw.RestApi(self, 'Api')\nappsignals.CfnServiceLevelObjective(self, 'Slo', name='checkout-availability', sli=sli)",
+    "positive_ts": "const api = new apigateway.RestApi(this, 'Api');\nnew synthetics.Canary(this, 'Probe', { schedule, test, runtime });",
+    "positive_py": "api = apigw.RestApi(self, 'Api')"
+  },
+  "REPO-059": {
+    "negative_ts": "new lambda.Function(this, 'Fn', { runtime, handler, code });\nconst alarm = new cloudwatch.Alarm(this, 'Errors', { metric, threshold: 1, evaluationPeriods: 1 });\nalarm.addAlarmAction(new actions.SnsAction(topic));",
+    "negative_py": "_lambda.Function(self, 'Fn', runtime=r, handler='h', code=c)\nchatbot.SlackChannelConfiguration(self, 'Chat', slack_channel_configuration_name='ops', slack_workspace_id='T1', slack_channel_id='C1')",
+    "positive_ts": "new lambda.Function(this, 'Fn', { runtime, handler, code });\nnew cloudwatch.Alarm(this, 'Errors', { metric, threshold: 1, evaluationPeriods: 1 });",
+    "positive_py": "_lambda.Function(self, 'Fn', runtime=r, handler='h', code=c)"
   }
 }

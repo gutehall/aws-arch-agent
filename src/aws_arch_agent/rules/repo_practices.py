@@ -428,6 +428,29 @@ template and CDK checks; this one reads the rest:
   an AWS Backup plan or a restore test (as REPO-051) to rebuild it from. Simplified
   automatic recovery is on by default but recovers only from host failures; an instance that
   turns it off (AutoRecovery disabled, auto_recovery = "disabled") always fires.
+
+Withstanding component failures (REL 11). Monitoring components (REL11-BP01), failing over
+to healthy resources (REL11-BP02) and replacing unhealthy targets (REL11-BP03) are mapped
+template and CDK checks; these read the rest. Relying on the data plane during recovery
+(REL11-BP04) is not checked: nothing in the IaC tells recovery steps that call control-plane
+APIs apart.
+
+- REPO-057 static stability: a production fleet whose literal minimum is one cannot lose an
+  Availability Zone without a scale-out. It fires on an Auto Scaling group with MinSize 1
+  (min_size, CDK minCapacity, which defaults to 1 when unset), an ECS Application Auto
+  Scaling target with MinCapacity 1 (CDK autoScaleTaskCount without minCapacity or with 1),
+  and an ECS service with a desired count of 1 when the repo has no ECS scaling target.
+  Files whose path reads as dev or staging are skipped; values from variables or
+  parameters are not judged.
+- REPO-058 availability target: when the IaC declares an edge (as REPO-019), it needs an
+  alarm on an edge 5xx, error or latency metric (the alarm half of REPO-019; canaries and
+  health checks do not count), or a CloudWatch Application Signals service level
+  objective.
+- REPO-059 availability notifications: when compute runs, someone must be told: an alarm
+  whose action is an SNS topic (an SNS ARN, a Terraform aws_sns_topic reference, a CDK topic
+  ARN or SnsAction, or in a template a Ref or GetAtt of an SNS topic), an Incident Manager
+  response plan, an AWS Chatbot (Amazon Q Developer in chat applications) configuration, or
+  an EventBridge rule on AWS Health events with a target.
 """
 from __future__ import annotations
 
@@ -2369,15 +2392,22 @@ def edges(repo_path: Path) -> dict[str, str]:
 def edge_telemetry(repo_path: Path) -> dict[str, str]:
     """Canaries, RUM, health checks and edge metric alarms: kind -> first file."""
     found = _in_iac(repo_path, _EDGE_MONITORS)
+    alarm = edge_alarm(repo_path)
+    if alarm:
+        found.setdefault("alarm on an edge latency or error metric", alarm)
+    return found
+
+
+def edge_alarm(repo_path: Path) -> str | None:
+    """The first file with an alarm on an edge latency or 5xx metric."""
     for rel, text in iac_texts(repo_path):
         if not _TYPED_ALARM.search(text):
             continue
         if _CDK_EDGE_METRIC.search(text) or (
             _EDGE_NAMESPACE.search(text) and _EDGE_METRIC.search(text)
         ):
-            found.setdefault("alarm on an edge latency or error metric", rel)
-            break
-    return found
+            return rel
+    return None
 
 
 def dependency_telemetry(repo_path: Path) -> dict[str, str]:
@@ -5455,6 +5485,244 @@ class SingleLocationRecoveryMissing(_RepoRule):
         )]
 
 
+# REL 11: capacity that rides out a failure (REPO-057), an availability target on the edge
+# (REPO-058), and someone told when availability drops (REPO-059).
+
+_CF_MIN_ONE_TYPES = frozenset({
+    "AWS::AutoScaling::AutoScalingGroup", "AWS::ApplicationAutoScaling::ScalableTarget",
+    "AWS::ECS::Service",
+})
+_CF_MIN_ONE = re.compile(_cf_type(
+    r"AutoScaling::AutoScalingGroup|ApplicationAutoScaling::ScalableTarget|ECS::Service"))
+_TF_MIN_ONE = re.compile(
+    r"resource\s+\"(aws_autoscaling_group|aws_appautoscaling_target|aws_ecs_service)\"\s+"
+    r"\"([^\"]+)\"\s*\{"
+)
+_ECS_DIMENSION = "ecs:service:DesiredCount"
+_CDK_TASK_COUNT = re.compile(r"(\w+)\s*\.\s*(?:autoScaleTaskCount|auto_scale_task_count)\(")
+
+
+def _cf_min_one(rel: str, text: str) -> List[tuple[str, str, int | None]]:
+    """(check, fleet, line) for template fleets whose literal minimum is one."""
+    try:
+        doc = parse_template_text(Path(rel), text)
+    except Exception:  # noqa: BLE001 - not a readable template
+        return []
+    resources = doc.get("Resources") if isinstance(doc, dict) else None
+    found: List[tuple[str, str, int | None]] = []
+    for name, body in (resources.items() if isinstance(resources, dict) else ()):
+        if not isinstance(body, dict) or body.get("Type") not in _CF_MIN_ONE_TYPES:
+            continue
+        props = body.get("Properties")
+        props = props if isinstance(props, dict) else {}
+        line = _cf_logical_line(text, str(name))
+        kind = body.get("Type")
+        if kind == "AWS::AutoScaling::AutoScalingGroup" and _num(props.get("MinSize")) == 1:
+            found.append(("fleet", f"Auto Scaling group {name} (minimum 1)", line))
+        elif (kind == "AWS::ApplicationAutoScaling::ScalableTarget"
+              and props.get("ScalableDimension") == _ECS_DIMENSION
+              and _num(props.get("MinCapacity")) == 1):
+            found.append(("fleet", f"ECS scaling target {name} (minimum 1)", line))
+        elif kind == "AWS::ECS::Service" and _num(props.get("DesiredCount")) == 1:
+            found.append(("service", f"ECS service {name} (desired count 1)", line))
+    return found
+
+
+def _tf_min_one(text: str) -> List[tuple[str, str, int | None]]:
+    found: List[tuple[str, str, int | None]] = []
+    for match in _TF_MIN_ONE.finditer(text):
+        kind, name = match.groups()
+        block = _braced(text, match.end() - 1)
+        line = _line_of(text, match.start())
+        if kind == "aws_autoscaling_group" and _tf_number(block, "min_size") == 1:
+            found.append(("fleet", f"Auto Scaling group {name} (minimum 1)", line))
+        elif (kind == "aws_appautoscaling_target"
+              and _tf_setting(block, "scalable_dimension") == f'"{_ECS_DIMENSION}"'
+              and _tf_number(block, "min_capacity") == 1):
+            found.append(("fleet", f"ECS scaling target {name} (minimum 1)", line))
+        elif kind == "aws_ecs_service" and _tf_number(block, "desired_count") == 1:
+            found.append(("service", f"ECS service {name} (desired count 1)", line))
+    return found
+
+
+def _cdk_min_one(text: str) -> List[tuple[str, str, int | None]]:
+    found: List[tuple[str, str, int | None]] = []
+    for match in _CDK_FLEET.finditer(text):
+        cls, name = match.groups()
+        args = _braced(text, match.start() + match.group(0).index("("), "(", ")")
+        line = _line_of(text, match.start())
+        if cls.endswith("AutoScalingGroup"):
+            key = "min_?[sS]ize" if cls.startswith("Cfn") else "min_?[cC]apacity"
+            has, low = _cdk_literal(args, key)
+            if low == 1 or (not has and not cls.startswith("Cfn") and not _SPREAD.search(args)):
+                found.append(("fleet", f"Auto Scaling group {name} (minimum 1)", line))
+        elif cls.endswith("Service") and _cdk_literal(args, "desired_?[cC]ount") == (True, 1):
+            if cls == "CfnService" and "ecs.CfnService" not in match.group(0):
+                continue
+            found.append(("service", f"ECS service {name} (desired count 1)", line))
+    for match in _CDK_TASK_COUNT.finditer(text):
+        args = _braced(text, match.end() - 1, "(", ")")
+        has, low = _cdk_literal(args, "min_?[cC]apacity")
+        if low == 1 or (not has and not _SPREAD.search(args)):
+            found.append(("fleet", f"ECS task count of {match.group(1)} (minimum 1)",
+                          _line_of(text, match.start())))
+    return found
+
+
+def single_capacity_fleets(repo_path: Path) -> List[tuple[str, str, int | None]]:
+    """Production fleets whose literal minimum is one: (fleet, file, line)."""
+    candidates: List[tuple[str, str, str, int | None]] = []
+    ecs_target = False
+    for rel, text in iac_texts(repo_path):
+        ecs_target = ecs_target or bool(_ECS_SCALABLE_TARGET.search(text))
+        if from_words(rel) in ("dev", "staging"):
+            continue
+        fleets = _tf_min_one(text) + _cdk_min_one(text)
+        if _CF_MIN_ONE.search(text):
+            fleets += _cf_min_one(rel, text)
+        candidates.extend((check, fleet, rel, line) for check, fleet, line in fleets)
+    return [(fleet, rel, line) for check, fleet, rel, line in candidates
+            if check == "fleet" or not ecs_target]
+
+
+class StaticStabilityMissing(_RepoRule):
+    id = "REPO-057"
+    title = "Capacity has no headroom to survive a failure"
+    category = "Reliability"
+    severity = "Low"
+    themes = ("resilience",)
+    recommendation = (
+        "Run enough capacity that losing one instance, task or Availability Zone does not "
+        "need a scale-out first: give production Auto Scaling groups and ECS services a "
+        "minimum of at least two, spread across Availability Zones, so the survivors carry "
+        "the load while the failed part is replaced (static stability)."
+    )
+
+    def run(self, repo_path: Path, language: str = "typescript") -> List[Finding]:
+        fleets = single_capacity_fleets(repo_path)
+        if not fleets:
+            return []
+        places = [f"{fleet} at {rel}:{line}" if line else f"{fleet} in {rel}"
+                  for fleet, rel, line in fleets]
+        return [self._finding(
+            f"Production fleets that run on one instance or task: {_listed(places, 4)}",
+            file=fleets[0][1],
+            line=fleets[0][2],
+        )]
+
+
+_SLO = re.compile(
+    _cf_type(r"ApplicationSignals::ServiceLevelObjective")
+    + r"|resource\s+\"aws_applicationsignals_service_level_objective\""
+    r"|\bCfnServiceLevelObjective\("
+)
+
+
+class AvailabilityTargetMissing(_RepoRule):
+    id = "REPO-058"
+    title = "No availability target on the user-facing edge"
+    category = "Reliability"
+    severity = "Medium"
+    themes = ("resilience",)
+    recommendation = (
+        "Turn the availability target into something that fires: alarm on the edge error "
+        "and latency metrics at the target (API Gateway 5XXError and Latency, ALB "
+        "HTTPCode_Target_5XX_Count and TargetResponseTime, CloudFront 5xxErrorRate), or define "
+        "a CloudWatch Application Signals service level objective for the service."
+    )
+
+    def run(self, repo_path: Path, language: str = "typescript") -> List[Finding]:
+        found = edges(repo_path)
+        if not found or edge_alarm(repo_path) or _in_iac(repo_path, (("SLO", _SLO),)):
+            return []
+        return [self._finding(
+            f"Serves users through {_named(found)}; searched the IaC for an alarm on an "
+            "edge 5xx, error or latency metric and an Application Signals service level "
+            "objective; found none",
+            file=next(iter(found.values())),
+        )]
+
+
+_SNS_ALARM_ACTION = re.compile(
+    r"[\"']?(?:AlarmActions|alarm_?[aA]ctions)[\"']?\s*[:=]\s*[^\]]{0,300}?"
+    r"(?:arn:aws[\w-]*:sns:|\baws_sns_topic\.\w+\.arn\b|\.topic_?[aA]rn\b)"
+    r"|\.add_?[aA]larm_?[aA]ction\(\s*(?:new\s+)?(?:\w+\.)*SnsAction\("
+)
+_NOTIFIERS = _kinds(
+    ("Incident Manager response plan", _cf_type(r"SSMIncidents::ResponsePlan")
+     + r"|resource\s+\"aws_ssmincidents_response_plan\"|arn:aws[\w-]*:ssm-incidents:"
+     r"|\bCfnResponsePlan\("),
+    ("AWS Chatbot configuration", _cf_type(r"Chatbot::\w+")
+     + r"|resource\s+\"aws_chatbot_\w+\""
+     r"|\bchatbot\.(?:Cfn)?\w*(?:Slack|Teams|Chime)\w*Configuration\("),
+)
+_HEALTH_EVENT = re.compile(r"\\?[\"']aws\.health\\?[\"']")
+
+
+def _cf_topic_alarm(rel: str, text: str) -> bool:
+    """A template alarm whose AlarmActions Ref or GetAtt an SNS topic in the template."""
+    try:
+        doc = parse_template_text(Path(rel), text)
+    except Exception:  # noqa: BLE001 - not a readable template
+        return False
+    resources = doc.get("Resources") if isinstance(doc, dict) else None
+    if not isinstance(resources, dict):
+        return False
+    topics = {name for name, body in resources.items()
+              if isinstance(body, dict) and body.get("Type") == "AWS::SNS::Topic"}
+    for body in resources.values():
+        if not isinstance(body, dict) or body.get("Type") != "AWS::CloudWatch::Alarm":
+            continue
+        props = body.get("Properties")
+        actions = props.get("AlarmActions") if isinstance(props, dict) else None
+        for action in actions if isinstance(actions, list) else ():
+            if isinstance(action, dict):
+                target = action.get("Ref") or action.get("Fn::GetAtt")
+                target = target[0] if isinstance(target, list) and target else target
+                if target in topics:
+                    return True
+    return False
+
+
+def availability_notifications(repo_path: Path) -> dict[str, str]:
+    """What tells people that availability dropped: kind -> first file."""
+    found = _in_iac(repo_path, _NOTIFIERS)
+    for rel, text in iac_texts(repo_path):
+        if _SNS_ALARM_ACTION.search(text) or (
+            _CF_ALARM.search(text) and _cf_topic_alarm(rel, text)
+        ):
+            found.setdefault("alarm that notifies an SNS topic", rel)
+        if (_EVENT_RULE_DECL.search(text) and _HEALTH_EVENT.search(text)
+                and _EVENT_TARGET.search(text)):
+            found.setdefault("EventBridge rule on AWS Health events", rel)
+    return found
+
+
+class AvailabilityNotificationMissing(_RepoRule):
+    id = "REPO-059"
+    title = "No one is notified when availability drops"
+    category = "Reliability"
+    severity = "Low"
+    themes = ("observability",)
+    recommendation = (
+        "Tell people when availability is hit: send the workload alarms to an SNS topic "
+        "the on-call team subscribes to, start an Incident Manager response plan, post to a "
+        "chat channel through Amazon Q Developer in chat applications (AWS Chatbot), and "
+        "route AWS Health events to the same place with an EventBridge rule."
+    )
+
+    def run(self, repo_path: Path, language: str = "typescript") -> List[Finding]:
+        compute = _in_iac(repo_path, _COMPUTE)
+        if not compute or availability_notifications(repo_path):
+            return []
+        return [self._finding(
+            f"Runs {_named(compute)}; searched the IaC for an alarm action that notifies an "
+            "SNS topic, an Incident Manager response plan, an AWS Chatbot configuration, and "
+            "an EventBridge rule on AWS Health events with a target; found none",
+            file=next(iter(compute.values())),
+        )]
+
+
 REPO_RULES: List[Rule] = [
     RepoTestsMissing(), RepoPipelineMissing(), SingleEnvironment(),
     OrgGuardrailsMissing(), AccountBaselineMissing(), RootUserUnchecked(),
@@ -5481,4 +5749,5 @@ REPO_RULES: List[Rule] = [
     RecoveryObjectivesMissing(), FailoverAutomationMissing(), DisasterRecoveryUntested(),
     DisasterRecoveryDrift(),
     SingleLocationRecoveryMissing(),
+    StaticStabilityMissing(), AvailabilityTargetMissing(), AvailabilityNotificationMissing(),
 ]
