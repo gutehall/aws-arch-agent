@@ -2224,28 +2224,30 @@ class IdempotencyMissing(_RepoRule):
 
 # Dependencies and constant work (REL 4): hardcoded client URLs (REPO-107) and synchronous
 # calls with no timeout and no queue (REPO-108).
-_HTTP_CODE_SUFFIXES = frozenset({".py", ".ts", ".js", ".mjs", ".cjs"})
+_HTTP_CODE_SUFFIXES = frozenset({
+    ".py", ".ts", ".tsx", ".mts", ".cts", ".js", ".jsx", ".mjs", ".cjs",
+})
 # A client call whose first argument is a literal http(s) URL; group 1 is the host.
 _LITERAL_URL_CALL = re.compile(
     r"(?:\b(?:requests|httpx)\.(?:get|post|put|patch|delete|head|request)"
-    r"|\burlopen|\bfetch|\baxios(?:\.(?:get|post|put|patch|delete|request))?"
-    r"|\bgot(?:\.(?:get|post|put|patch|delete))?)"
-    r"\(\s*[fF]?[`\"']https?://([^/`\"'\s:{$]+)"
+    r"|\burlopen|(?<![\w.])fetch|\baxios(?:\.(?:get|post|put|patch|delete|request))?"
+    r"|(?<![\w.])got(?:\.(?:get|post|put|patch|delete))?)"
+    r"\(\s*[fF]?[`\"']https?://(\[[^\]]+\]|[^/`\"'\s:{$]+)"
 )
 # Hosts that are local or are AWS endpoints: not a third-party dependency to name.
 _LOCAL_HOST = re.compile(
-    r"^(?:localhost|127\.0\.0\.1|0\.0\.0\.0|169\.254\.169\.254|\[::1\])$"
+    r"^(?:localhost|127\.0\.0\.1|0\.0\.0\.0|169\.254\.169\.254|\[::1?\])$"
     r"|\.amazonaws\.com(?:\.cn)?$|\.local$|\.internal$",
     re.IGNORECASE,
 )
 # A synchronous HTTP client call in function code.
 _SYNC_HTTP_CALL = re.compile(
     r"\b(?:requests|httpx)\.(?:get|post|put|patch|delete|head|request)\("
-    r"|\burlopen\(|\bfetch\(|\baxios(?:\.(?:get|post|put|patch|delete|request))?\("
-    r"|\bgot(?:\.(?:get|post|put|patch|delete))?\("
+    r"|\burlopen\(|(?<![\w.])fetch\(|\baxios(?:\.(?:get|post|put|patch|delete|request))?\("
+    r"|(?<![\w.])got(?:\.(?:get|post|put|patch|delete))?\("
 )
 _HTTP_TIMEOUT = re.compile(
-    r"\btimeout\b|\bAbortSignal\b|\bAbortController\b|\bsignal\s*:", re.IGNORECASE
+    r"\btimeout\w*\s*[=:]|\bAbortSignal\b|\bAbortController\b|\bsignal\s*:", re.IGNORECASE
 )
 # A queue, a stream or a schedule the IaC declares, so a call can be decoupled or repeated.
 _QUEUE_OR_SCHEDULE = re.compile(

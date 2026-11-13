@@ -66,9 +66,11 @@ def test_hardcoded_url_fails(tmp_path: Path, name: str, code: str) -> None:
         "fetch('http://localhost:3000/health');\n",
         "fetch('https://dynamodb.eu-west-1.amazonaws.com/');\n",
         "fetch('http://169.254.169.254/latest/meta-data/');\n",
+        "fetch('http://[::1]:8080/health');\n",
         "// see https://docs.vendor.com/api\nconst x = 1;\n",
     ],
-    ids=["env-ts", "env-py", "base-url", "localhost", "aws-endpoint", "metadata", "comment"],
+    ids=["env-ts", "env-py", "base-url", "localhost", "aws-endpoint", "metadata", "ipv6-loopback",
+         "comment"],
 )
 def test_named_or_local_dependency_passes(tmp_path: Path, code: str) -> None:
     assert not _found(_scan(tmp_path, {"src/handler.ts": code}), "REPO-107")
@@ -86,8 +88,10 @@ def test_url_in_tests_does_not_count(tmp_path: Path) -> None:
         ("src/handler.js", "const r = await axios.post(url, body);\n"),
         ("src/handler.py", "resp = requests.get(url)\n"),
         ("src/handler.py", "data = urlopen(url).read()\n"),
+        ("src/App.tsx", "const r = await fetch(url);\n"),
+        ("src/handler.ts", "// timeout later\nconst r = await fetch(url);\n"),
     ],
-    ids=["ts-fetch", "js-axios", "py-requests", "py-urlopen"],
+    ids=["ts-fetch", "js-axios", "py-requests", "py-urlopen", "tsx", "timeout-in-comment"],
 )
 def test_sync_call_without_timeout_or_queue_fails(tmp_path: Path, name: str, code: str) -> None:
     (hit,) = _found(_scan(tmp_path, {name: code, "main.tf": "# nothing here\n"}), "REPO-108")
@@ -112,9 +116,11 @@ def test_sync_call_without_timeout_or_queue_fails(tmp_path: Path, name: str, cod
          "main.tf": 'resource "aws_lambda_event_source_mapping" "m" {\n'
                     '  event_source_arn = aws_sqs_queue.q.arn\n}\n'},
         {"src/handler.ts": "const x = 1;\n"},
+        {"src/store.ts": "const row = await this.fetch(id);\nconst u = store.fetch(id);\n"},
     ],
     ids=["abort-signal", "py-timeout", "abort-controller", "terraform-queue",
-         "cloudformation-queue", "cdk-queue", "schedule", "event-source", "no-call"],
+         "cloudformation-queue", "cdk-queue", "schedule", "event-source", "no-call",
+         "fetch-method"],
 )
 def test_timeout_or_queue_passes(tmp_path: Path, files: dict) -> None:
     assert not _found(_scan(tmp_path, files), "REPO-108")
