@@ -2075,6 +2075,12 @@ TOPICS: dict[str, tuple[str, str, str, str]] = {
         "/wellarchitected/latest/reliability-pillar/"
         "rel_withstand_component_failures_avoid_control_plane.html",
     ),
+    "accelerator_sustainability": (
+        "CloudWatch agent: collect NVIDIA GPU metrics",
+        "/AmazonCloudWatch/latest/monitoring/CloudWatch-Agent-NVIDIA-GPU.html",
+        "Well-Architected SUS05-BP04: Optimize your use of hardware-based compute accelerators",
+        "/wellarchitected/latest/sustainability-pillar/sus_sus_hardware_a5.html",
+    ),
     "repo_tests": (
         "AWS CDK: testing constructs",
         "/cdk/v2/guide/testing.html",
@@ -2805,6 +2811,7 @@ RULE_TOPICS: dict[str, str] = {
     "REPO-147": "monitoring_review",
     "REPO-148": "demand_load_testing",
     "REPO-149": "data_plane_recovery",
+    "REPO-150": "accelerator_sustainability",
     "REPO-016": "fault_injection",
     "REPO-017": "load_testing",
     "REPO-018": "app_kpi_metrics",

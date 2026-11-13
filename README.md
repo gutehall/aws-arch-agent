@@ -4,7 +4,7 @@ Local-first AWS architecture review for infrastructure code. It scans **CDK** (T
 
 No AWS credentials. No cloud calls. LLM output is optional.
 
-> Early-stage: 328 static rules and 283 template checks are implemented and tested. 139 of the 328 CDK rules (42%) have a template check, so they also run for CloudFormation, Terraform and synthesised CDK. [docs/COVERAGE.md](docs/COVERAGE.md) gives the reason for each of the others. Expect some false positives and negatives, and API changes.
+> Early-stage: 329 static rules and 283 template checks are implemented and tested. 139 of the 329 CDK rules (42%) have a template check, so they also run for CloudFormation, Terraform and synthesised CDK. [docs/COVERAGE.md](docs/COVERAGE.md) gives the reason for each of the others. Expect some false positives and negatives, and API changes.
 
 ## Install
 
@@ -56,7 +56,7 @@ Each finding has a severity, a pillar, a file and line, evidence, a recommendati
 | **Operational Excellence** | 46 | No logging, alarms, tracing, KPI metrics, log and trace analysis, test gates, or rollback |
 | **Performance Efficiency** | 28 | No caching, oversized instances, no Graviton, no compute metrics or dynamic scaling, data kept on the instance, unwatched edge latency, no load balancer, single VPN or Direct Connect link, old protocols |
 | **Cost Optimization** | 47 | No autoscaling, NAT costs, no lifecycle policies, no cost report, cost attribution tags or unit-cost metrics, unowned or reactive budgets, previous-generation types, no named cost owner, no cost policy or control, budgets with no target, shared prod and dev accounts, billing on IAM users, temporary stacks with no end date, untagged creator or owner, nothing tears down temporary environments, no cost estimate, a VPC or cluster per workload, fleets with no pricing model, a higher-priced Region with no reason, Marketplace products with no term, no shared commitment tracking in an organization, cross-AZ and cross-Region transfer nobody modeled, data movers behind a NAT gateway with no gateway endpoint, no demand analysis, APIs and triggers with no throttle or buffer |
-| **Sustainability** | 16 | No Spot, right-sizing, SLAs with no sustainability tradeoff, unattached volumes and unreferenced load balancers, NAT gateways, target groups and network interfaces, a CloudFront price class that misses the Region, no note on team resource sizing, unthrottled APIs and triggers, components with no use (idle services, disabled rules, unsubscribed topics, untriggered functions), compute at its ceiling with no profile, mobile or device fleets with no device testing, data kept on host-attached storage |
+| **Sustainability** | 17 | No Spot, right-sizing, SLAs with no sustainability tradeoff, unattached volumes and unreferenced load balancers, NAT gateways, target groups and network interfaces, a CloudFront price class that misses the Region, no note on team resource sizing, unthrottled APIs and triggers, components with no use (idle services, disabled rules, unsubscribed topics, untriggered functions), compute at its ceiling with no profile, mobile or device fleets with no device testing, data kept on host-attached storage |
 | **Best Practices** | 5 | Tags, Secrets Manager, CDK Aspects |
 
 CloudFormation and Terraform run the template checks (`CF-*`). Full list: [docs/CF_RULES.md](docs/CF_RULES.md).

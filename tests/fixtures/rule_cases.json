@@ -1665,5 +1665,11 @@
     "negative_py": "answer = 42",
     "positive_ts": "new ec2.Instance(this, 'Web', { instanceType, machineImage, vpc });",
     "positive_py": "ec2.Instance(self, 'Web', instance_type=instance_type, machine_image=image, vpc=vpc)"
+  },
+  "REPO-150": {
+    "negative_ts": "new ec2.Instance(this, 'Web', { instanceType: ec2.InstanceType.of(ec2.InstanceClass.T3, ec2.InstanceSize.MICRO), machineImage, vpc });",
+    "negative_py": "answer = 42",
+    "positive_ts": "new ec2.Instance(this, 'Gpu', { instanceType: new ec2.InstanceType('g5.xlarge'), machineImage, vpc });",
+    "positive_py": "ec2.Instance(self, 'Gpu', instance_type=ec2.InstanceType('g5.xlarge'), machine_image=image, vpc=vpc)"
   }
 }

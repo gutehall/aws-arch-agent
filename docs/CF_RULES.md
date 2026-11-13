@@ -4,7 +4,7 @@ This document provides a comprehensive list of all rules checked by AWS Arch Age
 
 ## Overview
 
-AWS Arch Agent checks **328 static analysis rules** and **283 template checks** across all 6 AWS Well-Architected Framework pillars. 139 of the 328 CDK rules (42%) have a template check, so they also run for CloudFormation, Terraform and synthesised CDK. [COVERAGE.md](COVERAGE.md) gives the reason for each of the others.
+AWS Arch Agent checks **329 static analysis rules** and **283 template checks** across all 6 AWS Well-Architected Framework pillars. 139 of the 329 CDK rules (42%) have a template check, so they also run for CloudFormation, Terraform and synthesised CDK. [COVERAGE.md](COVERAGE.md) gives the reason for each of the others.
 
 ## Static Analysis Rules (V1 & V2 Modes)
 
@@ -456,7 +456,7 @@ These rules run on your CDK TypeScript/Python code and execute in both V1 and V2
 - BP-004: CDK Aspects not used for policy enforcement
 - BP-005: CDK context not used for environment-specific config
 
-### Sustainability (16 rules)
+### Sustainability (17 rules)
 
 - SUST-001: Spot instances not considered for batch/non-critical workloads
 - SUST-002: Resource right-sizing opportunities detected
@@ -480,6 +480,7 @@ These rules run on your CDK TypeScript/Python code and execute in both V1 and V2
 - REPO-106: Storage is not matched to the data access pattern
 
 ---
+- REPO-150: Accelerator instances have no utilization alarm or batch window
 
 ## CloudFormation Template Rules
 
@@ -1296,6 +1297,7 @@ Every rule has one or more themes, which cut across pillars: `finops`, `security
 | REPO-147 | observability |
 | REPO-148 | resilience |
 | REPO-149 | resilience |
+| REPO-150 | sustainability, finops |
 | SEC-001 | identity |
 | SEC-002 | identity |
 | SEC-003 | network-exposure |

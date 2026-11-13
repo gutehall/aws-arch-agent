@@ -15,7 +15,7 @@ Which CDK rules have a template check, and which AWS Foundational Security Best 
 
 ## CDK rules
 
-328 rules: 132 covered, 7 partial, 10 account, 5 cdk-only, 25 advice, 149 repo.
+329 rules: 132 covered, 7 partial, 10 account, 5 cdk-only, 25 advice, 150 repo.
 
 | Rule | Title | Template check | Status | Note |
 | -- | -- | -- | -- | -- |
@@ -347,6 +347,7 @@ Which CDK rules have a template check, and which AWS Foundational Security Best 
 | REPO-147 | No dated review record lists the stateful resources and their alarms |  | `repo` | Fires when the IaC declares a data store and no note named for a monitoring, alarm or observability review, scope, coverage or inventory carries a date. |
 | REPO-148 | No load test shows that the workload adapts to changes in demand |  | `repo` | Fires on the same condition as REPO-017 (no load test in a build config, package script or IaC pipeline); each answers its own question (REL 7 and REL 12). |
 | REPO-149 | A lone EC2 instance has no data plane recovery |  | `repo` | Fires when the IaC declares an EC2 instance and no Auto Scaling group, load balancer target group, Route 53 health check or instance recovery alarm. |
+| REPO-150 | Accelerator instances have no utilization alarm or batch window |  | `repo` | Fires when the IaC runs an accelerated instance type (p, g, gr, inf, trn, dl, f or vt1) on compute and has no GPU or Neuron core utilization alarm (the REPO-062 search), scheduled scaling or schedule. Each of REPO-062 and REPO-150 answers its own question (PERF 2 and SUS 5). |
 
 ## FSBP controls
 

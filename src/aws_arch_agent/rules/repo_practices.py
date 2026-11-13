@@ -266,6 +266,12 @@ healing):
 - REPO-149 data plane recovery: an EC2 instance in the IaC and no Auto Scaling group, target group,
   Route 53 health check or recovery alarm fires.
 
+Accelerators (SUS 5) run by default (SUST-002, SUST-005 and SUST-007 answer the other hardware
+practices):
+
+- REPO-150 accelerator utilization: the REPO-062 accelerators with no GPU or Neuron core
+  utilization alarm and no scheduled scaling or schedule fire; no accelerator passes.
+
 Reliability testing (REL 12) runs by default and reads the IaC and the builds REPO-009 reads
 (CI configs, inline buildspecs, CodeBuild projects and pipelines in the IaC, and the
 package.json scripts they run):
@@ -6590,6 +6596,44 @@ class ControlPlaneOnlyRecovery(_RepoRule):
         )]
 
 
+# Accelerators (SUS 5): accelerator instances with no utilization alarm or batch window
+# (REPO-150). REPO-062 answers the same instances for PERF 2.
+_BATCH_WINDOW = re.compile(
+    r"ScheduledAction|\baws_autoscaling_schedule\b|\bscheduled_action\b|\bscaleOnSchedule\("
+    r"|\bscale_on_schedule\("
+    r"|AWS::Scheduler::Schedule|\baws_scheduler_schedule\b"
+    r"|[\"']?ScheduleExpression[\"']?\s*:|\bschedule_expression\b"
+)
+
+
+class AcceleratorUtilizationUnchecked(_RepoRule):
+    id = "REPO-150"
+    title = "Accelerator instances have no utilization alarm or batch window"
+    category = "Sustainability"
+    severity = "Low"
+    themes = ("sustainability", "finops")
+    recommendation = (
+        "Use accelerators only while they work: alarm on GPU or NeuronCore utilization (the "
+        "CloudWatch agent with nvidia_gpu, or DCGM) and scale in when it is low, or run the "
+        "capacity on a schedule that matches the batch window so it is released when the "
+        "jobs end."
+    )
+
+    def run(self, repo_path: Path, language: str = "typescript") -> List[Finding]:
+        found = accelerators(repo_path)
+        if not found or accelerator_alarm(repo_path):
+            return []
+        if _in_iac_text(repo_path, _BATCH_WINDOW):
+            return []
+        places = [f"{kind} in {rel}" for kind, rel in found.items()]
+        return [self._finding(
+            f"Runs accelerated instances ({_listed(places, 4)}); searched the IaC for an alarm "
+            "on a GPU or Neuron core utilization metric, a scheduled scaling action and a "
+            "schedule; found none",
+            file=next(iter(found.values())),
+        )]
+
+
 _COMPUTE_TRACING = _kinds(
     ("Lambda active tracing",
      r"[\"']?Tracing[\"']?\s*:\s*[\"']?Active\b"
@@ -11827,6 +11871,7 @@ REPO_RULES: List[Rule] = [
     MonitoringScopeNotReviewed(),
     LoadTestForDemand(),
     ControlPlaneOnlyRecovery(),
+    AcceleratorUtilizationUnchecked(),
     FaultInjectionMissing(), LoadTestMissing(),
     KpiMetricMissing(), EdgeTelemetryMissing(), DependencyTelemetryMissing(),
     DeployTestGateMissing(), AutomatedRollbackMissing(),
