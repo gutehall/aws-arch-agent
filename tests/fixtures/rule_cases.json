@@ -1605,5 +1605,131 @@
     "negative_py": "ec2.Instance(self, 'Web', vpc=vpc, instance_type=t, machine_image=ami)",
     "positive_ts": "const host = new ec2.Instance(this, 'Db', { vpc, instanceType, machineImage });\nnew ec2.Volume(this, 'Data', { availabilityZone: 'eu-west-1a', size });",
     "positive_py": "host = ec2.Instance(self, 'Db', vpc=vpc, instance_type=t, machine_image=ami)\nhost.user_data.add_commands('dnf install -y mysql-server')"
+  },
+  "REPO-140": {
+    "negative_ts": "const answer = 42;",
+    "negative_py": "answer = 42",
+    "positive_ts": "new s3.Bucket(this, 'Bucket');",
+    "positive_py": "s3.Bucket(self, 'Bucket')"
+  },
+  "REPO-141": {
+    "negative_ts": "const answer = 42;",
+    "negative_py": "answer = 42",
+    "positive_ts": "new s3.Bucket(this, 'Bucket');",
+    "positive_py": "s3.Bucket(self, 'Bucket')"
+  },
+  "REPO-142": {
+    "negative_ts": "const answer = 42;",
+    "negative_py": "answer = 42",
+    "positive_ts": "new iam.User(this, 'Deployer');",
+    "positive_py": "iam.User(self, 'Deployer')"
+  },
+  "REPO-143": {
+    "negative_ts": "const answer = 42;",
+    "negative_py": "answer = 42",
+    "positive_ts": "new ram.CfnResourceShare(this, 'Share', { name: 'share' });",
+    "positive_py": "ram.CfnResourceShare(self, 'Share', name='share')"
+  },
+  "REPO-144": {
+    "negative_ts": "const answer = 42;",
+    "negative_py": "answer = 42",
+    "positive_ts": "new ec2.Instance(this, 'Web', { instanceType, machineImage, vpc, keyName: 'ops' });",
+    "positive_py": "ec2.Instance(self, 'Web', instance_type=instance_type, machine_image=image, vpc=vpc, key_name='ops')"
+  },
+  "REPO-145": {
+    "negative_ts": "const answer = 42;",
+    "negative_py": "answer = 42",
+    "positive_ts": "new ec2.Instance(this, 'Web', { instanceType, machineImage, vpc });",
+    "positive_py": "ec2.Instance(self, 'Web', instance_type=instance_type, machine_image=image, vpc=vpc)"
+  },
+  "REPO-146": {
+    "negative_ts": "new s3.Bucket(this, 'Bucket', { lifecycleRules: [{ expiration: Duration.days(30) }] });",
+    "negative_py": "answer = 42",
+    "positive_ts": "Tags.of(app).add('DataClassification', 'internal');\nnew s3.Bucket(this, 'Bucket');",
+    "positive_py": "Tags.of(app).add('DataClassification', 'internal')\ns3.Bucket(self, 'Bucket')"
+  },
+  "REPO-147": {
+    "negative_ts": "const answer = 42;",
+    "negative_py": "answer = 42",
+    "positive_ts": "new s3.Bucket(this, 'Bucket');",
+    "positive_py": "s3.Bucket(self, 'Bucket')"
+  },
+  "REPO-148": {
+    "negative_ts": "new ShellStep('LoadTest', { commands: ['k6 run load/checkout.js'] });",
+    "negative_py": "pipelines.ShellStep('LoadTest', commands=['artillery run load/artillery.yml'])",
+    "positive_ts": "new ShellStep('Synth', { commands: ['npm ci', 'npx cdk synth'] });",
+    "positive_py": "pipelines.ShellStep('Synth', commands=['pip install -r requirements.txt', 'cdk synth'])"
+  },
+  "REPO-149": {
+    "negative_ts": "new autoscaling.AutoScalingGroup(this, 'Asg', { vpc, instanceType, machineImage });",
+    "negative_py": "answer = 42",
+    "positive_ts": "new ec2.Instance(this, 'Web', { instanceType, machineImage, vpc });",
+    "positive_py": "ec2.Instance(self, 'Web', instance_type=instance_type, machine_image=image, vpc=vpc)"
+  },
+  "REPO-150": {
+    "negative_ts": "new ec2.Instance(this, 'Web', { instanceType: ec2.InstanceType.of(ec2.InstanceClass.T3, ec2.InstanceSize.MICRO), machineImage, vpc });",
+    "negative_py": "answer = 42",
+    "positive_ts": "new ec2.Instance(this, 'Gpu', { instanceType: new ec2.InstanceType('g5.xlarge'), machineImage, vpc });",
+    "positive_py": "ec2.Instance(self, 'Gpu', instance_type=ec2.InstanceType('g5.xlarge'), machine_image=image, vpc=vpc)"
+  },
+  "REPO-151": {
+    "negative_ts": "const answer = 42;",
+    "negative_py": "answer = 42",
+    "positive_ts": "new s3.Bucket(this, 'Bucket');",
+    "positive_py": "s3.Bucket(self, 'Bucket')"
+  },
+  "REPO-152": {
+    "negative_ts": "const answer = 42;",
+    "negative_py": "answer = 42",
+    "positive_ts": "new ec2.Instance(this, 'Web', { instanceType: new ec2.InstanceType('i3.large'), machineImage, vpc });",
+    "positive_py": "ec2.Instance(self, 'Web', instance_type=ec2.InstanceType('i3.large'), machine_image=image, vpc=vpc)"
+  },
+  "REPO-153": {
+    "negative_ts": "const answer = 42;",
+    "negative_py": "answer = 42",
+    "positive_ts": "new ec2.Volume(this, 'Data', { availabilityZone: 'a', size: cdk.Size.gibibytes(1000) });",
+    "positive_py": "ec2.Volume(self, 'Data', availability_zone='a', size=cdk.Size.gibibytes(1000))"
+  },
+  "REPO-154": {
+    "negative_ts": "const answer = 42;",
+    "negative_py": "answer = 42",
+    "positive_ts": "new s3.Bucket(this, 'Bucket');",
+    "positive_py": "s3.Bucket(self, 'Bucket')"
+  },
+  "REPO-155": {
+    "negative_ts": "const answer = 42;",
+    "negative_py": "answer = 42",
+    "positive_ts": "new ec2.Volume(this, 'A', { availabilityZone: 'a', size: cdk.Size.gibibytes(50) });\nnew ec2.Volume(this, 'B', { availabilityZone: 'a', size: cdk.Size.gibibytes(50) });",
+    "positive_py": "ec2.Volume(self, 'A', availability_zone='a', size=cdk.Size.gibibytes(50))\nec2.Volume(self, 'B', availability_zone='a', size=cdk.Size.gibibytes(50))"
+  },
+  "REPO-156": {
+    "negative_ts": "const answer = 42;",
+    "negative_py": "answer = 42",
+    "positive_ts": "plan.addSelection('Sel', { resources: [backup.BackupResource.fromConstruct(cache)] });\nnew elasticache.CfnCacheCluster(this, 'Cache', { cacheNodeType: 'cache.t3.micro', engine: 'redis', numCacheNodes: 1 });",
+    "positive_py": "plan.add_selection('Sel', resources=[backup.BackupResource.from_construct(cache)])\nelasticache.CfnCacheCluster(self, 'Cache', cache_node_type='cache.t3.micro', engine='redis', num_cache_nodes=1)"
+  },
+  "REPO-157": {
+    "negative_ts": "const answer = 42;",
+    "negative_py": "answer = 42",
+    "positive_ts": "new s3.Bucket(this, 'Bucket');",
+    "positive_py": "s3.Bucket(self, 'Bucket')"
+  },
+  "REPO-159": {
+    "negative_ts": "const answer = 42;",
+    "negative_py": "answer = 42",
+    "positive_ts": "new s3.Bucket(this, 'Bucket');",
+    "positive_py": "s3.Bucket(self, 'Bucket')"
+  },
+  "REPO-158": {
+    "negative_ts": "const answer = 42;",
+    "negative_py": "answer = 42",
+    "positive_ts": "new cloudwatch.Alarm(this, 'Errors', { metric, threshold: 1, evaluationPeriods: 1 });",
+    "positive_py": "cloudwatch.Alarm(self, 'Errors', metric=metric, threshold=1, evaluation_periods=1)"
+  },
+  "REPO-160": {
+    "negative_ts": "const answer = 42;",
+    "negative_py": "answer = 42",
+    "positive_ts": "new ec2.Instance(this, 'Web', { instanceType, machineImage, vpc });",
+    "positive_py": "ec2.Instance(self, 'Web', instance_type=instance_type, machine_image=image, vpc=vpc)"
   }
 }

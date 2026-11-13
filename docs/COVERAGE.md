@@ -15,7 +15,7 @@ Which CDK rules have a template check, and which AWS Foundational Security Best 
 
 ## CDK rules
 
-318 rules: 132 covered, 7 partial, 10 account, 5 cdk-only, 25 advice, 139 repo.
+339 rules: 132 covered, 7 partial, 10 account, 5 cdk-only, 25 advice, 160 repo.
 
 | Rule | Title | Template check | Status | Note |
 | -- | -- | -- | -- | -- |
@@ -337,6 +337,27 @@ Which CDK rules have a template check, and which AWS Foundational Security Best 
 | REPO-137 | Security services are not centralized through a delegated administrator or controls |  | `repo` | Fires when the repo holds IaC and defines no Organizations delegated administrator, service organization admin account or Control Tower control. Org-level: runs with `rules.org` or `rules.include`. |
 | REPO-138 | No threat model is in the repo |  | `repo` | Fires when the repo holds IaC and has no file named for a threat model and no note with a threat model heading. |
 | REPO-139 | No IAM Access Analyzer, Inspector or dated security service review is in the repo |  | `repo` | Fires when the repo holds IaC and defines no Access Analyzer or Inspector and has no dated security review note. |
+| REPO-140 | No permissions boundary, per-component roles or access requirements note define access |  | `repo` | Fires when the repo holds IaC with no permissions boundary, fewer than two IAM roles and no note or heading on access requirements. |
+| REPO-141 | No IAM Access Analyzer or dated access review reduces permissions over time |  | `repo` | Fires when the repo holds IaC and defines no Access Analyzer and has no dated access or permission review note. Org-level: runs with `rules.org` or `rules.include`. |
+| REPO-142 | The IaC creates a long-lived IAM user or access key |  | `repo` | Fires on the first IAM user or access key in the IaC (CloudFormation, Terraform or CDK). |
+| REPO-143 | A RAM resource share is not limited to the organization |  | `repo` | Fires on a RAM resource share in a file that does not set AllowExternalPrincipals to false. |
+| REPO-144 | EC2 instances use an SSH key pair and no Session Manager access |  | `repo` | Fires when an EC2 instance, launch template or Auto Scaling group sets an SSH key pair and the IaC grants no Session Manager access (AmazonSSMManagedInstanceCore, ssm:StartSession, ssmSessionPermissions). |
+| REPO-145 | Compute protection is not automated with Inspector or an SSM association |  | `repo` | Fires when the IaC runs compute and enables no Inspector and defines no SSM association or patch baseline. Org-level: runs with `rules.org` or `rules.include`. |
+| REPO-146 | Data classified by tag has no lifecycle or retention rule |  | `repo` | Fires when a data store sits in a file tagged with a classification (or an app tagged with one) and the file sets no lifecycle rule, TTL, backup retention or delete-after. |
+| REPO-147 | No dated review record lists the stateful resources and their alarms |  | `repo` | Fires when the IaC declares a data store and no note named for a monitoring, alarm or observability review, scope, coverage or inventory carries a date. |
+| REPO-148 | No load test shows that the workload adapts to changes in demand |  | `repo` | Fires on the same condition as REPO-017 (no load test in a build config, package script or IaC pipeline); each answers its own question (REL 7 and REL 12). |
+| REPO-149 | A lone EC2 instance has no data plane recovery |  | `repo` | Fires when the IaC declares an EC2 instance and no Auto Scaling group, load balancer target group, Route 53 health check or instance recovery alarm. |
+| REPO-150 | Accelerator instances have no utilization alarm or batch window |  | `repo` | Fires when the IaC runs an accelerated instance type (p, g, gr, inf, trn, dl, f or vt1) on compute and has no GPU or Neuron core utilization alarm (the REPO-062 search), scheduled scaling or schedule. Each of REPO-062 and REPO-150 answers its own question (PERF 2 and SUS 5). |
+| REPO-151 | Data stores carry no classification tag to drive retention and storage tiers |  | `repo` | Fires on the same condition as REPO-039 (a data store in a file with no classification tag and no app-wide tag); each answers its own question (SEC 7 and SUS 4). |
+| REPO-152 | Instances keep their data on instance store with no durable store behind it |  | `repo` | Fires when the IaC maps an ephemeral device or uses a storage-optimized or NVMe instance type and declares no S3, EFS, FSx, EBS, DynamoDB or database. |
+| REPO-153 | A large EBS volume is a fixed size with nothing to grow it |  | `repo` | Fires on an EBS volume of 500 GiB or more when the IaC has no Elastic Volumes call, EBS autoscaling script or file system grow command. |
+| REPO-154 | S3 buckets have no rule that deletes unneeded data |  | `repo` | Fires on a file that declares an S3 bucket and sets no lifecycle rule, TTL, retention period or backup delete-after; COST-013 reports the same fact for COST 4, because a rule maps to one question. |
+| REPO-155 | Several EBS volumes hold data and no shared file system or bucket does |  | `repo` | Fires when the IaC declares two or more EBS volumes and no EFS, FSx or S3. |
+| REPO-156 | A backup plan covers a cache or a temporary bucket |  | `repo` | Fires on a file with an AWS Backup selection that also declares an ElastiCache cluster or a bucket named tmp, temp, scratch or cache. |
+| REPO-157 | No operations metric (deploys, alarms, error budget) is measured |  | `repo` | Fires when the repo holds IaC and neither the IaC nor the build configs name a deployment, change failure, recovery time, alarm count, error budget, burn rate or service level objective metric. |
+| REPO-158 | No dashboard or status topic shows operations status to operators |  | `repo` | Fires when the IaC declares CloudWatch alarms and no CloudWatch dashboard and no status topic. |
+| REPO-159 | No dated review of the operations metrics is in the repo |  | `repo` | Fires when the repo holds IaC and no note named for an operations review, report, metrics, health or retrospective carries a date. |
+| REPO-160 | EC2 instances have no SSM association and no pipeline automates operations |  | `repo` | Fires when the IaC declares an EC2 instance, launch template or Auto Scaling group and has no SSM association, patch baseline, maintenance window or Automation document, and the repo has no CI workflow or pipeline. |
 
 ## FSBP controls
 

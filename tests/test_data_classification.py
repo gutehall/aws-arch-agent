@@ -165,6 +165,6 @@ def test_sec7_rules_map_and_run_by_default() -> None:
     assert not {"REPO-039", "REPO-040"} & ORG_RULE_IDS
 
 
-def test_sec7_still_misses_lifecycle() -> None:
+def test_sec7_checks_every_best_practice() -> None:
     (sec7,) = [a for a in well_architected.answers([]) if a.question.id == "SEC 7"]
-    assert sec7.not_checked == ("SEC07-BP04",)
+    assert sec7.not_checked == () and sec7.met

@@ -153,14 +153,17 @@ def test_v2_reports_the_repo_rules(tmp_path: Path) -> None:
     # cost estimate. SUS 2: no SLA note and no team resources note. OPS 5: no version
     # control, no quality gate. SEC 11: no training, pen test, review, deploy or owner note. REL 12: no playbook,
     # post-incident or game-day note. SEC 10: no contacts, plan, playbook, role,
-    # simulation or learning note. SEC 1: no threat model or security review (REPO-136 and REPO-137 are org-level).
+    # simulation or learning note. SEC 1: no threat model or security review (REPO-136 and REPO-137 are org-level). SEC 3: no access
+    # requirements note (REPO-141 is org-level). REL 6: no monitoring review note. REL 7: no load test. SUS 4: no classification tag, no bucket
+    # retention. OPS 9: no operations metric, no operations review.
     assert repo == [
         *REPO_IDS, "REPO-009", "REPO-011", "REPO-016", "REPO-017", "REPO-025", "REPO-039",
         "REPO-041", "REPO-052", "REPO-070", "REPO-077", "REPO-078", "REPO-079",
         "REPO-081", "REPO-086", "REPO-088", "REPO-098", "REPO-101", "REPO-113", "REPO-115",
         "REPO-117", "REPO-118", "REPO-119", "REPO-120", "REPO-121", "REPO-122", "REPO-123",
         "REPO-124", "REPO-125", "REPO-126", "REPO-127", "REPO-128", "REPO-129", "REPO-130",
-        "REPO-138", "REPO-139",
+        "REPO-138", "REPO-139", "REPO-140", "REPO-147", "REPO-148", "REPO-151", "REPO-154",
+        "REPO-157", "REPO-159",
     ]
     assert set(REPO_IDS) <= set(ctx.rules_run)
 

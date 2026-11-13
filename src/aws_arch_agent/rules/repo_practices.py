@@ -224,6 +224,83 @@ user):
 - REPO-139 new security services: IAM Access Analyzer or Inspector in the IaC, or a dated
   security service review note, passes.
 
+Permissions (SEC 3) run by default, except REPO-141, which runs only with rules.org
+(REPO-031 and REPO-032 answer guardrails and emergency access):
+
+- REPO-140 access requirements: a permissions boundary or two IAM roles in the IaC, or an access
+  requirements note, passes; it fires only on a repo that holds IaC.
+- REPO-141 permission reduction: an IAM Access Analyzer in the IaC, or a dated access review
+  note, passes; it fires only on a repo that holds IaC, and only with rules.org.
+- REPO-142 access lifecycle: an IAM user or access key in the IaC fires.
+- REPO-143 organization sharing: a RAM resource share that does not set AllowExternalPrincipals
+  to false fires.
+
+Compute protection (SEC 6) runs by default (REPO-010 answers artifact scanning, REPO-037 and
+REPO-038 integrity and hardened images):
+
+- REPO-144 interactive access: an EC2 instance, launch template or Auto Scaling group with an SSH
+  key pair and no Session Manager access (AmazonSSMManagedInstanceCore, ssm:StartSession,
+  ssmSessionPermissions) in the IaC fires.
+- REPO-145 automated protection: compute in the IaC with no Inspector enablement and no SSM
+  association or patch baseline fires; it runs only with rules.org.
+
+Data lifecycle (SEC 7) runs by default (REPO-039 and REPO-040 answer classification):
+
+- REPO-146 retention: a data store in a file tagged with a classification (or in an app tagged
+  with one) with no lifecycle, TTL, backup retention or delete-after setting fires.
+
+Monitoring scope (REL 6) runs by default (REPO-045 to REPO-048 answer metrics, logs, responses
+and traces):
+
+- REPO-147 monitoring review: a data store in the IaC with no dated note named for a monitoring,
+  alarm or observability review, scope, coverage or inventory fires.
+
+Demand (REL 7) runs by default (CF-ASG-006 answers automation of scaling):
+
+- REPO-148 load test: the same search as REPO-017 for a load test in the builds, answering
+  REL07-BP04; no load test fires.
+
+Recovery (REL 11) runs by default (REPO-057 to REPO-059 answer health checks, failover and
+healing):
+
+- REPO-149 data plane recovery: an EC2 instance in the IaC and no Auto Scaling group, target group,
+  Route 53 health check or recovery alarm fires.
+
+Accelerators (SUS 5) run by default (SUST-002, SUST-005 and SUST-007 answer the other hardware
+practices):
+
+- REPO-150 accelerator utilization: the REPO-062 accelerators with no GPU or Neuron core
+  utilization alarm and no scheduled scaling or schedule fire; no accelerator passes.
+
+Data management (SUS 4) runs by default (REL-018, CF-EFS-003 and SUST-006 answer lifecycle and
+data movement):
+
+- REPO-151 classification: the REPO-039 search, answering SUS04-BP01.
+- REPO-152 access pattern: instance store (an ephemeral mapping or a storage-optimized or NVMe
+  instance type) with no S3, EFS, FSx, EBS, DynamoDB or database in the IaC fires.
+- REPO-153 elastic block storage: an EBS volume of 500 GiB or more with no Elastic Volumes
+  call, EBS autoscaling script or grow command fires.
+- REPO-154 unneeded data: a file with an S3 bucket and no lifecycle, TTL, retention or backup
+  delete-after fires.
+- REPO-155 shared storage: two or more EBS volumes and no EFS, FSx or S3 in the IaC fires.
+- REPO-156 needless backups: a file with an AWS Backup selection and a cache cluster or a bucket
+  named tmp, temp, scratch or cache fires.
+
+Operations health (OPS 9) runs by default (REPO-018 answers the workload KPIs):
+
+- REPO-157 operations metrics: a repo that holds IaC with no deployment, change failure, recovery
+  time, alarm count, error budget, burn rate or service level objective metric in the IaC or
+  the build configs fires.
+- REPO-158 operator status: CloudWatch alarms with no dashboard and no status topic fire.
+- REPO-159 operations review: a repo that holds IaC with no dated note named for an operations
+  review, report, metrics, health or retrospective fires.
+
+Cost of effort (COST 11) runs by default:
+
+- REPO-160 automated operations: an EC2 instance, launch template or Auto Scaling group with no
+  SSM association, patch baseline, maintenance window or Automation document and no CI or
+  pipeline fires.
+
 Reliability testing (REL 12) runs by default and reads the IaC and the builds REPO-009 reads
 (CI configs, inline buildspecs, CodeBuild projects and pipelines in the IaC, and the
 package.json scripts they run):
@@ -2549,6 +2626,20 @@ class LoadTestMissing(_RepoRule):
             f"Searched the build configs ({_listed(builds)}) and the package.json scripts "
             f"they run for a load test ({_LOAD_TOOL_NAMES}); found none"
         )]
+
+
+class LoadTestForDemand(LoadTestMissing):
+    """The same search as REPO-017, answering REL07-BP04 for the question on demand."""
+
+    id = "REPO-148"
+    title = "No load test shows that the workload adapts to changes in demand"
+    themes = ("resilience",)
+    recommendation = (
+        "Prove the workload scales with demand: run a load test in the pipeline (k6, "
+        "Artillery, Locust, JMeter or Distributed Load Testing on AWS) that ramps traffic "
+        "past the current peak against a pre-production environment, and watch the Auto "
+        "Scaling activity, the throttles and the error rates while it runs."
+    )
 
 
 # Observability (OPS 4): an application KPI (REPO-018), user experience telemetry on the edge
@@ -6160,6 +6251,757 @@ class SecurityServiceReviewMissing(_IncidentRule):
 
     def present(self, repo_path: Path) -> str | None:
         return security_service_review(repo_path)
+
+
+# Permissions (SEC 3): access requirements (REPO-140), continuous permission reduction
+# (REPO-141), access tied to a lifecycle (REPO-142) and sharing within the organization
+# (REPO-143). REPO-031 and REPO-032 answer guardrails and emergency access.
+_ACCESS_NAME = re.compile(
+    r"access[-_ ]?(?:requirements?|model|matrix|control[-_ ]?policy)|permissions?[-_ ]?model"
+    r"|iam[-_ ]?(?:design|model|requirements?)|rbac"
+)
+_ACCESS_HEADING = re.compile(
+    r"(?i).*\b(?:access requirements?|access model|permissions? model|access matrix"
+    r"|who (?:can|needs) access)\b.*"
+)
+_ACCESS_ANALYZER = re.compile(
+    r"AWS::AccessAnalyzer::Analyzer|resource\s+\"aws_accessanalyzer_analyzer\""
+    r"|\baccessanalyzer\.(?:Cfn)?Analyzer\("
+)
+_ACCESS_REVIEW_NAME = re.compile(
+    r"(?:access|permissions?|iam|privilege)[-_ ]?reviews?|least[-_ ]?privilege"
+    r"|unused[-_ ]?access"
+)
+_ACCESS_REVIEW_HEADING = re.compile(
+    r"(?i).*\b(?:access reviews?|permissions? reviews?|iam reviews?|least privilege"
+    r"|unused access)\b.*"
+)
+_LONG_LIVED_IDENTITY = re.compile(
+    r"[\"']?Type[\"']?\s*:\s*[\"']?AWS::IAM::(?:User|AccessKey)\b"
+    r"|resource\s+\"aws_iam_(?:user|access_key)\"\s+\""
+    r"|\biam\.(?:Cfn)?(?:User|AccessKey)\("
+)
+_RAM_SHARE = re.compile(
+    r"[\"']?Type[\"']?\s*:\s*[\"']?AWS::RAM::ResourceShare\b"
+    r"|resource\s+\"aws_ram_resource_share\"\s+\"|\bram\.CfnResourceShare\("
+)
+_RAM_ORG_ONLY = re.compile(
+    r"[\"']?(?:AllowExternalPrincipals|allow_external_principals|allowExternalPrincipals)[\"']?"
+    r"\s*[:=]\s*[\"']?(?:false|False)\b"
+)
+
+
+class AccessRequirementsMissing(_IncidentRule):
+    id = "REPO-140"
+    title = "No permissions boundary, per-component roles or access requirements note define access"
+    themes = ("identity",)
+    recommendation = (
+        "Write down who and what needs access, then encode it: give each workload component "
+        "its own IAM role (one role per function, task or service), cap the roles with a "
+        "permissions boundary, or keep an access requirements note (docs/access-model.md) "
+        "that lists each principal, the resources it reaches and why."
+    )
+    searched = (
+        "the IaC for a permissions boundary and for two or more IAM roles, and the notes for "
+        "a file or heading on access requirements or the access model"
+    )
+
+    def present(self, repo_path: Path) -> str | None:
+        roles = 0
+        first: str | None = None
+        for rel, text in iac_texts(repo_path):
+            if _BOUNDARY.search(text):
+                return rel
+            found = len(_ROLE_DECL.findall(text))
+            if found:
+                roles += found
+                first = first or rel
+        if roles >= 2:
+            return first
+        return _noted(repo_path, _ACCESS_NAME, _ACCESS_HEADING)
+
+
+class PermissionsNotReduced(_IncidentRule):
+    id = "REPO-141"
+    title = "No IAM Access Analyzer or dated access review reduces permissions over time"
+    themes = ("identity",)
+    recommendation = (
+        "Reduce permissions continuously: create an IAM Access Analyzer (an unused access "
+        "analyzer for the organization or account) and act on its findings, or keep a dated "
+        "access review note (docs/access-review-2026-03.md) that records which permissions "
+        "you removed."
+    )
+    searched = (
+        "the IaC for an IAM Access Analyzer, and the notes for a dated access or permission "
+        "review"
+    )
+
+    def present(self, repo_path: Path) -> str | None:
+        found = _in_iac_text(repo_path, _ACCESS_ANALYZER)
+        if found:
+            return found
+        for rel, text in note_texts(repo_path):
+            parts = rel.lower().split("/")
+            names = [*parts[:-1], parts[-1].rsplit(".", 1)[0]]
+            titled = any(_ACCESS_REVIEW_NAME.search(n) for n in names) or any(
+                _ACCESS_REVIEW_HEADING.fullmatch(h.group(2).strip())
+                for h in _HEADING.finditer(text)
+            )
+            if titled and _DATE.search(text):
+                return rel
+        return None
+
+
+class LongLivedIdentity(_RepoRule):
+    id = "REPO-142"
+    title = "The IaC creates a long-lived IAM user or access key"
+    category = "Security"
+    severity = "Medium"
+    themes = ("identity",)
+    recommendation = (
+        "Tie access to a lifecycle: give people access through IAM Identity Center (SSO) and "
+        "give workloads IAM roles that the pipeline or the service assumes, so credentials "
+        "expire. Remove the IAM user and access key; if one must stay, rotate the key and "
+        "alarm on its age."
+    )
+
+    def run(self, repo_path: Path, language: str = "typescript") -> List[Finding]:
+        for rel, text in iac_texts(repo_path):
+            match = _LONG_LIVED_IDENTITY.search(text)
+            if match:
+                return [self._finding(
+                    f"{rel} declares an IAM user or access key ({match.group(0).strip()[:60]}); "
+                    "its credentials do not expire. Searched the IaC for IAM users and access "
+                    "keys",
+                    file=rel,
+                    line=_line_of(text, match.start()),
+                )]
+        return []
+
+
+class OrgShareOpenToExternal(_RepoRule):
+    id = "REPO-143"
+    title = "A RAM resource share is not limited to the organization"
+    category = "Security"
+    severity = "Medium"
+    themes = ("identity",)
+    recommendation = (
+        "Share within the organization only: set AllowExternalPrincipals to false "
+        "(allow_external_principals = false in Terraform) on the AWS RAM resource share and "
+        "name the organization or its units as principals. Resource policies that share "
+        "outside RAM need an aws:PrincipalOrgID condition, never a wildcard principal."
+    )
+
+    def run(self, repo_path: Path, language: str = "typescript") -> List[Finding]:
+        for rel, text in iac_texts(repo_path):
+            match = _RAM_SHARE.search(text)
+            if match and not _RAM_ORG_ONLY.search(text):
+                return [self._finding(
+                    f"{rel} declares a RAM resource share and does not set AllowExternalPrincipals "
+                    "to false, so the share can reach principals outside the organization "
+                    "(the default is true)",
+                    file=rel,
+                    line=_line_of(text, match.start()),
+                )]
+        return []
+
+
+# Compute protection (SEC 6): interactive access (REPO-144) and automated protection
+# (REPO-145). REPO-010 answers scanning of artifacts (SEC06-BP01).
+_EC2_HOST = re.compile(
+    _cf_type(r"EC2::(?:Instance|LaunchTemplate)|AutoScaling::LaunchConfiguration")
+    + r"|resource\s+\"aws_(?:instance|launch_template|launch_configuration)\""
+    r"|\bec2\.(?:Cfn)?(?:Instance|LaunchTemplate)\(|\bautoscaling\.AutoScalingGroup\("
+)
+_KEY_PAIR = re.compile(
+    r"[\"']?KeyName[\"']?\s*:|\bkey_name\s*=|\bkeyName\s*:|\bkey_name\s*:"
+    r"|\bkey_pair\s*[=:]|\bkeyPair\s*:|\bKeyPair\.from\w+\("
+)
+_SESSION_MANAGER = re.compile(
+    r"AmazonSSMManagedInstanceCore|AmazonSSMManagedEC2InstanceDefaultPolicy"
+    r"|\bssm:StartSession\b|\bssmSessionPermissions\s*:\s*true\b"
+    r"|\bssm_session_permissions\s*=\s*True\b|\bSSMManagedInstanceCore\b"
+)
+_SSM_BASELINE = re.compile(
+    r"AWS::SSM::(?:Association|PatchBaseline)\b"
+    r"|resource\s+\"aws_ssm_(?:association|patch_baseline|default_patch_baseline)\""
+    r"|\bssm\.Cfn(?:Association|PatchBaseline)\("
+)
+
+
+class InteractiveAccessWithKeyPair(_RepoRule):
+    id = "REPO-144"
+    title = "EC2 instances use an SSH key pair and no Session Manager access"
+    category = "Security"
+    severity = "Medium"
+    themes = ("identity", "network-exposure")
+    recommendation = (
+        "Reduce interactive access: manage instances through AWS Systems Manager Session "
+        "Manager (attach AmazonSSMManagedInstanceCore to the instance role, or set "
+        "ssmSessionPermissions in CDK), drop the key pair and close port 22. Session "
+        "Manager logs each session to CloudTrail and S3 or CloudWatch Logs."
+    )
+
+    def run(self, repo_path: Path, language: str = "typescript") -> List[Finding]:
+        keyed: tuple[str, int] | None = None
+        for rel, text in iac_texts(repo_path):
+            if _SESSION_MANAGER.search(text):
+                return []
+            if keyed is None and _EC2_HOST.search(text):
+                key = _KEY_PAIR.search(text)
+                if key:
+                    keyed = (rel, _line_of(text, key.start()))
+        if keyed is None:
+            return []
+        return [self._finding(
+            f"{keyed[0]} gives EC2 instances an SSH key pair; searched the IaC for Session "
+            "Manager access (AmazonSSMManagedInstanceCore, ssm:StartSession, "
+            "ssmSessionPermissions); found none",
+            file=keyed[0],
+            line=keyed[1],
+        )]
+
+
+class ComputeProtectionNotAutomated(_RepoRule):
+    id = "REPO-145"
+    title = "Compute protection is not automated with Inspector or an SSM association"
+    category = "Security"
+    severity = "Low"
+    themes = ("security-baseline",)
+    recommendation = (
+        "Automate compute protection: enable Amazon Inspector for EC2, ECR and Lambda (the "
+        "aws_inspector2_enabler resource or an Inspector2 Enable custom resource), and "
+        "apply the hardening baseline with an SSM State Manager association or a patch "
+        "baseline so every instance is configured and patched without a person."
+    )
+
+    def run(self, repo_path: Path, language: str = "typescript") -> List[Finding]:
+        compute = _in_iac(repo_path, _COMPUTE)
+        if not compute:
+            return []
+        if _in_iac_text(repo_path, _INSPECTOR) or _in_iac_text(repo_path, _SSM_BASELINE):
+            return []
+        return [self._finding(
+            f"Runs {_named(compute)}; searched the IaC for Amazon Inspector enablement and "
+            "for an SSM association or patch baseline; found none",
+            file=next(iter(compute.values())),
+        )]
+
+
+# Data lifecycle (SEC 7): classified data with no retention rule (REPO-146). REPO-039 and
+# REPO-040 answer the classification scheme and the controls it implies.
+_RETENTION = re.compile(
+    r"LifecycleConfiguration|\baws_s3_bucket_lifecycle_configuration\b|\blifecycle_rule\b"
+    r"|\blifecycle_?[rR]ules\b|\blifecycleConfiguration\b"
+    r"|TimeToLiveSpecification|\btime_to_live_attribute\b|\btimeToLiveAttribute\b"
+    r"|\bttl\s*\{|\bttl\s*=\s*\{"
+    r"|[\"']?BackupRetentionPeriod[\"']?\s*:|\bbackup_retention_period\b|\bbackupRetention\b"
+    r"|\bRetentionInDays\b|\bretention_in_days\b|\bretentionPeriod\b|\bretention_period\b"
+    r"|\bDeleteAfterDays\b|\bdelete_after\b|\bdeleteAfter\b"
+)
+
+
+class ClassifiedDataWithoutLifecycle(_RepoRule):
+    id = "REPO-146"
+    title = "Data classified by tag has no lifecycle or retention rule"
+    category = "Security"
+    severity = "Low"
+    themes = ("data-protection",)
+    recommendation = (
+        "Manage the data's lifecycle at scale: give each classified store a retention rule "
+        "that follows its class (an S3 lifecycle rule that expires or transitions objects, a "
+        "DynamoDB TTL attribute, database backup retention, an AWS Backup plan with "
+        "DeleteAfterDays), so data is deleted when its purpose ends."
+    )
+
+    def run(self, repo_path: Path, language: str = "typescript") -> List[Finding]:
+        app = _app_classified(repo_path)
+        found: List[str] = []
+        for rel, text in iac_texts(repo_path):
+            kinds = [name for name, pattern in _DATA_STORES if pattern.search(text)]
+            if not kinds or _RETENTION.search(text):
+                continue
+            if app or _CLASS_TAG.search(text):
+                found.append(f"{kinds[0]} in {rel}")
+        if not found:
+            return []
+        return [self._finding(
+            f"Declares classified data in {_listed(found)} with no retention rule; searched for "
+            "an S3 lifecycle rule, a DynamoDB TTL, database backup retention and an AWS "
+            "Backup delete-after setting",
+            file=found[0].rsplit(" in ", 1)[-1],
+        )]
+
+
+# Monitoring scope (REL 6): a dated record of what the alarms cover (REPO-147). REPO-045 to
+# REPO-048 answer the metrics, the log analysis, the automated response and the traces.
+_MONITORING_REVIEW_NAME = re.compile(
+    r"(?:monitoring|alarms?|alerting|observability)[-_ ]?(?:review|scope|coverage|inventory)"
+)
+_MONITORING_REVIEW_HEADING = re.compile(
+    r"(?i).*\b(?:monitoring|alarm|alerting|observability) (?:review|scope|coverage|inventory)\b.*"
+)
+
+
+def monitoring_review(repo_path: Path) -> str | None:
+    """A dated note on the scope of monitoring: file name or heading, and a date."""
+    for rel, text in note_texts(repo_path):
+        parts = rel.lower().split("/")
+        names = [*parts[:-1], parts[-1].rsplit(".", 1)[0]]
+        titled = any(_MONITORING_REVIEW_NAME.search(n) for n in names) or any(
+            _MONITORING_REVIEW_HEADING.fullmatch(h.group(2).strip())
+            for h in _HEADING.finditer(text)
+        )
+        if titled and _DATE.search(text):
+            return rel
+    return None
+
+
+class MonitoringScopeNotReviewed(_RepoRule):
+    id = "REPO-147"
+    title = "No dated review record lists the stateful resources and their alarms"
+    category = "Reliability"
+    severity = "Low"
+    themes = ("observability",)
+    recommendation = (
+        "Review the monitoring scope on a schedule: keep a dated note "
+        "(docs/monitoring-review-2026-03.md) that lists each stateful resource, the alarms "
+        "that watch it, what changed since the last review and which gaps you accepted."
+    )
+
+    def run(self, repo_path: Path, language: str = "typescript") -> List[Finding]:
+        stores = _in_iac(repo_path, _DATA_STORES)
+        if not stores or monitoring_review(repo_path):
+            return []
+        return [self._finding(
+            f"Declares {_named(stores)}; searched the notes for a dated monitoring or alarm "
+            "review (a file or heading named for a monitoring review, scope, coverage or "
+            "inventory); found none",
+        )]
+
+
+# Recovery on the data plane (REL 11): a lone instance has no health check, scaling group or
+# target group to replace it (REPO-149). REPO-057 to REPO-059 answer health checks, failover
+# and healing.
+_EC2_INSTANCE = re.compile(
+    _cf_type(r"EC2::Instance") + r"|resource\s+\"aws_instance\""
+    r"|\bec2\.(?:Cfn)?Instance\("
+)
+_DATA_PLANE_RECOVERY = re.compile(
+    _cf_type(r"AutoScaling::AutoScalingGroup|Route53::HealthCheck"
+             r"|ElasticLoadBalancingV2::TargetGroup")
+    + r"|resource\s+\"aws_(?:autoscaling_group|route53_health_check|lb_target_group"
+    r"|alb_target_group)\""
+    r"|\bautoscaling\.(?:Cfn)?AutoScalingGroup\(|\broute53\.CfnHealthCheck\("
+    r"|\b(?:Application|Network)TargetGroup\(|\belbv2\.Cfn\w*TargetGroup\("
+    r"|\bec2\.Instance\([^)]*\bautoRecovery\b|\brecovery[-_ ]?alarm\b"
+    r"|\bec2:recover\b|\bautomate:[\w-]+:recover\b"
+)
+
+
+class ControlPlaneOnlyRecovery(_RepoRule):
+    id = "REPO-149"
+    title = "A lone EC2 instance has no data plane recovery"
+    category = "Reliability"
+    severity = "Low"
+    themes = ("resilience",)
+    recommendation = (
+        "Recover on the data plane: run instances in an Auto Scaling group behind a target "
+        "group with health checks, or add a Route 53 health check with failover, so a failed "
+        "instance is replaced without anyone calling a control plane API (a pipeline run, "
+        "RunInstances or a console action) in the middle of the incident."
+    )
+
+    def run(self, repo_path: Path, language: str = "typescript") -> List[Finding]:
+        instance = _in_iac_text(repo_path, _EC2_INSTANCE)
+        if not instance or _in_iac_text(repo_path, _DATA_PLANE_RECOVERY):
+            return []
+        return [self._finding(
+            f"{instance} runs an EC2 instance on its own; searched the IaC for an Auto Scaling "
+            "group, a load balancer target group, a Route 53 health check and an instance "
+            "recovery alarm; found none",
+            file=instance,
+        )]
+
+
+# Accelerators (SUS 5): accelerator instances with no utilization alarm or batch window
+# (REPO-150). REPO-062 answers the same instances for PERF 2.
+_BATCH_WINDOW = re.compile(
+    r"ScheduledAction|\baws_autoscaling_schedule\b|\bscheduled_action\b|\bscaleOnSchedule\("
+    r"|\bscale_on_schedule\("
+    r"|AWS::Scheduler::Schedule|\baws_scheduler_schedule\b"
+    r"|[\"']?ScheduleExpression[\"']?\s*:|\bschedule_expression\b"
+)
+
+
+class AcceleratorUtilizationUnchecked(_RepoRule):
+    id = "REPO-150"
+    title = "Accelerator instances have no utilization alarm or batch window"
+    category = "Sustainability"
+    severity = "Low"
+    themes = ("sustainability", "finops")
+    recommendation = (
+        "Use accelerators only while they work: alarm on GPU or NeuronCore utilization (the "
+        "CloudWatch agent with nvidia_gpu, or DCGM) and scale in when it is low, or run the "
+        "capacity on a schedule that matches the batch window so it is released when the "
+        "jobs end."
+    )
+
+    def run(self, repo_path: Path, language: str = "typescript") -> List[Finding]:
+        found = accelerators(repo_path)
+        if not found or accelerator_alarm(repo_path):
+            return []
+        if _in_iac_text(repo_path, _BATCH_WINDOW):
+            return []
+        places = [f"{kind} in {rel}" for kind, rel in found.items()]
+        return [self._finding(
+            f"Runs accelerated instances ({_listed(places, 4)}); searched the IaC for an alarm "
+            "on a GPU or Neuron core utilization metric, a scheduled scaling action and a "
+            "schedule; found none",
+            file=next(iter(found.values())),
+        )]
+
+
+# Data management (SUS 4): a classification tag (REPO-151), data that is not tied to an
+# instance store (REPO-152), block storage that grows (REPO-153), data that is deleted
+# (REPO-154), common data on shared storage (REPO-155) and no backup of what is cheap to
+# recreate (REPO-156). SUS04-BP03 and BP07 are answered by REL-018, CF-EFS-003 and SUST-006. REPO-154 answers
+# SUS04-BP05 for S3 with the same fact as COST-013, because a rule maps to one question.
+_INSTANCE_STORE = re.compile(
+    r"\bephemeral\d\b|[\"']?VirtualName[\"']?\s*:\s*[\"']?ephemeral|\bvirtual_name\s*=\s*\"ephemeral"
+    r"|\b(?:i3(?:en)?|i4[a-z]+|im4gn|is4gen|d3(?:en)?|d2|[mcrzx]\d+[a-z]*d[a-z]*)"
+    r"\.(?:\d*x?large|\d+xlarge|metal|medium)\b"
+)
+_PERSISTENT_STORE = re.compile(
+    _cf_type(r"EFS::FileSystem|FSx::FileSystem|S3::Bucket|DynamoDB::(?:Global)?Table"
+             r"|RDS::DB(?:Instance|Cluster)|EC2::Volume")
+    + r"|resource\s+\"aws_(?:efs_file_system|fsx_\w+|s3_bucket|dynamodb_table|db_instance"
+    r"|rds_cluster|ebs_volume)\""
+    r"|\b(?:efs|fsx|s3|dynamodb|rds)\.(?:Cfn)?\w+\(|\bec2\.(?:Cfn)?Volume\("
+)
+_VOLUME_DECL = _EBS_VOLUME
+_VOLUME_SIZE = re.compile(
+    r"(?<![A-Za-z])[\"']?(?:Size|VolumeSize)[\"']?\s*:\s*[\"']?(\d+)|\b(?:size|volume_size)\s*=\s*(\d+)"
+    r"|\b(?:size|volumeSize)\s*[:=]\s*(?:\w+\.)?Size\.gibibytes\((\d+)\)"
+)
+_VOLUME_GROWS = re.compile(
+    r"ebs[-_]autoscale|\bModifyVolume\b|\bmodify-volume\b|\bresize2fs\b|\bgrowpart\b"
+    r"|\bxfs_growfs\b|\bElasticVolumes\b"
+)
+_LARGE_VOLUME_GIB = 500
+_SHARED_STORAGE = re.compile(
+    _cf_type(r"EFS::FileSystem|FSx::FileSystem|S3::Bucket")
+    + r"|resource\s+\"aws_(?:efs_file_system|fsx_\w+|s3_bucket)\""
+    r"|\b(?:efs|fsx|s3)\.(?:Cfn)?\w+\("
+)
+_BACKUP_SELECTION = re.compile(
+    _cf_type(r"Backup::BackupSelection") + r"|resource\s+\"aws_backup_selection\""
+    r"|\bbackup\.(?:Cfn)?BackupSelection\(|\bplan\.addSelection\(|\bplan\.add_selection\("
+    r"|\bBackupResource\.from\w+\("
+)
+_RECREATABLE = re.compile(
+    _cf_type(r"ElastiCache::(?:CacheCluster|ReplicationGroup|ServerlessCache)")
+    + r"|resource\s+\"aws_elasticache_(?:cluster|replication_group|serverless_cache)\""
+    r"|\belasticache\.Cfn(?:CacheCluster|ReplicationGroup|ServerlessCache)\("
+    r"|\b(?:Bucket|bucket|BucketName|bucket_name|aws_s3_bucket\"\s+\")[\"']?\s*[:=(,]?\s*"
+    r"[\"']?[\w.${}-]*?(?<![a-z])(?:tmp|temp|scratch|cache)(?![a-z])[\w.${}-]*",
+    re.IGNORECASE,
+)
+
+
+class DataClassificationForSustainability(DataClassificationMissing):
+    """The REPO-039 search, answering SUS04-BP01 for the question on data management."""
+
+    id = "REPO-151"
+    title = "Data stores carry no classification tag to drive retention and storage tiers"
+    themes = ("sustainability",)
+    recommendation = (
+        "Classify the data so the footprint follows its value: tag every data store with its "
+        "class (DataClassification = public, internal, confidential or restricted), or tag "
+        "the whole app (CDK Tags.of(app), Terraform provider default_tags), and let the class "
+        "choose the retention, the storage tier and whether the data is backed up."
+    )
+
+
+class InstanceStoreOnlyData(_RepoRule):
+    id = "REPO-152"
+    title = "Instances keep their data on instance store with no durable store behind it"
+    category = "Sustainability"
+    severity = "Low"
+    themes = ("sustainability", "resilience")
+    recommendation = (
+        "Match the store to the access pattern: keep data that must last on a durable store "
+        "(S3, EFS, EBS, DynamoDB or a database) and use instance store only as scratch space "
+        "for data you can rebuild, so you do not copy or keep the same data on every host."
+    )
+
+    def run(self, repo_path: Path, language: str = "typescript") -> List[Finding]:
+        found: str | None = None
+        for rel, text in iac_texts(repo_path):
+            if _PERSISTENT_STORE.search(text):
+                return []
+            if found is None and _INSTANCE_STORE.search(text):
+                found = rel
+        if found is None:
+            return []
+        return [self._finding(
+            f"{found} gives instances an instance store (an ephemeral device mapping or a "
+            "storage-optimized or NVMe instance type); searched the IaC for S3, EFS, FSx, "
+            "EBS, DynamoDB and a database; found none",
+            file=found,
+        )]
+
+
+class BlockStorageFixedAndLarge(_RepoRule):
+    id = "REPO-153"
+    title = "A large EBS volume is a fixed size with nothing to grow it"
+    category = "Sustainability"
+    severity = "Low"
+    themes = ("sustainability", "finops")
+    recommendation = (
+        "Provision the storage the data needs today and grow it with demand: start the EBS "
+        "volume small and expand it with Elastic Volumes (ModifyVolume, or the amazon-ebs-"
+        "autoscale script) when it fills, or use EFS, which grows by itself, instead of "
+        "reserving a large volume up front."
+    )
+
+    def run(self, repo_path: Path, language: str = "typescript") -> List[Finding]:
+        found: tuple[str, int] | None = None
+        for rel, text in iac_texts(repo_path):
+            if _VOLUME_GROWS.search(text):
+                return []
+            if found is not None or not _VOLUME_DECL.search(text):
+                continue
+            for match in _VOLUME_SIZE.finditer(text):
+                size = int(next(g for g in match.groups() if g))
+                if size >= _LARGE_VOLUME_GIB:
+                    found = (rel, size)
+                    break
+        if found is None:
+            return []
+        return [self._finding(
+            f"{found[0]} declares an EBS volume of {found[1]} GiB; searched the IaC for "
+            "Elastic Volumes (ModifyVolume), an EBS autoscaling script and a file system "
+            "grow command; found none",
+            file=found[0],
+        )]
+
+
+class UnneededDataNotDeleted(_RepoRule):
+    id = "REPO-154"
+    title = "S3 buckets have no rule that deletes unneeded data"
+    category = "Sustainability"
+    severity = "Low"
+    themes = ("sustainability", "finops")
+    recommendation = (
+        "Delete what nobody needs: give each S3 bucket a lifecycle rule that expires old "
+        "objects and incomplete multipart uploads, so data does not accumulate and keep "
+        "consuming storage."
+    )
+
+    def run(self, repo_path: Path, language: str = "typescript") -> List[Finding]:
+        for rel, text in iac_texts(repo_path):
+            if _DATA_STORES[0][1].search(text) and not _RETENTION.search(text):
+                return [self._finding(
+                    f"{rel} declares an S3 bucket and sets no lifecycle expiration or "
+                    "retention; searched the file for an S3 lifecycle rule, a DynamoDB TTL, a log "
+                    "retention period and a backup delete-after; found none",
+                )]
+        return []
+
+
+class CommonDataCopiedPerInstance(_RepoRule):
+    id = "REPO-155"
+    title = "Several EBS volumes hold data and no shared file system or bucket does"
+    category = "Sustainability"
+    severity = "Low"
+    themes = ("sustainability", "finops")
+    recommendation = (
+        "Store common data once: put data that several instances read on EFS, FSx or S3 and "
+        "mount or fetch it, instead of attaching an EBS volume with its own copy to each "
+        "instance."
+    )
+
+    def run(self, repo_path: Path, language: str = "typescript") -> List[Finding]:
+        volumes: List[str] = []
+        for rel, text in iac_texts(repo_path):
+            if _SHARED_STORAGE.search(text):
+                return []
+            volumes.extend(rel for _ in _VOLUME_DECL.finditer(text))
+        if len(volumes) < 2:
+            return []
+        return [self._finding(
+            f"Declares {len(volumes)} EBS volumes ({_listed(sorted(set(volumes)))}); searched "
+            "the IaC for an EFS or FSx file system and an S3 bucket for common data; found none",
+            file=volumes[0],
+        )]
+
+
+class RecreatableDataBackedUp(_RepoRule):
+    id = "REPO-156"
+    title = "A backup plan covers a cache or a temporary bucket"
+    category = "Sustainability"
+    severity = "Low"
+    themes = ("sustainability", "finops")
+    recommendation = (
+        "Back up only what is hard to recreate: take the cache cluster and the temporary or "
+        "scratch bucket out of the AWS Backup selection, or select resources by a tag that "
+        "only durable data carries."
+    )
+
+    def run(self, repo_path: Path, language: str = "typescript") -> List[Finding]:
+        for rel, text in iac_texts(repo_path):
+            if not _BACKUP_SELECTION.search(text):
+                continue
+            match = _RECREATABLE.search(text)
+            if match:
+                return [self._finding(
+                    f"{rel} selects resources for AWS Backup and declares a cache or a "
+                    f"temporary bucket ({match.group(0).strip()[:50]}) that is cheap to "
+                    "recreate",
+                    file=rel,
+                    line=_line_of(text, match.start()),
+                )]
+        return []
+
+
+# Operations health (OPS 9): an operations metric (REPO-157), status for operators (REPO-158)
+# and a dated review of the operations metrics (REPO-159). REPO-018 answers the workload KPIs.
+_OPS_METRIC = re.compile(
+    r"Deployment(?:Count|Frequency)|\bDeploy(?:Count|Frequency)\b|\bdeploy_(?:count|frequency)\b"
+    r"|ChangeFailureRate|LeadTimeForChanges|MeanTimeTo(?:Recover|Restore)|\bMTT[RD]\b"
+    r"|[Ee]rror[-_ ]?[Bb]udget|[Bb]urn[-_ ]?[Rr]ate|\bAlarmCount\b|\bServiceLevelObjective\b"
+    r"|AWS::ApplicationSignals::ServiceLevelObjective|\baws_applicationsignals_\w+"
+    r"|\bdora[-_ ]?metrics?\b"
+)
+_OPS_REVIEW_NAME = re.compile(
+    r"(?:operations?|operational|ops)[-_ ]?(?:review|metrics|health|report)"
+    r"|(?:weekly|monthly)[-_ ]?ops|retrospective|\bretro\b"
+)
+_OPS_REVIEW_HEADING = re.compile(
+    r"(?i).*\b(?:operations? (?:review|metrics|health|report)|operational review"
+    r"|ops (?:review|metrics)|retrospective)\b.*"
+)
+
+
+class OpsMetricsMissing(_IncidentRule):
+    id = "REPO-157"
+    title = "No operations metric (deploys, alarms, error budget) is measured"
+    category = "Operational Excellence"
+    themes = ("observability",)
+    recommendation = (
+        "Measure how operations are doing, not only the workload: publish a metric for "
+        "deployments (a DeploymentCount or the DORA metrics from the pipeline), the alarm "
+        "count or time to recover, and define an SLO with an error budget (CloudWatch "
+        "Application Signals service level objective)."
+    )
+    searched = (
+        "the IaC and the build configs for a deployment, change failure, recovery time, alarm "
+        "count, error budget, burn rate or service level objective metric"
+    )
+
+    def present(self, repo_path: Path) -> str | None:
+        found = _in_iac_text(repo_path, _OPS_METRIC)
+        if found:
+            return found
+        for rel, text in sorted(build_texts(repo_path)):
+            if _OPS_METRIC.search(text):
+                return rel
+        return None
+
+
+class OperatorStatusMissing(_RepoRule):
+    id = "REPO-158"
+    title = "No dashboard or status topic shows operations status to operators"
+    category = "Operational Excellence"
+    severity = "Low"
+    themes = ("observability",)
+    recommendation = (
+        "Make operations status visible: add a CloudWatch dashboard with the alarms, "
+        "deployments and trends operators watch, or an SNS topic that posts status to the "
+        "operators' channel, and keep it where the team already looks."
+    )
+
+    def run(self, repo_path: Path, language: str = "typescript") -> List[Finding]:
+        alarms, _plans = event_signals(repo_path)
+        if not alarms:
+            return []
+        for _rel, text in iac_texts(repo_path):
+            if _DASHBOARD.search(text) or (
+                _MESSAGING.search(text) and _CUSTOMER_CHANNEL.search(text)
+            ):
+                return []
+        return [self._finding(
+            f"The IaC declares CloudWatch alarms ({_listed(alarms)}); searched it for a "
+            "CloudWatch dashboard and for an SNS, SES or Pinpoint resource that names a "
+            "status, customer or subscriber channel; found none",
+            file=alarms[0],
+        )]
+
+
+class OpsReviewMissing(_IncidentRule):
+    id = "REPO-159"
+    title = "No dated review of the operations metrics is in the repo"
+    category = "Operational Excellence"
+    themes = ("observability",)
+    recommendation = (
+        "Review the operations metrics on a schedule: keep a dated operations review "
+        "(docs/ops-review-2026-03.md) that lists the metrics, the trend, what you decided "
+        "to improve and who owns it, and run it weekly or monthly."
+    )
+    searched = (
+        "the notes for a dated file or heading named for an operations review, report, "
+        "metrics, health or retrospective"
+    )
+
+    def present(self, repo_path: Path) -> str | None:
+        for rel, text in note_texts(repo_path):
+            parts = rel.lower().split("/")
+            names = [*parts[:-1], parts[-1].rsplit(".", 1)[0]]
+            titled = any(_OPS_REVIEW_NAME.search(n) for n in names) or any(
+                _OPS_REVIEW_HEADING.fullmatch(h.group(2).strip())
+                for h in _HEADING.finditer(text)
+            )
+            if titled and _DATE.search(text):
+                return rel
+        return None
+
+
+# Cost of effort (COST 11): instances run by hand (REPO-160). REPO-002 answers the pipeline,
+# REPO-145 the SSM baseline for SEC 6.
+_SSM_OPERATIONS = re.compile(
+    _SSM_BASELINE.pattern
+    + r"|AWS::SSM::(?:MaintenanceWindow|Document)\b"
+    r"|resource\s+\"aws_ssm_(?:maintenance_window|document)\""
+    r"|\bssm\.Cfn(?:MaintenanceWindow|Document)\("
+)
+
+
+class OperationsNotAutomated(_RepoRule):
+    id = "REPO-160"
+    title = "EC2 instances have no SSM association and no pipeline automates operations"
+    category = "Cost"
+    severity = "Low"
+    themes = ("finops",)
+    recommendation = (
+        "Spend less effort on routine work: manage instances with Systems Manager (a State "
+        "Manager association, a maintenance window or an Automation runbook) and deploy and "
+        "change them from a pipeline, so patching, configuration and releases do not need a "
+        "person logged in."
+    )
+
+    def run(self, repo_path: Path, language: str = "typescript") -> List[Finding]:
+        hosts = _in_iac_text(repo_path, _EC2_HOST)
+        if not hosts or _in_iac_text(repo_path, _SSM_OPERATIONS):
+            return []
+        if not RepoPipelineMissing().run(repo_path):
+            return []
+        return [self._finding(
+            f"{hosts} runs EC2 instances; searched the IaC for an SSM association, patch "
+            "baseline, maintenance window or Automation document, and the repo for a CI "
+            "workflow or pipeline; found none",
+            file=hosts,
+        )]
 
 
 _COMPUTE_TRACING = _kinds(
@@ -11389,6 +12231,27 @@ REPO_RULES: List[Rule] = [
     QuotasNotManaged(), QuotaIncreaseNotAutomated(), FixedQuotaNotDesignedAround(),
     ControlObjectivesMissing(), SecurityScopeNotReduced(), ThreatModelMissing(),
     SecurityServiceReviewMissing(),
+    AccessRequirementsMissing(),
+    PermissionsNotReduced(),
+    LongLivedIdentity(),
+    OrgShareOpenToExternal(),
+    InteractiveAccessWithKeyPair(),
+    ComputeProtectionNotAutomated(),
+    ClassifiedDataWithoutLifecycle(),
+    MonitoringScopeNotReviewed(),
+    LoadTestForDemand(),
+    ControlPlaneOnlyRecovery(),
+    AcceleratorUtilizationUnchecked(),
+    DataClassificationForSustainability(),
+    InstanceStoreOnlyData(),
+    BlockStorageFixedAndLarge(),
+    UnneededDataNotDeleted(),
+    CommonDataCopiedPerInstance(),
+    RecreatableDataBackedUp(),
+    OpsMetricsMissing(),
+    OperatorStatusMissing(),
+    OpsReviewMissing(),
+    OperationsNotAutomated(),
     FaultInjectionMissing(), LoadTestMissing(),
     KpiMetricMissing(), EdgeTelemetryMissing(), DependencyTelemetryMissing(),
     DeployTestGateMissing(), AutomatedRollbackMissing(),
