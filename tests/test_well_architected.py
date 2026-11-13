@@ -206,6 +206,7 @@ def test_json_report_has_answers() -> None:
         "status": "not met",
         "findings": ["CF-RDS-001"],
         "not_checked": _unchecked("SEC 8"),
+        "needs_org": [],
     }
     assert data["findings"][0]["question"] == "SEC 8"
     assert data["findings"][0]["best_practices"] == ["SEC08-BP02"]
@@ -253,3 +254,24 @@ def test_v2_writes_the_answers_from_findings_without_asking(tmp_path: Path, monk
     for a in answers(findings, ctx.rules_run):
         assert f"- **{a.question.id}** {a.question.title} — **{a.status}**" in section
     assert all(f.question == question_of(f.id) for f in findings)
+
+
+def test_account_level_practices_say_they_are_off_unless_rules_org() -> None:
+    from aws_arch_agent.agent.v1 import ORG_RULE_IDS
+
+    default = [r.id for r in ALL_RULES if r.id not in ORG_RULE_IDS]
+    by_id = {a.question.id: a for a in answers([], default)}
+    # SEC 6: SEC06-BP05 is answered only by the account-level REPO-145.
+    sec6 = by_id["SEC 6"]
+    assert sec6.needs_org == ("SEC06-BP05",) and sec6.not_checked == ("SEC06-BP05",)
+    assert sec6.reason() == "1 of 5 best practices off unless rules.org is on"
+    assert sec6.to_dict()["needs_org"] == ["SEC06-BP05"]
+    # With the account-level rules on, nothing in SEC 6 is waiting for them.
+    on = {a.question.id: a for a in answers([], [r.id for r in ALL_RULES])}
+    assert on["SEC 6"].needs_org == () and on["SEC 6"].not_checked == ()
+
+
+def test_a_practice_with_no_rule_run_is_not_checked_not_needs_org() -> None:
+    items = {a.question.id: a for a in answers([], [])}
+    assert items["SEC 6"].not_checked and not items["SEC 6"].needs_org == items["SEC 6"].not_checked
+    assert "not checked" in items["SEC 6"].reason()
