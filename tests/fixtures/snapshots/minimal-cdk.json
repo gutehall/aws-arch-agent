@@ -257,5 +257,26 @@
     "file": null,
     "line": null,
     "evidence": "Holds IaC (CDK: 2 files); searched the CI configs and the IaC for a pull request trigger, a merge request or a CodePipeline manual approval, and the repo for an issue or pull request template; found none"
+  },
+  {
+    "id": "REPO-169",
+    "severity": "Low",
+    "file": null,
+    "line": null,
+    "evidence": "Holds IaC (CDK: 2 files); searched the IaC for an Incident Manager plan or response plan, and the notes for a file or heading on escalation; found none"
+  },
+  {
+    "id": "REPO-170",
+    "severity": "Low",
+    "file": null,
+    "line": null,
+    "evidence": "Holds IaC (CDK: 2 files); searched the IaC for an SNS subscription, an AWS Chatbot channel or an on-call rotation, and the notes for a file or heading on on-call, alerting, notifications or communications; found none"
+  },
+  {
+    "id": "REPO-171",
+    "severity": "Low",
+    "file": null,
+    "line": null,
+    "evidence": "Holds IaC (CDK: 2 files); searched the notes for a file or heading on operations ownership, culture, sponsorship, a team charter or an operating model; found none"
   }
 ]

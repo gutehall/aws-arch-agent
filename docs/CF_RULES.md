@@ -4,7 +4,7 @@ This document provides a comprehensive list of all rules checked by AWS Arch Age
 
 ## Overview
 
-AWS Arch Agent checks **347 static analysis rules** and **283 template checks** across all 6 AWS Well-Architected Framework pillars. 139 of the 347 CDK rules (40%) have a template check, so they also run for CloudFormation, Terraform and synthesised CDK. [COVERAGE.md](COVERAGE.md) gives the reason for each of the others.
+AWS Arch Agent checks **350 static analysis rules** and **283 template checks** across all 6 AWS Well-Architected Framework pillars. 139 of the 350 CDK rules (40%) have a template check, so they also run for CloudFormation, Terraform and synthesised CDK. [COVERAGE.md](COVERAGE.md) gives the reason for each of the others.
 
 ## Static Analysis Rules (V1 & V2 Modes)
 
@@ -257,7 +257,7 @@ These rules run on your CDK TypeScript/Python code and execute in both V1 and V2
 - REPO-148: No load test shows that the workload adapts to changes in demand
 - REPO-149: A lone EC2 instance has no data plane recovery
 
-### Operational Excellence (57 rules)
+### Operational Excellence (60 rules)
 
 **Logging:**
 - OPS-001: CloudTrail not enabled
@@ -338,6 +338,9 @@ These rules run on your CDK TypeScript/Python code and execute in both V1 and V2
 - REPO-166: No Incident Manager contact or note names who owns operations activities
 - REPO-167: No CODEOWNERS file, escalation plan or ownership note says who owns what
 - REPO-168: No pull request check, manual approval or request template shows how to ask for a change
+- REPO-169: No escalation plan or note says who to turn to when the first responder cannot fix it
+- REPO-170: No chat channel, subscription, on-call schedule or note tells operators what is wrong
+- REPO-171: No ownership note says how the team is sponsored, empowered, trained and staffed
 
 ### Performance Efficiency (28 rules)
 
@@ -1333,6 +1336,9 @@ Every rule has one or more themes, which cut across pillars: `finops`, `security
 | REPO-166 | observability |
 | REPO-167 | observability |
 | REPO-168 | observability |
+| REPO-169 | observability |
+| REPO-170 | observability |
+| REPO-171 | observability |
 | SEC-001 | identity |
 | SEC-002 | identity |
 | SEC-003 | network-exposure |

@@ -15,7 +15,7 @@ Which CDK rules have a template check, and which AWS Foundational Security Best 
 
 ## CDK rules
 
-347 rules: 132 covered, 7 partial, 10 account, 5 cdk-only, 25 advice, 168 repo.
+350 rules: 132 covered, 7 partial, 10 account, 5 cdk-only, 25 advice, 171 repo.
 
 | Rule | Title | Template check | Status | Note |
 | -- | -- | -- | -- | -- |
@@ -366,6 +366,9 @@ Which CDK rules have a template check, and which AWS Foundational Security Best 
 | REPO-166 | No Incident Manager contact or note names who owns operations activities |  | `repo` | Fires on the same gap as REPO-125, for OPS02-BP03: the repo holds IaC and neither the IaC (Incident Manager contacts, plans or rotations) nor a note on contacts, on-call, escalation or responders exists. |
 | REPO-167 | No CODEOWNERS file, escalation plan or ownership note says who owns what |  | `repo` | Fires when the repo holds IaC and has no CODEOWNERS file with an owner, no Incident Manager contact or plan in the IaC, and no note named or headed for ownership or responsibilities. |
 | REPO-168 | No pull request check, manual approval or request template shows how to ask for a change |  | `repo` | Fires when the repo holds IaC and neither a CI config nor the IaC has a pull request trigger, a merge request or a CodePipeline manual approval, and the repo has no issue or pull request template. |
+| REPO-169 | No escalation plan or note says who to turn to when the first responder cannot fix it |  | `repo` | Fires when the repo holds IaC and neither the IaC (an Incident Manager plan or response plan) nor a note named or headed for escalation exists. |
+| REPO-170 | No chat channel, subscription, on-call schedule or note tells operators what is wrong |  | `repo` | Fires when the repo holds IaC and neither the IaC (an SNS subscription, an AWS Chatbot channel or an on-call rotation) nor a note named or headed for on-call, alerting, notifications or communications exists. |
+| REPO-171 | No ownership note says how the team is sponsored, empowered, trained and staffed |  | `repo` | Fires when the repo holds IaC and no note named or headed for operations ownership, culture, sponsorship, a team charter or an operating model exists. |
 
 ## FSBP controls
 

@@ -7277,6 +7277,93 @@ class ChangeRequestPathMissing(_RepoRule):
         )]
 
 
+# Culture (OPS 3): escalation (REPO-169), the operator channel (REPO-170) and one note that
+# says how the team is sponsored, empowered, trained and staffed (REPO-171).
+_ESCALATION_IN_IAC = re.compile(
+    _cf_type(r"SSMContacts::Plan") + r"|resource\s+\"aws_ssmcontacts_plan\""
+    r"|\bssmcontacts\.CfnPlan\(|" + _RESPONSE_PLAN.pattern
+)
+_ESCALATION_NAME = re.compile(r"escalat(?:e|es|ion|ions)")
+_ESCALATION_HEADING = re.compile(r"(?i).*\b(?:escalat(?:e|es|ion|ions)|escalation path)\b.*")
+
+
+class EscalationMissing(_NoteRule):
+    id = "REPO-169"
+    title = "No escalation plan or note says who to turn to when the first responder cannot fix it"
+    note_name = _ESCALATION_NAME
+    note_heading = _ESCALATION_HEADING
+    iac = _ESCALATION_IN_IAC
+    recommendation = (
+        "Make escalation normal: define an Incident Manager engagement plan with a second "
+        "stage (AWS::SSMContacts::Plan), or keep an escalation note that says after how long "
+        "and to whom an alarm moves up, and that asking for help early is expected."
+    )
+    searched = (
+        "the IaC for an Incident Manager plan or response plan, and the notes for a file or "
+        "heading on escalation"
+    )
+
+
+_CHANNEL_IN_IAC = re.compile(
+    _cf_type(r"Chatbot::\w+|SSMContacts::Rotation|SNS::Subscription")
+    + r"|resource\s+\"aws_(?:chatbot_\w+|ssmcontacts_rotation|sns_topic_subscription)\""
+    r"|\b(?:chatbot\.\w+|ssmcontacts\.CfnRotation|sns\.Subscription|subs\.\w+Subscription)\("
+    r"|\.addSubscription\(|\.add_subscription\("
+)
+_CHANNEL_NAME = re.compile(
+    r"on[-_ ]?call|communications?|comms|channels?|alerting|notifications?|paging|pager"
+)
+_CHANNEL_HEADING = re.compile(
+    r"(?i).*\b(?:on-?call|communications?|alerting|notifications?|paging|status updates?"
+    r"|operator channel)\b.*"
+)
+
+
+class OperatorChannelMissing(_NoteRule):
+    id = "REPO-170"
+    title = "No chat channel, subscription, on-call schedule or note tells operators what is wrong"
+    note_name = _CHANNEL_NAME
+    note_heading = _CHANNEL_HEADING
+    iac = _CHANNEL_IN_IAC
+    recommendation = (
+        "Tell the operators in a place they watch: subscribe the team to the alarm topic, "
+        "send alarms to chat with AWS Chatbot, and define an on-call rotation "
+        "(AWS::SSMContacts::Rotation), or keep a note that names the channel and says what an "
+        "alert must contain to be actionable."
+    )
+    searched = (
+        "the IaC for an SNS subscription, an AWS Chatbot channel or an on-call rotation, and "
+        "the notes for a file or heading on on-call, alerting, notifications or communications"
+    )
+
+
+_CULTURE_NAME = re.compile(
+    r"ops[-_ ]?(?:ownership|culture|model)|operations?[-_ ]?(?:ownership|culture|model)"
+    r"|team[-_ ]?(?:culture|charter|norms|health)|culture|sponsor(?:ship)?|charter"
+)
+_CULTURE_HEADING = re.compile(
+    r"(?i).*\b(?:culture|executive sponsor(?:ship)?|sponsor(?:ship)?|team charter"
+    r"|operating model|team norms|skills and training|team (?:growth|staffing))\b.*"
+)
+
+
+class OperationsCultureMissing(_NoteRule):
+    id = "REPO-171"
+    title = "No ownership note says how the team is sponsored, empowered, trained and staffed"
+    note_name = _CULTURE_NAME
+    note_heading = _CULTURE_HEADING
+    recommendation = (
+        "Write one operations ownership note (docs/ops-ownership.md) that names the executive "
+        "sponsor, what the team may do on its own when an outcome is at risk, how it "
+        "experiments, how people keep their skills current and how the team is staffed for "
+        "the workload."
+    )
+    searched = (
+        "the notes for a file or heading on operations ownership, culture, sponsorship, a "
+        "team charter or an operating model"
+    )
+
+
 _COMPUTE_TRACING = _kinds(
     ("Lambda active tracing",
      r"[\"']?Tracing[\"']?\s*:\s*[\"']?Active\b"
@@ -12569,4 +12656,5 @@ REPO_RULES: List[Rule] = [
     DataAccessPatternMismatch(),
     CustomerNeedsMissing(), GovernanceControlsMissing(), ThreatLandscapeMissing(), TradeoffsUnrecorded(),
     ProcedureOwnerMissing(), ActivityOwnerMissing(), OwnershipMechanismMissing(), ChangeRequestPathMissing(),
+    EscalationMissing(), OperatorChannelMissing(), OperationsCultureMissing(),
 ]
