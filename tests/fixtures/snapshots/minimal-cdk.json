@@ -201,5 +201,19 @@
     "file": null,
     "line": null,
     "evidence": "Searched the repo for a build to run a load test (a CI config, or a CodeBuild buildspec or pipeline in the IaC); found none"
+  },
+  {
+    "id": "REPO-157",
+    "severity": "Low",
+    "file": null,
+    "line": null,
+    "evidence": "Holds IaC (CDK: 2 files); searched the IaC and the build configs for a deployment, change failure, recovery time, alarm count, error budget, burn rate or service level objective metric; found none"
+  },
+  {
+    "id": "REPO-159",
+    "severity": "Low",
+    "file": null,
+    "line": null,
+    "evidence": "Holds IaC (CDK: 2 files); searched the notes for a dated file or heading named for an operations review, report, metrics, health or retrospective; found none"
   }
 ]

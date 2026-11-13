@@ -272,6 +272,29 @@ practices):
 - REPO-150 accelerator utilization: the REPO-062 accelerators with no GPU or Neuron core
   utilization alarm and no scheduled scaling or schedule fire; no accelerator passes.
 
+Data management (SUS 4) runs by default (REL-018, CF-EFS-003 and SUST-006 answer lifecycle and
+data movement):
+
+- REPO-151 classification: the REPO-039 search, answering SUS04-BP01.
+- REPO-152 access pattern: instance store (an ephemeral mapping or a storage-optimized or NVMe
+  instance type) with no S3, EFS, FSx, EBS, DynamoDB or database in the IaC fires.
+- REPO-153 elastic block storage: an EBS volume of 500 GiB or more with no Elastic Volumes
+  call, EBS autoscaling script or grow command fires.
+- REPO-154 unneeded data: a file with an S3 bucket and no lifecycle, TTL, retention or backup
+  delete-after fires.
+- REPO-155 shared storage: two or more EBS volumes and no EFS, FSx or S3 in the IaC fires.
+- REPO-156 needless backups: a file with an AWS Backup selection and a cache cluster or a bucket
+  named tmp, temp, scratch or cache fires.
+
+Operations health (OPS 9) runs by default (REPO-018 answers the workload KPIs):
+
+- REPO-157 operations metrics: a repo that holds IaC with no deployment, change failure, recovery
+  time, alarm count, error budget, burn rate or service level objective metric in the IaC or
+  the build configs fires.
+- REPO-158 operator status: CloudWatch alarms with no dashboard and no status topic fire.
+- REPO-159 operations review: a repo that holds IaC with no dated note named for an operations
+  review, report, metrics, health or retrospective fires.
+
 Reliability testing (REL 12) runs by default and reads the IaC and the builds REPO-009 reads
 (CI configs, inline buildspecs, CodeBuild projects and pipelines in the IaC, and the
 package.json scripts they run):
@@ -6634,6 +6657,310 @@ class AcceleratorUtilizationUnchecked(_RepoRule):
         )]
 
 
+# Data management (SUS 4): a classification tag (REPO-151), data that is not tied to an
+# instance store (REPO-152), block storage that grows (REPO-153), data that is deleted
+# (REPO-154), common data on shared storage (REPO-155) and no backup of what is cheap to
+# recreate (REPO-156). SUS04-BP03 and BP07 are answered by REL-018, CF-EFS-003 and SUST-006.
+_INSTANCE_STORE = re.compile(
+    r"\bephemeral\d\b|[\"']?VirtualName[\"']?\s*:\s*[\"']?ephemeral|\bvirtual_name\s*=\s*\"ephemeral"
+    r"|\b(?:i3(?:en)?|i4[a-z]+|im4gn|is4gen|d3(?:en)?|d2|[mcrzx]\d+[a-z]*d[a-z]*)"
+    r"\.(?:\d*x?large|\d+xlarge|metal|medium)\b"
+)
+_PERSISTENT_STORE = re.compile(
+    _cf_type(r"EFS::FileSystem|FSx::FileSystem|S3::Bucket|DynamoDB::(?:Global)?Table"
+             r"|RDS::DB(?:Instance|Cluster)|EC2::Volume")
+    + r"|resource\s+\"aws_(?:efs_file_system|fsx_\w+|s3_bucket|dynamodb_table|db_instance"
+    r"|rds_cluster|ebs_volume)\""
+    r"|\b(?:efs|fsx|s3|dynamodb|rds)\.(?:Cfn)?\w+\(|\bec2\.(?:Cfn)?Volume\("
+)
+_VOLUME_DECL = _EBS_VOLUME
+_VOLUME_SIZE = re.compile(
+    r"[\"']?(?:Size|VolumeSize)[\"']?\s*:\s*[\"']?(\d+)|\b(?:size|volume_size)\s*=\s*(\d+)"
+    r"|\b(?:size|volumeSize)\s*[:=]\s*(?:\w+\.)?Size\.gibibytes\((\d+)\)"
+)
+_VOLUME_GROWS = re.compile(
+    r"ebs[-_]autoscale|\bModifyVolume\b|\bmodify-volume\b|\bresize2fs\b|\bgrowpart\b"
+    r"|\bxfs_growfs\b|\bElasticVolumes\b"
+)
+_LARGE_VOLUME_GIB = 500
+_SHARED_STORAGE = re.compile(
+    _cf_type(r"EFS::FileSystem|FSx::FileSystem|S3::Bucket")
+    + r"|resource\s+\"aws_(?:efs_file_system|fsx_\w+|s3_bucket)\""
+    r"|\b(?:efs|fsx|s3)\.(?:Cfn)?\w+\("
+)
+_BACKUP_SELECTION = re.compile(
+    _cf_type(r"Backup::BackupSelection") + r"|resource\s+\"aws_backup_selection\""
+    r"|\bbackup\.(?:Cfn)?BackupSelection\(|\bplan\.addSelection\(|\bplan\.add_selection\("
+    r"|\bBackupResource\.from\w+\("
+)
+_RECREATABLE = re.compile(
+    _cf_type(r"ElastiCache::(?:CacheCluster|ReplicationGroup|ServerlessCache)")
+    + r"|resource\s+\"aws_elasticache_(?:cluster|replication_group|serverless_cache)\""
+    r"|\belasticache\.Cfn(?:CacheCluster|ReplicationGroup|ServerlessCache)\("
+    r"|\b(?:Bucket|bucket|BucketName|bucket_name|aws_s3_bucket\"\s+\")[\"']?\s*[:=(,]?\s*"
+    r"[\"']?[\w.${}-]*(?:tmp|temp|scratch|cache)[\w.${}-]*",
+    re.IGNORECASE,
+)
+
+
+class DataClassificationForSustainability(DataClassificationMissing):
+    """The REPO-039 search, answering SUS04-BP01 for the question on data management."""
+
+    id = "REPO-151"
+    title = "Data stores carry no classification tag to drive retention and storage tiers"
+    themes = ("sustainability",)
+    recommendation = (
+        "Classify the data so the footprint follows its value: tag every data store with its "
+        "class (DataClassification = public, internal, confidential or restricted), or tag "
+        "the whole app (CDK Tags.of(app), Terraform provider default_tags), and let the class "
+        "choose the retention, the storage tier and whether the data is backed up."
+    )
+
+
+class InstanceStoreOnlyData(_RepoRule):
+    id = "REPO-152"
+    title = "Instances keep their data on instance store with no durable store behind it"
+    category = "Sustainability"
+    severity = "Low"
+    themes = ("sustainability", "resilience")
+    recommendation = (
+        "Match the store to the access pattern: keep data that must last on a durable store "
+        "(S3, EFS, EBS, DynamoDB or a database) and use instance store only as scratch space "
+        "for data you can rebuild, so you do not copy or keep the same data on every host."
+    )
+
+    def run(self, repo_path: Path, language: str = "typescript") -> List[Finding]:
+        found: str | None = None
+        for rel, text in iac_texts(repo_path):
+            if _PERSISTENT_STORE.search(text):
+                return []
+            if found is None and _INSTANCE_STORE.search(text):
+                found = rel
+        if found is None:
+            return []
+        return [self._finding(
+            f"{found} gives instances an instance store (an ephemeral device mapping or a "
+            "storage-optimized or NVMe instance type); searched the IaC for S3, EFS, FSx, "
+            "EBS, DynamoDB and a database; found none",
+            file=found,
+        )]
+
+
+class BlockStorageFixedAndLarge(_RepoRule):
+    id = "REPO-153"
+    title = "A large EBS volume is a fixed size with nothing to grow it"
+    category = "Sustainability"
+    severity = "Low"
+    themes = ("sustainability", "finops")
+    recommendation = (
+        "Provision the storage the data needs today and grow it with demand: start the EBS "
+        "volume small and expand it with Elastic Volumes (ModifyVolume, or the amazon-ebs-"
+        "autoscale script) when it fills, or use EFS, which grows by itself, instead of "
+        "reserving a large volume up front."
+    )
+
+    def run(self, repo_path: Path, language: str = "typescript") -> List[Finding]:
+        found: tuple[str, int] | None = None
+        for rel, text in iac_texts(repo_path):
+            if _VOLUME_GROWS.search(text):
+                return []
+            if found is not None or not _VOLUME_DECL.search(text):
+                continue
+            for match in _VOLUME_SIZE.finditer(text):
+                size = int(next(g for g in match.groups() if g))
+                if size >= _LARGE_VOLUME_GIB:
+                    found = (rel, size)
+                    break
+        if found is None:
+            return []
+        return [self._finding(
+            f"{found[0]} declares an EBS volume of {found[1]} GiB; searched the IaC for "
+            "Elastic Volumes (ModifyVolume), an EBS autoscaling script and a file system "
+            "grow command; found none",
+            file=found[0],
+        )]
+
+
+class UnneededDataNotDeleted(_RepoRule):
+    id = "REPO-154"
+    title = "S3 buckets and log groups have no rule that deletes unneeded data"
+    category = "Sustainability"
+    severity = "Low"
+    themes = ("sustainability", "finops")
+    recommendation = (
+        "Delete what nobody needs: give each S3 bucket a lifecycle rule that expires old "
+        "objects and incomplete multipart uploads, and set a retention period on each "
+        "CloudWatch log group, so data does not accumulate and keep consuming storage."
+    )
+
+    def run(self, repo_path: Path, language: str = "typescript") -> List[Finding]:
+        for rel, text in iac_texts(repo_path):
+            if _DATA_STORES[0][1].search(text) and not _RETENTION.search(text):
+                return [self._finding(
+                    f"{rel} declares an S3 bucket and sets no lifecycle expiration or "
+                    "retention; searched the file for an S3 lifecycle rule, a log retention "
+                    "period, a DynamoDB TTL and a backup delete-after; found none",
+                    file=rel,
+                )]
+        return []
+
+
+class CommonDataCopiedPerInstance(_RepoRule):
+    id = "REPO-155"
+    title = "Several EBS volumes hold data and no shared file system or bucket does"
+    category = "Sustainability"
+    severity = "Low"
+    themes = ("sustainability", "finops")
+    recommendation = (
+        "Store common data once: put data that several instances read on EFS, FSx or S3 and "
+        "mount or fetch it, instead of attaching an EBS volume with its own copy to each "
+        "instance."
+    )
+
+    def run(self, repo_path: Path, language: str = "typescript") -> List[Finding]:
+        volumes: List[str] = []
+        for rel, text in iac_texts(repo_path):
+            if _SHARED_STORAGE.search(text):
+                return []
+            volumes.extend(rel for _ in _VOLUME_DECL.finditer(text))
+        if len(volumes) < 2:
+            return []
+        return [self._finding(
+            f"Declares {len(volumes)} EBS volumes ({_listed(sorted(set(volumes)))}); searched "
+            "the IaC for an EFS or FSx file system and an S3 bucket for common data; found none",
+            file=volumes[0],
+        )]
+
+
+class RecreatableDataBackedUp(_RepoRule):
+    id = "REPO-156"
+    title = "A backup plan covers a cache or a temporary bucket"
+    category = "Sustainability"
+    severity = "Low"
+    themes = ("sustainability", "finops")
+    recommendation = (
+        "Back up only what is hard to recreate: take the cache cluster and the temporary or "
+        "scratch bucket out of the AWS Backup selection, or select resources by a tag that "
+        "only durable data carries."
+    )
+
+    def run(self, repo_path: Path, language: str = "typescript") -> List[Finding]:
+        for rel, text in iac_texts(repo_path):
+            if not _BACKUP_SELECTION.search(text):
+                continue
+            match = _RECREATABLE.search(text)
+            if match:
+                return [self._finding(
+                    f"{rel} selects resources for AWS Backup and declares a cache or a "
+                    f"temporary bucket ({match.group(0).strip()[:50]}) that is cheap to "
+                    "recreate",
+                    file=rel,
+                    line=_line_of(text, match.start()),
+                )]
+        return []
+
+
+# Operations health (OPS 9): an operations metric (REPO-157), status for operators (REPO-158)
+# and a dated review of the operations metrics (REPO-159). REPO-018 answers the workload KPIs.
+_OPS_METRIC = re.compile(
+    r"Deployment(?:Count|Frequency)|\bDeploy(?:Count|Frequency)\b|\bdeploy_(?:count|frequency)\b"
+    r"|ChangeFailureRate|LeadTimeForChanges|MeanTimeTo(?:Recover|Restore)|\bMTT[RD]\b"
+    r"|[Ee]rror[-_ ]?[Bb]udget|[Bb]urn[-_ ]?[Rr]ate|\bAlarmCount\b|\bServiceLevelObjective\b"
+    r"|AWS::ApplicationSignals::ServiceLevelObjective|\baws_applicationsignals_\w+"
+    r"|\bdora[-_ ]?metrics?\b"
+)
+_OPS_REVIEW_NAME = re.compile(
+    r"(?:operations?|operational|ops)[-_ ]?(?:review|metrics|health|report)"
+    r"|(?:weekly|monthly)[-_ ]?ops|retrospective|\bretro\b"
+)
+_OPS_REVIEW_HEADING = re.compile(
+    r"(?i).*\b(?:operations? (?:review|metrics|health|report)|operational review"
+    r"|ops (?:review|metrics)|retrospective)\b.*"
+)
+
+
+class OpsMetricsMissing(_IncidentRule):
+    id = "REPO-157"
+    title = "No operations metric (deploys, alarms, error budget) is measured"
+    category = "Operational Excellence"
+    themes = ("observability",)
+    recommendation = (
+        "Measure how operations are doing, not only the workload: publish a metric for "
+        "deployments (a DeploymentCount or the DORA metrics from the pipeline), the alarm "
+        "count or time to recover, and define an SLO with an error budget (CloudWatch "
+        "Application Signals service level objective)."
+    )
+    searched = (
+        "the IaC and the build configs for a deployment, change failure, recovery time, alarm "
+        "count, error budget, burn rate or service level objective metric"
+    )
+
+    def present(self, repo_path: Path) -> str | None:
+        found = _in_iac_text(repo_path, _OPS_METRIC)
+        if found:
+            return found
+        for rel, text in sorted(build_texts(repo_path)):
+            if _OPS_METRIC.search(text):
+                return rel
+        return None
+
+
+class OperatorStatusMissing(_RepoRule):
+    id = "REPO-158"
+    title = "No dashboard or status topic shows operations status to operators"
+    category = "Operational Excellence"
+    severity = "Low"
+    themes = ("observability",)
+    recommendation = (
+        "Make operations status visible: add a CloudWatch dashboard with the alarms, "
+        "deployments and trends operators watch, or an SNS topic that posts status to the "
+        "operators' channel, and keep it where the team already looks."
+    )
+
+    def run(self, repo_path: Path, language: str = "typescript") -> List[Finding]:
+        alarms, _plans = event_signals(repo_path)
+        if not alarms:
+            return []
+        for _rel, text in iac_texts(repo_path):
+            if _DASHBOARD.search(text) or (
+                _MESSAGING.search(text) and _CUSTOMER_CHANNEL.search(text)
+            ):
+                return []
+        return [self._finding(
+            f"The IaC declares CloudWatch alarms ({_listed(alarms)}); searched it for a "
+            "CloudWatch dashboard and for an SNS topic with a status name; found none",
+            file=alarms[0],
+        )]
+
+
+class OpsReviewMissing(_IncidentRule):
+    id = "REPO-159"
+    title = "No dated review of the operations metrics is in the repo"
+    category = "Operational Excellence"
+    themes = ("observability",)
+    recommendation = (
+        "Review the operations metrics on a schedule: keep a dated operations review "
+        "(docs/ops-review-2026-03.md) that lists the metrics, the trend, what you decided "
+        "to improve and who owns it, and run it weekly or monthly."
+    )
+    searched = (
+        "the notes for a dated file or heading named for an operations review, report, "
+        "metrics, health or retrospective"
+    )
+
+    def present(self, repo_path: Path) -> str | None:
+        for rel, text in note_texts(repo_path):
+            parts = rel.lower().split("/")
+            names = [*parts[:-1], parts[-1].rsplit(".", 1)[0]]
+            titled = any(_OPS_REVIEW_NAME.search(n) for n in names) or any(
+                _OPS_REVIEW_HEADING.fullmatch(h.group(2).strip())
+                for h in _HEADING.finditer(text)
+            )
+            if titled and _DATE.search(text):
+                return rel
+        return None
+
+
 _COMPUTE_TRACING = _kinds(
     ("Lambda active tracing",
      r"[\"']?Tracing[\"']?\s*:\s*[\"']?Active\b"
@@ -11872,6 +12199,15 @@ REPO_RULES: List[Rule] = [
     LoadTestForDemand(),
     ControlPlaneOnlyRecovery(),
     AcceleratorUtilizationUnchecked(),
+    DataClassificationForSustainability(),
+    InstanceStoreOnlyData(),
+    BlockStorageFixedAndLarge(),
+    UnneededDataNotDeleted(),
+    CommonDataCopiedPerInstance(),
+    RecreatableDataBackedUp(),
+    OpsMetricsMissing(),
+    OperatorStatusMissing(),
+    OpsReviewMissing(),
     FaultInjectionMissing(), LoadTestMissing(),
     KpiMetricMissing(), EdgeTelemetryMissing(), DependencyTelemetryMissing(),
     DeployTestGateMissing(), AutomatedRollbackMissing(),

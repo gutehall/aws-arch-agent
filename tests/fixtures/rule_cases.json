@@ -1671,5 +1671,59 @@
     "negative_py": "answer = 42",
     "positive_ts": "new ec2.Instance(this, 'Gpu', { instanceType: new ec2.InstanceType('g5.xlarge'), machineImage, vpc });",
     "positive_py": "ec2.Instance(self, 'Gpu', instance_type=ec2.InstanceType('g5.xlarge'), machine_image=image, vpc=vpc)"
+  },
+  "REPO-151": {
+    "negative_ts": "const answer = 42;",
+    "negative_py": "answer = 42",
+    "positive_ts": "new s3.Bucket(this, 'Bucket');",
+    "positive_py": "s3.Bucket(self, 'Bucket')"
+  },
+  "REPO-152": {
+    "negative_ts": "const answer = 42;",
+    "negative_py": "answer = 42",
+    "positive_ts": "new ec2.Instance(this, 'Web', { instanceType: new ec2.InstanceType('i3.large'), machineImage, vpc });",
+    "positive_py": "ec2.Instance(self, 'Web', instance_type=ec2.InstanceType('i3.large'), machine_image=image, vpc=vpc)"
+  },
+  "REPO-153": {
+    "negative_ts": "const answer = 42;",
+    "negative_py": "answer = 42",
+    "positive_ts": "new ec2.Volume(this, 'Data', { availabilityZone: 'a', size: cdk.Size.gibibytes(1000) });",
+    "positive_py": "ec2.Volume(self, 'Data', availability_zone='a', size=cdk.Size.gibibytes(1000))"
+  },
+  "REPO-154": {
+    "negative_ts": "const answer = 42;",
+    "negative_py": "answer = 42",
+    "positive_ts": "new s3.Bucket(this, 'Bucket');",
+    "positive_py": "s3.Bucket(self, 'Bucket')"
+  },
+  "REPO-155": {
+    "negative_ts": "const answer = 42;",
+    "negative_py": "answer = 42",
+    "positive_ts": "new ec2.Volume(this, 'A', { availabilityZone: 'a', size: cdk.Size.gibibytes(50) });\nnew ec2.Volume(this, 'B', { availabilityZone: 'a', size: cdk.Size.gibibytes(50) });",
+    "positive_py": "ec2.Volume(self, 'A', availability_zone='a', size=cdk.Size.gibibytes(50))\nec2.Volume(self, 'B', availability_zone='a', size=cdk.Size.gibibytes(50))"
+  },
+  "REPO-156": {
+    "negative_ts": "const answer = 42;",
+    "negative_py": "answer = 42",
+    "positive_ts": "plan.addSelection('Sel', { resources: [backup.BackupResource.fromConstruct(cache)] });\nnew elasticache.CfnCacheCluster(this, 'Cache', { cacheNodeType: 'cache.t3.micro', engine: 'redis', numCacheNodes: 1 });",
+    "positive_py": "plan.add_selection('Sel', resources=[backup.BackupResource.from_construct(cache)])\nelasticache.CfnCacheCluster(self, 'Cache', cache_node_type='cache.t3.micro', engine='redis', num_cache_nodes=1)"
+  },
+  "REPO-157": {
+    "negative_ts": "const answer = 42;",
+    "negative_py": "answer = 42",
+    "positive_ts": "new s3.Bucket(this, 'Bucket');",
+    "positive_py": "s3.Bucket(self, 'Bucket')"
+  },
+  "REPO-159": {
+    "negative_ts": "const answer = 42;",
+    "negative_py": "answer = 42",
+    "positive_ts": "new s3.Bucket(this, 'Bucket');",
+    "positive_py": "s3.Bucket(self, 'Bucket')"
+  },
+  "REPO-158": {
+    "negative_ts": "const answer = 42;",
+    "negative_py": "answer = 42",
+    "positive_ts": "new cloudwatch.Alarm(this, 'Errors', { metric, threshold: 1, evaluationPeriods: 1 });",
+    "positive_py": "cloudwatch.Alarm(self, 'Errors', metric=metric, threshold=1, evaluation_periods=1)"
   }
 }

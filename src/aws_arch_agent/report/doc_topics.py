@@ -2081,6 +2081,66 @@ TOPICS: dict[str, tuple[str, str, str, str]] = {
         "Well-Architected SUS05-BP04: Optimize your use of hardware-based compute accelerators",
         "/wellarchitected/latest/sustainability-pillar/sus_sus_hardware_a5.html",
     ),
+    "sustainability_data_classification": (
+        "Data Classification whitepaper: leveraging AWS to support data classification",
+        "/whitepapers/latest/data-classification/leveraging-aws-cloud-to-support-data-classification.html",
+        "Well-Architected SUS04-BP01: Implement a data classification policy",
+        "/wellarchitected/latest/sustainability-pillar/sus_sus_data_a2.html",
+    ),
+    "storage_access_patterns": (
+        "Amazon EC2: instance store",
+        "/AWSEC2/latest/UserGuide/InstanceStorage.html",
+        "Well-Architected SUS04-BP02: Use technologies that support data access and storage "
+        "patterns",
+        "/wellarchitected/latest/sustainability-pillar/sus_sus_data_a3.html",
+    ),
+    "elastic_block_storage": (
+        "Amazon EBS: Elastic Volumes",
+        "/ebs/latest/userguide/ebs-modify-volume.html",
+        "Well-Architected SUS04-BP04: Use elasticity and automation to expand block storage or "
+        "file system",
+        "/wellarchitected/latest/sustainability-pillar/sus_sus_data_a5.html",
+    ),
+    "remove_unneeded_data": (
+        "Amazon S3: managing your storage lifecycle",
+        "/AmazonS3/latest/userguide/object-lifecycle-mgmt.html",
+        "Well-Architected SUS04-BP05: Remove unneeded or redundant data",
+        "/wellarchitected/latest/sustainability-pillar/sus_sus_data_a6.html",
+    ),
+    "shared_storage": (
+        "Amazon EFS: what is Amazon Elastic File System",
+        "/efs/latest/ug/whatisefs.html",
+        "Well-Architected SUS04-BP06: Use shared file systems or storage to access common data",
+        "/wellarchitected/latest/sustainability-pillar/sus_sus_data_a7.html",
+    ),
+    "recreatable_data_backups": (
+        "AWS Backup: what is AWS Backup",
+        "/aws-backup/latest/devguide/whatisbackup.html",
+        "Well-Architected SUS04-BP08: Back up data only when difficult to recreate",
+        "/wellarchitected/latest/sustainability-pillar/sus_sus_data_a9.html",
+    ),
+    "operations_metrics": (
+        "CloudWatch: using metrics",
+        "/AmazonCloudWatch/latest/monitoring/working_with_metrics.html",
+        "Well-Architected OPS09-BP01: Measure operations goals and KPIs with metrics",
+        "/wellarchitected/latest/operational-excellence-pillar/"
+        "ops_operations_health_measure_ops_goals_kpis.html",
+    ),
+    "operations_status": (
+        "CloudWatch: using dashboards",
+        "/AmazonCloudWatch/latest/monitoring/CloudWatch_Dashboards.html",
+        "Well-Architected OPS09-BP02: Communicate status and trends to ensure visibility into "
+        "operation",
+        "/wellarchitected/latest/operational-excellence-pillar/"
+        "ops_operations_health_communicate_status_trends.html",
+    ),
+    "operations_review": (
+        "AWS DevOps Guidance",
+        "/wellarchitected/latest/devops-guidance/devops-guidance.html",
+        "Well-Architected OPS09-BP03: Review operations metrics and prioritize improvement",
+        "/wellarchitected/latest/operational-excellence-pillar/"
+        "ops_operations_health_review_ops_metrics_prioritize_improvement.html",
+    ),
     "repo_tests": (
         "AWS CDK: testing constructs",
         "/cdk/v2/guide/testing.html",
@@ -2812,6 +2872,15 @@ RULE_TOPICS: dict[str, str] = {
     "REPO-148": "demand_load_testing",
     "REPO-149": "data_plane_recovery",
     "REPO-150": "accelerator_sustainability",
+    "REPO-151": "sustainability_data_classification",
+    "REPO-152": "storage_access_patterns",
+    "REPO-153": "elastic_block_storage",
+    "REPO-154": "remove_unneeded_data",
+    "REPO-155": "shared_storage",
+    "REPO-156": "recreatable_data_backups",
+    "REPO-157": "operations_metrics",
+    "REPO-158": "operations_status",
+    "REPO-159": "operations_review",
     "REPO-016": "fault_injection",
     "REPO-017": "load_testing",
     "REPO-018": "app_kpi_metrics",
