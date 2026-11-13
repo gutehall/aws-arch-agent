@@ -135,6 +135,18 @@ Idempotent workers (REL 4) runs by default:
   AbortController fires when the IaC declares no SQS queue, Kinesis stream, Lambda event
   source or schedule. One queue or schedule anywhere passes every call.
 
+Event management (OPS 10) runs by default and fires only when the IaC declares a CloudWatch
+alarm (or, for REPO-109 and REPO-112, an Incident Manager response plan):
+
+- REPO-109 priority: an alarm or response plan file that names a severity, priority, impact
+  or a Sev1 to Sev5 or P1 to P5 label passes.
+- REPO-110 customer communication: an SNS, SES or Pinpoint resource in a file that names
+  customers, subscribers or a status page passes.
+- REPO-111 event status: a CloudWatch dashboard with an alarm status or alarm widget passes.
+- REPO-112 automated response: an alarm action that runs automation, an EventBridge rule on
+  alarm state changes with a target, or an SSM Automation target or response-plan action
+  passes. A scaling policy alone does not.
+
 Reliability testing (REL 12) runs by default and reads the IaC and the builds REPO-009 reads
 (CI configs, inline buildspecs, CodeBuild projects and pipelines in the IaC, and the
 package.json scripts they run):
@@ -4907,6 +4919,168 @@ class AlarmResponseMissing(_RepoRule):
             "Auto Scaling policy, an alarm action that runs automation or a Lambda function, "
             "and an EventBridge rule on alarm state changes; found none",
             file=next(iter(compute.values())),
+        )]
+
+
+# Event management (OPS 10): priority (REPO-109), customer communication (REPO-110), an event
+# status dashboard (REPO-111) and automated responses (REPO-112).
+_RESPONSE_PLAN = re.compile(
+    _cf_type(r"SSMIncidents::ResponsePlan") + r"|resource\s+\"aws_ssmincidents_response_plan\""
+    r"|\bssmincidents\.(?:Cfn)?ResponsePlan\("
+)
+_EVENT_SEVERITY = re.compile(
+    r"\b(?:[Ss]everity|SEVERITY|[Pp]riority|PRIORITY|[Ii]mpact|[Ss]ev[-_]?[1-5]|P[1-5])\b"
+)
+_CUSTOMER_CHANNEL = re.compile(
+    r"customer|status[-_ ]?page|statuspage|service[-_ ]?status|public[-_ ]?status|subscriber",
+    re.IGNORECASE,
+)
+_MESSAGING = re.compile(
+    _cf_type(r"SNS::Topic|Pinpoint::\w+|SES::\w+|PinpointEmail::\w+|SMS-?Voice\w*::\w+")
+    + r"|resource\s+\"aws_(?:sns_topic|pinpoint_\w+|ses_\w+|sesv2_\w+)\""
+    r"|\b(?:sns|pinpoint|ses|sesv2)\.(?:Cfn)?\w+\("
+)
+_ALARM_WIDGET = re.compile(
+    r"\bAlarmStatusWidget\b|\bAlarmWidget\b|\balarm_status_widget\b"
+    r"|[\"']?type[\"']?\s*[:=]\s*\\?[\"']alarm\\?[\"']"
+)
+_RESPONSE_AUTOMATION = re.compile(
+    r"automation-definition|StartAutomationExecution|\b[Ss]sm_?[Aa]utomation\b"
+    r"|RunCommandParameters"
+)
+
+
+def event_signals(repo_path: Path) -> tuple[list[str], list[str]]:
+    """(files with a CloudWatch alarm, files with an Incident Manager response plan)."""
+    alarms: list[str] = []
+    plans: list[str] = []
+    for rel, text in iac_texts(repo_path):
+        if _TYPED_ALARM.search(text):
+            alarms.append(rel)
+        if _RESPONSE_PLAN.search(text):
+            plans.append(rel)
+    return alarms, plans
+
+
+class EventSeverityMissing(_RepoRule):
+    id = "REPO-109"
+    title = "Alarms and response plans carry no severity"
+    severity = "Low"
+    themes = ("observability",)
+    recommendation = (
+        "Rank events by business impact so responders start with the worst. Give each alarm "
+        "a severity or priority in its name, description or tags, and set the impact of each "
+        "Incident Manager response plan, so a page for a checkout outage is not "
+        "indistinguishable from a warning about disk usage."
+    )
+
+    def run(self, repo_path: Path, language: str = "typescript") -> List[Finding]:
+        alarms, plans = event_signals(repo_path)
+        if not alarms and not plans:
+            return []
+        files = set(alarms) | set(plans)
+        for rel, text in iac_texts(repo_path):
+            if rel in files and _EVENT_SEVERITY.search(text):
+                return []
+        what = []
+        if alarms:
+            what.append(f"CloudWatch alarms ({_listed(alarms)})")
+        if plans:
+            what.append(f"Incident Manager response plans ({_listed(plans)})")
+        return [self._finding(
+            f"The IaC declares {' and '.join(what)}; searched those files for a severity, "
+            "priority or impact; found none",
+            file=(alarms or plans)[0],
+        )]
+
+
+class CustomerCommunicationMissing(_RepoRule):
+    id = "REPO-110"
+    title = "No customer communication channel is separate from the operator alarms"
+    severity = "Low"
+    themes = ("observability",)
+    recommendation = (
+        "Plan how customers hear about a service-impacting event: a status page, or an SNS "
+        "topic, SES or Pinpoint channel that customers or their account teams subscribe to, "
+        "kept apart from the topic that pages operators."
+    )
+
+    def run(self, repo_path: Path, language: str = "typescript") -> List[Finding]:
+        alarms, _plans = event_signals(repo_path)
+        if not alarms:
+            return []
+        for rel, text in iac_texts(repo_path):
+            if _MESSAGING.search(text) and _CUSTOMER_CHANNEL.search(text):
+                return []
+        return [self._finding(
+            f"The IaC declares CloudWatch alarms ({_listed(alarms)}); searched it for an SNS "
+            "topic, SES or Pinpoint resource with a customer, subscriber or status-page "
+            "name; found none",
+            file=alarms[0],
+        )]
+
+
+class EventStatusDashboardMissing(_RepoRule):
+    id = "REPO-111"
+    title = "No dashboard shows the state of the alarms"
+    severity = "Low"
+    themes = ("observability",)
+    recommendation = (
+        "Show event status in one place: add a CloudWatch dashboard with an alarm status "
+        "widget (or an alarm widget) for the workload's alarms, separate from the dashboard "
+        "of workload metrics, so responders and stakeholders see which alarms are firing."
+    )
+
+    def run(self, repo_path: Path, language: str = "typescript") -> List[Finding]:
+        alarms, _plans = event_signals(repo_path)
+        if not alarms:
+            return []
+        dashboards = 0
+        for rel, text in iac_texts(repo_path):
+            if not _DASHBOARD.search(text):
+                continue
+            dashboards += 1
+            if any(_ALARM_WIDGET.search(part) for part in _dashboard_texts(rel, text)):
+                return []
+        seen = (f"found {dashboards} dashboard file(s) with no alarm status widget"
+                if dashboards else "found no CloudWatch dashboard")
+        return [self._finding(
+            f"The IaC declares CloudWatch alarms ({_listed(alarms)}); searched it for a "
+            f"dashboard with an alarm status widget; {seen}",
+            file=alarms[0],
+        )]
+
+
+class EventResponseNotAutomated(_RepoRule):
+    id = "REPO-112"
+    title = "Events start no automated response beyond a notification"
+    severity = "Medium"
+    themes = ("observability",)
+    recommendation = (
+        "Automate the first response to an event: route alarm state changes through an "
+        "EventBridge rule to an SSM Automation runbook or a Lambda function, point an alarm "
+        "action at an SSM OpsItem or automation, or give the Incident Manager response plan "
+        "an SSM Automation action, so a notification is not the only thing that happens."
+    )
+
+    def run(self, repo_path: Path, language: str = "typescript") -> List[Finding]:
+        alarms, plans = event_signals(repo_path)
+        if not alarms and not plans:
+            return []
+        responses = {
+            kind: rel for kind, rel in automated_responses(repo_path).items()
+            if kind != "scaling policy"
+        }
+        if responses:
+            return []
+        if any(_RESPONSE_AUTOMATION.search(text) for _, text in iac_texts(repo_path)):
+            return []
+        return [self._finding(
+            f"The IaC declares {'alarms' if alarms else 'response plans'} "
+            f"({_listed(alarms or plans)}); searched it for an alarm action that runs "
+            "automation, an EventBridge rule on alarm state changes, and an SSM Automation "
+            "target or response-plan action; found none",
+            file=(alarms or plans)[0],
         )]
 
 
@@ -10113,6 +10287,8 @@ REPO_RULES: List[Rule] = [
     DependencyScanMissing(), ArtifactScanMissing(), CentralPackageRepoMissing(),
     QuotaAlarmMissing(), FailoverHeadroomMissing(), VpcCidrOverlap(),
     IdempotencyMissing(), DependencyUrlHardcoded(), SyncCallNoTimeoutOrQueue(),
+    EventSeverityMissing(), CustomerCommunicationMissing(), EventStatusDashboardMissing(),
+    EventResponseNotAutomated(),
     FaultInjectionMissing(), LoadTestMissing(),
     KpiMetricMissing(), EdgeTelemetryMissing(), DependencyTelemetryMissing(),
     DeployTestGateMissing(), AutomatedRollbackMissing(),

@@ -4,7 +4,7 @@ This document provides a comprehensive list of all rules checked by AWS Arch Age
 
 ## Overview
 
-AWS Arch Agent checks **287 static analysis rules** and **283 template checks** across all 6 AWS Well-Architected Framework pillars. 139 of the 287 CDK rules (48%) have a template check, so they also run for CloudFormation, Terraform and synthesised CDK. [COVERAGE.md](COVERAGE.md) gives the reason for each of the others.
+AWS Arch Agent checks **291 static analysis rules** and **283 template checks** across all 6 AWS Well-Architected Framework pillars. 139 of the 291 CDK rules (48%) have a template check, so they also run for CloudFormation, Terraform and synthesised CDK. [COVERAGE.md](COVERAGE.md) gives the reason for each of the others.
 
 ## Static Analysis Rules (V1 & V2 Modes)
 
@@ -223,7 +223,7 @@ These rules run on your CDK TypeScript/Python code and execute in both V1 and V2
 - REPO-058: No availability target on the user-facing edge
 - REPO-059: No one is notified when availability drops
 
-### Operational Excellence (38 rules)
+### Operational Excellence (42 rules)
 
 **Logging:**
 - OPS-001: CloudTrail not enabled
@@ -281,6 +281,12 @@ These rules run on your CDK TypeScript/Python code and execute in both V1 and V2
 - REPO-028: Workload logs are not analyzed
 - REPO-029: Workload traces are not analyzed
 - REPO-030: Dashboards show no workload metric
+
+**Event management (repo-level, OPS 10):**
+- REPO-109: Alarms and response plans carry no severity
+- REPO-110: No customer communication channel is separate from the operator alarms
+- REPO-111: No dashboard shows the state of the alarms
+- REPO-112: Events start no automated response beyond a notification
 
 ### Performance Efficiency (28 rules)
 
@@ -1210,6 +1216,10 @@ Every rule has one or more themes, which cut across pillars: `finops`, `security
 | REPO-106 | sustainability, finops |
 | REPO-107 | resilience |
 | REPO-108 | resilience |
+| REPO-109 | observability |
+| REPO-110 | observability |
+| REPO-111 | observability |
+| REPO-112 | observability |
 | SEC-001 | identity |
 | SEC-002 | identity |
 | SEC-003 | network-exposure |

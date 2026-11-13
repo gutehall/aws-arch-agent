@@ -203,9 +203,9 @@ ALL_RULES = [
     ResourceNamingConvention(),
     CdkAspectsMissing(),
     CdkContextMissing(),
-    # Operational Excellence (38 rules)
-    # These 26, and REPO-001 to REPO-003, REPO-018 to REPO-022 and REPO-027 to REPO-030 in
-    # REPO_RULES.
+    # Operational Excellence (42 rules)
+    # These 26, and REPO-001 to REPO-003, REPO-018 to REPO-022, REPO-027 to REPO-030 and
+    # REPO-109 to REPO-112 in REPO_RULES.
     CloudTrailMissing(),
     VpcFlowLogsMissing(),
     XRayTracingMissing(),

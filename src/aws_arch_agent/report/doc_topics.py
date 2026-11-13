@@ -1820,6 +1820,31 @@ TOPICS: dict[str, tuple[str, str, str, str]] = {
         "Well-Architected OPS10-BP04: Define escalation paths",
         "/wellarchitected/latest/operational-excellence-pillar/ops_event_response_define_escalation_paths.html",
     ),
+    "event_priority": (
+        "Incident Manager: response plans",
+        "/incident-manager/latest/userguide/response-plans.html",
+        "Well-Architected OPS10-BP03: Prioritize operational events based on business impact",
+        "/wellarchitected/latest/operational-excellence-pillar/ops_event_response_prioritize_events.html",
+    ),
+    "customer_communication": (
+        "Amazon SNS: topics and subscribers",
+        "/sns/latest/dg/welcome.html",
+        "Well-Architected OPS10-BP05: Define a customer communication plan for "
+        "service-impacting events",
+        "/wellarchitected/latest/operational-excellence-pillar/ops_event_response_push_notify.html",
+    ),
+    "alarm_status_dashboard": (
+        "CloudWatch: alarm widgets on a dashboard",
+        "/AmazonCloudWatch/latest/monitoring/CloudWatch_Dashboard_Widgets.html",
+        "Well-Architected OPS10-BP06: Communicate status through dashboards",
+        "/wellarchitected/latest/operational-excellence-pillar/ops_event_response_dashboards.html",
+    ),
+    "event_automation": (
+        "Systems Manager Automation",
+        "/systems-manager/latest/userguide/systems-manager-automation.html",
+        "Well-Architected OPS10-BP07: Automate responses to events",
+        "/wellarchitected/latest/operational-excellence-pillar/ops_event_response_auto_event_response.html",
+    ),
     "repo_tests": (
         "AWS CDK: testing constructs",
         "/cdk/v2/guide/testing.html",
@@ -2509,6 +2534,10 @@ RULE_TOPICS: dict[str, str] = {
     "REPO-015": "idempotent_workers",
     "REPO-107": "dependency_endpoints",
     "REPO-108": "constant_work",
+    "REPO-109": "event_priority",
+    "REPO-110": "customer_communication",
+    "REPO-111": "alarm_status_dashboard",
+    "REPO-112": "event_automation",
     "REPO-016": "fault_injection",
     "REPO-017": "load_testing",
     "REPO-018": "app_kpi_metrics",

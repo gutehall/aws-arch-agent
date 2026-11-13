@@ -874,6 +874,30 @@
     "positive_ts": "const res = await fetch(process.env.PAYMENTS_URL!);",
     "positive_py": "resp = requests.post(url, json=payload)"
   },
+  "REPO-109": {
+    "negative_ts": "new cloudwatch.Alarm(this, 'Sev2Errors', { alarmName: 'sev2-api-errors', metric, threshold: 1, evaluationPeriods: 1 });",
+    "negative_py": "cloudwatch.Alarm(self, 'Errors', alarm_name='sev2-api-errors', metric=metric, threshold=1, evaluation_periods=1)",
+    "positive_ts": "new cloudwatch.Alarm(this, 'Errors', { metric, threshold: 1, evaluationPeriods: 1 });",
+    "positive_py": "cloudwatch.Alarm(self, 'Errors', metric=metric, threshold=1, evaluation_periods=1)"
+  },
+  "REPO-110": {
+    "negative_ts": "new cloudwatch.Alarm(this, 'Errors', { metric, threshold: 1, evaluationPeriods: 1 });\nnew sns.Topic(this, 'CustomerStatus');",
+    "negative_py": "cloudwatch.Alarm(self, 'Errors', metric=metric, threshold=1, evaluation_periods=1)\nsns.Topic(self, 'StatusPageUpdates')",
+    "positive_ts": "new cloudwatch.Alarm(this, 'Errors', { metric, threshold: 1, evaluationPeriods: 1 });",
+    "positive_py": "cloudwatch.Alarm(self, 'Errors', metric=metric, threshold=1, evaluation_periods=1)"
+  },
+  "REPO-111": {
+    "negative_ts": "new cloudwatch.Alarm(this, 'Errors', { metric, threshold: 1, evaluationPeriods: 1 });\nnew cloudwatch.Dashboard(this, 'D', { widgets: [[new cloudwatch.AlarmStatusWidget({ alarms: [alarm] })]] });",
+    "negative_py": "cloudwatch.Alarm(self, 'Errors', metric=metric, threshold=1, evaluation_periods=1)\ncloudwatch.Dashboard(self, 'D', widgets=[[cloudwatch.AlarmStatusWidget(alarms=[alarm])]])",
+    "positive_ts": "new cloudwatch.Alarm(this, 'Errors', { metric, threshold: 1, evaluationPeriods: 1 });",
+    "positive_py": "cloudwatch.Alarm(self, 'Errors', metric=metric, threshold=1, evaluation_periods=1)"
+  },
+  "REPO-112": {
+    "negative_ts": "new cloudwatch.Alarm(this, 'Errors', { metric, threshold: 1, evaluationPeriods: 1 });\nnew events.Rule(this, 'R', { eventPattern: { detailType: ['CloudWatch Alarm State Change'] }, targets: [new targets.LambdaFunction(fn)] });",
+    "negative_py": "cloudwatch.Alarm(self, 'Errors', metric=metric, threshold=1, evaluation_periods=1)\nevents.Rule(self, 'R', event_pattern=events.EventPattern(detail_type=['CloudWatch Alarm State Change']), targets=[targets.LambdaFunction(fn)])",
+    "positive_ts": "new cloudwatch.Alarm(this, 'Errors', { metric, threshold: 1, evaluationPeriods: 1 });",
+    "positive_py": "cloudwatch.Alarm(self, 'Errors', metric=metric, threshold=1, evaluation_periods=1)"
+  },
   "REPO-016": {
     "negative_ts": "new fis.CfnExperimentTemplate(this, 'StopInstances', { description: 'stop one AZ', roleArn: role.roleArn, stopConditions: [{ source: 'aws:cloudwatch:alarm', value: alarm.alarmArn }], targets: {}, actions: {} });",
     "negative_py": "pipelines.ShellStep('Chaos', commands=['aws fis start-experiment --experiment-template-id EXT123'])",

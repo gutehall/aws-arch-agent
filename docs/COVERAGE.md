@@ -15,7 +15,7 @@ Which CDK rules have a template check, and which AWS Foundational Security Best 
 
 ## CDK rules
 
-287 rules: 132 covered, 7 partial, 10 account, 5 cdk-only, 25 advice, 108 repo.
+291 rules: 132 covered, 7 partial, 10 account, 5 cdk-only, 25 advice, 112 repo.
 
 | Rule | Title | Template check | Status | Note |
 | -- | -- | -- | -- | -- |
@@ -306,6 +306,10 @@ Which CDK rules have a template check, and which AWS Foundational Security Best 
 | REPO-106 | Storage is not matched to the data access pattern |  | `repo` | Fires on the same gap as REPO-063: production data kept only on instance volumes, instance store or a database engine run on the host, with no managed data store in the IaC. |
 | REPO-107 | Function code calls a hardcoded external URL |  | `repo` | A literal http(s) host in a requests, httpx, urlopen, fetch, axios or got call in Python, TypeScript or JavaScript outside tests. Local, link-local and AWS endpoints and URLs built from a variable do not fire. |
 | REPO-108 | Synchronous calls have no timeout, and no queue or schedule sits behind them |  | `repo` | Fires on a file with a synchronous HTTP call and no timeout or abort signal, when the IaC has no SQS queue, Kinesis stream, event source mapping or schedule. |
+| REPO-109 | Alarms and response plans carry no severity |  | `repo` | Fires when the IaC has a CloudWatch alarm or an Incident Manager response plan and no file with one names a severity, priority or impact. |
+| REPO-110 | No customer communication channel is separate from the operator alarms |  | `repo` | Fires when the IaC has alarms and no SNS, SES or Pinpoint resource in a file that names customers, subscribers or a status page. |
+| REPO-111 | No dashboard shows the state of the alarms |  | `repo` | Fires when the IaC has alarms and no dashboard with an alarm status or alarm widget. |
+| REPO-112 | Events start no automated response beyond a notification |  | `repo` | Fires when the IaC has alarms or response plans and no alarm action that runs automation, EventBridge rule on alarm state changes, or SSM Automation target. A scaling policy alone does not count. |
 
 ## FSBP controls
 
