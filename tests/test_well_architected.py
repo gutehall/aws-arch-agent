@@ -130,14 +130,15 @@ def test_answers_one_per_question_from_findings() -> None:
     assert list(by_id["SEC 8"].not_checked) == left
     expected = "1 finding" + (f"; {len(left)} of 4 best practices not checked" if left else "")
     assert by_id["SEC 8"].reason() == expected
-    # Nothing checks OPS 1, so it is not met even with no findings.
-    assert _unchecked("OPS 1")
-    assert not by_id["OPS 1"].met and not by_id["OPS 1"].findings
+    # No rule ran: OPS 1 is not met even with no findings.
+    idle = {a.question.id: a for a in answers([], [])}
+    assert not idle["OPS 1"].met and not idle["OPS 1"].findings
 
 
 def test_unchecked_best_practices_follow_the_mapping_not_the_list(monkeypatch) -> None:
     """A best practice missing from both tables is still not checked."""
     monkeypatch.setattr(wa_map, "NOT_CHECKED", frozenset())
+    monkeypatch.setattr(well_architected, "RULE_BEST_PRACTICES", {})
     assert not {a.question.id: a for a in answers([])}["OPS 1"].met
 
 

@@ -7004,6 +7004,154 @@ class OperationsNotAutomated(_RepoRule):
         )]
 
 
+# Priorities (OPS 1): the customers a workload serves (REPO-161), the governance and
+# compliance controls it follows (REPO-162), the threats it faces (REPO-163) and the
+# tradeoffs it recorded (REPO-164).
+
+
+def _note_having(
+    repo_path: Path, name: re.Pattern[str], heading: re.Pattern[str],
+    needs: re.Pattern[str] | None = None,
+) -> str | None:
+    """The first note named or headed for a topic whose text also matches needs."""
+    for rel, text in note_texts(repo_path):
+        parts = rel.lower().split("/")
+        names = [*parts[:-1], parts[-1].rsplit(".", 1)[0]]
+        titled = any(name.search(part) for part in names) or any(
+            heading.fullmatch(h.group(2).strip()) for h in _HEADING.finditer(text)
+        )
+        if titled and (needs is None or needs.search(text)):
+            return rel
+    return None
+
+
+class _NoteRule(_IncidentRule):
+    """An operations rule that fires on a repo that holds IaC when no note, and no IaC
+    resource, answers the practice."""
+
+    category = "Operational Excellence"
+    themes = ("observability",)
+    note_name: ClassVar[re.Pattern[str]]
+    note_heading: ClassVar[re.Pattern[str]]
+    note_needs: ClassVar[re.Pattern[str] | None] = None
+    iac: ClassVar[re.Pattern[str] | None] = None
+
+    def present(self, repo_path: Path) -> str | None:
+        found = _in_iac_text(repo_path, self.iac) if self.iac else None
+        return found or _note_having(
+            repo_path, self.note_name, self.note_heading, self.note_needs
+        )
+
+
+class CustomerNeedsMissing(_NoteRule):
+    id = "REPO-161"
+    title = "No note names the external and internal customers the workload serves"
+    note_name = re.compile(
+        r"customers?|stakeholders?|personas?|user[-_ ]?needs|business[-_ ]?(?:goals|priorities)"
+    )
+    note_heading = re.compile(
+        r"(?i).*\b(?:customers?|stakeholders?|personas?|users and needs|business priorities"
+        r"|business goals|requirements)\b.*"
+    )
+    recommendation = (
+        "Write down who the workload is for: a customers note (docs/customers.md or a "
+        "Stakeholders section in the README) that names the external customers, the internal "
+        "customers and teams, what each needs and which need comes first when they conflict."
+    )
+    searched = (
+        "the notes for a file or heading on customers, stakeholders, personas, user needs, "
+        "business goals or requirements"
+    )
+
+
+_GOVERNANCE_IN_IAC = re.compile(
+    _cf_type(r"Config::(?:Organization)?ConformancePack")
+    + r"|" + _cf_type(r"SecurityHub::Standard") + r"|" + _cf_type(r"Organizations::Policy")
+    + r"|resource\s+\"aws_(?:config_(?:organization_)?conformance_pack|organizations_policy"
+    r"|securityhub_standards_subscription)\""
+    r"|\b(?:config\.Cfn(?:Organization)?ConformancePack|securityhub\.CfnStandard"
+    r"|organizations\.CfnPolicy)\("
+)
+
+
+class GovernanceControlsMissing(_NoteRule):
+    id = "REPO-162"
+    title = "No conformance pack, Security Hub standard, SCP or compliance note names the controls"
+    category = "Operational Excellence"
+    note_name = re.compile(
+        r"compliance|governance|regulat(?:ion|ory)|standards?|controls?[-_ ]?framework"
+        r"|soc[-_ ]?2|pci|hipaa|gdpr|iso[-_ ]?27001"
+    )
+    note_heading = re.compile(
+        r"(?i).*\b(?:compliance|governance|regulatory|regulations?|standards? we follow"
+        r"|control framework|soc ?2|pci[- ]dss|hipaa|gdpr|iso ?27001)\b.*"
+    )
+    iac = _GOVERNANCE_IN_IAC
+    recommendation = (
+        "Make the rules the workload must follow explicit: define an AWS Config conformance "
+        "pack, a Security Hub standards subscription or a service control policy in the IaC "
+        "(this runs with rules.org, because these are usually account-level), or keep a "
+        "compliance note that names the standard (PCI DSS, SOC 2, HIPAA, GDPR, ISO 27001) and "
+        "the controls that answer it."
+    )
+    searched = (
+        "the IaC for a Config conformance pack, a Security Hub standard or an Organizations "
+        "policy, and the notes for a file or heading on compliance, governance or a standard"
+    )
+
+
+_THREAT_IN_IAC = re.compile(
+    _cf_type(r"GuardDuty::Detector") + r"|" + _cf_type(r"SecurityHub::Hub")
+    + r"|resource\s+\"aws_(?:guardduty_detector|securityhub_account)\""
+    r"|\b(?:guardduty\.CfnDetector|securityhub\.CfnHub)\("
+)
+
+
+class ThreatLandscapeMissing(_NoteRule):
+    id = "REPO-163"
+    title = "Neither GuardDuty, Security Hub nor a threat model covers the threats to the workload"
+    category = "Operational Excellence"
+    themes = ("security-baseline",)
+    note_name = re.compile(r"threat[-_ ]?(?:model|landscape|analysis|assessment)s?")
+    note_heading = re.compile(
+        r"(?i).*\b(?:threat (?:model|landscape|analysis|assessment)s?|threats?)\b.*"
+    )
+    iac = _THREAT_IN_IAC
+    recommendation = (
+        "Evaluate what threatens the workload: enable GuardDuty or Security Hub in the IaC "
+        "(this runs with rules.org, because these are usually account-level), or keep a "
+        "threat model note (docs/threat-model.md) that lists the assets, the threats to them "
+        "and the controls against each."
+    )
+    searched = (
+        "the IaC for a GuardDuty detector or a Security Hub hub, and the notes for a file or "
+        "heading on a threat model or the threat landscape"
+    )
+
+
+class TradeoffsUnrecorded(_NoteRule):
+    id = "REPO-164"
+    title = "No architecture decision record weighs a tradeoff"
+    note_name = re.compile(
+        r"adrs?|decision[-_ ]?records?|architecture[-_ ]?decisions?|decisions?|tradeoffs?"
+    )
+    note_heading = re.compile(
+        r"(?i).*\b(?:decision records?|architecture decisions?|trade-?offs?)\b.*"
+    )
+    note_needs = re.compile(
+        r"(?i)\b(?:trade-?offs?|consequences|alternatives? considered|pros and cons|risks?)\b"
+    )
+    recommendation = (
+        "Record decisions with their tradeoffs: keep an architecture decision record per "
+        "choice (docs/adr/0001-queue-or-stream.md) that states the options, the benefit and "
+        "the risk of each, and why you took this one."
+    )
+    searched = (
+        "the notes for an architecture decision record, in a file, a folder or a heading, "
+        "that names a tradeoff, a consequence, an alternative or a risk"
+    )
+
+
 _COMPUTE_TRACING = _kinds(
     ("Lambda active tracing",
      r"[\"']?Tracing[\"']?\s*:\s*[\"']?Active\b"
@@ -12294,4 +12442,5 @@ REPO_RULES: List[Rule] = [
     TeamResourcesUnsized(), DemandCurveNotFlattened(),
     UnusedComponents(), HotCodeUnprofiled(), DeviceImpactUnaddressed(),
     DataAccessPatternMismatch(),
+    CustomerNeedsMissing(), GovernanceControlsMissing(), ThreatLandscapeMissing(), TradeoffsUnrecorded(),
 ]

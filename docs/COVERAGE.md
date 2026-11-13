@@ -15,7 +15,7 @@ Which CDK rules have a template check, and which AWS Foundational Security Best 
 
 ## CDK rules
 
-339 rules: 132 covered, 7 partial, 10 account, 5 cdk-only, 25 advice, 160 repo.
+343 rules: 132 covered, 7 partial, 10 account, 5 cdk-only, 25 advice, 164 repo.
 
 | Rule | Title | Template check | Status | Note |
 | -- | -- | -- | -- | -- |
@@ -358,6 +358,10 @@ Which CDK rules have a template check, and which AWS Foundational Security Best 
 | REPO-158 | No dashboard or status topic shows operations status to operators |  | `repo` | Fires when the IaC declares CloudWatch alarms and no CloudWatch dashboard and no status topic. |
 | REPO-159 | No dated review of the operations metrics is in the repo |  | `repo` | Fires when the repo holds IaC and no note named for an operations review, report, metrics, health or retrospective carries a date. |
 | REPO-160 | EC2 instances have no SSM association and no pipeline automates operations |  | `repo` | Fires when the IaC declares an EC2 instance, launch template or Auto Scaling group and has no SSM association, patch baseline, maintenance window or Automation document, and the repo has no CI workflow or pipeline. |
+| REPO-161 | No note names the external and internal customers the workload serves |  | `repo` | Fires when the repo holds IaC and no note named or headed for customers, stakeholders, personas, user needs, business goals or requirements exists. |
+| REPO-162 | No conformance pack, Security Hub standard, SCP or compliance note names the controls |  | `repo` | Fires when the repo holds IaC and neither the IaC (a Config conformance pack, a Security Hub standard or an Organizations policy) nor a note on compliance, governance or a named standard exists. Runs with `rules.org`. |
+| REPO-163 | Neither GuardDuty, Security Hub nor a threat model covers the threats to the workload |  | `repo` | Fires when the repo holds IaC and neither the IaC (a GuardDuty detector or a Security Hub hub) nor a threat model note exists. Runs with `rules.org`. |
+| REPO-164 | No architecture decision record weighs a tradeoff |  | `repo` | Fires when the repo holds IaC and no note named or headed as an architecture decision record names a tradeoff, a consequence, an alternative or a risk. |
 
 ## FSBP controls
 

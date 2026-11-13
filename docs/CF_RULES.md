@@ -4,7 +4,7 @@ This document provides a comprehensive list of all rules checked by AWS Arch Age
 
 ## Overview
 
-AWS Arch Agent checks **339 static analysis rules** and **283 template checks** across all 6 AWS Well-Architected Framework pillars. 139 of the 339 CDK rules (41%) have a template check, so they also run for CloudFormation, Terraform and synthesised CDK. [COVERAGE.md](COVERAGE.md) gives the reason for each of the others.
+AWS Arch Agent checks **343 static analysis rules** and **283 template checks** across all 6 AWS Well-Architected Framework pillars. 139 of the 343 CDK rules (41%) have a template check, so they also run for CloudFormation, Terraform and synthesised CDK. [COVERAGE.md](COVERAGE.md) gives the reason for each of the others.
 
 ## Static Analysis Rules (V1 & V2 Modes)
 
@@ -257,7 +257,7 @@ These rules run on your CDK TypeScript/Python code and execute in both V1 and V2
 - REPO-148: No load test shows that the workload adapts to changes in demand
 - REPO-149: A lone EC2 instance has no data plane recovery
 
-### Operational Excellence (49 rules)
+### Operational Excellence (53 rules)
 
 **Logging:**
 - OPS-001: CloudTrail not enabled
@@ -330,6 +330,10 @@ These rules run on your CDK TypeScript/Python code and execute in both V1 and V2
 - REPO-157: No operations metric (deploys, alarms, error budget) is measured
 - REPO-158: No dashboard or status topic shows operations status to operators
 - REPO-159: No dated review of the operations metrics is in the repo
+- REPO-161: No note names the external and internal customers the workload serves
+- REPO-162: No conformance pack, Security Hub standard, SCP or compliance note names the controls
+- REPO-163: Neither GuardDuty, Security Hub nor a threat model covers the threats to the workload
+- REPO-164: No architecture decision record weighs a tradeoff
 
 ### Performance Efficiency (28 rules)
 
@@ -771,7 +775,6 @@ Like Infracost's view, it is an approximation: on-demand prices, 730 hours a mon
 Every rule has one or more themes, which cut across pillars: `finops`, `security-baseline`, `identity`, `data-protection`, `network-exposure`, `resilience`, `observability`, `sustainability`. `--theme finops` (repeatable, or comma-separated; config `themes`) limits a scan to those themes. JSON findings carry `themes`. SARIF carries them as result `properties.themes` and rule `properties.tags`. `--group-by theme` (config `group_by`) groups Markdown findings by theme; a finding in two themes is listed under both. The HTML report has a theme filter next to the severity tabs, and the Markdown and JSON summary add one line per theme. CDK source rules declare their themes in their class; template checks declare them in `CF_THEMES` in `rules/cf_template.py`.
 
 <!-- themes:start -->
-
 | Rule | Themes |
 |------|--------|
 | CF-ACM-001 | resilience |
@@ -1318,6 +1321,10 @@ Every rule has one or more themes, which cut across pillars: `finops`, `security
 | REPO-158 | observability |
 | REPO-159 | observability |
 | REPO-160 | finops |
+| REPO-161 | observability |
+| REPO-162 | observability |
+| REPO-163 | security-baseline |
+| REPO-164 | observability |
 | SEC-001 | identity |
 | SEC-002 | identity |
 | SEC-003 | network-exposure |
@@ -1396,5 +1403,4 @@ Every rule has one or more themes, which cut across pillars: `finops`, `security
 | SUST-005 | sustainability |
 | SUST-006 | sustainability, finops |
 | SUST-007 | sustainability, finops |
-
 <!-- themes:end -->

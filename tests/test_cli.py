@@ -728,6 +728,10 @@ def test_cli_html_with_no_findings_writes_a_page(tmp_path: Path) -> None:
     # Notes and IaC for OPS 9: a dated operations review and an error budget.
     (tmp_path / "docs" / "ops-review.md").write_text("Reviewed 2026-03-02.\n", encoding="utf-8")
     (tmp_path / "slo.tf").write_text("locals {\n  error_budget = 0.001\n}\n", encoding="utf-8")
+    # Notes for OPS 1: the customers and an architecture decision with its tradeoff.
+    (tmp_path / "docs" / "customers.md").write_text("Shops and support.\n", encoding="utf-8")
+    (tmp_path / "docs" / "adr").mkdir()
+    (tmp_path / "docs" / "adr" / "0001-queue.md").write_text("Tradeoff: cost.\n", encoding="utf-8")
     (tmp_path / "CODEOWNERS").write_text("* @org/platform\n", encoding="utf-8")
     for rel in (".github/workflows/ci.yml", "tests/main.tftest.hcl", "dev.tfvars", "prod.tfvars"):
         (tmp_path / rel).parent.mkdir(parents=True, exist_ok=True)
