@@ -51,13 +51,19 @@ Each finding has a severity, a pillar, a file and line, evidence, a recommendati
 
 | Pillar | Rules | Examples |
 |--------|------:|----------|
-| **Security** | 113 | Missing encryption, public access, hardcoded secrets, no MFA |
-| **Reliability** | 75 | Missing DLQs, no backups, single-AZ, no health checks, untraced requests, fixed-size fleets |
-| **Operational Excellence** | 67 | No logging, alarms, tracing, KPI metrics, log and trace analysis, test gates, or rollback |
-| **Performance Efficiency** | 33 | No caching, oversized instances, no Graviton, no compute metrics or dynamic scaling, data kept on the instance, unwatched edge latency, no load balancer, single VPN or Direct Connect link, old protocols |
-| **Cost Optimization** | 52 | No autoscaling, NAT costs, no lifecycle policies, no cost report, cost attribution tags or unit-cost metrics, unowned or reactive budgets, previous-generation types, no named cost owner, no cost policy or control, budgets with no target, shared prod and dev accounts, billing on IAM users, temporary stacks with no end date, untagged creator or owner, nothing tears down temporary environments, no cost estimate, a VPC or cluster per workload, fleets with no pricing model, a higher-priced Region with no reason, Marketplace products with no term, no shared commitment tracking in an organization, cross-AZ and cross-Region transfer nobody modeled, data movers behind a NAT gateway with no gateway endpoint, no demand analysis, APIs and triggers with no throttle or buffer |
-| **Sustainability** | 27 | No Spot, right-sizing, SLAs with no sustainability tradeoff, unattached volumes and unreferenced load balancers, NAT gateways, target groups and network interfaces, a CloudFront price class that misses the Region, no note on team resource sizing, unthrottled APIs and triggers, components with no use (idle services, disabled rules, unsubscribed topics, untriggered functions), compute at its ceiling with no profile, mobile or device fleets with no device testing, data kept on host-attached storage |
+| **Security** | 113 | Missing encryption, public access, hardcoded secrets, no MFA, no threat model, long-lived IAM users, no permission review |
+| **Reliability** | 75 | Missing DLQs, no backups, single-AZ, no health checks, untraced requests, fixed-size fleets, no quota alarms, no failover test |
+| **Operational Excellence** | 67 | No logging, alarms, tracing, KPI metrics, test gates, or rollback; no named owner, runbook, priorities, post-incident review or evolution notes |
+| **Performance Efficiency** | 33 | No caching, oversized instances, no Graviton, no dynamic scaling, no load balancer, single VPN or Direct Connect link, no load test or architecture decision record |
+| **Cost Optimization** | 52 | No autoscaling, NAT costs, no lifecycle policies, no cost report, cost tags or budgets, no cost owner, no cost review, fleets with no pricing model, unmodeled data transfer |
+| **Sustainability** | 27 | No Spot, no right-sizing, idle or unused resources, unattached volumes, no device testing, no sustainability tradeoff or improvement process |
 | **Best Practices** | 5 | Tags, Secrets Manager, CDK Aspects |
+
+Many repo-level checks (`REPO-*`) read the IaC together with notes in the repo (README, ADRs, runbooks, `docs/`), so a missing process is reported as a finding too.
+
+### Well-Architected answers
+
+The report ends with an answer for each of the 57 Well-Architected questions, **met** or **not met**, computed from the findings alone. Every one of the 307 best practices maps to at least one rule. Some practices only make sense at account level (an organization trail, service control policies, a cost and usage report). Those rules are off by default; set `rules.org: true` to turn them on. Until then the question reads "N of M best practices off unless rules.org is on", and JSON `answers` carry `needs_org` with the rule ids.
 
 CloudFormation and Terraform run the template checks (`CF-*`). Full list: [docs/CF_RULES.md](docs/CF_RULES.md).
 
