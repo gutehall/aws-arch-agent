@@ -593,5 +593,33 @@
     "file": null,
     "line": null,
     "evidence": "Holds IaC (Terraform: 3 files); searched the notes for an architecture decision record, in a file, a folder or a heading, that names a tradeoff, a consequence, an alternative or a risk; found none"
+  },
+  {
+    "id": "REPO-165",
+    "severity": "Low",
+    "file": null,
+    "line": null,
+    "evidence": "Holds IaC (Terraform: 3 files); searched the notes named or headed for a runbook, playbook or procedure for an Owner, Contact or Responsible line that names a team or a person; found none"
+  },
+  {
+    "id": "REPO-166",
+    "severity": "Low",
+    "file": null,
+    "line": null,
+    "evidence": "Holds IaC (Terraform: 3 files); searched the IaC for Incident Manager contacts and plans, and the notes for a file or heading on contacts, on-call, key personnel or responders; found none"
+  },
+  {
+    "id": "REPO-167",
+    "severity": "Low",
+    "file": null,
+    "line": null,
+    "evidence": "Holds IaC (Terraform: 3 files); searched the repo for a CODEOWNERS file with an owner, the IaC for an Incident Manager contact or plan, and the notes for a file or heading on ownership or responsibilities; found none"
+  },
+  {
+    "id": "REPO-168",
+    "severity": "Low",
+    "file": null,
+    "line": null,
+    "evidence": "Holds IaC (Terraform: 3 files); searched the CI configs and the IaC for a pull request trigger, a merge request or a CodePipeline manual approval, and the repo for an issue or pull request template; found none"
   }
 ]

@@ -732,6 +732,12 @@ def test_cli_html_with_no_findings_writes_a_page(tmp_path: Path) -> None:
     (tmp_path / "docs" / "customers.md").write_text("Shops and support.\n", encoding="utf-8")
     (tmp_path / "docs" / "adr").mkdir()
     (tmp_path / "docs" / "adr" / "0001-queue.md").write_text("Tradeoff: cost.\n", encoding="utf-8")
+    # Notes and a pull request template for OPS 2: an owned runbook and who is on call.
+    (tmp_path / "docs" / "runbooks").mkdir()
+    (tmp_path / "docs" / "runbooks" / "restore.md").write_text("Owner: platform\n", encoding="utf-8")
+    (tmp_path / "docs" / "on-call.md").write_text("Platform is on call.\n", encoding="utf-8")
+    (tmp_path / ".github" / "pull_request_template.md").parent.mkdir(exist_ok=True)
+    (tmp_path / ".github" / "pull_request_template.md").write_text("What changed?\n", encoding="utf-8")
     (tmp_path / "CODEOWNERS").write_text("* @org/platform\n", encoding="utf-8")
     for rel in (".github/workflows/ci.yml", "tests/main.tftest.hcl", "dev.tfvars", "prod.tfvars"):
         (tmp_path / rel).parent.mkdir(parents=True, exist_ok=True)

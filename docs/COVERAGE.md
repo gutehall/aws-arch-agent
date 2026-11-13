@@ -15,7 +15,7 @@ Which CDK rules have a template check, and which AWS Foundational Security Best 
 
 ## CDK rules
 
-343 rules: 132 covered, 7 partial, 10 account, 5 cdk-only, 25 advice, 164 repo.
+347 rules: 132 covered, 7 partial, 10 account, 5 cdk-only, 25 advice, 168 repo.
 
 | Rule | Title | Template check | Status | Note |
 | -- | -- | -- | -- | -- |
@@ -362,6 +362,10 @@ Which CDK rules have a template check, and which AWS Foundational Security Best 
 | REPO-162 | No conformance pack, Security Hub standard, SCP or compliance note names the controls |  | `repo` | Fires when the repo holds IaC and neither the IaC (a Config conformance pack, a Security Hub standard or an Organizations policy) nor a note on compliance, governance or a named standard exists. Runs with `rules.org`. |
 | REPO-163 | Neither GuardDuty, Security Hub nor a threat model covers the threats to the workload |  | `repo` | Fires when the repo holds IaC and neither the IaC (a GuardDuty detector or a Security Hub hub) nor a threat model note exists. Runs with `rules.org`. |
 | REPO-164 | No architecture decision record weighs a tradeoff |  | `repo` | Fires when the repo holds IaC and no note named or headed as an architecture decision record names a tradeoff, a consequence, an alternative or a risk. |
+| REPO-165 | No runbook, playbook or procedure names an owner |  | `repo` | Fires when the repo holds IaC and no note named or headed for a runbook, playbook or procedure has an Owner, Contact or Responsible line that names a team or a person. |
+| REPO-166 | No Incident Manager contact or note names who owns operations activities |  | `repo` | Fires on the same gap as REPO-125, for OPS02-BP03: the repo holds IaC and neither the IaC (Incident Manager contacts, plans or rotations) nor a note on contacts, on-call, escalation or responders exists. |
+| REPO-167 | No CODEOWNERS file, escalation plan or ownership note says who owns what |  | `repo` | Fires when the repo holds IaC and has no CODEOWNERS file with an owner, no Incident Manager contact or plan in the IaC, and no note named or headed for ownership or responsibilities. |
+| REPO-168 | No pull request check, manual approval or request template shows how to ask for a change |  | `repo` | Fires when the repo holds IaC and neither a CI config nor the IaC has a pull request trigger, a merge request or a CodePipeline manual approval, and the repo has no issue or pull request template. |
 
 ## FSBP controls
 

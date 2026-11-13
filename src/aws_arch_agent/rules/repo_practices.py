@@ -7152,6 +7152,131 @@ class TradeoffsUnrecorded(_NoteRule):
     )
 
 
+# Ownership (OPS 2): who owns procedures (REPO-165), operations activities (REPO-166), the
+# ownership mechanism (REPO-167) and the way to ask for a change or an exception (REPO-168).
+_PROCEDURE_NAME = re.compile(
+    r"run[-_ ]?books?|playbooks?|procedures?|sops?(?:$|[-_ .])|standard[-_ ]operating"
+    r"|operations?[-_ ]?guide|how[-_ ]?to"
+)
+_PROCEDURE_HEADING = re.compile(
+    r"(?i).*\b(?:run-?books?|playbooks?|procedures?|standard operating procedures?)\b.*"
+)
+
+
+class ProcedureOwnerMissing(_NoteRule):
+    id = "REPO-165"
+    title = "No runbook, playbook or procedure names an owner"
+    note_name = _PROCEDURE_NAME
+    note_heading = _PROCEDURE_HEADING
+    recommendation = (
+        "Give each procedure an owner: put an Owner line (a team or a person) at the top of "
+        "every runbook, playbook and procedure note, so someone keeps it current and answers "
+        "for it."
+    )
+    searched = (
+        "the notes named or headed for a runbook, playbook or procedure for an Owner, "
+        "Contact or Responsible line that names a team or a person"
+    )
+
+    def present(self, repo_path: Path) -> str | None:
+        for rel, text in note_texts(repo_path):
+            parts = rel.lower().split("/")
+            names = [*parts[:-1], parts[-1].rsplit(".", 1)[0]]
+            titled = any(_PROCEDURE_NAME.search(n) for n in names) or any(
+                _PROCEDURE_HEADING.fullmatch(h.group(2).strip()) for h in _HEADING.finditer(text)
+            )
+            if titled and _names_owner(text):
+                return rel
+        return None
+
+
+class ActivityOwnerMissing(KeyContactsMissing):
+    """The same search as REPO-125, answering OPS02-BP03 for the question on structure."""
+
+    id = "REPO-166"
+    title = "No Incident Manager contact or note names who owns operations activities"
+    category = "Operational Excellence"
+    themes = ("observability",)
+    recommendation = (
+        "Name who performs each operations activity: define Incident Manager contacts and an "
+        "engagement plan (AWS::SSMContacts::Contact and Plan), or keep an on-call note that "
+        "says which team patches, restores, responds and approves changes."
+    )
+
+
+_OWNERSHIP_NAME = re.compile(
+    r"owners?(?:hip)?|responsibilit(?:y|ies)|raci|team[-_ ]?agreements?|working[-_ ]?agreements?"
+)
+_OWNERSHIP_HEADING = re.compile(
+    r"(?i).*\b(?:ownership|owners|responsibilit(?:y|ies)|raci|who owns|team agreements?)\b.*"
+)
+
+
+class OwnershipMechanismMissing(_NoteRule):
+    id = "REPO-167"
+    title = "No CODEOWNERS file, escalation plan or ownership note says who owns what"
+    note_name = _OWNERSHIP_NAME
+    note_heading = _OWNERSHIP_HEADING
+    recommendation = (
+        "Keep ownership where it can be changed: add a CODEOWNERS file with an owner for each "
+        "path, or an Incident Manager escalation plan, or an ownership note that lists who "
+        "owns each stack and how a team hands one over. A repo that one team owns says so."
+    )
+    searched = (
+        "the repo for a CODEOWNERS file with an owner, the IaC for an Incident Manager "
+        "contact or plan, and the notes for a file or heading on ownership or responsibilities"
+    )
+
+    def present(self, repo_path: Path) -> str | None:
+        for rel, lines in _codeowners(repo_path):
+            if lines:
+                return rel
+        return (_in_iac_text(repo_path, _CONTACTS_IN_IAC)
+                or _note_having(repo_path, self.note_name, self.note_heading))
+
+
+_CHANGE_REQUEST = re.compile(
+    r"\bpull_request(?:_target)?\b|\bmerge_requests?\b|ManualApprovalAction|\bmanual_approval\b"
+    r"|Category[\"']?\s*[:=]\s*[\"']?Approval\b|\bcategory\s*=\s*\"Approval\""
+    r"|\bapprovals?\.ManualApproval\b|\bIssueTemplates?\b"
+)
+_REQUEST_TEMPLATES = (".github/pull_request_template", ".github/issue_template",
+                      ".gitlab/merge_request_templates", ".gitlab/issue_templates")
+
+
+class ChangeRequestPathMissing(_RepoRule):
+    id = "REPO-168"
+    title = "No pull request check, manual approval or request template shows how to ask for a change"
+    category = "Operational Excellence"
+    severity = "Low"
+    themes = ("observability",)
+    recommendation = (
+        "Give people one way to ask for an addition, a change or an exception: run a CI "
+        "check on pull requests, add a manual approval action to the pipeline, or keep an "
+        "issue or pull request template that says what to include and who approves."
+    )
+
+    def run(self, repo_path: Path, language: str = "typescript") -> List[Finding]:
+        held = _holds_iac(repo_path)
+        if not held:
+            return []
+        for _rel, text in build_texts(repo_path):
+            if _CHANGE_REQUEST.search(text):
+                return []
+        for rel, text in iac_texts(repo_path):
+            if _CHANGE_REQUEST.search(text):
+                return []
+        for path in walk(repo_path):
+            rel = "/".join(_rel_parts(path, repo_path)).lower()
+            if rel.startswith(_REQUEST_TEMPLATES):
+                return []
+        return [self._finding(
+            f"Holds IaC ({held}); searched the CI configs and the IaC for a pull request "
+            "trigger, a merge request or a CodePipeline manual approval, and the repo for an "
+            "issue or pull request template; found none"
+        )]
+
+
 _COMPUTE_TRACING = _kinds(
     ("Lambda active tracing",
      r"[\"']?Tracing[\"']?\s*:\s*[\"']?Active\b"
@@ -12443,4 +12568,5 @@ REPO_RULES: List[Rule] = [
     UnusedComponents(), HotCodeUnprofiled(), DeviceImpactUnaddressed(),
     DataAccessPatternMismatch(),
     CustomerNeedsMissing(), GovernanceControlsMissing(), ThreatLandscapeMissing(), TradeoffsUnrecorded(),
+    ProcedureOwnerMissing(), ActivityOwnerMissing(), OwnershipMechanismMissing(), ChangeRequestPathMissing(),
 ]

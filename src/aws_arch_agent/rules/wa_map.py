@@ -651,10 +651,13 @@ RULE_BEST_PRACTICES: dict[str, tuple[str, ...]] = {
     "REPO-162": ("OPS01-BP03", "OPS01-BP04"),
     "REPO-163": ("OPS01-BP05",),
     "REPO-164": ("OPS01-BP06",),
+    "REPO-165": ("OPS02-BP02",),
+    "REPO-166": ("OPS02-BP03",),
+    "REPO-167": ("OPS02-BP04", "OPS02-BP06"),
+    "REPO-168": ("OPS02-BP05",),
 }
 
 NOT_CHECKED: frozenset[str] = frozenset({
-    "OPS02-BP02", "OPS02-BP03", "OPS02-BP04", "OPS02-BP05", "OPS02-BP06",
     "OPS03-BP01", "OPS03-BP02", "OPS03-BP03", "OPS03-BP04", "OPS03-BP05", "OPS03-BP06",
     "OPS03-BP07",
     "OPS07-BP01", "OPS07-BP02", "OPS07-BP03", "OPS07-BP04", "OPS07-BP06",
