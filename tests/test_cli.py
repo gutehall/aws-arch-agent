@@ -705,6 +705,17 @@ def test_cli_html_with_no_findings_writes_a_page(tmp_path: Path) -> None:
     # Notes for REL 12: a failure playbook, a post-incident template and a game day plan.
     for note in ("playbook.md", "postmortem-template.md", "game-days.md"):
         (tmp_path / "docs" / note).write_text("Notes.\n", encoding="utf-8")
+    # Notes and IaC for SEC 10: contacts, an incident plan, security playbooks, a response
+    # role, a simulation and a security post-incident template.
+    for note in ("security-contacts.md", "incident-response-plan.md", "security-playbook.md",
+                 "security-postmortem-template.md"):
+        (tmp_path / "docs" / note).write_text("Notes.\n", encoding="utf-8")
+    (tmp_path / "response.tf").write_text(
+        'resource "aws_iam_role" "ir" {\n  name = "IncidentResponder"\n'
+        '  permissions_boundary = "arn:aws:iam::123456789012:policy/boundary"\n}\n'
+        'resource "aws_fis_experiment_template" "t" {\n  description = "d"\n}\n',
+        encoding="utf-8",
+    )
     (tmp_path / "CODEOWNERS").write_text("* @org/platform\n", encoding="utf-8")
     for rel in (".github/workflows/ci.yml", "tests/main.tftest.hcl", "dev.tfvars", "prod.tfvars"):
         (tmp_path / rel).parent.mkdir(parents=True, exist_ok=True)

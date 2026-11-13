@@ -970,6 +970,42 @@
     "positive_ts": "new s3.Bucket(this, 'Bucket');",
     "positive_py": "s3.Bucket(self, 'Bucket')"
   },
+  "REPO-125": {
+    "negative_ts": "const answer = 42;",
+    "negative_py": "answer = 42",
+    "positive_ts": "new s3.Bucket(this, 'Bucket');",
+    "positive_py": "s3.Bucket(self, 'Bucket')"
+  },
+  "REPO-126": {
+    "negative_ts": "const answer = 42;",
+    "negative_py": "answer = 42",
+    "positive_ts": "new s3.Bucket(this, 'Bucket');",
+    "positive_py": "s3.Bucket(self, 'Bucket')"
+  },
+  "REPO-127": {
+    "negative_ts": "const answer = 42;",
+    "negative_py": "answer = 42",
+    "positive_ts": "new s3.Bucket(this, 'Bucket');",
+    "positive_py": "s3.Bucket(self, 'Bucket')"
+  },
+  "REPO-128": {
+    "negative_ts": "const answer = 42;",
+    "negative_py": "answer = 42",
+    "positive_ts": "new s3.Bucket(this, 'Bucket');",
+    "positive_py": "s3.Bucket(self, 'Bucket')"
+  },
+  "REPO-129": {
+    "negative_ts": "const answer = 42;",
+    "negative_py": "answer = 42",
+    "positive_ts": "new s3.Bucket(this, 'Bucket');",
+    "positive_py": "s3.Bucket(self, 'Bucket')"
+  },
+  "REPO-130": {
+    "negative_ts": "const answer = 42;",
+    "negative_py": "answer = 42",
+    "positive_ts": "new s3.Bucket(this, 'Bucket');",
+    "positive_py": "s3.Bucket(self, 'Bucket')"
+  },
   "REPO-016": {
     "negative_ts": "new fis.CfnExperimentTemplate(this, 'StopInstances', { description: 'stop one AZ', roleArn: role.roleArn, stopConditions: [{ source: 'aws:cloudwatch:alarm', value: alarm.alarmArn }], targets: {}, actions: {} });",
     "negative_py": "pipelines.ShellStep('Chaos', commands=['aws fis start-experiment --experiment-template-id EXT123'])",

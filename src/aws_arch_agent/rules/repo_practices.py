@@ -181,6 +181,21 @@ Reliability testing practices (REL 12) run by default on a repo that holds IaC:
   postmortem, incident report or root cause analysis passes.
 - REPO-124 game days: a note named or headed for a game day, chaos day or fire drill passes.
 
+Incident readiness (SEC 10) runs by default on a repo that holds IaC (REPO-007 and REPO-008
+answer forensics and containment):
+
+- REPO-125 contacts: an Incident Manager contact or plan, or a note or folder named or headed
+  for contacts, on-call, key personnel or responders, passes.
+- REPO-126 incident plan: an Incident Manager response plan, or a note named or headed for an
+  incident management or response plan, passes.
+- REPO-127 security playbooks: a note, folder or heading for security incident playbooks
+  passes.
+- REPO-128 response access: an IAM role or Identity Center permission set named for incident
+  response, a responder, an investigator or forensics passes.
+- REPO-129 simulations: an AWS FIS experiment template in the IaC passes.
+- REPO-130 learning: a note or heading for a security post-incident review or postmortem
+  passes.
+
 Reliability testing (REL 12) runs by default and reads the IaC and the builds REPO-009 reads
 (CI configs, inline buildspecs, CodeBuild projects and pipelines in the IaC, and the
 package.json scripts they run):
@@ -5598,6 +5613,185 @@ class GameDayMissing(_RepoRule):
         )]
 
 
+# Incident readiness (SEC 10): key contacts (REPO-125), an incident plan (REPO-126), security
+# playbooks (REPO-127), pre-provisioned response access (REPO-128), simulations (REPO-129)
+# and learning from incidents (REPO-130). REPO-007 and REPO-008 answer SEC10-BP03 and
+# SEC10-BP06 (forensics and containment). They fire only on a repo that holds IaC.
+_CONTACTS_IN_IAC = re.compile(
+    _cf_type(r"SSMContacts::\w+") + r"|resource\s+\"aws_ssmcontacts_(?:contact|plan|rotation)\""
+    r"|\bssmcontacts\.(?:Cfn)?\w+\("
+)
+_CONTACTS_NAME = re.compile(
+    r"contacts?|on[-_ ]?call|key[-_ ]?personnel|escalation|responders?|incident[-_ ]?team"
+)
+_CONTACTS_HEADING = re.compile(
+    r"(?i).*\b(?:key personnel|security contacts?|on-?call|escalation contacts?"
+    r"|incident (?:contacts?|team)|responders?)\b.*"
+)
+_IR_PLAN_NAME = re.compile(
+    r"incident[-_ ]?(?:management|response)[-_ ]?plan|incident[-_ ]?response|ir[-_ ]?plan"
+)
+_IR_PLAN_HEADING = re.compile(
+    r"(?i).*\b(?:incident (?:management|response) plan|incident response|security incident plan)\b.*"
+)
+_SECURITY_PLAYBOOK_NAME = re.compile(
+    r"security[-_ ]?(?:incident[-_ ]?)?playbooks?|ir[-_ ]?playbooks?"
+    r"|incident[-_ ]?response[-_ ]?playbooks?"
+)
+_SECURITY_PLAYBOOK_HEADING = re.compile(
+    r"(?i).*\b(?:security (?:incident )?playbooks?|incident response playbooks?|ir playbooks?)\b.*"
+)
+_IAM_ROLE_DECL = re.compile(
+    r"AWS::IAM::Role\b|resource\s+\"aws_iam_role\"|\biam\.(?:Cfn)?Role\(|\bnew\s+Role\("
+    r"|\bSSO::PermissionSet\b|resource\s+\"aws_ssoadmin_permission_set\""
+)
+_IR_ROLE_NAME = re.compile(
+    r"(?i)(?:incident|security)[-_ ]?(?:response|responder|investigat\w*|forensic\w*)"
+    r"|\bIncidentResponse\w*|\bSecurityIR\w*|\bforensic[-_ ]?(?:analyst|access|role)\b"
+)
+_SECURITY_LEARNING_NAME = re.compile(
+    r"security[-_ ]?(?:post[-_ ]?incident|postmortem|incident[-_ ]?review|lessons?)"
+)
+_SECURITY_LEARNING_HEADING = re.compile(
+    r"(?i).*\b(?:security (?:post[- ]?incident|post[- ]?mortem|incident review|lessons learned))\b.*"
+)
+
+
+def _in_iac_text(repo_path: Path, pattern: re.Pattern[str]) -> str | None:
+    """The first IaC file outside tests whose text matches."""
+    for rel, text in iac_texts(repo_path):
+        if pattern.search(text):
+            return rel
+    return None
+
+
+def _ir_role(repo_path: Path) -> str | None:
+    for rel, text in iac_texts(repo_path):
+        if _IAM_ROLE_DECL.search(text) and _IR_ROLE_NAME.search(text):
+            return rel
+    return None
+
+
+class _IncidentRule(_RepoRule):
+    """A SEC 10 rule: it fires on a repo that holds IaC when nothing answers the practice."""
+
+    category = "Security"
+    severity = "Low"
+    themes = ("security-baseline",)
+    searched = ""
+
+    def present(self, repo_path: Path) -> str | None:
+        raise NotImplementedError
+
+    def run(self, repo_path: Path, language: str = "typescript") -> List[Finding]:
+        held = _holds_iac(repo_path)
+        if not held or self.present(repo_path):
+            return []
+        return [self._finding(f"Holds IaC ({held}); searched {self.searched}; found none")]
+
+
+class KeyContactsMissing(_IncidentRule):
+    id = "REPO-125"
+    title = "No Incident Manager contact or note names who responds to security incidents"
+    themes = ("security-baseline",)
+    recommendation = (
+        "Name who responds: define Incident Manager contacts and an escalation plan "
+        "(AWS::SSMContacts::Contact and Plan), or keep a contacts note in the repo with the "
+        "security responders, the on-call rotation and the external resources (the AWS "
+        "account team, a retainer) to call."
+    )
+    searched = (
+        "the IaC for Incident Manager contacts and plans, and the notes for a file or heading "
+        "on contacts, on-call, key personnel or responders"
+    )
+
+    def present(self, repo_path: Path) -> str | None:
+        return (_in_iac_text(repo_path, _CONTACTS_IN_IAC)
+                or _noted(repo_path, _CONTACTS_NAME, _CONTACTS_HEADING))
+
+
+class IncidentPlanMissing(_IncidentRule):
+    id = "REPO-126"
+    title = "No security incident management plan is in the template or the repo"
+    themes = ("security-baseline",)
+    recommendation = (
+        "Write the plan before the incident: an Incident Manager response plan in the IaC, or "
+        "an incident response plan note (docs/incident-response-plan.md) that says what "
+        "counts as an incident, who leads, how to contain it and how to communicate."
+    )
+    searched = (
+        "the IaC for an Incident Manager response plan, and the notes for a file or heading "
+        "on an incident management or response plan"
+    )
+
+    def present(self, repo_path: Path) -> str | None:
+        return (_in_iac_text(repo_path, _RESPONSE_PLAN)
+                or _noted(repo_path, _IR_PLAN_NAME, _IR_PLAN_HEADING))
+
+
+class SecurityPlaybookMissing(_IncidentRule):
+    id = "REPO-127"
+    title = "No security incident response playbook is in the repo"
+    themes = ("security-baseline",)
+    recommendation = (
+        "Write playbooks for the incidents you expect (leaked credentials, a compromised "
+        "instance, public data exposure): detection, triage, containment, eradication and "
+        "recovery steps, kept as docs/security-playbooks and exercised in a simulation."
+    )
+    searched = "the notes for a file, folder or heading on security incident playbooks"
+
+    def present(self, repo_path: Path) -> str | None:
+        return _noted(repo_path, _SECURITY_PLAYBOOK_NAME, _SECURITY_PLAYBOOK_HEADING)
+
+
+class ResponseAccessMissing(_IncidentRule):
+    id = "REPO-128"
+    title = "No incident response role is provisioned before an incident"
+    themes = ("security-baseline",)
+    recommendation = (
+        "Provision responder access in advance: an IAM role or an Identity Center permission "
+        "set for incident response (IncidentResponder, SecurityInvestigator) with the read "
+        "and containment permissions it needs, assumed with MFA, so nobody creates access "
+        "in the middle of an incident."
+    )
+    searched = (
+        "the IaC for an IAM role or permission set named for incident response, a responder, "
+        "an investigator or forensics"
+    )
+
+    def present(self, repo_path: Path) -> str | None:
+        return _ir_role(repo_path)
+
+
+class SecuritySimulationMissing(_IncidentRule):
+    id = "REPO-129"
+    title = "No simulation of an incident is defined"
+    themes = ("security-baseline",)
+    recommendation = (
+        "Run simulations so the response is practised: define an AWS FIS experiment template "
+        "for the failures you plan for, and run it with the responders on a schedule."
+    )
+    searched = "the IaC for an AWS FIS experiment template"
+
+    def present(self, repo_path: Path) -> str | None:
+        return _in_iac_text(repo_path, _FIS_IN_IAC)
+
+
+class IncidentLearningMissing(_IncidentRule):
+    id = "REPO-130"
+    title = "No security post-incident template is in the repo"
+    themes = ("security-baseline",)
+    recommendation = (
+        "Learn from security incidents: keep a security post-incident template "
+        "(docs/security-postmortem-template.md) with the timeline, the root cause, the "
+        "detection and response gaps and the follow-ups, and review each one."
+    )
+    searched = "the notes for a file or heading on a security post-incident review or postmortem"
+
+    def present(self, repo_path: Path) -> str | None:
+        return _noted(repo_path, _SECURITY_LEARNING_NAME, _SECURITY_LEARNING_HEADING)
+
+
 _COMPUTE_TRACING = _kinds(
     ("Lambda active tracing",
      r"[\"']?Tracing[\"']?\s*:\s*[\"']?Active\b"
@@ -10807,6 +11001,9 @@ REPO_RULES: List[Rule] = [
     SecurityTrainingMissing(), PenetrationTestMissing(), CodeReviewNotEnforced(),
     ProgrammaticDeployMissing(), SecurityOwnershipMissing(),
     FailurePlaybookMissing(), PostIncidentAnalysisMissing(), GameDayMissing(),
+    KeyContactsMissing(), IncidentPlanMissing(), SecurityPlaybookMissing(),
+    ResponseAccessMissing(), SecuritySimulationMissing(),
+    IncidentLearningMissing(),
     FaultInjectionMissing(), LoadTestMissing(),
     KpiMetricMissing(), EdgeTelemetryMissing(), DependencyTelemetryMissing(),
     DeployTestGateMissing(), AutomatedRollbackMissing(),

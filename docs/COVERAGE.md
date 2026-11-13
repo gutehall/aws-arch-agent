@@ -15,7 +15,7 @@ Which CDK rules have a template check, and which AWS Foundational Security Best 
 
 ## CDK rules
 
-303 rules: 132 covered, 7 partial, 10 account, 5 cdk-only, 25 advice, 124 repo.
+309 rules: 132 covered, 7 partial, 10 account, 5 cdk-only, 25 advice, 130 repo.
 
 | Rule | Title | Template check | Status | Note |
 | -- | -- | -- | -- | -- |
@@ -322,6 +322,12 @@ Which CDK rules have a template check, and which AWS Foundational Security Best 
 | REPO-122 | No playbook is in the repo for investigating failures |  | `repo` | Fires when the repo holds IaC and no note, or folder, is named or headed for a playbook, a failure investigation or a troubleshooting guide. |
 | REPO-123 | No post-incident template or record is in the repo |  | `repo` | Fires when the repo holds IaC and no note is named or headed for a post-incident review, postmortem, incident report or root cause analysis. |
 | REPO-124 | No game day is recorded in the repo |  | `repo` | Fires when the repo holds IaC and no note is named or headed for a game day, chaos day or fire drill. |
+| REPO-125 | No Incident Manager contact or note names who responds to security incidents |  | `repo` | Fires when the repo holds IaC and has no Incident Manager contact or plan and no note, or folder, named or headed for contacts, on-call, key personnel or responders. |
+| REPO-126 | No security incident management plan is in the template or the repo |  | `repo` | Fires when the repo holds IaC and has no Incident Manager response plan and no note named or headed for an incident management or response plan. |
+| REPO-127 | No security incident response playbook is in the repo |  | `repo` | Fires when the repo holds IaC and no note, folder or heading is for security incident playbooks. |
+| REPO-128 | No incident response role is provisioned before an incident |  | `repo` | Fires when the repo holds IaC and no IAM role or permission set is named for incident response, a responder, an investigator or forensics. |
+| REPO-129 | No simulation of an incident is defined |  | `repo` | Fires when the repo holds IaC and defines no AWS FIS experiment template. |
+| REPO-130 | No security post-incident template is in the repo |  | `repo` | Fires when the repo holds IaC and no note or heading is for a security post-incident review or postmortem. |
 
 ## FSBP controls
 

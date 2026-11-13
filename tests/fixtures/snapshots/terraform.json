@@ -481,5 +481,47 @@
     "file": null,
     "line": null,
     "evidence": "Holds IaC (Terraform: 3 files); searched the notes for a file or heading on a game day, a chaos day or a fire drill; found none"
+  },
+  {
+    "id": "REPO-125",
+    "severity": "Low",
+    "file": null,
+    "line": null,
+    "evidence": "Holds IaC (Terraform: 3 files); searched the IaC for Incident Manager contacts and plans, and the notes for a file or heading on contacts, on-call, key personnel or responders; found none"
+  },
+  {
+    "id": "REPO-126",
+    "severity": "Low",
+    "file": null,
+    "line": null,
+    "evidence": "Holds IaC (Terraform: 3 files); searched the IaC for an Incident Manager response plan, and the notes for a file or heading on an incident management or response plan; found none"
+  },
+  {
+    "id": "REPO-127",
+    "severity": "Low",
+    "file": null,
+    "line": null,
+    "evidence": "Holds IaC (Terraform: 3 files); searched the notes for a file, folder or heading on security incident playbooks; found none"
+  },
+  {
+    "id": "REPO-128",
+    "severity": "Low",
+    "file": null,
+    "line": null,
+    "evidence": "Holds IaC (Terraform: 3 files); searched the IaC for an IAM role or permission set named for incident response, a responder, an investigator or forensics; found none"
+  },
+  {
+    "id": "REPO-129",
+    "severity": "Low",
+    "file": null,
+    "line": null,
+    "evidence": "Holds IaC (Terraform: 3 files); searched the IaC for an AWS FIS experiment template; found none"
+  },
+  {
+    "id": "REPO-130",
+    "severity": "Low",
+    "file": null,
+    "line": null,
+    "evidence": "Holds IaC (Terraform: 3 files); searched the notes for a file or heading on a security post-incident review or postmortem; found none"
   }
 ]
