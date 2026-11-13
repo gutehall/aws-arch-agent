@@ -266,7 +266,14 @@
             "items": {
               "type": "string"
             },
-            "description": "Best practices of the question that no rule checks yet."
+            "description": "Best practices of the question that this scan did not check: no rule checks them, or their rules did not run."
+          },
+          "needs_org": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "The part of not_checked whose rules are all account-level and off unless rules.org is true."
           }
         }
       }

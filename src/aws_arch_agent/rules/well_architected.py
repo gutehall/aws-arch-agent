@@ -47,6 +47,9 @@ class Answer:
     met: bool
     findings: tuple[Finding, ...]
     not_checked: tuple[str, ...]
+    # The part of not_checked whose rules are all account-level and off by default
+    # (rules.org). Those are not missing rules: turning the account-level checks on runs them.
+    needs_org: tuple[str, ...] = ()
 
     @property
     def status(self) -> str:
@@ -58,9 +61,14 @@ class Answer:
         if self.findings:
             n = len(self.findings)
             parts.append(f"{n} finding{'s' if n != 1 else ''}")
-        if self.not_checked:
-            total = len(self.question.best_practices)
-            parts.append(f"{len(self.not_checked)} of {total} best practices not checked")
+        total = len(self.question.best_practices)
+        other = len(self.not_checked) - len(self.needs_org)
+        if other:
+            parts.append(f"{other} of {total} best practices not checked")
+        if self.needs_org:
+            parts.append(
+                f"{len(self.needs_org)} of {total} best practices off unless rules.org is on"
+            )
         return "; ".join(parts)
 
     def to_dict(self) -> dict:
@@ -71,6 +79,7 @@ class Answer:
             "status": self.status,
             "findings": [f.id for f in self.findings],
             "not_checked": list(self.not_checked),
+            "needs_org": list(self.needs_org),
         }
 
 
@@ -154,7 +163,12 @@ def answers(findings: Iterable[Finding], ran: Iterable[str] | None = None) -> Li
 
     ran is the rule ids that could report (RepoContext.rules_run); None means every rule.
     """
+    from aws_arch_agent.agent.v1 import ORG_RULE_IDS
+
     ids = RULE_BEST_PRACTICES if ran is None else set(ran)
+    org_only = {
+        bp for bp, rules in _rules_by_practice().items() if rules and rules <= ORG_RULE_IDS
+    }
     checked = {bp for rid in ids for bp in RULE_BEST_PRACTICES.get(rid, ())}
     under: dict[str, List[Finding]] = {}
     for f in findings:
@@ -165,8 +179,19 @@ def answers(findings: Iterable[Finding], ran: Iterable[str] | None = None) -> Li
     for q in questions():
         found = tuple(under.get(q.id, ()))
         missing = tuple(bp.id for bp in q.best_practices if bp.id not in checked)
-        out.append(Answer(q, met=not found and not missing, findings=found, not_checked=missing))
+        org = tuple(bp for bp in missing if bp in org_only)
+        out.append(Answer(q, met=not found and not missing, findings=found,
+                          not_checked=missing, needs_org=org))
     return out
+
+
+@lru_cache(maxsize=1)
+def _rules_by_practice() -> dict[str, frozenset[str]]:
+    by_bp: dict[str, set[str]] = {}
+    for rid, bps in RULE_BEST_PRACTICES.items():
+        for bp in bps:
+            by_bp.setdefault(bp, set()).add(rid)
+    return {bp: frozenset(rules) for bp, rules in by_bp.items()}
 
 
 def finding_rows(answer: Answer) -> List[tuple[str, str, int]]:
