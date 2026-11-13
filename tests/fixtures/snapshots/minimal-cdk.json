@@ -187,5 +187,33 @@
     "file": null,
     "line": null,
     "evidence": "Holds IaC (CDK: 2 files); searched the IaC for IAM Access Analyzer and Amazon Inspector, and the notes for a dated security service review; found none"
+  },
+  {
+    "id": "REPO-140",
+    "severity": "Low",
+    "file": null,
+    "line": null,
+    "evidence": "Holds IaC (CDK: 2 files); searched the IaC for a permissions boundary and for two or more IAM roles, and the notes for a file or heading on access requirements or the access model; found none"
+  },
+  {
+    "id": "REPO-148",
+    "severity": "Low",
+    "file": null,
+    "line": null,
+    "evidence": "Searched the repo for a build to run a load test (a CI config, or a CodeBuild buildspec or pipeline in the IaC); found none"
+  },
+  {
+    "id": "REPO-157",
+    "severity": "Low",
+    "file": null,
+    "line": null,
+    "evidence": "Holds IaC (CDK: 2 files); searched the IaC and the build configs for a deployment, change failure, recovery time, alarm count, error budget, burn rate or service level objective metric; found none"
+  },
+  {
+    "id": "REPO-159",
+    "severity": "Low",
+    "file": null,
+    "line": null,
+    "evidence": "Holds IaC (CDK: 2 files); searched the notes for a dated file or heading named for an operations review, report, metrics, health or retrospective; found none"
   }
 ]

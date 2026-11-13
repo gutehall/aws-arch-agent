@@ -70,7 +70,7 @@ from aws_arch_agent.rules.sustainability import (
 )
 
 ALL_RULES = [
-    # Security (105 rules: these 71, and REPO-004 to REPO-011, REPO-031 to REPO-041,
+    # Security (113 rules: these 71, and REPO-004 to REPO-011, REPO-031 to REPO-041,
     # REPO-117 to REPO-121, REPO-125 to REPO-130 and REPO-136 to REPO-139 in REPO_RULES
     # below)
     IamWildcardAction(),
@@ -144,7 +144,7 @@ ALL_RULES = [
     IamUserConsolePassword(),
     IamAccessKeyCreated(),
     IamUserDirectPolicies(),
-    # Reliability (71 rules: these 33, and REPO-012 to REPO-017, REPO-023 to REPO-026,
+    # Reliability (74 rules: these 33, and REPO-012 to REPO-017, REPO-023 to REPO-026,
     # REPO-042 to REPO-059, REPO-107, REPO-108, REPO-122 to REPO-124 and REPO-131 to
     # REPO-135 in REPO_RULES)
     RdsMultiAzMissing(),
@@ -180,7 +180,7 @@ ALL_RULES = [
     S3VersioningMissing(),
     VpcSingleAz(),
     LambdaDirectInvoke(),
-    # Cost Optimization (47 rules: these 18, and REPO-069 to REPO-097 in REPO_RULES)
+    # Cost Optimization (48 rules: these 18, and REPO-069 to REPO-097 in REPO_RULES)
     LogRetentionNeverExpire(),
     MissingAutoscalingHint(),
     DynamoDbAutoscalingMissing(),
@@ -205,7 +205,7 @@ ALL_RULES = [
     ResourceNamingConvention(),
     CdkAspectsMissing(),
     CdkContextMissing(),
-    # Operational Excellence (46 rules)
+    # Operational Excellence (49 rules)
     # These 26, and REPO-001 to REPO-003, REPO-018 to REPO-022, REPO-027 to REPO-030 and
     # REPO-109 to REPO-116 in REPO_RULES.
     CloudTrailMissing(),
@@ -256,7 +256,7 @@ ALL_RULES = [
     EbsIo2BlockExpress(),
     CloudWatchContributorInsights(),
     RdsProxyMissing(),
-    # Sustainability (16 rules: these 7, and REPO-098 to REPO-106 in REPO_RULES)
+    # Sustainability (22 rules: these 7, and REPO-098 to REPO-106 in REPO_RULES)
     SpotNotConsidered(),
     RightSizingHint(),
     ScheduledScalingMissing(),

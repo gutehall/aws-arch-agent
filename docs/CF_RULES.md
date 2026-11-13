@@ -4,13 +4,13 @@ This document provides a comprehensive list of all rules checked by AWS Arch Age
 
 ## Overview
 
-AWS Arch Agent checks **318 static analysis rules** and **283 template checks** across all 6 AWS Well-Architected Framework pillars. 139 of the 318 CDK rules (44%) have a template check, so they also run for CloudFormation, Terraform and synthesised CDK. [COVERAGE.md](COVERAGE.md) gives the reason for each of the others.
+AWS Arch Agent checks **339 static analysis rules** and **283 template checks** across all 6 AWS Well-Architected Framework pillars. 139 of the 339 CDK rules (41%) have a template check, so they also run for CloudFormation, Terraform and synthesised CDK. [COVERAGE.md](COVERAGE.md) gives the reason for each of the others.
 
 ## Static Analysis Rules (V1 & V2 Modes)
 
 These rules run on your CDK TypeScript/Python code and execute in both V1 and V2 modes.
 
-### Security (105 rules)
+### Security (113 rules)
 
 **Encryption & Data Protection:**
 - SEC-006: S3 bucket encryption missing
@@ -138,8 +138,16 @@ These rules run on your CDK TypeScript/Python code and execute in both V1 and V2
 - REPO-039: Data stores carry no classification tag
 - REPO-040: Data classified as sensitive has no customer managed key
 - REPO-041: Nothing stops unencrypted storage from being created
+- REPO-140: No permissions boundary, per-component roles or access requirements note define access
+- REPO-141: No IAM Access Analyzer or dated access review reduces permissions over time
+- REPO-142: The IaC creates a long-lived IAM user or access key
+- REPO-143: A RAM resource share is not limited to the organization
+- REPO-144: EC2 instances use an SSH key pair and no Session Manager access
+- REPO-145: Compute protection is not automated with Inspector or an SSM association
+- REPO-146: Data classified by tag has no lifecycle or retention rule
+- REPO-151: Data stores carry no classification tag to drive retention and storage tiers
 
-### Reliability (71 rules)
+### Reliability (74 rules)
 
 **High Availability:**
 - REL-001: RDS instance missing multi-AZ
@@ -245,8 +253,11 @@ These rules run on your CDK TypeScript/Python code and execute in both V1 and V2
 - REPO-057: Capacity has no headroom to survive a failure
 - REPO-058: No availability target on the user-facing edge
 - REPO-059: No one is notified when availability drops
+- REPO-147: No dated review record lists the stateful resources and their alarms
+- REPO-148: No load test shows that the workload adapts to changes in demand
+- REPO-149: A lone EC2 instance has no data plane recovery
 
-### Operational Excellence (46 rules)
+### Operational Excellence (49 rules)
 
 **Logging:**
 - OPS-001: CloudTrail not enabled
@@ -316,6 +327,9 @@ These rules run on your CDK TypeScript/Python code and execute in both V1 and V2
 - REPO-114: Configuration is not kept in a configuration store or per-environment files
 - REPO-115: No CI step lints, type-checks or sets a coverage gate
 - REPO-116: Deployments have no rollback, blue/green or canary step
+- REPO-157: No operations metric (deploys, alarms, error budget) is measured
+- REPO-158: No dashboard or status topic shows operations status to operators
+- REPO-159: No dated review of the operations metrics is in the repo
 
 ### Performance Efficiency (28 rules)
 
@@ -363,7 +377,7 @@ These rules run on your CDK TypeScript/Python code and execute in both V1 and V2
 - REPO-067: Traffic is not spread by a load balancer
 - REPO-068: Edge uses an older network protocol
 
-### Cost Optimization (47 rules)
+### Cost Optimization (48 rules)
 
 **Resource Right-Sizing:**
 - COST-002: Compute resources may miss autoscaling
@@ -437,6 +451,7 @@ These rules run on your CDK TypeScript/Python code and execute in both V1 and V2
 **Demand management (repo-level, COST 9):**
 - REPO-096: Workload demand is not analysed
 - REPO-097: Demand has no buffer or throttle
+- REPO-160: EC2 instances have no SSM association and no pipeline automates operations
 
 ### Best Practices (5 rules)
 
@@ -446,7 +461,7 @@ These rules run on your CDK TypeScript/Python code and execute in both V1 and V2
 - BP-004: CDK Aspects not used for policy enforcement
 - BP-005: CDK context not used for environment-specific config
 
-### Sustainability (16 rules)
+### Sustainability (22 rules)
 
 - SUST-001: Spot instances not considered for batch/non-critical workloads
 - SUST-002: Resource right-sizing opportunities detected
@@ -470,6 +485,12 @@ These rules run on your CDK TypeScript/Python code and execute in both V1 and V2
 - REPO-106: Storage is not matched to the data access pattern
 
 ---
+- REPO-150: Accelerator instances have no utilization alarm or batch window
+- REPO-152: Instances keep their data on instance store with no durable store behind it
+- REPO-153: A large EBS volume is a fixed size with nothing to grow it
+- REPO-154: S3 buckets have no rule that deletes unneeded data
+- REPO-155: Several EBS volumes hold data and no shared file system or bucket does
+- REPO-156: A backup plan covers a cache or a temporary bucket
 
 ## CloudFormation Template Rules
 
@@ -1276,6 +1297,27 @@ Every rule has one or more themes, which cut across pillars: `finops`, `security
 | REPO-137 | security-baseline |
 | REPO-138 | security-baseline |
 | REPO-139 | security-baseline |
+| REPO-140 | identity |
+| REPO-141 | identity |
+| REPO-142 | identity |
+| REPO-143 | identity |
+| REPO-144 | identity, network-exposure |
+| REPO-145 | security-baseline |
+| REPO-146 | data-protection |
+| REPO-147 | observability |
+| REPO-148 | resilience |
+| REPO-149 | resilience |
+| REPO-150 | sustainability, finops |
+| REPO-151 | sustainability |
+| REPO-152 | sustainability, resilience |
+| REPO-153 | sustainability, finops |
+| REPO-154 | sustainability, finops |
+| REPO-155 | sustainability, finops |
+| REPO-156 | sustainability, finops |
+| REPO-157 | observability |
+| REPO-158 | observability |
+| REPO-159 | observability |
+| REPO-160 | finops |
 | SEC-001 | identity |
 | SEC-002 | identity |
 | SEC-003 | network-exposure |

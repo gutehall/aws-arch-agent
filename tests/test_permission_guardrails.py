@@ -202,7 +202,6 @@ def test_sec3_rules_map_to_their_best_practices() -> None:
     assert well_architected.question_of("REPO-032") == "SEC 3"
 
 
-def test_sec3_reads_not_met_while_practices_remain_unchecked() -> None:
+def test_sec3_checks_every_best_practice() -> None:
     (sec3,) = [a for a in well_architected.answers([]) if a.question.id == "SEC 3"]
-    assert sec3.not_checked == ("SEC03-BP01", "SEC03-BP04", "SEC03-BP06", "SEC03-BP08")
-    assert not sec3.met
+    assert sec3.not_checked == () and sec3.met

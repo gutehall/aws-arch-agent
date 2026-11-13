@@ -409,11 +409,10 @@ def test_rules_map_to_rel6_and_run_by_default() -> None:
         assert rule.category == "Reliability" and rule.themes == ("observability",)
 
 
-def test_rel6_reads_one_answer_with_only_the_review_unchecked() -> None:
+def test_rel6_reads_one_answer_with_every_best_practice_checked() -> None:
     (rel6,) = [a for a in well_architected.answers([]) if a.question.id == "REL 6"]
-    assert rel6.not_checked == ("REL06-BP06",)
-    # One answer: with no finding it stays not met only for the unchecked review.
-    assert not rel6.met and rel6.reason() == "1 of 7 best practices not checked"
+    # One answer: with no finding every best practice is checked and the answer is met.
+    assert rel6.not_checked == () and rel6.met
     hit = AlarmResponseMissing()._finding("no automated response")
     (failing,) = [a for a in well_architected.answers([hit]) if a.question.id == "REL 6"]
     assert not failing.met and [f.id for f in failing.findings] == ["REPO-047"]
