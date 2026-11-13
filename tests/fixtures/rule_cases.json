@@ -1725,5 +1725,11 @@
     "negative_py": "answer = 42",
     "positive_ts": "new cloudwatch.Alarm(this, 'Errors', { metric, threshold: 1, evaluationPeriods: 1 });",
     "positive_py": "cloudwatch.Alarm(self, 'Errors', metric=metric, threshold=1, evaluation_periods=1)"
+  },
+  "REPO-160": {
+    "negative_ts": "const answer = 42;",
+    "negative_py": "answer = 42",
+    "positive_ts": "new ec2.Instance(this, 'Web', { instanceType, machineImage, vpc });",
+    "positive_py": "ec2.Instance(self, 'Web', instance_type=instance_type, machine_image=image, vpc=vpc)"
   }
 }

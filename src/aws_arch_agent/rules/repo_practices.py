@@ -295,6 +295,12 @@ Operations health (OPS 9) runs by default (REPO-018 answers the workload KPIs):
 - REPO-159 operations review: a repo that holds IaC with no dated note named for an operations
   review, report, metrics, health or retrospective fires.
 
+Cost of effort (COST 11) runs by default:
+
+- REPO-160 automated operations: an EC2 instance, launch template or Auto Scaling group with no
+  SSM association, patch baseline, maintenance window or Automation document and no CI or
+  pipeline fires.
+
 Reliability testing (REL 12) runs by default and reads the IaC and the builds REPO-009 reads
 (CI configs, inline buildspecs, CodeBuild projects and pipelines in the IaC, and the
 package.json scripts they run):
@@ -6961,6 +6967,43 @@ class OpsReviewMissing(_IncidentRule):
         return None
 
 
+# Cost of effort (COST 11): instances run by hand (REPO-160). REPO-002 answers the pipeline,
+# REPO-145 the SSM baseline for SEC 6.
+_SSM_OPERATIONS = re.compile(
+    _SSM_BASELINE.pattern
+    + r"|AWS::SSM::(?:MaintenanceWindow|Document)\b"
+    r"|resource\s+\"aws_ssm_(?:maintenance_window|document)\""
+    r"|\bssm\.Cfn(?:MaintenanceWindow|Document)\("
+)
+
+
+class OperationsNotAutomated(_RepoRule):
+    id = "REPO-160"
+    title = "EC2 instances have no SSM association and no pipeline automates operations"
+    category = "Cost"
+    severity = "Low"
+    themes = ("finops",)
+    recommendation = (
+        "Spend less effort on routine work: manage instances with Systems Manager (a State "
+        "Manager association, a maintenance window or an Automation runbook) and deploy and "
+        "change them from a pipeline, so patching, configuration and releases do not need a "
+        "person logged in."
+    )
+
+    def run(self, repo_path: Path, language: str = "typescript") -> List[Finding]:
+        hosts = _in_iac_text(repo_path, _EC2_HOST)
+        if not hosts or _in_iac_text(repo_path, _SSM_OPERATIONS):
+            return []
+        if not RepoPipelineMissing().run(repo_path):
+            return []
+        return [self._finding(
+            f"{hosts} runs EC2 instances; searched the IaC for an SSM association, patch "
+            "baseline, maintenance window or Automation document, and the repo for a CI "
+            "workflow or pipeline; found none",
+            file=hosts,
+        )]
+
+
 _COMPUTE_TRACING = _kinds(
     ("Lambda active tracing",
      r"[\"']?Tracing[\"']?\s*:\s*[\"']?Active\b"
@@ -12208,6 +12251,7 @@ REPO_RULES: List[Rule] = [
     OpsMetricsMissing(),
     OperatorStatusMissing(),
     OpsReviewMissing(),
+    OperationsNotAutomated(),
     FaultInjectionMissing(), LoadTestMissing(),
     KpiMetricMissing(), EdgeTelemetryMissing(), DependencyTelemetryMissing(),
     DeployTestGateMissing(), AutomatedRollbackMissing(),

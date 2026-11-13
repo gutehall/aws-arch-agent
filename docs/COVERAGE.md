@@ -15,7 +15,7 @@ Which CDK rules have a template check, and which AWS Foundational Security Best 
 
 ## CDK rules
 
-338 rules: 132 covered, 7 partial, 10 account, 5 cdk-only, 25 advice, 159 repo.
+339 rules: 132 covered, 7 partial, 10 account, 5 cdk-only, 25 advice, 160 repo.
 
 | Rule | Title | Template check | Status | Note |
 | -- | -- | -- | -- | -- |
@@ -357,6 +357,7 @@ Which CDK rules have a template check, and which AWS Foundational Security Best 
 | REPO-157 | No operations metric (deploys, alarms, error budget) is measured |  | `repo` | Fires when the repo holds IaC and neither the IaC nor the build configs name a deployment, change failure, recovery time, alarm count, error budget, burn rate or service level objective metric. |
 | REPO-158 | No dashboard or status topic shows operations status to operators |  | `repo` | Fires when the IaC declares CloudWatch alarms and no CloudWatch dashboard and no status topic. |
 | REPO-159 | No dated review of the operations metrics is in the repo |  | `repo` | Fires when the repo holds IaC and no note named for an operations review, report, metrics, health or retrospective carries a date. |
+| REPO-160 | EC2 instances have no SSM association and no pipeline automates operations |  | `repo` | Fires when the IaC declares an EC2 instance, launch template or Auto Scaling group and has no SSM association, patch baseline, maintenance window or Automation document, and the repo has no CI workflow or pipeline. |
 
 ## FSBP controls
 

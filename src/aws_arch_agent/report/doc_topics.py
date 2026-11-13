@@ -2141,6 +2141,12 @@ TOPICS: dict[str, tuple[str, str, str, str]] = {
         "/wellarchitected/latest/operational-excellence-pillar/"
         "ops_operations_health_review_ops_metrics_prioritize_improvement.html",
     ),
+    "operations_automation": (
+        "AWS Systems Manager: State Manager",
+        "/systems-manager/latest/userguide/systems-manager-state.html",
+        "Well-Architected COST11-BP01: Perform automation for operations",
+        "/wellarchitected/latest/cost-optimization-pillar/cost_evaluate_cost_effort_automations_operations.html",
+    ),
     "repo_tests": (
         "AWS CDK: testing constructs",
         "/cdk/v2/guide/testing.html",
@@ -2881,6 +2887,7 @@ RULE_TOPICS: dict[str, str] = {
     "REPO-157": "operations_metrics",
     "REPO-158": "operations_status",
     "REPO-159": "operations_review",
+    "REPO-160": "operations_automation",
     "REPO-016": "fault_injection",
     "REPO-017": "load_testing",
     "REPO-018": "app_kpi_metrics",
