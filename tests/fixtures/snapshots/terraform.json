@@ -548,7 +548,7 @@
   {
     "id": "REPO-147",
     "severity": "Low",
-    "file": "main.tf",
+    "file": null,
     "line": null,
     "evidence": "Declares S3 bucket (main.tf), RDS database (main.tf); searched the notes for a dated monitoring or alarm review (a file or heading named for a monitoring review, scope, coverage or inventory); found none"
   },

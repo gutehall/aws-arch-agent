@@ -6577,7 +6577,6 @@ class MonitoringScopeNotReviewed(_RepoRule):
             f"Declares {_named(stores)}; searched the notes for a dated monitoring or alarm "
             "review (a file or heading named for a monitoring review, scope, coverage or "
             "inventory); found none",
-            file=next(iter(stores.values())),
         )]
 
 
@@ -6807,7 +6806,6 @@ class UnneededDataNotDeleted(_RepoRule):
                     f"{rel} declares an S3 bucket and sets no lifecycle expiration or "
                     "retention; searched the file for an S3 lifecycle rule, a DynamoDB TTL, a log "
                     "retention period and a backup delete-after; found none",
-                    file=rel,
                 )]
         return []
 

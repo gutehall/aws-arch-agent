@@ -356,10 +356,9 @@ def test_rules_map_to_rel7_and_run_by_default() -> None:
         assert rule.category == "Reliability" and rule.themes == ("resilience",)
 
 
-def test_rel7_reads_one_answer_with_only_load_testing_unchecked() -> None:
+def test_rel7_reads_one_answer_with_every_best_practice_checked() -> None:
     (rel7,) = [a for a in well_architected.answers([]) if a.question.id == "REL 7"]
-    assert rel7.not_checked == ("REL07-BP04",)
-    assert not rel7.met and rel7.reason() == "1 of 4 best practices not checked"
+    assert rel7.not_checked == () and rel7.met
     hit = FixedSizeFleet()._finding("fixed fleet")
     (failing,) = [a for a in well_architected.answers([hit]) if a.question.id == "REL 7"]
     assert not failing.met and [f.id for f in failing.findings] == ["REPO-049"]

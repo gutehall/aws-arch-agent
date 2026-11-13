@@ -93,7 +93,7 @@ def test_large_fixed_volume_fires_only_when_nothing_grows_it(
 
 def test_bucket_without_retention_fires(tmp_path: Path) -> None:
     (hit,) = _hits(_scan(tmp_path, {"b.tf": _BUCKET.format(n="b")}), "REPO-154")
-    assert hit.question == "SUS 4" and hit.file == "prod/b.tf"
+    assert hit.question == "SUS 4" and "prod/b.tf" in hit.evidence
 
 
 def test_bucket_with_lifecycle_passes(tmp_path: Path) -> None:

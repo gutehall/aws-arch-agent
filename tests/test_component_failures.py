@@ -326,9 +326,9 @@ def test_rules_map_to_rel11_and_run_by_default(rule_id: str, practice: str) -> N
     assert rule_id not in ORG_RULE_IDS
 
 
-def test_rel11_leaves_only_the_data_plane_unchecked() -> None:
+def test_rel11_checks_every_best_practice() -> None:
     (rel11,) = [a for a in well_architected.answers([]) if a.question.id == "REL 11"]
-    assert rel11.not_checked == ("REL11-BP04",)
+    assert rel11.not_checked == () and rel11.met
 
 
 def test_rel11_is_not_met_when_a_new_rule_fires(tmp_path: Path) -> None:

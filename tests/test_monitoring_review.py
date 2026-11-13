@@ -30,7 +30,7 @@ def test_rule_answers_rel6() -> None:
 def test_stateful_resource_without_review_fires(tmp_path: Path) -> None:
     (hit,) = _hits(_scan(tmp_path, {"t.tf": _TABLE}))
     assert hit.question == "REL 6" and hit.category == "Reliability" and hit.severity == "Low"
-    assert hit.file == "prod/t.tf" and "DynamoDB table" in hit.evidence
+    assert "DynamoDB table" in hit.evidence and "prod/t.tf" in hit.evidence
 
 
 @pytest.mark.parametrize(
