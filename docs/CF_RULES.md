@@ -4,13 +4,13 @@ This document provides a comprehensive list of all rules checked by AWS Arch Age
 
 ## Overview
 
-AWS Arch Agent checks **318 static analysis rules** and **283 template checks** across all 6 AWS Well-Architected Framework pillars. 139 of the 318 CDK rules (44%) have a template check, so they also run for CloudFormation, Terraform and synthesised CDK. [COVERAGE.md](COVERAGE.md) gives the reason for each of the others.
+AWS Arch Agent checks **322 static analysis rules** and **283 template checks** across all 6 AWS Well-Architected Framework pillars. 139 of the 322 CDK rules (43%) have a template check, so they also run for CloudFormation, Terraform and synthesised CDK. [COVERAGE.md](COVERAGE.md) gives the reason for each of the others.
 
 ## Static Analysis Rules (V1 & V2 Modes)
 
 These rules run on your CDK TypeScript/Python code and execute in both V1 and V2 modes.
 
-### Security (105 rules)
+### Security (109 rules)
 
 **Encryption & Data Protection:**
 - SEC-006: S3 bucket encryption missing
@@ -138,6 +138,10 @@ These rules run on your CDK TypeScript/Python code and execute in both V1 and V2
 - REPO-039: Data stores carry no classification tag
 - REPO-040: Data classified as sensitive has no customer managed key
 - REPO-041: Nothing stops unencrypted storage from being created
+- REPO-140: No permissions boundary, per-component roles or access requirements note define access
+- REPO-141: No IAM Access Analyzer or dated access review reduces permissions over time
+- REPO-142: The IaC creates a long-lived IAM user or access key
+- REPO-143: A RAM resource share is not limited to the organization
 
 ### Reliability (71 rules)
 
@@ -1276,6 +1280,10 @@ Every rule has one or more themes, which cut across pillars: `finops`, `security
 | REPO-137 | security-baseline |
 | REPO-138 | security-baseline |
 | REPO-139 | security-baseline |
+| REPO-140 | identity |
+| REPO-141 | identity |
+| REPO-142 | identity |
+| REPO-143 | identity |
 | SEC-001 | identity |
 | SEC-002 | identity |
 | SEC-003 | network-exposure |

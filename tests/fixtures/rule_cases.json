@@ -1605,5 +1605,29 @@
     "negative_py": "ec2.Instance(self, 'Web', vpc=vpc, instance_type=t, machine_image=ami)",
     "positive_ts": "const host = new ec2.Instance(this, 'Db', { vpc, instanceType, machineImage });\nnew ec2.Volume(this, 'Data', { availabilityZone: 'eu-west-1a', size });",
     "positive_py": "host = ec2.Instance(self, 'Db', vpc=vpc, instance_type=t, machine_image=ami)\nhost.user_data.add_commands('dnf install -y mysql-server')"
+  },
+  "REPO-140": {
+    "negative_ts": "const answer = 42;",
+    "negative_py": "answer = 42",
+    "positive_ts": "new s3.Bucket(this, 'Bucket');",
+    "positive_py": "s3.Bucket(self, 'Bucket')"
+  },
+  "REPO-141": {
+    "negative_ts": "const answer = 42;",
+    "negative_py": "answer = 42",
+    "positive_ts": "new s3.Bucket(this, 'Bucket');",
+    "positive_py": "s3.Bucket(self, 'Bucket')"
+  },
+  "REPO-142": {
+    "negative_ts": "const answer = 42;",
+    "negative_py": "answer = 42",
+    "positive_ts": "new iam.User(this, 'Deployer');",
+    "positive_py": "iam.User(self, 'Deployer')"
+  },
+  "REPO-143": {
+    "negative_ts": "const answer = 42;",
+    "negative_py": "answer = 42",
+    "positive_ts": "new ram.CfnResourceShare(this, 'Share', { name: 'share' });",
+    "positive_py": "ram.CfnResourceShare(self, 'Share', name='share')"
   }
 }

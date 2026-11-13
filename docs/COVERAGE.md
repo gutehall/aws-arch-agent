@@ -15,7 +15,7 @@ Which CDK rules have a template check, and which AWS Foundational Security Best 
 
 ## CDK rules
 
-318 rules: 132 covered, 7 partial, 10 account, 5 cdk-only, 25 advice, 139 repo.
+322 rules: 132 covered, 7 partial, 10 account, 5 cdk-only, 25 advice, 143 repo.
 
 | Rule | Title | Template check | Status | Note |
 | -- | -- | -- | -- | -- |
@@ -337,6 +337,10 @@ Which CDK rules have a template check, and which AWS Foundational Security Best 
 | REPO-137 | Security services are not centralized through a delegated administrator or controls |  | `repo` | Fires when the repo holds IaC and defines no Organizations delegated administrator, service organization admin account or Control Tower control. Org-level: runs with `rules.org` or `rules.include`. |
 | REPO-138 | No threat model is in the repo |  | `repo` | Fires when the repo holds IaC and has no file named for a threat model and no note with a threat model heading. |
 | REPO-139 | No IAM Access Analyzer, Inspector or dated security service review is in the repo |  | `repo` | Fires when the repo holds IaC and defines no Access Analyzer or Inspector and has no dated security review note. |
+| REPO-140 | No permissions boundary, per-component roles or access requirements note define access |  | `repo` | Fires when the repo holds IaC with no permissions boundary, fewer than two IAM roles and no note or heading on access requirements. |
+| REPO-141 | No IAM Access Analyzer or dated access review reduces permissions over time |  | `repo` | Fires when the repo holds IaC and defines no Access Analyzer and has no dated access or permission review note. Org-level: runs with `rules.org` or `rules.include`. |
+| REPO-142 | The IaC creates a long-lived IAM user or access key |  | `repo` | Fires on the first IAM user or access key in the IaC (CloudFormation, Terraform or CDK). |
+| REPO-143 | A RAM resource share is not limited to the organization |  | `repo` | Fires on a RAM resource share in a file that does not set AllowExternalPrincipals to false. |
 
 ## FSBP controls
 

@@ -187,5 +187,12 @@
     "file": null,
     "line": null,
     "evidence": "Holds IaC (CDK: 2 files); searched the IaC for IAM Access Analyzer and Amazon Inspector, and the notes for a dated security service review; found none"
+  },
+  {
+    "id": "REPO-140",
+    "severity": "Low",
+    "file": null,
+    "line": null,
+    "evidence": "Holds IaC (CDK: 2 files); searched the IaC for a permissions boundary and for two or more IAM roles, and the notes for a file or heading on access requirements or the access model; found none"
   }
 ]

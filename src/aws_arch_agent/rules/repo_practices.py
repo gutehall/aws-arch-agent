@@ -224,6 +224,17 @@ user):
 - REPO-139 new security services: IAM Access Analyzer or Inspector in the IaC, or a dated
   security service review note, passes.
 
+Permissions (SEC 3) run by default (REPO-031 and REPO-032 answer guardrails and emergency
+access):
+
+- REPO-140 access requirements: a permissions boundary or two IAM roles in the IaC, or an access
+  requirements note, passes; it fires only on a repo that holds IaC.
+- REPO-141 permission reduction: an IAM Access Analyzer in the IaC, or a dated access review
+  note, passes; it fires only on a repo that holds IaC.
+- REPO-142 access lifecycle: an IAM user or access key in the IaC fires.
+- REPO-143 organization sharing: a RAM resource share that does not set AllowExternalPrincipals
+  to false fires.
+
 Reliability testing (REL 12) runs by default and reads the IaC and the builds REPO-009 reads
 (CI configs, inline buildspecs, CodeBuild projects and pipelines in the IaC, and the
 package.json scripts they run):
@@ -6162,6 +6173,159 @@ class SecurityServiceReviewMissing(_IncidentRule):
         return security_service_review(repo_path)
 
 
+# Permissions (SEC 3): access requirements (REPO-140), continuous permission reduction
+# (REPO-141), access tied to a lifecycle (REPO-142) and sharing within the organization
+# (REPO-143). REPO-031 and REPO-032 answer guardrails and emergency access.
+_ACCESS_NAME = re.compile(
+    r"access[-_ ]?(?:requirements?|model|matrix|control[-_ ]?policy)|permissions?[-_ ]?model"
+    r"|iam[-_ ]?(?:design|model|requirements?)|rbac"
+)
+_ACCESS_HEADING = re.compile(
+    r"(?i).*\b(?:access requirements?|access model|permissions? model|access matrix"
+    r"|who (?:can|needs) access)\b.*"
+)
+_ACCESS_ANALYZER = re.compile(
+    r"AWS::AccessAnalyzer::Analyzer|resource\s+\"aws_accessanalyzer_analyzer\""
+    r"|\baccessanalyzer\.(?:Cfn)?Analyzer\("
+)
+_ACCESS_REVIEW_NAME = re.compile(
+    r"(?:access|permissions?|iam|privilege)[-_ ]?reviews?|least[-_ ]?privilege"
+    r"|unused[-_ ]?access"
+)
+_ACCESS_REVIEW_HEADING = re.compile(
+    r"(?i).*\b(?:access reviews?|permissions? reviews?|iam reviews?|least privilege"
+    r"|unused access)\b.*"
+)
+_LONG_LIVED_IDENTITY = re.compile(
+    r"[\"']?Type[\"']?\s*:\s*[\"']?AWS::IAM::(?:User|AccessKey)\b"
+    r"|resource\s+\"aws_iam_(?:user|access_key)\"\s+\""
+    r"|\biam\.(?:Cfn)?(?:User|AccessKey)\("
+)
+_RAM_SHARE = re.compile(
+    r"[\"']?Type[\"']?\s*:\s*[\"']?AWS::RAM::ResourceShare\b"
+    r"|resource\s+\"aws_ram_resource_share\"\s+\"|\bram\.CfnResourceShare\("
+)
+_RAM_ORG_ONLY = re.compile(
+    r"[\"']?(?:AllowExternalPrincipals|allow_external_principals|allowExternalPrincipals)[\"']?"
+    r"\s*[:=]\s*[\"']?(?:false|False)\b"
+)
+
+
+class AccessRequirementsMissing(_IncidentRule):
+    id = "REPO-140"
+    title = "No permissions boundary, per-component roles or access requirements note define access"
+    themes = ("identity",)
+    recommendation = (
+        "Write down who and what needs access, then encode it: give each workload component "
+        "its own IAM role (one role per function, task or service), cap the roles with a "
+        "permissions boundary, or keep an access requirements note (docs/access-model.md) "
+        "that lists each principal, the resources it reaches and why."
+    )
+    searched = (
+        "the IaC for a permissions boundary and for two or more IAM roles, and the notes for "
+        "a file or heading on access requirements or the access model"
+    )
+
+    def present(self, repo_path: Path) -> str | None:
+        roles = 0
+        first: str | None = None
+        for rel, text in iac_texts(repo_path):
+            if _BOUNDARY.search(text):
+                return rel
+            found = len(_ROLE_DECL.findall(text))
+            if found:
+                roles += found
+                first = first or rel
+        if roles >= 2:
+            return first
+        return _noted(repo_path, _ACCESS_NAME, _ACCESS_HEADING)
+
+
+class PermissionsNotReduced(_IncidentRule):
+    id = "REPO-141"
+    title = "No IAM Access Analyzer or dated access review reduces permissions over time"
+    themes = ("identity",)
+    recommendation = (
+        "Reduce permissions continuously: create an IAM Access Analyzer (an unused access "
+        "analyzer for the organization or account) and act on its findings, or keep a dated "
+        "access review note (docs/access-review-2026-03.md) that records which permissions "
+        "you removed."
+    )
+    searched = (
+        "the IaC for an IAM Access Analyzer, and the notes for a dated access or permission "
+        "review"
+    )
+
+    def present(self, repo_path: Path) -> str | None:
+        found = _in_iac_text(repo_path, _ACCESS_ANALYZER)
+        if found:
+            return found
+        for rel, text in note_texts(repo_path):
+            parts = rel.lower().split("/")
+            names = [*parts[:-1], parts[-1].rsplit(".", 1)[0]]
+            titled = any(_ACCESS_REVIEW_NAME.search(n) for n in names) or any(
+                _ACCESS_REVIEW_HEADING.fullmatch(h.group(2).strip())
+                for h in _HEADING.finditer(text)
+            )
+            if titled and _DATE.search(text):
+                return rel
+        return None
+
+
+class LongLivedIdentity(_RepoRule):
+    id = "REPO-142"
+    title = "The IaC creates a long-lived IAM user or access key"
+    category = "Security"
+    severity = "Medium"
+    themes = ("identity",)
+    recommendation = (
+        "Tie access to a lifecycle: give people access through IAM Identity Center (SSO) and "
+        "give workloads IAM roles that the pipeline or the service assumes, so credentials "
+        "expire. Remove the IAM user and access key; if one must stay, rotate the key and "
+        "alarm on its age."
+    )
+
+    def run(self, repo_path: Path, language: str = "typescript") -> List[Finding]:
+        for rel, text in iac_texts(repo_path):
+            match = _LONG_LIVED_IDENTITY.search(text)
+            if match:
+                return [self._finding(
+                    f"{rel} declares an IAM user or access key ({match.group(0).strip()[:60]}); "
+                    "its credentials do not expire. Searched the IaC for IAM users and access "
+                    "keys",
+                    file=rel,
+                    line=_line_of(text, match.start()),
+                )]
+        return []
+
+
+class OrgShareOpenToExternal(_RepoRule):
+    id = "REPO-143"
+    title = "A RAM resource share is not limited to the organization"
+    category = "Security"
+    severity = "Medium"
+    themes = ("identity",)
+    recommendation = (
+        "Share within the organization only: set AllowExternalPrincipals to false "
+        "(allow_external_principals = false in Terraform) on the AWS RAM resource share and "
+        "name the organization or its units as principals. Resource policies that share "
+        "outside RAM need an aws:PrincipalOrgID condition, never a wildcard principal."
+    )
+
+    def run(self, repo_path: Path, language: str = "typescript") -> List[Finding]:
+        for rel, text in iac_texts(repo_path):
+            match = _RAM_SHARE.search(text)
+            if match and not _RAM_ORG_ONLY.search(text):
+                return [self._finding(
+                    f"{rel} declares a RAM resource share and does not set AllowExternalPrincipals "
+                    "to false, so the share can reach principals outside the organization "
+                    "(the default is true)",
+                    file=rel,
+                    line=_line_of(text, match.start()),
+                )]
+        return []
+
+
 _COMPUTE_TRACING = _kinds(
     ("Lambda active tracing",
      r"[\"']?Tracing[\"']?\s*:\s*[\"']?Active\b"
@@ -11389,6 +11553,10 @@ REPO_RULES: List[Rule] = [
     QuotasNotManaged(), QuotaIncreaseNotAutomated(), FixedQuotaNotDesignedAround(),
     ControlObjectivesMissing(), SecurityScopeNotReduced(), ThreatModelMissing(),
     SecurityServiceReviewMissing(),
+    AccessRequirementsMissing(),
+    PermissionsNotReduced(),
+    LongLivedIdentity(),
+    OrgShareOpenToExternal(),
     FaultInjectionMissing(), LoadTestMissing(),
     KpiMetricMissing(), EdgeTelemetryMissing(), DependencyTelemetryMissing(),
     DeployTestGateMissing(), AutomatedRollbackMissing(),
