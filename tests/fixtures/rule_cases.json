@@ -1869,5 +1869,29 @@
     "negative_py": "answer = 42",
     "positive_ts": "new s3.Bucket(this, 'Bucket');",
     "positive_py": "s3.Bucket(self, 'Bucket')"
+  },
+  "REPO-184": {
+    "negative_ts": "const answer = 42;",
+    "negative_py": "answer = 42",
+    "positive_ts": "new ec2.Instance(this, 'Web', { instanceType, machineImage, vpc });",
+    "positive_py": "ec2.Instance(self, 'Web', instance_type=instance_type, machine_image=image, vpc=vpc)"
+  },
+  "REPO-185": {
+    "negative_ts": "const answer = 42;",
+    "negative_py": "answer = 42",
+    "positive_ts": "new ec2.Instance(this, 'Web', { instanceType, machineImage, vpc });",
+    "positive_py": "ec2.Instance(self, 'Web', instance_type=instance_type, machine_image=image, vpc=vpc)"
+  },
+  "REPO-186": {
+    "negative_ts": "new ShellStep('LoadTest', { commands: ['k6 run load/checkout.js'] });",
+    "negative_py": "pipelines.ShellStep('LoadTest', commands=['artillery run load/artillery.yml'])",
+    "positive_ts": "new ShellStep('Synth', { commands: ['npm ci', 'npx cdk synth'] });",
+    "positive_py": "pipelines.ShellStep('Synth', commands=['pip install -r requirements.txt', 'cdk synth'])"
+  },
+  "REPO-187": {
+    "negative_ts": "const answer = 42;",
+    "negative_py": "answer = 42",
+    "positive_ts": "new s3.Bucket(this, 'Bucket');",
+    "positive_py": "s3.Bucket(self, 'Bucket')"
   }
 }

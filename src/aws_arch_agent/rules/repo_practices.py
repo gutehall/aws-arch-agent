@@ -7580,6 +7580,91 @@ class ArchitectureDecisionIncomplete(_RepoRule):
         )]
 
 
+# Performance culture (PERF 5): KPIs with a threshold (REPO-184), automated remediation
+# (REPO-185), a load test (REPO-186) and a review note (REPO-187).
+_PERF_METRIC = re.compile(
+    r"(?i)\b(?:latency|duration|response[-_ ]?time|targetresponsetime|integratedlatency"
+    r"|cpuutilization|cpu[-_ ]?utili[sz]ation|memoryutili[sz]ation|throttl\w*|queuedepth"
+    r"|approximatenumberofmessagesvisible|iterator[-_ ]?age|p9[0-9](?:\.\d+)?)\b"
+)
+_NUMERIC_THRESHOLD = re.compile(r"(?i)\bthreshold[\"']?\s*[:=]\s*[\"']?\d")
+
+
+class PerformanceKpiMissing(_RepoRule):
+    id = "REPO-184"
+    title = "No alarm on latency or saturation has a numeric threshold"
+    category = "Performance Efficiency"
+    severity = "Low"
+    themes = ("observability",)
+    recommendation = (
+        "Turn performance goals into numbers: alarm on the latency (p99, TargetResponseTime, "
+        "Duration) and the saturation (CPU, queue depth, throttles) of the critical path, "
+        "each with a threshold taken from the goal, and name the path in the alarm."
+    )
+
+    def run(self, repo_path: Path, language: str = "typescript") -> List[Finding]:
+        compute = _in_iac(repo_path, _COMPUTE)
+        if not compute:
+            return []
+        for _rel, text in iac_texts(repo_path):
+            if _ALARM.search(text) and _PERF_METRIC.search(text) and _NUMERIC_THRESHOLD.search(text):
+                return []
+        return [self._finding(
+            f"Runs {_named(compute)}; searched the IaC for a CloudWatch alarm on a latency, "
+            "duration, utilization, throttle or queue metric with a numeric threshold; "
+            "found none",
+            file=next(iter(compute.values())),
+        )]
+
+
+class PerformanceRemediationMissing(AlarmResponseMissing):
+    """The same search as REPO-047, answering PERF05-BP05 for the question on culture."""
+
+    id = "REPO-185"
+    title = "Performance alarms trigger no automated remediation"
+    category = "Performance Efficiency"
+    themes = ("observability",)
+    recommendation = (
+        "Fix performance problems without a person: scale on load with a target tracking or "
+        "step scaling policy, or point the alarm at an SSM Automation runbook, a Lambda "
+        "function or an EventBridge rule that restarts, resizes or scales the resource."
+    )
+
+
+class PerformanceLoadTestMissing(LoadTestMissing):
+    """The same search as REPO-017, answering PERF05-BP04 for the question on culture."""
+
+    id = "REPO-186"
+    title = "No load test shows how the workload performs under load"
+    category = "Performance Efficiency"
+    themes = ("observability",)
+    recommendation = (
+        "Measure performance before users do: run a load test in the pipeline (k6, Artillery, "
+        "Locust, JMeter or Distributed Load Testing on AWS) against pre-production at the "
+        "expected peak, and fail the build when latency or errors pass the target."
+    )
+
+
+class PerformanceReviewMissing(_NoteRule):
+    id = "REPO-187"
+    title = "No performance review note names how the team improves and reviews performance"
+    category = "Performance Efficiency"
+    note_name = re.compile(
+        r"perf(?:ormance)?[-_ ]?(?:review|reviews|report|improvement|kpis?|metrics|process)"
+    )
+    note_heading = re.compile(
+        r"(?i).*\b(?:performance (?:review|reviews|report|improvement|kpis?|metrics|process))\b.*"
+    )
+    recommendation = (
+        "Write down how performance is reviewed (docs/performance-review.md): the KPIs, how "
+        "often the team reads them, what starts an improvement and who owns it."
+    )
+    searched = (
+        "the notes for a file or heading on a performance review, report, improvement process "
+        "or KPIs"
+    )
+
+
 _COMPUTE_TRACING = _kinds(
     ("Lambda active tracing",
      r"[\"']?Tracing[\"']?\s*:\s*[\"']?Active\b"
@@ -13006,4 +13091,5 @@ REPO_RULES: List[Rule] = [
     CostRequirementsMissing(), ComponentCostNotAnalysed(), LicenseTermsUnrecorded(),
     CostReviewMissing(),
     ArchitectureDecisionIncomplete(),
+    PerformanceKpiMissing(), PerformanceRemediationMissing(), PerformanceLoadTestMissing(), PerformanceReviewMissing(),
 ]

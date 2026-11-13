@@ -4,7 +4,7 @@ This document provides a comprehensive list of all rules checked by AWS Arch Age
 
 ## Overview
 
-AWS Arch Agent checks **362 static analysis rules** and **283 template checks** across all 6 AWS Well-Architected Framework pillars. 139 of the 362 CDK rules (38%) have a template check, so they also run for CloudFormation, Terraform and synthesised CDK. [COVERAGE.md](COVERAGE.md) gives the reason for each of the others.
+AWS Arch Agent checks **366 static analysis rules** and **283 template checks** across all 6 AWS Well-Architected Framework pillars. 139 of the 366 CDK rules (38%) have a template check, so they also run for CloudFormation, Terraform and synthesised CDK. [COVERAGE.md](COVERAGE.md) gives the reason for each of the others.
 
 ## Static Analysis Rules (V1 & V2 Modes)
 
@@ -349,7 +349,7 @@ These rules run on your CDK TypeScript/Python code and execute in both V1 and V2
 - REPO-177: No issue template, pipeline notification or note records what a change did
 - REPO-178: No improvement note names how the team improves, shares knowledge and finds time
 
-### Performance Efficiency (29 rules)
+### Performance Efficiency (33 rules)
 
 **Compute Optimization:**
 - PERF-001: Compute may not use Graviton/ARM
@@ -395,6 +395,10 @@ These rules run on your CDK TypeScript/Python code and execute in both V1 and V2
 - REPO-067: Traffic is not spread by a load balancer
 - REPO-068: Edge uses an older network protocol
 - REPO-183: No architecture decision record names the services considered, the cost, the tradeoff and the benchmark
+- REPO-184: No alarm on latency or saturation has a numeric threshold
+- REPO-185: Performance alarms trigger no automated remediation
+- REPO-186: No load test shows how the workload performs under load
+- REPO-187: No performance review note names how the team improves and reviews performance
 
 ### Cost Optimization (52 rules)
 
@@ -1363,6 +1367,10 @@ Every rule has one or more themes, which cut across pillars: `finops`, `security
 | REPO-181 | finops |
 | REPO-182 | finops |
 | REPO-183 | observability |
+| REPO-184 | observability |
+| REPO-185 | observability |
+| REPO-186 | observability |
+| REPO-187 | observability |
 | SEC-001 | identity |
 | SEC-002 | identity |
 | SEC-003 | network-exposure |

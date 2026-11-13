@@ -719,5 +719,33 @@
     "file": null,
     "line": null,
     "evidence": "Holds IaC (CloudFormation: 1 file); searched the notes for an architecture decision record, in a file, a folder or a heading; found none"
+  },
+  {
+    "id": "REPO-184",
+    "severity": "Low",
+    "file": "stack.yaml",
+    "line": null,
+    "evidence": "Runs Lambda (stack.yaml); searched the IaC for a CloudWatch alarm on a latency, duration, utilization, throttle or queue metric with a numeric threshold; found none"
+  },
+  {
+    "id": "REPO-185",
+    "severity": "Low",
+    "file": "stack.yaml",
+    "line": null,
+    "evidence": "Runs Lambda (stack.yaml); searched the IaC for an Auto Scaling or Application Auto Scaling policy, an alarm action that runs automation or a Lambda function, and an EventBridge rule on alarm state changes; found none"
+  },
+  {
+    "id": "REPO-186",
+    "severity": "Low",
+    "file": null,
+    "line": null,
+    "evidence": "Searched the repo for a build to run a load test (a CI config, or a CodeBuild buildspec or pipeline in the IaC); found none"
+  },
+  {
+    "id": "REPO-187",
+    "severity": "Low",
+    "file": null,
+    "line": null,
+    "evidence": "Holds IaC (CloudFormation: 1 file); searched the notes for a file or heading on a performance review, report, improvement process or KPIs; found none"
   }
 ]

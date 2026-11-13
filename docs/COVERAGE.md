@@ -15,7 +15,7 @@ Which CDK rules have a template check, and which AWS Foundational Security Best 
 
 ## CDK rules
 
-362 rules: 132 covered, 7 partial, 10 account, 5 cdk-only, 25 advice, 183 repo.
+366 rules: 132 covered, 7 partial, 10 account, 5 cdk-only, 25 advice, 187 repo.
 
 | Rule | Title | Template check | Status | Note |
 | -- | -- | -- | -- | -- |
@@ -381,6 +381,10 @@ Which CDK rules have a template check, and which AWS Foundational Security Best 
 | REPO-181 | A Marketplace image runs on a dedicated host with no licensing note |  | `repo` | Fires when the IaC names a Marketplace image and declares a dedicated host and no note named or headed for licences, licensing or bring your own licence exists. |
 | REPO-182 | No dated cost review or scheduled cost report is in the repo |  | `repo` | Fires when the repo holds IaC and neither the IaC (a Data Export, cost and usage report or cost anomaly subscription) nor a dated note named or headed for a cost review, report or checklist exists. |
 | REPO-183 | No architecture decision record names the services considered, the cost, the tradeoff and the benchmark |  | `repo` | Fires when the repo holds IaC and either no note is an architecture decision record or the records together do not name the services considered, the guidance used, the cost comparison, the tradeoff, the reference architecture, the benchmark and the data used. |
+| REPO-184 | No alarm on latency or saturation has a numeric threshold |  | `repo` | Fires when the IaC declares compute and no IaC file has a CloudWatch alarm on a latency, duration, utilization, throttle or queue metric with a numeric threshold. |
+| REPO-185 | Performance alarms trigger no automated remediation |  | `repo` | Fires on the same gap as REPO-047, for PERF05-BP05: the IaC runs compute and has no scaling policy, no alarm action that runs automation or a Lambda function and no EventBridge rule on alarm state changes. |
+| REPO-186 | No load test shows how the workload performs under load |  | `repo` | Fires on the same gap as REPO-017, for PERF05-BP04: no build config runs a load test. |
+| REPO-187 | No performance review note names how the team improves and reviews performance |  | `repo` | Fires when the repo holds IaC and no note named or headed for a performance review, report, improvement process or KPIs exists. |
 
 ## FSBP controls
 

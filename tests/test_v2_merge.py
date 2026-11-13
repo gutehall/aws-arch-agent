@@ -24,9 +24,9 @@ from aws_arch_agent.rules.cf_template import CF_COVERS_STATIC
 from aws_arch_agent.tools.llm import LLMResult
 
 # Repo-level rules add Operational Excellence (OPS 5) and Reliability (REL 12: no fault
-# injection, no load test) pillars to any bare repo; so do no version control, no quality gate and no load test for demand (REPO-148).
+# injection, no load test) pillars to any bare repo; so do no version control, no quality gate and no load test for demand (REPO-148) and no load test for performance (REPO-186).
 REPO_IDS = ["REPO-001", "REPO-002", "REPO-003", "REPO-016", "REPO-017", "REPO-113", "REPO-115",
-            "REPO-148"]
+            "REPO-148", "REPO-186"]
 
 
 def _ok(text: str) -> LLMResult:
