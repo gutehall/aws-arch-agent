@@ -15,7 +15,7 @@ Which CDK rules have a template check, and which AWS Foundational Security Best 
 
 ## CDK rules
 
-361 rules: 132 covered, 7 partial, 10 account, 5 cdk-only, 25 advice, 182 repo.
+362 rules: 132 covered, 7 partial, 10 account, 5 cdk-only, 25 advice, 183 repo.
 
 | Rule | Title | Template check | Status | Note |
 | -- | -- | -- | -- | -- |
@@ -380,6 +380,7 @@ Which CDK rules have a template check, and which AWS Foundational Security Best 
 | REPO-180 | No cost estimate covers each component the workload declares |  | `repo` | Fires on the same gap as REPO-088, for COST05-BP02 and COST05-BP03: the workload declares resources and the repo holds no Infracost run or config and no cost estimate note with an amount. |
 | REPO-181 | A Marketplace image runs on a dedicated host with no licensing note |  | `repo` | Fires when the IaC names a Marketplace image and declares a dedicated host and no note named or headed for licences, licensing or bring your own licence exists. |
 | REPO-182 | No dated cost review or scheduled cost report is in the repo |  | `repo` | Fires when the repo holds IaC and neither the IaC (a Data Export, cost and usage report or cost anomaly subscription) nor a dated note named or headed for a cost review, report or checklist exists. |
+| REPO-183 | No architecture decision record names the services considered, the cost, the tradeoff and the benchmark |  | `repo` | Fires when the repo holds IaC and either no note is an architecture decision record or the records together do not name the services considered, the guidance used, the cost comparison, the tradeoff, the reference architecture, the benchmark and the data used. |
 
 ## FSBP controls
 

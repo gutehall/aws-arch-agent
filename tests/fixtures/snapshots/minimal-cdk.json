@@ -341,5 +341,12 @@
     "file": null,
     "line": null,
     "evidence": "Holds IaC (CDK: 2 files); searched the IaC for a Data Export, a cost and usage report or a cost anomaly subscription, and the notes for a dated file or heading on a cost review, report or checklist; found none"
+  },
+  {
+    "id": "REPO-183",
+    "severity": "Low",
+    "file": null,
+    "line": null,
+    "evidence": "Holds IaC (CDK: 2 files); searched the notes for an architecture decision record, in a file, a folder or a heading; found none"
   }
 ]

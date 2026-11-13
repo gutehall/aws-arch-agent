@@ -2279,6 +2279,12 @@ TOPICS: dict[str, tuple[str, str, str, str]] = {
         "Well-Architected COST10-BP02: Review and analyze this workload regularly",
         "/wellarchitected/latest/cost-optimization-pillar/cost_evaluate_new_services_review_workload.html",
     ),
+    "architecture_decision": (
+        "AWS Prescriptive Guidance: architectural decision records",
+        "/prescriptive-guidance/latest/architectural-decision-records/adr-process.html",
+        "Well-Architected PERF01-BP06: Use benchmarking to drive architectural decisions",
+        "/wellarchitected/latest/performance-efficiency-pillar/perf_architecture_use_benchmarking.html",
+    ),
     "repo_tests": (
         "AWS CDK: testing constructs",
         "/cdk/v2/guide/testing.html",
@@ -3042,6 +3048,7 @@ RULE_TOPICS: dict[str, str] = {
     "REPO-180": "component_costs",
     "REPO-181": "license_terms",
     "REPO-182": "cost_review",
+    "REPO-183": "architecture_decision",
     "REPO-016": "fault_injection",
     "REPO-017": "load_testing",
     "REPO-018": "app_kpi_metrics",

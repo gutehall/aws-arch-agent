@@ -7520,6 +7520,66 @@ class ImprovementLoopMissing(_NoteRule):
     )
 
 
+# Choosing architecture (PERF 1): one decision record that shows how the choice was made
+# (REPO-183).
+_ADR_SECTIONS = (
+    ("the services considered", re.compile(
+        r"(?i)\b(?:alternatives?|options?|services?) (?:considered|evaluated|compared)\b"
+        r"|\bconsidered\b|\bcompared\b")),
+    ("the guidance or partner used", re.compile(
+        r"(?i)\bwell-architected\b|\bprescriptive guidance\b|\bsolutions? architects?\b"
+        r"|\bpartner\b|\bAWS guidance\b|\bbest practices?\b")),
+    ("the cost comparison", re.compile(r"(?i)\bcosts?\b|\bpric(?:e|es|ing)\b|\$\s?\d")),
+    ("the tradeoff", re.compile(r"(?i)\btrade-?offs?\b|\bconsequences\b|\bdownsides?\b")),
+    ("the reference architecture", re.compile(
+        r"(?i)\breference architectures?\b|\blanding zone\b|\bsolutions? library\b"
+        r"|\barchitecture center\b|\bblueprints?\b")),
+    ("the benchmark", re.compile(r"(?i)\bbenchmarks?(?:ed|ing)?\b|\bload test\b|\bproof of concept\b")),
+    ("the data used", re.compile(
+        r"(?i)\bdata-driven\b|\bevidence\b|\bmetrics?\b|\bmeasure(?:d|ments?)?\b|\bresults?\b")),
+)
+
+
+class ArchitectureDecisionIncomplete(_RepoRule):
+    id = "REPO-183"
+    title = "No architecture decision record names the services considered, the cost, the tradeoff and the benchmark"
+    category = "Performance Efficiency"
+    severity = "Low"
+    themes = ("observability",)
+    recommendation = (
+        "Record how you chose the architecture: write an architecture decision record "
+        "(docs/adr/0001-compute.md) that names the services you considered, the guidance or "
+        "partner you used, the cost comparison, the tradeoff for customers, the reference "
+        "architecture you followed, the benchmark you ran and the data that decided it."
+    )
+
+    def run(self, repo_path: Path, language: str = "typescript") -> List[Finding]:
+        held = _holds_iac(repo_path)
+        if not held:
+            return []
+        texts = []
+        for rel, text in note_texts(repo_path):
+            parts = rel.lower().split("/")
+            names = [*parts[:-1], parts[-1].rsplit(".", 1)[0]]
+            if any(TradeoffsUnrecorded.note_name.search(n) for n in names) or any(
+                TradeoffsUnrecorded.note_heading.fullmatch(h.group(2).strip())
+                for h in _HEADING.finditer(text)
+            ):
+                texts.append(text)
+        if not texts:
+            return [self._finding(
+                f"Holds IaC ({held}); searched the notes for an architecture decision record, "
+                "in a file, a folder or a heading; found none"
+            )]
+        joined = "\n".join(texts)
+        missing = [label for label, found in _ADR_SECTIONS if not found.search(joined)]
+        if not missing:
+            return []
+        return [self._finding(
+            f"Holds IaC ({held}); the decision records do not name {_listed(missing, 7)}"
+        )]
+
+
 _COMPUTE_TRACING = _kinds(
     ("Lambda active tracing",
      r"[\"']?Tracing[\"']?\s*:\s*[\"']?Active\b"
@@ -12945,4 +13005,5 @@ REPO_RULES: List[Rule] = [
     PostIncidentLessonsMissing(), FeedbackLoopMissing(), ImprovementLoopMissing(),
     CostRequirementsMissing(), ComponentCostNotAnalysed(), LicenseTermsUnrecorded(),
     CostReviewMissing(),
+    ArchitectureDecisionIncomplete(),
 ]

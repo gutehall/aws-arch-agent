@@ -731,7 +731,10 @@ def test_cli_html_with_no_findings_writes_a_page(tmp_path: Path) -> None:
     # Notes for OPS 1: the customers and an architecture decision with its tradeoff.
     (tmp_path / "docs" / "customers.md").write_text("Shops and support.\n", encoding="utf-8")
     (tmp_path / "docs" / "adr").mkdir()
-    (tmp_path / "docs" / "adr" / "0001-queue.md").write_text("Tradeoff: cost.\n", encoding="utf-8")
+    (tmp_path / "docs" / "adr" / "0001-queue.md").write_text(
+        "We considered SQS and Kinesis, following the Well-Architected guidance and the reference "
+        "architecture. Cost and the tradeoff are in the benchmark: the measured results are "
+        "the data.\n", encoding="utf-8")
     # Notes and a pull request template for OPS 2: an owned runbook and who is on call.
     (tmp_path / "docs" / "runbooks").mkdir()
     (tmp_path / "docs" / "runbooks" / "restore.md").write_text("Owner: platform\n", encoding="utf-8")
