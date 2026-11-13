@@ -648,7 +648,7 @@
     "severity": "Low",
     "file": null,
     "line": null,
-    "evidence": "Holds IaC (Terraform: 3 files); searched the IaC for an SSM document, and the notes for a file, folder or heading on a runbook or an operations guide; found none"
+    "evidence": "Holds IaC (Terraform: 3 files); searched the IaC for an SSM Automation document, and the notes for a file, folder or heading on a runbook or an operations guide; found none"
   },
   {
     "id": "REPO-173",
@@ -662,7 +662,7 @@
     "severity": "Low",
     "file": null,
     "line": null,
-    "evidence": "Holds IaC (Terraform: 3 files); searched the IaC for an AWS Support resource, and the notes for a file or heading on a support plan or support cases; found none"
+    "evidence": "Holds IaC (Terraform: 3 files); searched the notes for a file or heading on a support plan, AWS Support or support cases; found none"
   },
   {
     "id": "REPO-175",
@@ -725,7 +725,7 @@
     "severity": "Low",
     "file": "main.tf",
     "line": null,
-    "evidence": "Runs Lambda (main.tf); searched the IaC for a CloudWatch alarm on a latency, duration, utilization, throttle or queue metric with a numeric threshold; found none"
+    "evidence": "Runs Lambda (main.tf); searched the IaC for a CloudWatch alarm on a latency, duration, utilization, throttle or queue metric with a numeric threshold in the same alarm; found none"
   },
   {
     "id": "REPO-185",

@@ -2328,8 +2328,8 @@ TOPICS: dict[str, tuple[str, str, str, str]] = {
         "/wellarchitected/latest/sustainability-pillar/sus_sus_dev_a1.html",
     ),
     "dependency_updates": (
-        "Well-Architected SUS06-BP02: Adopt methods that can rapidly introduce sustainability improvements",
-        "/wellarchitected/latest/sustainability-pillar/sus_sus_dev_a2.html",
+        "AWS Lambda: runtimes",
+        "/lambda/latest/dg/lambda-runtimes.html",
         "Well-Architected SUS06-BP03: Keep your workload up-to-date",
         "/wellarchitected/latest/sustainability-pillar/sus_sus_dev_a3.html",
     ),

@@ -48,8 +48,9 @@ def test_one_big_stack_fires(tmp_path: Path) -> None:
         {"lib/a.ts": "class A extends Stack {}\nclass B extends Stack {}\n"
                      + "new lambda.Function(this, 'A', p);\n" * 4 + "new s3.Bucket(this, 'B');\n" * 4},
         {"main.tf": _tf("aws_lambda_function", "fn", 6)},
+        {"main.tf": _BIG + 'module "billing" {\n  source = "./billing"\n}\n'},
     ],
-    ids=["small", "two-files", "modules", "two-stacks", "compute-only"],
+    ids=["small", "two-files", "modules", "two-stacks", "compute-only", "one-module"],
 )
 def test_segmented_or_small_workload_passes(tmp_path: Path, files: dict) -> None:
     assert not _found(_scan(tmp_path, files))

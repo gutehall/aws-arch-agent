@@ -78,6 +78,11 @@ def test_alarm_without_a_kpi_fails(tmp_path: Path, files: dict) -> None:
     assert _found(_scan(tmp_path, {**_HOST, **files}), "REPO-184")
 
 
+def test_metric_and_threshold_must_share_an_alarm(tmp_path: Path) -> None:
+    text = ("# latency matters\n" + _ALARM.format(metric="Errors", limit=1))
+    assert _found(_scan(tmp_path, {**_HOST, "a.tf": text}), "REPO-184")
+
+
 def test_compute_without_automation_fails_the_remediation_rule(tmp_path: Path) -> None:
     (hit,) = _found(_scan(tmp_path, _HOST), "REPO-185")
     assert hit.question == "PERF 5"

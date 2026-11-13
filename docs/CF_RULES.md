@@ -344,10 +344,10 @@ These rules run on your CDK TypeScript/Python code and execute in both V1 and V2
 - REPO-171: No ownership note says how the team is sponsored, empowered, trained and staffed
 - REPO-172: No runbook is in the repo for deploying and operating the workload
 - REPO-173: No playbook is in the repo for investigating issues in the workload
-- REPO-174: No note or resource names the support plan for production
-- REPO-175: No operational readiness checklist is in the repo
+- REPO-174: No note names the support plan for production
+- REPO-175: No operational readiness checklist that covers the team's capability is in the repo
 - REPO-176: No post-incident template or review records the lessons learned
-- REPO-177: No issue template, pipeline notification or note records what a change did
+- REPO-177: No issue template that asks for the outcome, pipeline notification or note records what a change did
 - REPO-178: No improvement note names how the team improves, shares knowledge and finds time
 
 ### Performance Efficiency (33 rules)
@@ -395,9 +395,9 @@ These rules run on your CDK TypeScript/Python code and execute in both V1 and V2
 - REPO-066: Dedicated connectivity or VPN has no redundant link
 - REPO-067: Traffic is not spread by a load balancer
 - REPO-068: Edge uses an older network protocol
-- REPO-183: No architecture decision record names the services considered, the cost, the tradeoff and the benchmark
+- REPO-183: No architecture decision record covers the services, guidance, cost, tradeoff, reference architecture, benchmark and data
 - REPO-184: No alarm on latency or saturation has a numeric threshold
-- REPO-185: Performance alarms trigger no automated remediation
+- REPO-185: Nothing remediates performance problems automatically
 - REPO-186: No load test shows how the workload performs under load
 - REPO-187: No performance review note names how the team improves and reviews performance
 
@@ -477,7 +477,7 @@ These rules run on your CDK TypeScript/Python code and execute in both V1 and V2
 - REPO-097: Demand has no buffer or throttle
 - REPO-160: EC2 instances have no SSM association and no pipeline automates operations
 - REPO-179: No budget or cost note states the cost requirements for peak and steady usage
-- REPO-180: No cost estimate covers each component the workload declares
+- REPO-180: No cost estimate is in the repo for the components the workload declares
 - REPO-181: A Marketplace image runs on a dedicated host with no licensing note
 - REPO-182: No dated cost review or scheduled cost report is in the repo
 

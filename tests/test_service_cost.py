@@ -16,7 +16,7 @@ _MARKET = 'data "aws_ami" "m" {\n  owners = ["aws-marketplace"]\n}\n'
 
 def _scan(root: Path, files: dict[str, str]) -> list:
     for rel, text in files.items():
-        path = root / "prod" / rel
+        path = root / (rel[1:] if rel.startswith("/") else f"prod/{rel}")
         path.parent.mkdir(parents=True, exist_ok=True)
         path.write_text(text, encoding="utf-8")
     _report, _ctx, findings, _w = analyze_v1(root, use_llm=False)
@@ -80,6 +80,11 @@ def test_component_cost_rule_passes_with_an_estimate(tmp_path: Path) -> None:
 def test_marketplace_image_on_a_dedicated_host_needs_a_licence_note(tmp_path: Path) -> None:
     (hit,) = _found(_scan(tmp_path, {"m.tf": _MARKET + _HOST}), "REPO-181")
     assert hit.question == "COST 5" and hit.file == "prod/m.tf"
+
+
+def test_a_licence_file_is_not_a_licensing_note(tmp_path: Path) -> None:
+    files = {"m.tf": _MARKET + _HOST, "/LICENSE.md": "MIT\n"}
+    assert _found(_scan(tmp_path, files), "REPO-181")
 
 
 @pytest.mark.parametrize(

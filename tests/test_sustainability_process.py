@@ -86,6 +86,11 @@ def test_always_on_build_fleet_fires(tmp_path: Path, text: str) -> None:
     assert hit.question == "SUS 6" and hit.file == f"prod/{name}"
 
 
+def test_a_spot_comment_is_not_spot_capacity(tmp_path: Path) -> None:
+    text = '# spot later\nresource "aws_instance" "gh_runner" {\n  instance_type = "m5.large"\n}\n'
+    assert _found(_scan(tmp_path, {"f.tf": text}), "REPO-192")
+
+
 @pytest.mark.parametrize(
     "text",
     [

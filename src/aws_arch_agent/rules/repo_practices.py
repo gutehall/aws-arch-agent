@@ -7051,7 +7051,7 @@ class CustomerNeedsMissing(_NoteRule):
     )
     note_heading = re.compile(
         r"(?i).*\b(?:customers?|stakeholders?|personas?|users and needs|business priorities"
-        r"|business goals|requirements)\b.*"
+        r"|business goals)\b.*"
     )
     recommendation = (
         "Write down who the workload is for: a customers note (docs/customers.md or a "
@@ -7079,12 +7079,11 @@ class GovernanceControlsMissing(_NoteRule):
     title = "No conformance pack, Security Hub standard, SCP or compliance note names the controls"
     category = "Operational Excellence"
     note_name = re.compile(
-        r"compliance|governance|regulat(?:ion|ory)|standards?|controls?[-_ ]?framework"
-        r"|soc[-_ ]?2|pci|hipaa|gdpr|iso[-_ ]?27001"
+        r"compliance|governance|regulat(?:ion|ory)|soc[-_ ]?2|pci|hipaa|gdpr|iso[-_ ]?27001"
     )
     note_heading = re.compile(
-        r"(?i).*\b(?:compliance|governance|regulatory|regulations?|standards? we follow"
-        r"|control framework|soc ?2|pci[- ]dss|hipaa|gdpr|iso ?27001)\b.*"
+        r"(?i).*\b(?:compliance|governance|regulatory|regulations?|soc ?2|pci[- ]dss|hipaa"
+        r"|gdpr|iso ?27001)\b.*"
     )
     iac = _GOVERNANCE_IN_IAC
     recommendation = (
@@ -7369,6 +7368,7 @@ class OperationsCultureMissing(_NoteRule):
 _SSM_DOCUMENT = re.compile(
     _cf_type(r"SSM::Document") + r"|resource\s+\"aws_ssm_document\"|\bssm\.CfnDocument\("
 )
+_AUTOMATION_DOCUMENT = re.compile(r"[\"']?(?i:document_?type)[\"']?\s*[:=]\s*[\"']?Automation\b")
 
 
 class RunbooksMissing(_NoteRule):
@@ -7378,16 +7378,21 @@ class RunbooksMissing(_NoteRule):
     note_heading = re.compile(
         r"(?i).*\b(?:run-?books?|operations? guide|operating procedures?)\b.*"
     )
-    iac = _SSM_DOCUMENT
     recommendation = (
         "Write the routine procedures down: a runbook per task (docs/runbooks/deploy.md, "
         "restore.md, rotate-keys.md) with the steps, the checks and the rollback, or an SSM "
         "Automation document that performs them."
     )
     searched = (
-        "the IaC for an SSM document, and the notes for a file, folder or heading on a runbook "
+        "the IaC for an SSM Automation document, and the notes for a file, folder or heading on a runbook "
         "or an operations guide"
     )
+
+    def present(self, repo_path: Path) -> str | None:
+        for rel, text in iac_texts(repo_path):
+            if _SSM_DOCUMENT.search(text) and _AUTOMATION_DOCUMENT.search(text):
+                return rel
+        return super().present(repo_path)
 
 
 class OperationalPlaybooksMissing(FailurePlaybookMissing):
@@ -7406,34 +7411,35 @@ class OperationalPlaybooksMissing(FailurePlaybookMissing):
 
 class SupportPlanMissing(_NoteRule):
     id = "REPO-174"
-    title = "No note or resource names the support plan for production"
+    title = "No note names the support plan for production"
     note_name = re.compile(
         r"support[-_ ]?plans?|aws[-_ ]?support|(?:business|enterprise)[-_ ]?support|support[-_ ]?cases?"
     )
     note_heading = re.compile(
         r"(?i).*\b(?:support plans?|aws support|(?:business|enterprise) support|support cases?)\b.*"
     )
-    iac = re.compile(_cf_type(r"Support::\w+") + r"|resource\s+\"aws_support_\w+\"")
     recommendation = (
         "Decide what support production has: name the AWS Support plan (Business or "
         "Enterprise) in a support note, with who may open a case and the severity each kind "
         "of issue gets, and keep it with the other operations notes."
     )
     searched = (
-        "the IaC for an AWS Support resource, and the notes for a file or heading on a "
-        "support plan or support cases"
+        "the notes for a file or heading on a support plan, AWS Support or support cases"
     )
 
 
 class ReadinessReviewMissing(_NoteRule):
     id = "REPO-175"
-    title = "No operational readiness checklist is in the repo"
+    title = "No operational readiness checklist that covers the team's capability is in the repo"
     note_name = re.compile(
         r"readiness|orr(?:$|[-_ .])|launch[-_ ]?checklist|go[-_ ]?live|production[-_ ]?checklist"
     )
     note_heading = re.compile(
         r"(?i).*\b(?:operational readiness|readiness (?:review|checklist)|launch checklist"
         r"|go-live|production checklist)\b.*"
+    )
+    note_needs = re.compile(
+        r"(?i)\b(?:train\w*|skills?|personnel|capabilit\w*|on-?call|staff\w*)\b"
     )
     recommendation = (
         "Check readiness before every launch: keep an operational readiness checklist "
@@ -7474,9 +7480,12 @@ _FEEDBACK_NAME = re.compile(r"feedback|retro(?:spective)?s?(?:$|[-_ .])|change[-
 _FEEDBACK_HEADING = re.compile(r"(?i).*\b(?:feedback|retrospectives?|change outcomes?)\b.*")
 
 
+_OUTCOME_WORD = re.compile(r"(?i)\b(?:outcome|what happened|what (?:it )?changed|impact|result)\b")
+
+
 class FeedbackLoopMissing(_NoteRule):
     id = "REPO-177"
-    title = "No issue template, pipeline notification or note records what a change did"
+    title = "No issue template that asks for the outcome, pipeline notification or note records what a change did"
     note_name = _FEEDBACK_NAME
     note_heading = _FEEDBACK_HEADING
     iac = _FEEDBACK_IN_IAC
@@ -7494,7 +7503,8 @@ class FeedbackLoopMissing(_NoteRule):
         for path in walk(repo_path):
             rel = "/".join(_rel_parts(path, repo_path))
             if rel.lower().startswith((".github/issue_template", ".gitlab/issue_templates")):
-                return rel
+                if _OUTCOME_WORD.search(read_text_safe(path)):
+                    return rel
         return super().present(repo_path)
 
 
@@ -7529,20 +7539,22 @@ _ADR_SECTIONS = (
     ("the guidance or partner used", re.compile(
         r"(?i)\bwell-architected\b|\bprescriptive guidance\b|\bsolutions? architects?\b"
         r"|\bpartner\b|\bAWS guidance\b|\bbest practices?\b")),
-    ("the cost comparison", re.compile(r"(?i)\bcosts?\b|\bpric(?:e|es|ing)\b|\$\s?\d")),
+    ("the cost comparison", re.compile(
+        r"(?i)\bcost (?:comparison|comparisons|of|estimate)\b|\bpric(?:e|ing) comparison\b"
+        r"|\$\s?\d")),
     ("the tradeoff", re.compile(r"(?i)\btrade-?offs?\b|\bconsequences\b|\bdownsides?\b")),
     ("the reference architecture", re.compile(
         r"(?i)\breference architectures?\b|\blanding zone\b|\bsolutions? library\b"
         r"|\barchitecture center\b|\bblueprints?\b")),
     ("the benchmark", re.compile(r"(?i)\bbenchmarks?(?:ed|ing)?\b|\bload test\b|\bproof of concept\b")),
     ("the data used", re.compile(
-        r"(?i)\bdata-driven\b|\bevidence\b|\bmetrics?\b|\bmeasure(?:d|ments?)?\b|\bresults?\b")),
+        r"(?i)\bdata-driven\b|\bevidence\b|\bmeasured\b|\bmeasurements?\b")),
 )
 
 
 class ArchitectureDecisionIncomplete(_RepoRule):
     id = "REPO-183"
-    title = "No architecture decision record names the services considered, the cost, the tradeoff and the benchmark"
+    title = "No architecture decision record covers the services, guidance, cost, tradeoff, reference architecture, benchmark and data"
     category = "Performance Efficiency"
     severity = "Low"
     themes = ("observability",)
@@ -7607,12 +7619,16 @@ class PerformanceKpiMissing(_RepoRule):
         if not compute:
             return []
         for _rel, text in iac_texts(repo_path):
-            if _ALARM.search(text) and _PERF_METRIC.search(text) and _ALARM_THRESHOLD.search(text):
-                return []
+            starts = [m.start() for m in _ALARM.finditer(text)]
+            for n, start in enumerate(starts):
+                end = starts[n + 1] if n + 1 < len(starts) else len(text)
+                block = text[start:min(end, start + 1200)]
+                if _PERF_METRIC.search(block) and _ALARM_THRESHOLD.search(block):
+                    return []
         return [self._finding(
             f"Runs {_named(compute)}; searched the IaC for a CloudWatch alarm on a latency, "
-            "duration, utilization, throttle or queue metric with a numeric threshold; "
-            "found none",
+            "duration, utilization, throttle or queue metric with a numeric threshold in the same "
+            "alarm; found none",
             file=next(iter(compute.values())),
         )]
 
@@ -7621,7 +7637,7 @@ class PerformanceRemediationMissing(AlarmResponseMissing):
     """The same search as REPO-047, answering PERF05-BP05 for the question on culture."""
 
     id = "REPO-185"
-    title = "Performance alarms trigger no automated remediation"
+    title = "Nothing remediates performance problems automatically"
     category = "Performance Efficiency"
     themes = ("observability",)
     recommendation = (
@@ -7667,12 +7683,13 @@ class PerformanceReviewMissing(_NoteRule):
 
 # Service architecture (REL 3): a workload that mixes many services and stores in one stack
 # with no stack, module or API boundary (REPO-188).
-_BOUNDARY_MARKERS = re.compile(
+_NESTED_BOUNDARY = re.compile(
     _cf_type(r"CloudFormation::Stack") + r"|resource\s+\"aws_cloudformation_stack\""
-    r"|^\s*module\s+\"|\bNestedStack\b|\bcfn\.CfnStack\("
-    r"|\bclass\s+\w+\s*\(\s*(?:cdk\.)?(?:Nested)?Stack\b"
-    r"|\bclass\s+\w+\s+extends\s+(?:cdk\.)?(?:Nested)?Stack\b",
+    r"|^[ \t]*module\s+\"|\bNestedStack\b|\bcfn\.CfnStack\(",
     re.MULTILINE,
+)
+_STACK_CLASS = re.compile(
+    r"\bclass\s+\w+\s*\(\s*(?:cdk\.)?Stack\b|\bclass\s+\w+\s+extends\s+(?:cdk\.)?Stack\b"
 )
 _BOUNDARY_LIMIT = 4
 
@@ -7701,7 +7718,7 @@ class ServiceBoundaryMissing(_RepoRule):
         rel, text = files[0]
         compute, stores = _declared(text, _COMPUTE), _declared(text, _DATA_STORES)
         if (compute < _BOUNDARY_LIMIT or stores < _BOUNDARY_LIMIT
-                or len(_BOUNDARY_MARKERS.findall(text)) > 1):
+                or _NESTED_BOUNDARY.search(text) or len(_STACK_CLASS.findall(text)) > 1):
             return []
         return [self._finding(
             f"{rel} declares {compute} compute resources and {stores} data stores and is the "
@@ -7713,7 +7730,7 @@ class ServiceBoundaryMissing(_RepoRule):
 
 # Region selection (SUS 1): an extra Region that no resource uses (REPO-189).
 _REGION_PROVIDER = re.compile(
-    r"provider\s+\"aws\"\s*\{(?P<body>[^{}]*)\}", re.DOTALL
+    r"provider\s+\"aws\"\s*\{(?P<body>(?:[^{}]|\{(?:[^{}]|\{[^{}]*\})*\})*)\}", re.DOTALL
 )
 _REGION_ALIAS = re.compile(r"\balias\s*=\s*\"(?P<alias>[\w-]+)\"")
 
@@ -7819,9 +7836,13 @@ _BUILD_FLEET = re.compile(
     r"|\bec2\.(?:Cfn)?Instance\(\s*(?:this|self)\s*,\s*[\"'][\w-]*(?:Runner|Jenkins|Build(?:Agent|Server|Node|Fleet))"
     r"|[\"'][\w-]*(?:Runner|Jenkins|Build(?:Agent|Server|Node|Fleet))\w*[\"']\s*:\s*\{\s*[\"']Type[\"']"
     r"\s*:\s*[\"']AWS::EC2::Instance[\"']"
-    r"|^\s*[\w-]*(?:Runner|Jenkins|Build(?:Agent|Server|Node|Fleet))\w*:\s*\n\s*Type:\s*AWS::EC2::Instance",
+    r"|^[ \t]*[\w-]*(?:Runner|Jenkins|Build(?:Agent|Server|Node|Fleet))\w*:[ \t]*\n[ \t]*Type:[ \t]*AWS::EC2::Instance",
     re.MULTILINE,
 )
+def _without_comments(text: str) -> str:
+    return re.sub(r"(?m)(?:^|[ \t])(?:#|//).*$", "", text)
+
+
 _SPOT_CAPACITY = re.compile(r"(?i)\bspot\b|instance_market_options|SpotOptions|MarketType")
 
 
@@ -7840,10 +7861,13 @@ class BuildFleetAlwaysOn(_RepoRule):
     def run(self, repo_path: Path, language: str = "typescript") -> List[Finding]:
         for rel, text in iac_texts(repo_path):
             match = _BUILD_FLEET.search(text)
-            if match and not _SPOT_CAPACITY.search(text):
+            if not match:
+                continue
+            body = _without_comments(text[match.start():match.start() + 1500])
+            if not _SPOT_CAPACITY.search(body):
                 return [self._finding(
-                    f"{rel} declares a build fleet and no Spot capacity; searched the file "
-                    "for Spot options, a mixed instances policy and a market type",
+                    f"{rel} declares a build fleet and no Spot capacity; searched the "
+                    "resource for Spot options, a mixed instances policy and a market type",
                     file=rel,
                     line=_line_of(text, match.start()),
                 )]
@@ -13138,7 +13162,7 @@ class ComponentCostNotAnalysed(CostModelMissing):
     selecting services."""
 
     id = "REPO-180"
-    title = "No cost estimate covers each component the workload declares"
+    title = "No cost estimate is in the repo for the components the workload declares"
     recommendation = (
         "Cost every component before you pick it: run Infracost in CI (infracost breakdown, "
         "which lists each resource) or write a per-component estimate in the repo with an "
@@ -13146,7 +13170,7 @@ class ComponentCostNotAnalysed(CostModelMissing):
     )
 
 
-_MARKETPLACE_IN_IAC = re.compile(r"aws-marketplace|\bmarketplace\b|\bproduct[-_ ]?codes?\b")
+_MARKETPLACE_IN_IAC = re.compile(r"aws-marketplace|\bproduct[-_ ]?codes?\b")
 _DEDICATED_HOST = re.compile(
     _cf_type(r"EC2::Host") + r"|resource\s+\"aws_ec2_host\"|\bec2\.CfnHost\("
     r"|\btenancy\s*=\s*\"host\"|\bTenancy[\"']?\s*:\s*[\"']?host\b|\bTenancy\.HOST\b"
@@ -13168,14 +13192,21 @@ class LicenseTermsUnrecorded(_RepoRule):
     )
 
     def run(self, repo_path: Path, language: str = "typescript") -> List[Finding]:
-        market = _in_iac_text(repo_path, _MARKETPLACE_IN_IAC)
-        host = _in_iac_text(repo_path, _DEDICATED_HOST)
-        if not market or not host:
+        host = next((rel for rel, text in iac_texts(repo_path)
+                     if _MARKETPLACE_IN_IAC.search(text) and _DEDICATED_HOST.search(text)), None)
+        if not host:
             return []
-        if _note_having(repo_path, _LICENSE_NAME, _LICENSE_HEADING):
-            return []
+        for rel, text in note_texts(repo_path):
+            stem = rel.rsplit("/", 1)[-1].rsplit(".", 1)[0].lower()
+            if stem in ("license", "licence", "copying"):
+                continue
+            parts = rel.lower().split("/")
+            if any(_LICENSE_NAME.search(n) for n in [*parts[:-1], stem]) or any(
+                _LICENSE_HEADING.fullmatch(h.group(2).strip()) for h in _HEADING.finditer(text)
+            ):
+                return []
         return [self._finding(
-            f"{market} names a Marketplace image and {host} runs a dedicated host; searched "
+            f"{host} names a Marketplace image and declares a dedicated host; searched "
             "the notes for a file or heading on licences, licensing or bring your own "
             "licence; found none",
             file=host,

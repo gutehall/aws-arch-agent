@@ -733,8 +733,8 @@ def test_cli_html_with_no_findings_writes_a_page(tmp_path: Path) -> None:
     (tmp_path / "docs" / "adr").mkdir()
     (tmp_path / "docs" / "adr" / "0001-queue.md").write_text(
         "We considered SQS and Kinesis, following the Well-Architected guidance and the reference "
-        "architecture. Cost and the tradeoff are in the benchmark: the measured results are "
-        "the data.\n", encoding="utf-8")
+        "architecture. The cost comparison is $40 against $120. The tradeoff is cold starts. A "
+        "benchmark gave measured results, which is the data we used.\n", encoding="utf-8")
     # Notes and a pull request template for OPS 2: an owned runbook and who is on call.
     (tmp_path / "docs" / "runbooks").mkdir()
     (tmp_path / "docs" / "runbooks" / "restore.md").write_text("Owner: platform\n", encoding="utf-8")
@@ -748,7 +748,8 @@ def test_cli_html_with_no_findings_writes_a_page(tmp_path: Path) -> None:
     (tmp_path / "docs" / "playbooks").mkdir()
     (tmp_path / "docs" / "playbooks" / "latency.md").write_text("Open it.\n", encoding="utf-8")
     (tmp_path / "docs" / "support-plan.md").write_text("Enterprise Support.\n", encoding="utf-8")
-    (tmp_path / "docs" / "readiness.md").write_text("- [ ] alarms\n", encoding="utf-8")
+    (tmp_path / "docs" / "readiness.md").write_text("- [ ] alarms\n- [ ] team trained\n",
+                                                    encoding="utf-8")
     # Notes for OPS 11: a post-incident template, feedback on changes and an improvement loop.
     (tmp_path / "docs" / "post-incident-template.md").write_text(
         "## Lessons learned\n", encoding="utf-8")
@@ -786,7 +787,7 @@ def test_cli_html_with_no_findings_writes_a_page(tmp_path: Path) -> None:
     assert result.exit_code == 0, result.output
     page = out_file.read_text(encoding="utf-8")
     assert page.startswith("<!DOCTYPE html>")
-    assert "All (0)" in page, sorted(set(__import__("re").findall(r"[A-Z]+-\d{3}", page)))
+    assert "All (0)" in page
     assert '<p class="empty">No findings.</p>' in page
 
 

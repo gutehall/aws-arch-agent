@@ -49,8 +49,9 @@ def test_repo_without_iac_does_not_fire(tmp_path: Path) -> None:
     [
         {"docs/runbooks/deploy.md": "Steps.\n"},
         {"docs/ops.md": "## Runbook\n\nRestore the table.\n"},
-        {"d.tf": 'resource "aws_ssm_document" "d" {\n  name = "restore"\n}\n'},
-        {"d.json": '{"Resources": {"D": {"Type": "AWS::SSM::Document"}}}'},
+        {"d.tf": 'resource "aws_ssm_document" "d" {\n  document_type = "Automation"\n}\n'},
+        {"d.json": '{"Resources": {"D": {"Type": "AWS::SSM::Document", '
+                   '"Properties": {"DocumentType": "Automation"}}}}'},
     ],
     ids=["folder", "heading", "tf-document", "cfn-document"],
 )
@@ -69,9 +70,8 @@ def test_playbook_passes(tmp_path: Path) -> None:
     [
         {"docs/support-plan.md": "Enterprise Support.\n"},
         {"docs/ops.md": "## AWS Support\n\nBusiness plan.\n"},
-        {"s.tf": 'resource "aws_support_case" "c" {}\n'},
     ],
-    ids=["named", "heading", "tf"],
+    ids=["named", "heading"],
 )
 def test_support_plan_passes(tmp_path: Path, files: dict) -> None:
     assert not _found(_scan(tmp_path, {**_TF, **files}), "REPO-174")
@@ -80,10 +80,20 @@ def test_support_plan_passes(tmp_path: Path, files: dict) -> None:
 @pytest.mark.parametrize(
     "files",
     [
-        {"docs/readiness.md": "- [ ] alarms\n"},
-        {"docs/launch.md": "## Operational readiness\n\nChecked.\n"},
+        {"docs/readiness.md": "- [ ] alarms\n- [ ] team trained\n"},
+        {"docs/launch.md": "## Operational readiness\n\nOn-call rota agreed.\n"},
     ],
     ids=["named", "heading"],
 )
 def test_readiness_checklist_passes(tmp_path: Path, files: dict) -> None:
     assert not _found(_scan(tmp_path, {**_TF, **files}), "REPO-175")
+
+
+def test_checklist_without_the_team_fails(tmp_path: Path) -> None:
+    files = {**_TF, "docs/readiness.md": "- [ ] alarms\n- [ ] backups\n"}
+    assert _found(_scan(tmp_path, files), "REPO-175")
+
+
+def test_session_manager_document_is_not_a_runbook(tmp_path: Path) -> None:
+    files = {**_TF, "d.tf": 'resource "aws_ssm_document" "d" {\n  document_type = "Session"\n}\n'}
+    assert _found(_scan(tmp_path, files), "REPO-172")

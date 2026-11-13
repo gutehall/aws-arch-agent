@@ -45,3 +45,9 @@ def test_unused_provider_alias_fires(tmp_path: Path) -> None:
 )
 def test_used_or_absent_alias_passes(tmp_path: Path, files: dict) -> None:
     assert not _found(_scan(tmp_path, {**_TF, **files}), "REPO-189")
+
+
+def test_alias_with_a_nested_block_still_counts(tmp_path: Path) -> None:
+    text = ('provider "aws" {\n  alias  = "east"\n  region = "us-east-1"\n'
+            '  default_tags {\n    tags = { a = "b" }\n  }\n}\n')
+    assert _found(_scan(tmp_path, {**_TF, "p.tf": text}), "REPO-189")

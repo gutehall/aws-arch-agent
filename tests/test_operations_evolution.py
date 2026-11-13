@@ -65,7 +65,7 @@ def test_post_incident_without_lessons_fails(tmp_path: Path) -> None:
 @pytest.mark.parametrize(
     "files",
     [
-        {"/.github/ISSUE_TEMPLATE/change.md": "What did it do?\n"},
+        {"/.github/ISSUE_TEMPLATE/change.md": "What was the outcome?\n"},
         {"n.tf": 'resource "aws_codestarnotifications_notification_rule" "n" {}\n'},
         {"lib/n.ts": "rule.notifyOnExecutionStateChange('Chat', target);\n"},
         {"docs/retrospectives.md": "Weekly.\n"},
@@ -74,6 +74,11 @@ def test_post_incident_without_lessons_fails(tmp_path: Path) -> None:
 )
 def test_feedback_loop_passes(tmp_path: Path, files: dict) -> None:
     assert not _found(_scan(tmp_path, {**_TF, **files}), "REPO-177")
+
+
+def test_issue_template_without_an_outcome_question_fails(tmp_path: Path) -> None:
+    files = {**_TF, "/.github/ISSUE_TEMPLATE/bug.md": "Describe the bug.\n"}
+    assert _found(_scan(tmp_path, files), "REPO-177")
 
 
 @pytest.mark.parametrize(
