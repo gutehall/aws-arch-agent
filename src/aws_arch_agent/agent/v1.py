@@ -273,6 +273,7 @@ ORG_RULE_IDS = frozenset({
     "SEC-026", "SEC-027", "OPS-001", "OPS-014", "COST-014", "REPO-004", "REPO-007", "REPO-008",
     "REPO-012", "REPO-032", "REPO-069", "REPO-080", "REPO-133", "REPO-134", "REPO-136",
     "REPO-137", "REPO-141", "REPO-145",
+    "REPO-162", "REPO-163",
 })
 
 

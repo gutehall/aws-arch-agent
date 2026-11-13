@@ -7004,6 +7004,924 @@ class OperationsNotAutomated(_RepoRule):
         )]
 
 
+# Priorities (OPS 1): the customers a workload serves (REPO-161), the governance and
+# compliance controls it follows (REPO-162), the threats it faces (REPO-163) and the
+# tradeoffs it recorded (REPO-164).
+
+
+def _note_having(
+    repo_path: Path, name: re.Pattern[str], heading: re.Pattern[str],
+    needs: re.Pattern[str] | None = None,
+) -> str | None:
+    """The first note named or headed for a topic whose text also matches needs."""
+    for rel, text in note_texts(repo_path):
+        parts = rel.lower().split("/")
+        names = [*parts[:-1], parts[-1].rsplit(".", 1)[0]]
+        titled = any(name.search(part) for part in names) or any(
+            heading.fullmatch(h.group(2).strip()) for h in _HEADING.finditer(text)
+        )
+        if titled and (needs is None or needs.search(text)):
+            return rel
+    return None
+
+
+class _NoteRule(_IncidentRule):
+    """An operations rule that fires on a repo that holds IaC when no note, and no IaC
+    resource, answers the practice."""
+
+    category = "Operational Excellence"
+    themes = ("observability",)
+    note_name: ClassVar[re.Pattern[str]]
+    note_heading: ClassVar[re.Pattern[str]]
+    note_needs: ClassVar[re.Pattern[str] | None] = None
+    iac: ClassVar[re.Pattern[str] | None] = None
+
+    def present(self, repo_path: Path) -> str | None:
+        found = _in_iac_text(repo_path, self.iac) if self.iac else None
+        return found or _note_having(
+            repo_path, self.note_name, self.note_heading, self.note_needs
+        )
+
+
+class CustomerNeedsMissing(_NoteRule):
+    id = "REPO-161"
+    title = "No note names the external and internal customers the workload serves"
+    themes = ("observability",)
+    note_name = re.compile(
+        r"customers?|stakeholders?|personas?|user[-_ ]?needs|business[-_ ]?(?:goals|priorities)"
+    )
+    note_heading = re.compile(
+        r"(?i).*\b(?:customers?|stakeholders?|personas?|users and needs|business priorities"
+        r"|business goals)\b.*"
+    )
+    recommendation = (
+        "Write down who the workload is for: a customers note (docs/customers.md or a "
+        "Stakeholders section in the README) that names the external customers, the internal "
+        "customers and teams, what each needs and which need comes first when they conflict."
+    )
+    searched = (
+        "the notes for a file or heading on customers, stakeholders, personas, user needs, "
+        "business goals or requirements"
+    )
+
+
+_GOVERNANCE_IN_IAC = re.compile(
+    _cf_type(r"Config::(?:Organization)?ConformancePack")
+    + r"|" + _cf_type(r"SecurityHub::Standard") + r"|" + _cf_type(r"Organizations::Policy")
+    + r"|resource\s+\"aws_(?:config_(?:organization_)?conformance_pack|organizations_policy"
+    r"|securityhub_standards_subscription)\""
+    r"|\b(?:config\.Cfn(?:Organization)?ConformancePack|securityhub\.CfnStandard"
+    r"|organizations\.CfnPolicy)\("
+)
+
+
+class GovernanceControlsMissing(_NoteRule):
+    id = "REPO-162"
+    title = "No conformance pack, Security Hub standard, SCP or compliance note names the controls"
+    themes = ("security-baseline",)
+    category = "Operational Excellence"
+    note_name = re.compile(
+        r"compliance|governance|regulat(?:ion|ory)|soc[-_ ]?2|pci|hipaa|gdpr|iso[-_ ]?27001"
+    )
+    note_heading = re.compile(
+        r"(?i).*\b(?:compliance|governance|regulatory|regulations?|soc ?2|pci[- ]dss|hipaa"
+        r"|gdpr|iso ?27001)\b.*"
+    )
+    iac = _GOVERNANCE_IN_IAC
+    recommendation = (
+        "Make the rules the workload must follow explicit: define an AWS Config conformance "
+        "pack, a Security Hub standards subscription or a service control policy in the IaC "
+        "(this runs with rules.org, because these are usually account-level), or keep a "
+        "compliance note that names the standard (PCI DSS, SOC 2, HIPAA, GDPR, ISO 27001) and "
+        "the controls that answer it."
+    )
+    searched = (
+        "the IaC for a Config conformance pack, a Security Hub standard or an Organizations "
+        "policy, and the notes for a file or heading on compliance, governance or a standard"
+    )
+
+
+_THREAT_IN_IAC = re.compile(
+    _cf_type(r"GuardDuty::Detector") + r"|" + _cf_type(r"SecurityHub::Hub")
+    + r"|resource\s+\"aws_(?:guardduty_detector|securityhub_account)\""
+    r"|\b(?:guardduty\.CfnDetector|securityhub\.CfnHub)\("
+)
+
+
+class ThreatLandscapeMissing(_NoteRule):
+    id = "REPO-163"
+    title = "Neither GuardDuty, Security Hub nor a threat model covers the threats to the workload"
+    category = "Operational Excellence"
+    themes = ("security-baseline",)
+    note_name = re.compile(r"threat[-_ ]?(?:model|landscape|analysis|assessment)s?")
+    note_heading = re.compile(
+        r"(?i).*\b(?:threat (?:model|landscape|analysis|assessment)s?|threats?)\b.*"
+    )
+    iac = _THREAT_IN_IAC
+    recommendation = (
+        "Evaluate what threatens the workload: enable GuardDuty or Security Hub in the IaC "
+        "(this runs with rules.org, because these are usually account-level), or keep a "
+        "threat model note (docs/threat-model.md) that lists the assets, the threats to them "
+        "and the controls against each."
+    )
+    searched = (
+        "the IaC for a GuardDuty detector or a Security Hub hub, and the notes for a file or "
+        "heading on a threat model or the threat landscape"
+    )
+
+
+class TradeoffsUnrecorded(_NoteRule):
+    id = "REPO-164"
+    title = "No architecture decision record weighs a tradeoff"
+    themes = ("observability",)
+    note_name = re.compile(
+        r"adrs?|decision[-_ ]?records?|architecture[-_ ]?decisions?|decisions?|tradeoffs?"
+    )
+    note_heading = re.compile(
+        r"(?i).*\b(?:decision records?|architecture decisions?|trade-?offs?)\b.*"
+    )
+    note_needs = re.compile(
+        r"(?i)\b(?:trade-?offs?|consequences|alternatives? considered|pros and cons|risks?)\b"
+    )
+    recommendation = (
+        "Record decisions with their tradeoffs: keep an architecture decision record per "
+        "choice (docs/adr/0001-queue-or-stream.md) that states the options, the benefit and "
+        "the risk of each, and why you took this one."
+    )
+    searched = (
+        "the notes for an architecture decision record, in a file, a folder or a heading, "
+        "that names a tradeoff, a consequence, an alternative or a risk"
+    )
+
+
+# Ownership (OPS 2): who owns procedures (REPO-165), operations activities (REPO-166), the
+# ownership mechanism (REPO-167) and the way to ask for a change or an exception (REPO-168).
+_PROCEDURE_NAME = re.compile(
+    r"run[-_ ]?books?|playbooks?|procedures?|sops?(?:$|[-_ .])|standard[-_ ]operating"
+    r"|operations?[-_ ]?guide|how[-_ ]?to"
+)
+_PROCEDURE_HEADING = re.compile(
+    r"(?i).*\b(?:run-?books?|playbooks?|procedures?|standard operating procedures?)\b.*"
+)
+
+
+class ProcedureOwnerMissing(_NoteRule):
+    id = "REPO-165"
+    title = "No runbook, playbook or procedure names an owner"
+    themes = ("observability",)
+    note_name = _PROCEDURE_NAME
+    note_heading = _PROCEDURE_HEADING
+    recommendation = (
+        "Give each procedure an owner: put an Owner line (a team or a person) at the top of "
+        "every runbook, playbook and procedure note, so someone keeps it current and answers "
+        "for it."
+    )
+    searched = (
+        "the notes named or headed for a runbook, playbook or procedure for an Owner, "
+        "Contact or Responsible line that names a team or a person"
+    )
+
+    def present(self, repo_path: Path) -> str | None:
+        for rel, text in note_texts(repo_path):
+            parts = rel.lower().split("/")
+            names = [*parts[:-1], parts[-1].rsplit(".", 1)[0]]
+            titled = any(_PROCEDURE_NAME.search(n) for n in names) or any(
+                _PROCEDURE_HEADING.fullmatch(h.group(2).strip()) for h in _HEADING.finditer(text)
+            )
+            if titled and _names_owner(text):
+                return rel
+        return None
+
+
+class ActivityOwnerMissing(KeyContactsMissing):
+    """The same search as REPO-125, answering OPS02-BP03 for the question on structure."""
+
+    id = "REPO-166"
+    title = "No Incident Manager contact or note names who owns operations activities"
+    category = "Operational Excellence"
+    themes = ("observability",)
+    recommendation = (
+        "Name who performs each operations activity: define Incident Manager contacts and an "
+        "engagement plan (AWS::SSMContacts::Contact and Plan), or keep an on-call note that "
+        "says which team patches, restores, responds and approves changes."
+    )
+
+
+_OWNERSHIP_NAME = re.compile(
+    r"owners?(?:hip)?|responsibilit(?:y|ies)|raci|team[-_ ]?agreements?|working[-_ ]?agreements?"
+)
+_OWNERSHIP_HEADING = re.compile(
+    r"(?i).*\b(?:ownership|owners|responsibilit(?:y|ies)|raci|who owns|team agreements?)\b.*"
+)
+
+
+class OwnershipMechanismMissing(_NoteRule):
+    id = "REPO-167"
+    title = "No CODEOWNERS file, escalation plan or ownership note says who owns what"
+    themes = ("observability",)
+    note_name = _OWNERSHIP_NAME
+    note_heading = _OWNERSHIP_HEADING
+    recommendation = (
+        "Keep ownership where it can be changed: add a CODEOWNERS file with an owner for each "
+        "path, or an Incident Manager escalation plan, or an ownership note that lists who "
+        "owns each stack and how a team hands one over. A repo that one team owns says so."
+    )
+    searched = (
+        "the repo for a CODEOWNERS file with an owner, the IaC for an Incident Manager "
+        "contact or plan, and the notes for a file or heading on ownership or responsibilities"
+    )
+
+    def present(self, repo_path: Path) -> str | None:
+        for rel, lines in _codeowners(repo_path):
+            if lines:
+                return rel
+        return (_in_iac_text(repo_path, _CONTACTS_IN_IAC)
+                or _note_having(repo_path, self.note_name, self.note_heading))
+
+
+_CHANGE_REQUEST = re.compile(
+    r"\bpull_request(?:_target)?\b|\bmerge_requests?\b|ManualApprovalAction|\bmanual_approval\b"
+    r"|Category[\"']?\s*[:=]\s*[\"']?Approval\b|\bcategory\s*=\s*\"Approval\""
+    r"|\bapprovals?\.ManualApproval\b|\bIssueTemplates?\b"
+)
+_REQUEST_TEMPLATES = (".github/pull_request_template", ".github/issue_template",
+                      ".gitlab/merge_request_templates", ".gitlab/issue_templates")
+
+
+class ChangeRequestPathMissing(_RepoRule):
+    id = "REPO-168"
+    title = "No pull request check, manual approval or request template shows how to ask for a change"
+    category = "Operational Excellence"
+    severity = "Low"
+    themes = ("observability",)
+    recommendation = (
+        "Give people one way to ask for an addition, a change or an exception: run a CI "
+        "check on pull requests, add a manual approval action to the pipeline, or keep an "
+        "issue or pull request template that says what to include and who approves."
+    )
+
+    def run(self, repo_path: Path, language: str = "typescript") -> List[Finding]:
+        held = _holds_iac(repo_path)
+        if not held:
+            return []
+        for _rel, text in build_texts(repo_path):
+            if _CHANGE_REQUEST.search(text):
+                return []
+        for rel, text in iac_texts(repo_path):
+            if _CHANGE_REQUEST.search(text):
+                return []
+        for path in walk(repo_path):
+            rel = "/".join(_rel_parts(path, repo_path)).lower()
+            if rel.startswith(_REQUEST_TEMPLATES):
+                return []
+        return [self._finding(
+            f"Holds IaC ({held}); searched the CI configs and the IaC for a pull request "
+            "trigger, a merge request or a CodePipeline manual approval, and the repo for an "
+            "issue or pull request template; found none"
+        )]
+
+
+# Culture (OPS 3): escalation (REPO-169), the operator channel (REPO-170) and one note that
+# says how the team is sponsored, empowered, trained and staffed (REPO-171).
+_ESCALATION_IN_IAC = re.compile(
+    _cf_type(r"SSMContacts::Plan") + r"|resource\s+\"aws_ssmcontacts_plan\""
+    r"|\bssmcontacts\.CfnPlan\(|" + _RESPONSE_PLAN.pattern
+)
+_ESCALATION_NAME = re.compile(r"escalat(?:e|es|ion|ions)")
+_ESCALATION_HEADING = re.compile(r"(?i).*\b(?:escalat(?:e|es|ion|ions)|escalation path)\b.*")
+
+
+class EscalationMissing(_NoteRule):
+    id = "REPO-169"
+    title = "No escalation plan or note says who to turn to when the first responder cannot fix it"
+    themes = ("observability",)
+    note_name = _ESCALATION_NAME
+    note_heading = _ESCALATION_HEADING
+    iac = _ESCALATION_IN_IAC
+    recommendation = (
+        "Make escalation normal: define an Incident Manager engagement plan with a second "
+        "stage (AWS::SSMContacts::Plan), or keep an escalation note that says after how long "
+        "and to whom an alarm moves up, and that asking for help early is expected."
+    )
+    searched = (
+        "the IaC for an Incident Manager plan or response plan, and the notes for a file or "
+        "heading on escalation"
+    )
+
+
+_CHANNEL_IN_IAC = re.compile(
+    _cf_type(r"Chatbot::\w+|SSMContacts::Rotation|SNS::Subscription")
+    + r"|resource\s+\"aws_(?:chatbot_\w+|ssmcontacts_rotation|sns_topic_subscription)\""
+    r"|\b(?:chatbot\.\w+|ssmcontacts\.CfnRotation|sns\.Subscription|subs\.\w+Subscription)\("
+    r"|\.addSubscription\(|\.add_subscription\("
+)
+_CHANNEL_NAME = re.compile(
+    r"on[-_ ]?call|communications?|comms|channels?|alerting|notifications?|paging|pager"
+)
+_CHANNEL_HEADING = re.compile(
+    r"(?i).*\b(?:on-?call|communications?|alerting|notifications?|paging|status updates?"
+    r"|operator channel)\b.*"
+)
+
+
+class OperatorChannelMissing(_NoteRule):
+    id = "REPO-170"
+    title = "No chat channel, subscription, on-call schedule or note tells operators what is wrong"
+    themes = ("observability",)
+    note_name = _CHANNEL_NAME
+    note_heading = _CHANNEL_HEADING
+    iac = _CHANNEL_IN_IAC
+    recommendation = (
+        "Tell the operators in a place they watch: subscribe the team to the alarm topic, "
+        "send alarms to chat with AWS Chatbot, and define an on-call rotation "
+        "(AWS::SSMContacts::Rotation), or keep a note that names the channel and says what an "
+        "alert must contain to be actionable."
+    )
+    searched = (
+        "the IaC for an SNS subscription, an AWS Chatbot channel or an on-call rotation, and "
+        "the notes for a file or heading on on-call, alerting, notifications or communications"
+    )
+
+
+_CULTURE_NAME = re.compile(
+    r"ops[-_ ]?(?:ownership|culture|model)|operations?[-_ ]?(?:ownership|culture|model)"
+    r"|team[-_ ]?(?:culture|charter|norms|health)|culture|sponsor(?:ship)?|charter"
+)
+_CULTURE_HEADING = re.compile(
+    r"(?i).*\b(?:culture|executive sponsor(?:ship)?|sponsor(?:ship)?|team charter"
+    r"|operating model|team norms|skills and training|team (?:growth|staffing))\b.*"
+)
+
+
+class OperationsCultureMissing(_NoteRule):
+    id = "REPO-171"
+    title = "No ownership note says how the team is sponsored, empowered, trained and staffed"
+    themes = ("observability",)
+    note_name = _CULTURE_NAME
+    note_heading = _CULTURE_HEADING
+    recommendation = (
+        "Write one operations ownership note (docs/ops-ownership.md) that names the executive "
+        "sponsor, what the team may do on its own when an outcome is at risk, how it "
+        "experiments, how people keep their skills current and how the team is staffed for "
+        "the workload."
+    )
+    searched = (
+        "the notes for a file or heading on operations ownership, culture, sponsorship, a "
+        "team charter or an operating model"
+    )
+
+
+# Readiness (OPS 7): runbooks (REPO-172), playbooks (REPO-173), a support plan (REPO-174) and
+# the operational readiness review (REPO-175).
+_SSM_DOCUMENT = re.compile(
+    _cf_type(r"SSM::Document") + r"|resource\s+\"aws_ssm_document\"|\bssm\.CfnDocument\("
+)
+_AUTOMATION_DOCUMENT = re.compile(r"[\"']?(?i:document_?type)[\"']?\s*[:=]\s*[\"']?Automation\b")
+
+
+class RunbooksMissing(_NoteRule):
+    id = "REPO-172"
+    title = "No runbook is in the repo for deploying and operating the workload"
+    themes = ("observability",)
+    note_name = re.compile(r"run[-_ ]?books?|operations?[-_ ]?guide|operating[-_ ]?procedures?")
+    note_heading = re.compile(
+        r"(?i).*\b(?:run-?books?|operations? guide|operating procedures?)\b.*"
+    )
+    recommendation = (
+        "Write the routine procedures down: a runbook per task (docs/runbooks/deploy.md, "
+        "restore.md, rotate-keys.md) with the steps, the checks and the rollback, or an SSM "
+        "Automation document that performs them."
+    )
+    searched = (
+        "the IaC for an SSM Automation document, and the notes for a file, folder or heading on a runbook "
+        "or an operations guide"
+    )
+
+    def present(self, repo_path: Path) -> str | None:
+        for rel, text in iac_texts(repo_path):
+            if _SSM_DOCUMENT.search(text) and _AUTOMATION_DOCUMENT.search(text):
+                return rel
+        return super().present(repo_path)
+
+
+class OperationalPlaybooksMissing(FailurePlaybookMissing):
+    """The same search as REPO-122, answering OPS07-BP04 for the question on readiness."""
+
+    id = "REPO-173"
+    title = "No playbook is in the repo for investigating issues in the workload"
+    category = "Operational Excellence"
+    themes = ("observability",)
+    recommendation = (
+        "Separate investigating from doing: keep playbooks (docs/playbooks) that say how to "
+        "find the cause of a symptom, with the dashboards, logs and queries to open, next to "
+        "the runbooks that say how to run a procedure."
+    )
+
+
+class SupportPlanMissing(_NoteRule):
+    id = "REPO-174"
+    title = "No note names the support plan for production"
+    themes = ("observability",)
+    note_name = re.compile(
+        r"support[-_ ]?plans?|aws[-_ ]?support|(?:business|enterprise)[-_ ]?support|support[-_ ]?cases?"
+    )
+    note_heading = re.compile(
+        r"(?i).*\b(?:support plans?|aws support|(?:business|enterprise) support|support cases?)\b.*"
+    )
+    recommendation = (
+        "Decide what support production has: name the AWS Support plan (Business or "
+        "Enterprise) in a support note, with who may open a case and the severity each kind "
+        "of issue gets, and keep it with the other operations notes."
+    )
+    searched = (
+        "the notes for a file or heading on a support plan, AWS Support or support cases"
+    )
+
+
+class ReadinessReviewMissing(_NoteRule):
+    id = "REPO-175"
+    title = "No operational readiness checklist that covers the team's capability is in the repo"
+    themes = ("observability",)
+    note_name = re.compile(
+        r"readiness|orr(?:$|[-_ .])|launch[-_ ]?checklist|go[-_ ]?live|production[-_ ]?checklist"
+    )
+    note_heading = re.compile(
+        r"(?i).*\b(?:operational readiness|readiness (?:review|checklist)|launch checklist"
+        r"|go-live|production checklist)\b.*"
+    )
+    note_needs = re.compile(
+        r"(?i)\b(?:train\w*|skills?|personnel|capabilit\w*|on-?call|staff\w*)\b"
+    )
+    recommendation = (
+        "Check readiness before every launch: keep an operational readiness checklist "
+        "(docs/readiness.md) that asks whether the team can run the workload (people, "
+        "runbooks, alarms, backups, on-call) and review it before each release to production."
+    )
+    searched = (
+        "the notes for a file or heading on operational readiness, a launch checklist or a "
+        "go-live checklist"
+    )
+
+
+# Evolving operations (OPS 11): lessons from incidents (REPO-176), feedback on changes
+# (REPO-177) and one note on the improvement loop (REPO-178).
+class PostIncidentLessonsMissing(_NoteRule):
+    id = "REPO-176"
+    title = "No post-incident template or review records the lessons learned"
+    themes = ("observability",)
+    note_name = _POST_INCIDENT_NAME
+    note_heading = _POST_INCIDENT_HEADING
+    note_needs = re.compile(r"(?i)\blessons?(?:[- ]learned)?\b|\bwhat we learned\b|\baction items?\b")
+    recommendation = (
+        "Learn from every incident: keep a post-incident template (docs/post-incident-"
+        "template.md) with the timeline, the cause, what went well, what did not, the lessons "
+        "learned and the action items with owners, and share each review with the team."
+    )
+    searched = (
+        "the notes for a post-incident file or heading that has a lessons learned or action "
+        "items section"
+    )
+
+
+_FEEDBACK_IN_IAC = re.compile(
+    _cf_type(r"CodeStarNotifications::NotificationRule")
+    + r"|resource\s+\"aws_codestarnotifications_notification_rule\""
+    r"|\bnotifications\.NotificationRule\(|\.notifyOn\w*\(|\.notify_on_\w+\("
+)
+_FEEDBACK_NAME = re.compile(r"feedback|retro(?:spective)?s?(?:$|[-_ .])|change[-_ ]?outcomes?")
+_FEEDBACK_HEADING = re.compile(r"(?i).*\b(?:feedback|retrospectives?|change outcomes?)\b.*")
+
+
+_OUTCOME_WORD = re.compile(r"(?i)\b(?:outcome|what happened|what (?:it )?changed|impact|result)\b")
+
+
+class FeedbackLoopMissing(_NoteRule):
+    id = "REPO-177"
+    title = "No issue template that asks for the outcome, pipeline notification or note records what a change did"
+    themes = ("observability",)
+    note_name = _FEEDBACK_NAME
+    note_heading = _FEEDBACK_HEADING
+    iac = _FEEDBACK_IN_IAC
+    recommendation = (
+        "Close the loop on every change: send the pipeline's success and failure events to "
+        "the team (a CodeStar notification rule), keep an issue template that asks what the "
+        "change did, and review the outcomes in a retrospective."
+    )
+    searched = (
+        "the IaC for a pipeline notification rule, the repo for an issue template, and the "
+        "notes for a file or heading on feedback, retrospectives or change outcomes"
+    )
+
+    def present(self, repo_path: Path) -> str | None:
+        for path in walk(repo_path):
+            rel = "/".join(_rel_parts(path, repo_path))
+            if rel.lower().startswith((".github/issue_template", ".gitlab/issue_templates")):
+                if _OUTCOME_WORD.search(read_text_safe(path)):
+                    return rel
+        return super().present(repo_path)
+
+
+class ImprovementLoopMissing(_NoteRule):
+    id = "REPO-178"
+    title = "No improvement note names how the team improves, shares knowledge and finds time"
+    themes = ("observability",)
+    note_name = re.compile(
+        r"improvements?|retro(?:spective)?s?(?:$|[-_ .])|kaizen|knowledge|learning[-_ ]?loop"
+    )
+    note_heading = re.compile(
+        r"(?i).*\b(?:continuous improvement|improvements?(?: process| backlog)?|knowledge"
+        r"(?: management| sharing)?|learning loop|retrospectives?)\b.*"
+    )
+    recommendation = (
+        "Write down the improvement loop (docs/improvement.md): what drives an improvement "
+        "(incidents, metrics, cost), how an insight is checked before it becomes work, where "
+        "the knowledge lives, how metrics are reviewed and how much time the team reserves "
+        "for it."
+    )
+    searched = (
+        "the notes for a file or heading on continuous improvement, retrospectives, knowledge "
+        "management or a learning loop"
+    )
+
+
+# Choosing architecture (PERF 1): one decision record that shows how the choice was made
+# (REPO-183).
+_ADR_SECTIONS = (
+    ("the services considered", re.compile(
+        r"(?i)\b(?:alternatives?|options?|services?) (?:considered|evaluated|compared)\b"
+        r"|\bconsidered\b|\bcompared\b")),
+    ("the guidance or partner used", re.compile(
+        r"(?i)\bwell-architected\b|\bprescriptive guidance\b|\bsolutions? architects?\b"
+        r"|\bpartner\b|\bAWS guidance\b|\bbest practices?\b")),
+    ("the cost comparison", re.compile(
+        r"(?i)\bcost (?:comparison|comparisons|of|estimate)\b|\bpric(?:e|ing) comparison\b"
+        r"|\$\s?\d")),
+    ("the tradeoff", re.compile(r"(?i)\btrade-?offs?\b|\bconsequences\b|\bdownsides?\b")),
+    ("the reference architecture", re.compile(
+        r"(?i)\breference architectures?\b|\blanding zone\b|\bsolutions? library\b"
+        r"|\barchitecture center\b|\bblueprints?\b")),
+    ("the benchmark", re.compile(r"(?i)\bbenchmarks?(?:ed|ing)?\b|\bload test\b|\bproof of concept\b")),
+    ("the data used", re.compile(
+        r"(?i)\bdata-driven\b|\bevidence\b|\bmeasured\b|\bmeasurements?\b")),
+)
+
+
+class ArchitectureDecisionIncomplete(_RepoRule):
+    id = "REPO-183"
+    title = "No architecture decision record covers the services, guidance, cost, tradeoff, reference architecture, benchmark and data"
+    category = "Performance Efficiency"
+    severity = "Low"
+    themes = ("observability",)
+    recommendation = (
+        "Record how you chose the architecture: write an architecture decision record "
+        "(docs/adr/0001-compute.md) that names the services you considered, the guidance or "
+        "partner you used, the cost comparison, the tradeoff for customers, the reference "
+        "architecture you followed, the benchmark you ran and the data that decided it."
+    )
+
+    def run(self, repo_path: Path, language: str = "typescript") -> List[Finding]:
+        held = _holds_iac(repo_path)
+        if not held:
+            return []
+        texts = []
+        for rel, text in note_texts(repo_path):
+            parts = rel.lower().split("/")
+            names = [*parts[:-1], parts[-1].rsplit(".", 1)[0]]
+            if any(TradeoffsUnrecorded.note_name.search(n) for n in names) or any(
+                TradeoffsUnrecorded.note_heading.fullmatch(h.group(2).strip())
+                for h in _HEADING.finditer(text)
+            ):
+                texts.append(text)
+        if not texts:
+            return [self._finding(
+                f"Holds IaC ({held}); searched the notes for an architecture decision record, "
+                "in a file, a folder or a heading; found none"
+            )]
+        joined = "\n".join(texts)
+        missing = [label for label, found in _ADR_SECTIONS if not found.search(joined)]
+        if not missing:
+            return []
+        return [self._finding(
+            f"Holds IaC ({held}); the decision records do not name {_listed(missing, 7)}"
+        )]
+
+
+# Performance culture (PERF 5): KPIs with a threshold (REPO-184), automated remediation
+# (REPO-185), a load test (REPO-186) and a review note (REPO-187).
+_PERF_METRIC = re.compile(
+    r"(?i)\b(?:latency|duration|response[-_ ]?time|targetresponsetime|integratedlatency"
+    r"|cpuutilization|cpu[-_ ]?utili[sz]ation|memoryutili[sz]ation|throttl\w*|queuedepth"
+    r"|approximatenumberofmessagesvisible|iterator[-_ ]?age|p9[0-9](?:\.\d+)?)\b"
+)
+_ALARM_THRESHOLD = re.compile(r"(?i)\bthreshold[\"']?\s*[:=]\s*[\"']?\d")
+
+
+class PerformanceKpiMissing(_RepoRule):
+    id = "REPO-184"
+    title = "No alarm on latency or saturation has a numeric threshold"
+    category = "Performance Efficiency"
+    severity = "Low"
+    themes = ("observability",)
+    recommendation = (
+        "Turn performance goals into numbers: alarm on the latency (p99, TargetResponseTime, "
+        "Duration) and the saturation (CPU, queue depth, throttles) of the critical path, "
+        "each with a threshold taken from the goal, and name the path in the alarm."
+    )
+
+    def run(self, repo_path: Path, language: str = "typescript") -> List[Finding]:
+        compute = _in_iac(repo_path, _COMPUTE)
+        if not compute:
+            return []
+        for _rel, text in iac_texts(repo_path):
+            starts = [m.start() for m in _ALARM.finditer(text)]
+            for n, start in enumerate(starts):
+                end = starts[n + 1] if n + 1 < len(starts) else len(text)
+                block = text[start:min(end, start + 1200)]
+                if _PERF_METRIC.search(block) and _ALARM_THRESHOLD.search(block):
+                    return []
+        return [self._finding(
+            f"Runs {_named(compute)}; searched the IaC for a CloudWatch alarm on a latency, "
+            "duration, utilization, throttle or queue metric with a numeric threshold in the same "
+            "alarm; found none",
+            file=next(iter(compute.values())),
+        )]
+
+
+class PerformanceRemediationMissing(AlarmResponseMissing):
+    """The same search as REPO-047, answering PERF05-BP05 for the question on culture."""
+
+    id = "REPO-185"
+    title = "Nothing remediates performance problems automatically"
+    category = "Performance Efficiency"
+    themes = ("observability",)
+    recommendation = (
+        "Fix performance problems without a person: scale on load with a target tracking or "
+        "step scaling policy, or point the alarm at an SSM Automation runbook, a Lambda "
+        "function or an EventBridge rule that restarts, resizes or scales the resource."
+    )
+
+
+class PerformanceLoadTestMissing(LoadTestMissing):
+    """The same search as REPO-017, answering PERF05-BP04 for the question on culture."""
+
+    id = "REPO-186"
+    title = "No load test shows how the workload performs under load"
+    category = "Performance Efficiency"
+    themes = ("observability",)
+    recommendation = (
+        "Measure performance before users do: run a load test in the pipeline (k6, Artillery, "
+        "Locust, JMeter or Distributed Load Testing on AWS) against pre-production at the "
+        "expected peak, and fail the build when latency or errors pass the target."
+    )
+
+
+class PerformanceReviewMissing(_NoteRule):
+    id = "REPO-187"
+    title = "No performance review note names how the team improves and reviews performance"
+    themes = ("observability",)
+    category = "Performance Efficiency"
+    note_name = re.compile(
+        r"perf(?:ormance)?[-_ ]?(?:review|reviews|report|improvement|kpis?|metrics|process)"
+    )
+    note_heading = re.compile(
+        r"(?i).*\b(?:performance (?:review|reviews|report|improvement|kpis?|metrics|process))\b.*"
+    )
+    recommendation = (
+        "Write down how performance is reviewed (docs/performance-review.md): the KPIs, how "
+        "often the team reads them, what starts an improvement and who owns it."
+    )
+    searched = (
+        "the notes for a file or heading on a performance review, report, improvement process "
+        "or KPIs"
+    )
+
+
+# Service architecture (REL 3): a workload that mixes many services and stores in one stack
+# with no stack, module or API boundary (REPO-188).
+_NESTED_BOUNDARY = re.compile(
+    _cf_type(r"CloudFormation::Stack") + r"|resource\s+\"aws_cloudformation_stack\""
+    r"|^[ \t]*module\s+\"|\bNestedStack\b|\bcfn\.CfnStack\(",
+    re.MULTILINE,
+)
+_STACK_CLASS = re.compile(
+    r"\bclass\s+\w+\s*\(\s*(?:cdk\.)?Stack\b|\bclass\s+\w+\s+extends\s+(?:cdk\.)?Stack\b"
+)
+_BOUNDARY_LIMIT = 4
+
+
+def _declared(text: str, kinds: tuple[tuple[str, re.Pattern[str]], ...]) -> int:
+    return sum(len(pattern.findall(text)) for _name, pattern in kinds)
+
+
+class ServiceBoundaryMissing(_RepoRule):
+    id = "REPO-188"
+    title = "One stack declares many compute services and data stores with no stack, module or API boundary"
+    category = "Reliability"
+    severity = "Low"
+    themes = ("resilience",)
+    recommendation = (
+        "Segment the workload by business domain: give each domain its own stack, module or "
+        "API (orders, billing, notifications), so a change or a failure in one does not "
+        "reach the others and each team owns what it runs. Keep a stack to one purpose."
+    )
+
+    def run(self, repo_path: Path, language: str = "typescript") -> List[Finding]:
+        files = [(rel, text) for rel, text in iac_texts(repo_path)
+                 if _declared(text, _COMPUTE) or _declared(text, _DATA_STORES)]
+        if len(files) != 1:
+            return []
+        rel, text = files[0]
+        compute, stores = _declared(text, _COMPUTE), _declared(text, _DATA_STORES)
+        if (compute < _BOUNDARY_LIMIT or stores < _BOUNDARY_LIMIT
+                or _NESTED_BOUNDARY.search(text) or len(_STACK_CLASS.findall(text)) > 1):
+            return []
+        return [self._finding(
+            f"{rel} declares {compute} compute resources and {stores} data stores and is the "
+            "only IaC file with workload resources; searched it for nested stacks, modules "
+            "and a second stack class; found none",
+            file=rel,
+        )]
+
+
+# Region selection (SUS 1): an extra Region that no resource uses (REPO-189).
+_REGION_PROVIDER = re.compile(
+    r"provider\s+\"aws\"\s*\{(?P<body>(?:[^{}]|\{(?:[^{}]|\{[^{}]*\})*\})*)\}", re.DOTALL
+)
+_REGION_ALIAS = re.compile(r"\balias\s*=\s*\"(?P<alias>[\w-]+)\"")
+
+
+class UnusedRegion(_RepoRule):
+    id = "REPO-189"
+    title = "A Terraform provider for an extra Region is declared and no resource uses it"
+    category = "Sustainability"
+    severity = "Low"
+    themes = ("sustainability", "finops")
+    recommendation = (
+        "Run in the Regions you need: remove the provider alias for a Region that no "
+        "resource, module or data source uses, or point the workload that belongs there at "
+        "it. Choose each Region from a variable or a config file, and give the reason in a "
+        "comment (latency, data residency, a lower carbon intensity)."
+    )
+
+    def run(self, repo_path: Path, language: str = "typescript") -> List[Finding]:
+        tf = [(rel, text) for rel, text in iac_texts(repo_path) if rel.endswith(".tf")]
+        declared: List[tuple[str, str, int]] = []
+        for rel, text in tf:
+            for match in _REGION_PROVIDER.finditer(text):
+                alias = _REGION_ALIAS.search(match.group("body"))
+                if alias and re.search(r"\bregion\s*=", match.group("body")):
+                    declared.append((rel, alias.group("alias"), _line_of(text, match.start())))
+        unused = [
+            (rel, alias, line) for rel, alias, line in declared
+            if not any(re.search(rf"\baws\.{re.escape(alias)}\b", text) for _r, text in tf)
+        ]
+        if not unused:
+            return []
+        rel, _first, line = unused[0]
+        names = _listed([a for _r, a, _l in unused])
+        return [self._finding(
+            f"The provider alias {names} sets a Region and no resource, module or data "
+            "source refers to it (provider = aws.<alias> or providers = { aws = aws.<alias> })",
+            file=rel,
+            line=line,
+        )]
+
+
+# Sustainability processes (SUS 6): goals (REPO-190), up-to-date dependencies (REPO-191),
+# build environments (REPO-192) and device testing (REPO-193).
+class SustainabilityGoalsMissing(_NoteRule):
+    id = "REPO-190"
+    title = "No sustainability note states the goals and the methods to reach them"
+    category = "Sustainability"
+    themes = ("sustainability",)
+    note_name = re.compile(r"sustainab\w*|carbon|green[-_ ]?(?:it|software|ops)|emissions?")
+    note_heading = re.compile(
+        r"(?i).*\b(?:sustainability|carbon(?: footprint| intensity)?|green (?:it|software)"
+        r"|emissions?)\b.*"
+    )
+    recommendation = (
+        "Write the sustainability goals down (docs/sustainability.md): what the workload "
+        "should achieve (carbon, energy, idle capacity), who is told, and the methods the "
+        "team uses to reach it (the Customer Carbon Footprint Tool, right-sizing reviews, "
+        "Graviton, shutting down idle environments)."
+    )
+    searched = (
+        "the notes for a file or heading on sustainability, carbon, emissions or green "
+        "software"
+    )
+
+
+_DEPENDENCY_UPDATE_FILES = frozenset({
+    ".github/dependabot.yml", ".github/dependabot.yaml", "renovate.json", "renovate.json5",
+    ".renovaterc", ".renovaterc.json", ".github/renovate.json", ".github/renovate.json5",
+    ".gitlab/renovate.json",
+})
+
+
+class DependencyUpdatesMissing(_RepoRule):
+    id = "REPO-191"
+    title = "Nothing proposes updates to dependencies, runtimes and base images"
+    category = "Sustainability"
+    severity = "Low"
+    themes = ("sustainability",)
+    recommendation = (
+        "Keep the workload current: turn on Dependabot (.github/dependabot.yml) or Renovate "
+        "(renovate.json) for packages, GitHub Actions and Docker base images, and review "
+        "the updates weekly, because newer runtimes and images are usually more efficient."
+    )
+
+    def run(self, repo_path: Path, language: str = "typescript") -> List[Finding]:
+        held = _holds_iac(repo_path)
+        if not held:
+            return []
+        for path in walk(repo_path):
+            if "/".join(_rel_parts(path, repo_path)).lower() in _DEPENDENCY_UPDATE_FILES:
+                return []
+        return [self._finding(
+            f"Holds IaC ({held}); searched the repo for a Dependabot or Renovate config; "
+            "found none"
+        )]
+
+
+_BUILD_FLEET = re.compile(
+    _cf_type(r"CodeBuild::Fleet") + r"|resource\s+\"aws_codebuild_fleet\""
+    r"|\bcodebuild\.(?:Cfn)?Fleet\("
+    r"|resource\s+\"aws_(?:instance|launch_template|autoscaling_group)\"\s+\"[\w-]*"
+    r"(?:runner|jenkins|build[-_]?(?:agent|server|node|fleet))[\w-]*\""
+    r"|\bec2\.(?:Cfn)?Instance\(\s*(?:this|self)\s*,\s*[\"'][\w-]*(?:Runner|Jenkins|Build(?:Agent|Server|Node|Fleet))"
+    r"|[\"'][\w-]*(?:Runner|Jenkins|Build(?:Agent|Server|Node|Fleet))\w*[\"']\s*:\s*\{\s*[\"']Type[\"']"
+    r"\s*:\s*[\"']AWS::EC2::Instance[\"']"
+    r"|^[ \t]*[\w-]*(?:Runner|Jenkins|Build(?:Agent|Server|Node|Fleet))\w*:[ \t]*\n[ \t]*Type:[ \t]*AWS::EC2::Instance",
+    re.MULTILINE,
+)
+def _without_comments(text: str) -> str:
+    return re.sub(r"(?m)(?:^|[ \t])(?:#|//).*$", "", text)
+
+
+_SPOT_CAPACITY = re.compile(r"(?i)\bspot\b|instance_market_options|SpotOptions|MarketType")
+
+
+class BuildFleetAlwaysOn(_RepoRule):
+    id = "REPO-192"
+    title = "A dedicated always-on fleet runs builds"
+    category = "Sustainability"
+    severity = "Low"
+    themes = ("sustainability", "finops")
+    recommendation = (
+        "Share build capacity: run builds on CodeBuild or GitHub hosted runners that exist "
+        "only while a job runs, or put the self-hosted runners on Spot in an Auto Scaling "
+        "group that scales to zero when the queue is empty."
+    )
+
+    def run(self, repo_path: Path, language: str = "typescript") -> List[Finding]:
+        for rel, text in iac_texts(repo_path):
+            match = _BUILD_FLEET.search(text)
+            if not match:
+                continue
+            body = _without_comments(text[match.start():match.start() + 1500])
+            if not _SPOT_CAPACITY.search(body):
+                return [self._finding(
+                    f"{rel} declares a build fleet and no Spot capacity; searched the "
+                    "resource for Spot options, a mixed instances policy and a market type",
+                    file=rel,
+                    line=_line_of(text, match.start()),
+                )]
+        return []
+
+
+_FARM_WORDS = re.compile(
+    r"(?i)device[-_ ]?farm|firebase test lab|browserstack|sauce ?labs"
+)
+_NOT_A_MOBILE_APP = frozenset({"AWS IoT thing", "Pinpoint app"})
+
+
+class DeviceFarmMissing(_RepoRule):
+    id = "REPO-193"
+    title = "A mobile app is built and no device farm tests it"
+    category = "Sustainability"
+    severity = "Low"
+    themes = ("sustainability",)
+    recommendation = (
+        "Test on shared devices instead of buying a drawer of phones: run the test suite on "
+        "AWS Device Farm (AWS::DeviceFarm::Project) from the pipeline, and retire the devices "
+        "the team keeps only for testing."
+    )
+
+    def run(self, repo_path: Path, language: str = "typescript") -> List[Finding]:
+        apps = {k: v for k, v in device_targets(repo_path).items() if k not in _NOT_A_MOBILE_APP}
+        if not apps:
+            return []
+        kind, rel = next(iter(apps.items()))
+        texts = [*iac_texts(repo_path), *build_texts(repo_path), *note_texts(repo_path)]
+        if any(_FARM_WORDS.search(text) for _rel, text in texts):
+            return []
+        return [self._finding(
+            f"{rel} is a {kind}; searched the IaC, the build configs and the notes for AWS "
+            "Device Farm or another shared device service; found none",
+            file=rel,
+        )]
+
+
 _COMPUTE_TRACING = _kinds(
     ("Lambda active tracing",
      r"[\"']?Tracing[\"']?\s*:\s*[\"']?Active\b"
@@ -12212,6 +13130,142 @@ class DataAccessPatternMismatch(_RepoRule):
         )]
 
 
+# Selecting services by cost (COST 5): written cost requirements (REPO-179), the cost of each
+# component (REPO-180) and licensing (REPO-181).
+_BUDGET_IN_IAC = re.compile(
+    _cf_type(r"Budgets::Budget") + r"|resource\s+\"aws_budgets_budget\""
+    r"|\bbudgets\.CfnBudget\("
+)
+_PEAK_WORD = re.compile(r"(?i)\b(?:peak|spikes?|bursts?|seasonal|busiest)\b")
+_STEADY_WORD = re.compile(r"(?i)\b(?:steady|baseline|average|normal|typical|off-peak)\b")
+
+
+class CostRequirementsMissing(_NoteRule):
+    id = "REPO-179"
+    title = "No budget or cost note states the cost requirements for peak and steady usage"
+    category = "Cost"
+    themes = ("finops",)
+    note_name = _COST_NAME
+    note_heading = _COST_HEADING
+    recommendation = (
+        "Write the cost requirements down: define an AWS Budget for the workload in the IaC, "
+        "or keep a cost note that states the monthly limit and what it is at steady usage and "
+        "at peak, and review the choice of services against it."
+    )
+    searched = (
+        "the IaC for an AWS Budget, and the notes named or headed for cost, spend or a budget "
+        "that mention both peak and steady usage"
+    )
+
+    def present(self, repo_path: Path) -> str | None:
+        found = _in_iac_text(repo_path, _BUDGET_IN_IAC)
+        if found:
+            return found
+        for rel, text in note_texts(repo_path):
+            parts = rel.lower().split("/")
+            names = [*parts[:-1], parts[-1].rsplit(".", 1)[0]]
+            titled = any(_COST_NAME.search(n) for n in names) or any(
+                _COST_HEADING.fullmatch(h.group(2).strip()) for h in _HEADING.finditer(text)
+            )
+            if titled and _PEAK_WORD.search(text) and _STEADY_WORD.search(text):
+                return rel
+        return None
+
+
+class ComponentCostNotAnalysed(CostModelMissing):
+    """The same search as REPO-088, answering COST05-BP02 and COST05-BP03 for the question on
+    selecting services."""
+
+    id = "REPO-180"
+    title = "No cost estimate is in the repo for the components the workload declares"
+    themes = ("finops",)
+    recommendation = (
+        "Cost every component before you pick it: run Infracost in CI (infracost breakdown, "
+        "which lists each resource) or write a per-component estimate in the repo with an "
+        "amount for each service, and compare the options you did not take."
+    )
+
+
+_MARKETPLACE_IN_IAC = re.compile(r"aws-marketplace|\bproduct[-_ ]?codes?\b")
+_DEDICATED_HOST = re.compile(
+    _cf_type(r"EC2::Host") + r"|resource\s+\"aws_ec2_host\"|\bec2\.CfnHost\("
+    r"|\btenancy\s*=\s*\"host\"|\bTenancy[\"']?\s*:\s*[\"']?host\b|\bTenancy\.HOST\b"
+)
+_LICENSE_NAME = re.compile(r"licen[sc]e|licensing|byol|bring[-_ ]?your[-_ ]?own")
+_LICENSE_HEADING = re.compile(r"(?i).*\b(?:licen[sc]es?|licensing|byol|bring your own)\b.*")
+
+
+class LicenseTermsUnrecorded(_RepoRule):
+    id = "REPO-181"
+    title = "A Marketplace image runs on a dedicated host with no licensing note"
+    category = "Cost"
+    severity = "Low"
+    themes = ("finops",)
+    recommendation = (
+        "Choose software for its licence cost: write a licensing note that says what the "
+        "Marketplace product costs per instance and per host, whether you bring your own "
+        "licence and what a licence-included or open source option would cost instead."
+    )
+
+    def run(self, repo_path: Path, language: str = "typescript") -> List[Finding]:
+        host = next((rel for rel, text in iac_texts(repo_path)
+                     if _MARKETPLACE_IN_IAC.search(text) and _DEDICATED_HOST.search(text)), None)
+        if not host:
+            return []
+        for rel, text in note_texts(repo_path):
+            stem = rel.rsplit("/", 1)[-1].rsplit(".", 1)[0].lower()
+            if stem in ("license", "licence", "copying"):
+                continue
+            parts = rel.lower().split("/")
+            if any(_LICENSE_NAME.search(n) for n in [*parts[:-1], stem]) or any(
+                _LICENSE_HEADING.fullmatch(h.group(2).strip()) for h in _HEADING.finditer(text)
+            ):
+                return []
+        return [self._finding(
+            f"{host} names a Marketplace image and declares a dedicated host; searched "
+            "the notes for a file or heading on licences, licensing or bring your own "
+            "licence; found none",
+            file=host,
+        )]
+
+
+# Evaluating new services (COST 10): a recurring review of the workload's cost (REPO-182).
+_COST_REPORT_IN_IAC = re.compile(
+    _cf_type(r"BCMDataExports::Export|CUR::ReportDefinition|CE::AnomalySubscription")
+    + r"|resource\s+\"aws_(?:bcmdataexports_export|cur_report_definition"
+    r"|ce_anomaly_subscription)\""
+)
+_COST_REVIEW_NAME = re.compile(
+    r"(?:cost|finops|budget|spend)[-_ ]?(?:review|report|checklist|retro(?:spective)?)s?"
+    r"|(?:review|checklist)[-_ ]?(?:of[-_ ])?(?:cost|spend)"
+)
+_COST_REVIEW_HEADING = re.compile(
+    r"(?i).*\b(?:cost (?:review|report|checklist)|finops review|budget review|spend review"
+    r"|new services review)\b.*"
+)
+
+
+class CostReviewMissing(_NoteRule):
+    id = "REPO-182"
+    title = "No dated cost review or scheduled cost report is in the repo"
+    category = "Cost"
+    themes = ("finops",)
+    note_name = _COST_REVIEW_NAME
+    note_heading = _COST_REVIEW_HEADING
+    note_needs = _DATE
+    iac = _COST_REPORT_IN_IAC
+    recommendation = (
+        "Review cost on a schedule and when AWS ships something new: keep a dated cost review "
+        "(docs/cost-review-2026-03.md) with a checklist of the services and prices you "
+        "re-checked and what you decided, or schedule a cost report (a Data Export or a cost "
+        "anomaly subscription) in the IaC."
+    )
+    searched = (
+        "the IaC for a Data Export, a cost and usage report or a cost anomaly subscription, "
+        "and the notes for a dated file or heading on a cost review, report or checklist"
+    )
+
+
 REPO_RULES: List[Rule] = [
     RepoTestsMissing(), RepoPipelineMissing(), SingleEnvironment(),
     OrgGuardrailsMissing(), AccountBaselineMissing(), RootUserUnchecked(),
@@ -12294,4 +13348,16 @@ REPO_RULES: List[Rule] = [
     TeamResourcesUnsized(), DemandCurveNotFlattened(),
     UnusedComponents(), HotCodeUnprofiled(), DeviceImpactUnaddressed(),
     DataAccessPatternMismatch(),
+    CustomerNeedsMissing(), GovernanceControlsMissing(), ThreatLandscapeMissing(), TradeoffsUnrecorded(),
+    ProcedureOwnerMissing(), ActivityOwnerMissing(), OwnershipMechanismMissing(), ChangeRequestPathMissing(),
+    EscalationMissing(), OperatorChannelMissing(), OperationsCultureMissing(),
+    RunbooksMissing(), OperationalPlaybooksMissing(), SupportPlanMissing(), ReadinessReviewMissing(),
+    PostIncidentLessonsMissing(), FeedbackLoopMissing(), ImprovementLoopMissing(),
+    CostRequirementsMissing(), ComponentCostNotAnalysed(), LicenseTermsUnrecorded(),
+    CostReviewMissing(),
+    ArchitectureDecisionIncomplete(),
+    PerformanceKpiMissing(), PerformanceRemediationMissing(), PerformanceLoadTestMissing(), PerformanceReviewMissing(),
+    ServiceBoundaryMissing(),
+    UnusedRegion(),
+    SustainabilityGoalsMissing(), DependencyUpdatesMissing(), BuildFleetAlwaysOn(), DeviceFarmMissing(),
 ]

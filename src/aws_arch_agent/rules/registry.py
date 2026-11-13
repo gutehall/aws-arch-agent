@@ -144,7 +144,7 @@ ALL_RULES = [
     IamUserConsolePassword(),
     IamAccessKeyCreated(),
     IamUserDirectPolicies(),
-    # Reliability (74 rules: these 33, and REPO-012 to REPO-017, REPO-023 to REPO-026,
+    # Reliability (75 rules: these 33, and REPO-012 to REPO-017, REPO-023 to REPO-026,
     # REPO-042 to REPO-059, REPO-107, REPO-108, REPO-122 to REPO-124 and REPO-131 to
     # REPO-135 in REPO_RULES)
     RdsMultiAzMissing(),
@@ -205,7 +205,7 @@ ALL_RULES = [
     ResourceNamingConvention(),
     CdkAspectsMissing(),
     CdkContextMissing(),
-    # Operational Excellence (49 rules)
+    # Operational Excellence (67 rules)
     # These 26, and REPO-001 to REPO-003, REPO-018 to REPO-022, REPO-027 to REPO-030 and
     # REPO-109 to REPO-116 in REPO_RULES.
     CloudTrailMissing(),
@@ -236,7 +236,7 @@ ALL_RULES = [
     AlarmEscalationMissing(),
     *REPO_RULES,  # repo-level: tests, pipeline, guardrails, incidents, app security, testing,
     # observability, deployment risk, telemetry analysis
-    # Performance Efficiency (28 rules: these 19, and REPO-060 to REPO-068 in REPO_RULES)
+    # Performance Efficiency (33 rules: these 19, and REPO-060 to REPO-068 in REPO_RULES)
     GravitonNotUsed(),
     CachingHint(),
     DynamoDbProvisionedCapacity(),
@@ -256,7 +256,7 @@ ALL_RULES = [
     EbsIo2BlockExpress(),
     CloudWatchContributorInsights(),
     RdsProxyMissing(),
-    # Sustainability (22 rules: these 7, and REPO-098 to REPO-106 in REPO_RULES)
+    # Sustainability (27 rules: these 7, and REPO-098 to REPO-106 in REPO_RULES)
     SpotNotConsidered(),
     RightSizingHint(),
     ScheduledScalingMissing(),

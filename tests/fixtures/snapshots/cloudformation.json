@@ -579,5 +579,187 @@
     "file": null,
     "line": null,
     "evidence": "Holds IaC (CloudFormation: 1 file); searched the notes for a dated file or heading named for an operations review, report, metrics, health or retrospective; found none"
+  },
+  {
+    "id": "REPO-161",
+    "severity": "Low",
+    "file": null,
+    "line": null,
+    "evidence": "Holds IaC (CloudFormation: 1 file); searched the notes for a file or heading on customers, stakeholders, personas, user needs, business goals or requirements; found none"
+  },
+  {
+    "id": "REPO-164",
+    "severity": "Low",
+    "file": null,
+    "line": null,
+    "evidence": "Holds IaC (CloudFormation: 1 file); searched the notes for an architecture decision record, in a file, a folder or a heading, that names a tradeoff, a consequence, an alternative or a risk; found none"
+  },
+  {
+    "id": "REPO-165",
+    "severity": "Low",
+    "file": null,
+    "line": null,
+    "evidence": "Holds IaC (CloudFormation: 1 file); searched the notes named or headed for a runbook, playbook or procedure for an Owner, Contact or Responsible line that names a team or a person; found none"
+  },
+  {
+    "id": "REPO-166",
+    "severity": "Low",
+    "file": null,
+    "line": null,
+    "evidence": "Holds IaC (CloudFormation: 1 file); searched the IaC for Incident Manager contacts and plans, and the notes for a file or heading on contacts, on-call, key personnel or responders; found none"
+  },
+  {
+    "id": "REPO-167",
+    "severity": "Low",
+    "file": null,
+    "line": null,
+    "evidence": "Holds IaC (CloudFormation: 1 file); searched the repo for a CODEOWNERS file with an owner, the IaC for an Incident Manager contact or plan, and the notes for a file or heading on ownership or responsibilities; found none"
+  },
+  {
+    "id": "REPO-168",
+    "severity": "Low",
+    "file": null,
+    "line": null,
+    "evidence": "Holds IaC (CloudFormation: 1 file); searched the CI configs and the IaC for a pull request trigger, a merge request or a CodePipeline manual approval, and the repo for an issue or pull request template; found none"
+  },
+  {
+    "id": "REPO-169",
+    "severity": "Low",
+    "file": null,
+    "line": null,
+    "evidence": "Holds IaC (CloudFormation: 1 file); searched the IaC for an Incident Manager plan or response plan, and the notes for a file or heading on escalation; found none"
+  },
+  {
+    "id": "REPO-170",
+    "severity": "Low",
+    "file": null,
+    "line": null,
+    "evidence": "Holds IaC (CloudFormation: 1 file); searched the IaC for an SNS subscription, an AWS Chatbot channel or an on-call rotation, and the notes for a file or heading on on-call, alerting, notifications or communications; found none"
+  },
+  {
+    "id": "REPO-171",
+    "severity": "Low",
+    "file": null,
+    "line": null,
+    "evidence": "Holds IaC (CloudFormation: 1 file); searched the notes for a file or heading on operations ownership, culture, sponsorship, a team charter or an operating model; found none"
+  },
+  {
+    "id": "REPO-172",
+    "severity": "Low",
+    "file": null,
+    "line": null,
+    "evidence": "Holds IaC (CloudFormation: 1 file); searched the IaC for an SSM Automation document, and the notes for a file, folder or heading on a runbook or an operations guide; found none"
+  },
+  {
+    "id": "REPO-173",
+    "severity": "Low",
+    "file": null,
+    "line": null,
+    "evidence": "Holds IaC (CloudFormation: 1 file); searched the notes for a file or heading on a playbook, a failure investigation or a troubleshooting guide; found none"
+  },
+  {
+    "id": "REPO-174",
+    "severity": "Low",
+    "file": null,
+    "line": null,
+    "evidence": "Holds IaC (CloudFormation: 1 file); searched the notes for a file or heading on a support plan, AWS Support or support cases; found none"
+  },
+  {
+    "id": "REPO-175",
+    "severity": "Low",
+    "file": null,
+    "line": null,
+    "evidence": "Holds IaC (CloudFormation: 1 file); searched the notes for a file or heading on operational readiness, a launch checklist or a go-live checklist; found none"
+  },
+  {
+    "id": "REPO-176",
+    "severity": "Low",
+    "file": null,
+    "line": null,
+    "evidence": "Holds IaC (CloudFormation: 1 file); searched the notes for a post-incident file or heading that has a lessons learned or action items section; found none"
+  },
+  {
+    "id": "REPO-177",
+    "severity": "Low",
+    "file": null,
+    "line": null,
+    "evidence": "Holds IaC (CloudFormation: 1 file); searched the IaC for a pipeline notification rule, the repo for an issue template, and the notes for a file or heading on feedback, retrospectives or change outcomes; found none"
+  },
+  {
+    "id": "REPO-178",
+    "severity": "Low",
+    "file": null,
+    "line": null,
+    "evidence": "Holds IaC (CloudFormation: 1 file); searched the notes for a file or heading on continuous improvement, retrospectives, knowledge management or a learning loop; found none"
+  },
+  {
+    "id": "REPO-179",
+    "severity": "Low",
+    "file": null,
+    "line": null,
+    "evidence": "Holds IaC (CloudFormation: 1 file); searched the IaC for an AWS Budget, and the notes named or headed for cost, spend or a budget that mention both peak and steady usage; found none"
+  },
+  {
+    "id": "REPO-180",
+    "severity": "Low",
+    "file": null,
+    "line": null,
+    "evidence": "Declares Lambda in stack.yaml, S3 bucket in stack.yaml, RDS database in stack.yaml; searched CI for infracost breakdown, diff or comment, the repo for an Infracost or cost-estimate config, and notes named or headed cost estimate, cost model, estimated cost or pricing that give an amount or a Pricing Calculator link; found none"
+  },
+  {
+    "id": "REPO-182",
+    "severity": "Low",
+    "file": null,
+    "line": null,
+    "evidence": "Holds IaC (CloudFormation: 1 file); searched the IaC for a Data Export, a cost and usage report or a cost anomaly subscription, and the notes for a dated file or heading on a cost review, report or checklist; found none"
+  },
+  {
+    "id": "REPO-183",
+    "severity": "Low",
+    "file": null,
+    "line": null,
+    "evidence": "Holds IaC (CloudFormation: 1 file); searched the notes for an architecture decision record, in a file, a folder or a heading; found none"
+  },
+  {
+    "id": "REPO-184",
+    "severity": "Low",
+    "file": "stack.yaml",
+    "line": null,
+    "evidence": "Runs Lambda (stack.yaml); searched the IaC for a CloudWatch alarm on a latency, duration, utilization, throttle or queue metric with a numeric threshold in the same alarm; found none"
+  },
+  {
+    "id": "REPO-185",
+    "severity": "Low",
+    "file": "stack.yaml",
+    "line": null,
+    "evidence": "Runs Lambda (stack.yaml); searched the IaC for an Auto Scaling or Application Auto Scaling policy, an alarm action that runs automation or a Lambda function, and an EventBridge rule on alarm state changes; found none"
+  },
+  {
+    "id": "REPO-186",
+    "severity": "Low",
+    "file": null,
+    "line": null,
+    "evidence": "Searched the repo for a build to run a load test (a CI config, or a CodeBuild buildspec or pipeline in the IaC); found none"
+  },
+  {
+    "id": "REPO-187",
+    "severity": "Low",
+    "file": null,
+    "line": null,
+    "evidence": "Holds IaC (CloudFormation: 1 file); searched the notes for a file or heading on a performance review, report, improvement process or KPIs; found none"
+  },
+  {
+    "id": "REPO-190",
+    "severity": "Low",
+    "file": null,
+    "line": null,
+    "evidence": "Holds IaC (CloudFormation: 1 file); searched the notes for a file or heading on sustainability, carbon, emissions or green software; found none"
+  },
+  {
+    "id": "REPO-191",
+    "severity": "Low",
+    "file": null,
+    "line": null,
+    "evidence": "Holds IaC (CloudFormation: 1 file); searched the repo for a Dependabot or Renovate config; found none"
   }
 ]

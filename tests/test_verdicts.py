@@ -411,7 +411,9 @@ def test_v1_findings_section_matches_no_llm(tmp_path: Path, monkeypatch) -> None
     plain, _c, _f, _w = _analyze(_repo(tmp_path), use_llm=False)
     report, ctx, findings, _w = _analyze(tmp_path)
     assert ctx.llm.status == "ok"
-    assert report.count("- LLM verdict: **likely false positive** — `because`") == len(findings)
+    judged_cap = BATCH_SIZE * MAX_VERDICT_BATCHES
+    assert report.count("- LLM verdict: **likely false positive** — `because`") == min(
+        len(findings), judged_cap)
     assert _plain(report) == GENERATED.sub("", plain)
 
 
@@ -480,7 +482,8 @@ def test_cli_line_says_how_many_were_judged(tmp_path: Path, monkeypatch) -> None
     assert result.exit_code == 0, result.output
     head = out.read_text(encoding="utf-8").splitlines()
     assert head[0] == "LLM: ollama/llama3:8b responded"
-    assert re.fullmatch(r"Verdicts: (\d+) of \1 findings judged", head[1])
+    match = re.fullmatch(r"Verdicts: (\d+) of (\d+) findings judged", head[1])
+    assert match and int(match.group(1)) == min(int(match.group(2)), BATCH_SIZE * MAX_VERDICT_BATCHES)
     assert head[2] == ""
     assert head[1] in result.output.splitlines()
 
@@ -511,7 +514,7 @@ def test_sinks_ignore_the_verdict_except_where_shown(tmp_path: Path, monkeypatch
     _use(monkeypatch, _all("false_positive"))
     _r, ctx0, plain, _w = _analyze(_repo(tmp_path), use_llm=False)
     _r, ctx, judged, _w = _analyze(tmp_path)
-    assert all(f.verdict for f in judged)
+    assert sum(1 for f in judged if f.verdict) == min(len(judged), BATCH_SIZE * MAX_VERDICT_BATCHES)
 
     assert merge_into_baseline(set(), judged) == merge_into_baseline(set(), plain)
     assert render_sarif(ctx, judged) == render_sarif(ctx0, plain)
