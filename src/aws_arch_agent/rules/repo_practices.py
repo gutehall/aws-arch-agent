@@ -7364,6 +7364,88 @@ class OperationsCultureMissing(_NoteRule):
     )
 
 
+# Readiness (OPS 7): runbooks (REPO-172), playbooks (REPO-173), a support plan (REPO-174) and
+# the operational readiness review (REPO-175).
+_SSM_DOCUMENT = re.compile(
+    _cf_type(r"SSM::Document") + r"|resource\s+\"aws_ssm_document\"|\bssm\.CfnDocument\("
+)
+
+
+class RunbooksMissing(_NoteRule):
+    id = "REPO-172"
+    title = "No runbook is in the repo for deploying and operating the workload"
+    note_name = re.compile(r"run[-_ ]?books?|operations?[-_ ]?guide|operating[-_ ]?procedures?")
+    note_heading = re.compile(
+        r"(?i).*\b(?:run-?books?|operations? guide|operating procedures?)\b.*"
+    )
+    iac = _SSM_DOCUMENT
+    recommendation = (
+        "Write the routine procedures down: a runbook per task (docs/runbooks/deploy.md, "
+        "restore.md, rotate-keys.md) with the steps, the checks and the rollback, or an SSM "
+        "Automation document that performs them."
+    )
+    searched = (
+        "the IaC for an SSM document, and the notes for a file, folder or heading on a runbook "
+        "or an operations guide"
+    )
+
+
+class OperationalPlaybooksMissing(FailurePlaybookMissing):
+    """The same search as REPO-122, answering OPS07-BP04 for the question on readiness."""
+
+    id = "REPO-173"
+    title = "No playbook is in the repo for investigating issues in the workload"
+    category = "Operational Excellence"
+    themes = ("observability",)
+    recommendation = (
+        "Separate investigating from doing: keep playbooks (docs/playbooks) that say how to "
+        "find the cause of a symptom, with the dashboards, logs and queries to open, next to "
+        "the runbooks that say how to run a procedure."
+    )
+
+
+class SupportPlanMissing(_NoteRule):
+    id = "REPO-174"
+    title = "No note or resource names the support plan for production"
+    note_name = re.compile(
+        r"support[-_ ]?plans?|aws[-_ ]?support|(?:business|enterprise)[-_ ]?support|support[-_ ]?cases?"
+    )
+    note_heading = re.compile(
+        r"(?i).*\b(?:support plans?|aws support|(?:business|enterprise) support|support cases?)\b.*"
+    )
+    iac = re.compile(_cf_type(r"Support::\w+") + r"|resource\s+\"aws_support_\w+\"")
+    recommendation = (
+        "Decide what support production has: name the AWS Support plan (Business or "
+        "Enterprise) in a support note, with who may open a case and the severity each kind "
+        "of issue gets, and keep it with the other operations notes."
+    )
+    searched = (
+        "the IaC for an AWS Support resource, and the notes for a file or heading on a "
+        "support plan or support cases"
+    )
+
+
+class ReadinessReviewMissing(_NoteRule):
+    id = "REPO-175"
+    title = "No operational readiness checklist is in the repo"
+    note_name = re.compile(
+        r"readiness|orr(?:$|[-_ .])|launch[-_ ]?checklist|go[-_ ]?live|production[-_ ]?checklist"
+    )
+    note_heading = re.compile(
+        r"(?i).*\b(?:operational readiness|readiness (?:review|checklist)|launch checklist"
+        r"|go-live|production checklist)\b.*"
+    )
+    recommendation = (
+        "Check readiness before every launch: keep an operational readiness checklist "
+        "(docs/readiness.md) that asks whether the team can run the workload (people, "
+        "runbooks, alarms, backups, on-call) and review it before each release to production."
+    )
+    searched = (
+        "the notes for a file or heading on operational readiness, a launch checklist or a "
+        "go-live checklist"
+    )
+
+
 _COMPUTE_TRACING = _kinds(
     ("Lambda active tracing",
      r"[\"']?Tracing[\"']?\s*:\s*[\"']?Active\b"
@@ -12657,4 +12739,5 @@ REPO_RULES: List[Rule] = [
     CustomerNeedsMissing(), GovernanceControlsMissing(), ThreatLandscapeMissing(), TradeoffsUnrecorded(),
     ProcedureOwnerMissing(), ActivityOwnerMissing(), OwnershipMechanismMissing(), ChangeRequestPathMissing(),
     EscalationMissing(), OperatorChannelMissing(), OperationsCultureMissing(),
+    RunbooksMissing(), OperationalPlaybooksMissing(), SupportPlanMissing(), ReadinessReviewMissing(),
 ]

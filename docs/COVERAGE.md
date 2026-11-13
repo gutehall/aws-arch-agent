@@ -15,7 +15,7 @@ Which CDK rules have a template check, and which AWS Foundational Security Best 
 
 ## CDK rules
 
-350 rules: 132 covered, 7 partial, 10 account, 5 cdk-only, 25 advice, 171 repo.
+354 rules: 132 covered, 7 partial, 10 account, 5 cdk-only, 25 advice, 175 repo.
 
 | Rule | Title | Template check | Status | Note |
 | -- | -- | -- | -- | -- |
@@ -369,6 +369,10 @@ Which CDK rules have a template check, and which AWS Foundational Security Best 
 | REPO-169 | No escalation plan or note says who to turn to when the first responder cannot fix it |  | `repo` | Fires when the repo holds IaC and neither the IaC (an Incident Manager plan or response plan) nor a note named or headed for escalation exists. |
 | REPO-170 | No chat channel, subscription, on-call schedule or note tells operators what is wrong |  | `repo` | Fires when the repo holds IaC and neither the IaC (an SNS subscription, an AWS Chatbot channel or an on-call rotation) nor a note named or headed for on-call, alerting, notifications or communications exists. |
 | REPO-171 | No ownership note says how the team is sponsored, empowered, trained and staffed |  | `repo` | Fires when the repo holds IaC and no note named or headed for operations ownership, culture, sponsorship, a team charter or an operating model exists. |
+| REPO-172 | No runbook is in the repo for deploying and operating the workload |  | `repo` | Fires when the repo holds IaC and neither the IaC (an SSM document) nor a note named or headed for a runbook or an operations guide exists. |
+| REPO-173 | No playbook is in the repo for investigating issues in the workload |  | `repo` | Fires on the same gap as REPO-122, for OPS07-BP04: the repo holds IaC and no note named or headed for a playbook, failure investigation or troubleshooting guide exists. |
+| REPO-174 | No note or resource names the support plan for production |  | `repo` | Fires when the repo holds IaC and neither the IaC (an AWS Support resource) nor a note named or headed for a support plan, AWS Support or support cases exists. |
+| REPO-175 | No operational readiness checklist is in the repo |  | `repo` | Fires when the repo holds IaC and no note named or headed for operational readiness, a launch checklist or a go-live checklist exists. |
 
 ## FSBP controls
 

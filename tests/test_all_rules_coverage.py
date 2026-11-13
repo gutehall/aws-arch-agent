@@ -85,6 +85,10 @@ PROJECT_TOUCHED = frozenset({
     "REPO-169",
     "REPO-170",
     "REPO-171",
+    "REPO-172",
+    "REPO-173",
+    "REPO-174",
+    "REPO-175",
 })
 
 

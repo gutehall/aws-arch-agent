@@ -741,6 +741,11 @@ def test_cli_html_with_no_findings_writes_a_page(tmp_path: Path) -> None:
     # Notes for OPS 3: escalation and the operations ownership.
     (tmp_path / "docs" / "escalation.md").write_text("Page the lead.\n", encoding="utf-8")
     (tmp_path / "docs" / "ops-ownership.md").write_text("Sponsor: the CTO.\n", encoding="utf-8")
+    # Notes for OPS 7: playbooks, a support plan and the readiness checklist.
+    (tmp_path / "docs" / "playbooks").mkdir()
+    (tmp_path / "docs" / "playbooks" / "latency.md").write_text("Open it.\n", encoding="utf-8")
+    (tmp_path / "docs" / "support-plan.md").write_text("Enterprise Support.\n", encoding="utf-8")
+    (tmp_path / "docs" / "readiness.md").write_text("- [ ] alarms\n", encoding="utf-8")
     (tmp_path / "CODEOWNERS").write_text("* @org/platform\n", encoding="utf-8")
     for rel in (".github/workflows/ci.yml", "tests/main.tftest.hcl", "dev.tfvars", "prod.tfvars"):
         (tmp_path / rel).parent.mkdir(parents=True, exist_ok=True)

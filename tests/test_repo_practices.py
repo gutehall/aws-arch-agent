@@ -165,6 +165,7 @@ def test_v2_reports_the_repo_rules(tmp_path: Path) -> None:
         "REPO-138", "REPO-139", "REPO-140", "REPO-147", "REPO-148", "REPO-151", "REPO-154",
         "REPO-157", "REPO-159", "REPO-161", "REPO-164", "REPO-165", "REPO-166", "REPO-167",
         "REPO-168", "REPO-169", "REPO-170", "REPO-171",
+        "REPO-172", "REPO-173", "REPO-174", "REPO-175",
     ]
     assert set(REPO_IDS) <= set(ctx.rules_run)
 
