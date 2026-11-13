@@ -135,6 +135,95 @@ Idempotent workers (REL 4) runs by default:
   AbortController fires when the IaC declares no SQS queue, Kinesis stream, Lambda event
   source or schedule. One queue or schedule anywhere passes every call.
 
+Event management (OPS 10) runs by default and fires only when the IaC declares a CloudWatch
+alarm (or, for REPO-109 and REPO-112, an Incident Manager response plan):
+
+- REPO-109 priority: an alarm or response plan file that names a severity, priority, impact
+  or a Sev1 to Sev5 or P1 to P5 label passes.
+- REPO-110 customer communication: an SNS, SES or Pinpoint resource in a file that names
+  customers, subscribers or a status page passes.
+- REPO-111 event status: a CloudWatch dashboard with an alarm status or alarm widget passes.
+- REPO-112 automated response: an alarm action that runs automation, an EventBridge rule on
+  alarm state changes with a target, or an SSM Automation target or response-plan action
+  passes. A scaling policy alone does not.
+
+Change flow (OPS 5) runs by default:
+
+- REPO-113 version control: a .git entry (a directory, or a file in a worktree or submodule)
+  in the scanned folder or any folder above it, or a CodeCommit repository, CodeConnections
+  or CodeStar connection or hosted pipeline source in the IaC, passes.
+- REPO-114 configuration: when the IaC runs compute, SSM parameters, Secrets Manager, AppConfig,
+  a parameter lookup, or a tfvars, cdk.context or config-directory file per environment passes.
+- REPO-115 quality gate: a linter, type checker, static analyzer or coverage threshold in a
+  build config or in a package.json script a build runs passes. A repo with no CI fires.
+- REPO-116 small, reversible changes: when the IaC runs compute, a rollback control (as
+  REPO-022), blue/green, a canary or linear traffic shift, a CodeDeploy deployment group or
+  Lambda alias weights passes.
+
+Application security practices (SEC 11) run by default on a repo that holds IaC:
+
+- REPO-117 training: a note named or headed for security training, security awareness or
+  secure coding passes.
+- REPO-118 penetration test: a note named or headed for a penetration test that holds a date
+  passes.
+- REPO-119 code review: a CODEOWNERS file, branch protection or a ruleset with required
+  reviews (IaC or repository settings as code) or a CodeCommit approval rule passes.
+- REPO-120 programmatic deploy: a build config or pipeline that deploys passes (the detection
+  REPO-025 uses).
+- REPO-121 security ownership: a SECURITY.md, a security owners or champions note, or a
+  CODEOWNERS line that names security passes.
+
+Reliability testing practices (REL 12) run by default on a repo that holds IaC:
+
+- REPO-122 playbooks: a note or folder named or headed for playbooks, failure investigations
+  or a troubleshooting guide passes.
+- REPO-123 post-incident analysis: a note named or headed for a post-incident review,
+  postmortem, incident report or root cause analysis passes.
+- REPO-124 game days: a note named or headed for a game day, chaos day or fire drill passes.
+
+Incident readiness (SEC 10) runs by default on a repo that holds IaC (REPO-007 and REPO-008
+answer forensics and containment):
+
+- REPO-125 contacts: an Incident Manager contact or plan, or a note or folder named or headed
+  for contacts, on-call, key personnel or responders, passes.
+- REPO-126 incident plan: an Incident Manager response plan, or a note named or headed for an
+  incident management or response plan, passes.
+- REPO-127 security playbooks: a note, folder or heading for security incident playbooks
+  passes.
+- REPO-128 response access: an IAM role or Identity Center permission set named for incident
+  response, a responder, an investigator or forensics passes.
+- REPO-129 simulations: an AWS FIS experiment template in the IaC passes.
+- REPO-130 learning: a note or heading for a security post-incident review or postmortem
+  passes.
+
+Network connectivity (REL 2) runs by default:
+
+- REPO-131 public endpoint: an EC2 instance with a public IP address and no load balancer or
+  Global Accelerator in the IaC fires; an EIP on a NAT gateway does not count.
+- REPO-132 on-premises links: exactly one VPN connection, Direct Connect connection or virtual
+  interface in the IaC fires; none, or two or more, pass.
+
+Service quotas (REL 1) run by default (REPO-012 and REPO-013 answer alarms and headroom):
+
+- REPO-133 managed quotas: compute with no Service Quotas resource, template or quotas module
+  fires.
+- REPO-134 quota automation: compute with no Service Quotas resource or template and no
+  RequestServiceQuotaIncrease call or permission fires.
+- REPO-135 fixed quotas: an SQS FIFO queue without high-throughput mode, or a provisioned
+  one-shard Kinesis stream with no on-demand mode, fires.
+
+Security operations (SEC 1) run by default on a repo that holds IaC (REPO-006 answers the root
+user):
+
+- REPO-136 control objectives: a Security Hub standards subscription or a Config conformance
+  pack passes.
+- REPO-137 management scope: an Organizations delegated administrator, a service organization
+  admin account or a Control Tower control passes.
+- REPO-138 threat model: a file named for a threat model, or a note with a threat model
+  heading, passes.
+- REPO-139 new security services: IAM Access Analyzer or Inspector in the IaC, or a dated
+  security service review note, passes.
+
 Reliability testing (REL 12) runs by default and reads the IaC and the builds REPO-009 reads
 (CI configs, inline buildspecs, CodeBuild projects and pipelines in the IaC, and the
 package.json scripts they run):
@@ -2272,7 +2361,7 @@ def http_client_files(repo_path: Path) -> Iterator[tuple[str, str]]:
 
 class DependencyUrlHardcoded(_RepoRule):
     id = "REPO-107"
-    title = "Function code calls a hardcoded external URL"
+    title = "Code calls a hardcoded external URL"
     category = "Reliability"
     severity = "Low"
     themes = ("resilience",)
@@ -2295,7 +2384,7 @@ class DependencyUrlHardcoded(_RepoRule):
             return []
         listed = ", ".join(f"{host} ({rel})" for host, rel in hits[:5])
         return [self._finding(
-            f"Function code calls a literal URL: {listed}"
+            f"Code calls a literal URL: {listed}"
             + (f" and {len(hits) - 5} more" if len(hits) > 5 else "")
             + "; the host is in neither a parameter, an environment variable nor a resource",
             file=hits[0][1],
@@ -2306,7 +2395,7 @@ class SyncCallNoTimeoutOrQueue(_RepoRule):
     id = "REPO-108"
     title = "Synchronous calls have no timeout, and no queue or schedule sits behind them"
     category = "Reliability"
-    severity = "Medium"
+    severity = "Low"
     themes = ("resilience",)
     recommendation = (
         "A synchronous client of a dependency that can fail or stall holds its caller. Set a "
@@ -4910,6 +4999,1169 @@ class AlarmResponseMissing(_RepoRule):
         )]
 
 
+# Event management (OPS 10): priority (REPO-109), customer communication (REPO-110), an event
+# status dashboard (REPO-111) and automated responses (REPO-112).
+_RESPONSE_PLAN = re.compile(
+    _cf_type(r"SSMIncidents::ResponsePlan") + r"|resource\s+\"aws_ssmincidents_response_plan\""
+    r"|\bssmincidents\.(?:Cfn)?ResponsePlan\("
+)
+_EVENT_SEVERITY = re.compile(
+    r"\b(?:[Ss]everity|SEVERITY|[Pp]riority|PRIORITY|[Ii]mpact|[Ss]ev[-_]?[1-5]|P[1-5])\b"
+)
+_CUSTOMER_CHANNEL = re.compile(
+    r"customer|status[-_ ]?page|statuspage|service[-_ ]?status|public[-_ ]?status|subscriber",
+    re.IGNORECASE,
+)
+_MESSAGING = re.compile(
+    _cf_type(r"SNS::Topic|Pinpoint::\w+|SES::\w+|PinpointEmail::\w+|SMS-?Voice\w*::\w+")
+    + r"|resource\s+\"aws_(?:sns_topic|pinpoint_\w+|ses_\w+|sesv2_\w+)\""
+    r"|\b(?:sns|pinpoint|ses|sesv2)\.(?:Cfn)?\w+\("
+)
+_ALARM_WIDGET = re.compile(
+    r"\bAlarmStatusWidget\b|\bAlarmWidget\b|\balarm_status_widget\b"
+    r"|[\"']?type[\"']?\s*[:=]\s*\\?[\"']alarm\\?[\"']"
+)
+_RESPONSE_AUTOMATION = re.compile(
+    r"automation-definition|StartAutomationExecution|\b[Ss]sm_?[Aa]utomation\b"
+    r"|RunCommandParameters"
+)
+
+
+def event_signals(repo_path: Path) -> tuple[list[str], list[str]]:
+    """(files with a CloudWatch alarm, files with an Incident Manager response plan)."""
+    alarms: list[str] = []
+    plans: list[str] = []
+    for rel, text in iac_texts(repo_path):
+        if _TYPED_ALARM.search(text):
+            alarms.append(rel)
+        if _RESPONSE_PLAN.search(text):
+            plans.append(rel)
+    return alarms, plans
+
+
+class EventSeverityMissing(_RepoRule):
+    id = "REPO-109"
+    title = "Alarms and response plans carry no severity"
+    severity = "Low"
+    themes = ("observability",)
+    recommendation = (
+        "Rank events by business impact so responders start with the worst. Give each alarm "
+        "a severity or priority in its name, description or tags, and set the impact of each "
+        "Incident Manager response plan, so a page for a checkout outage is not "
+        "indistinguishable from a warning about disk usage."
+    )
+
+    def run(self, repo_path: Path, language: str = "typescript") -> List[Finding]:
+        alarms, plans = event_signals(repo_path)
+        if not alarms and not plans:
+            return []
+        files = set(alarms) | set(plans)
+        for rel, text in iac_texts(repo_path):
+            if rel in files and _EVENT_SEVERITY.search(text):
+                return []
+        what = []
+        if alarms:
+            what.append(f"CloudWatch alarms ({_listed(alarms)})")
+        if plans:
+            what.append(f"Incident Manager response plans ({_listed(plans)})")
+        return [self._finding(
+            f"The IaC declares {' and '.join(what)}; searched those files for a severity, "
+            "priority or impact; found none",
+            file=(alarms or plans)[0],
+        )]
+
+
+class CustomerCommunicationMissing(_RepoRule):
+    id = "REPO-110"
+    title = "No customer communication channel is separate from the operator alarms"
+    severity = "Low"
+    themes = ("observability",)
+    recommendation = (
+        "Plan how customers hear about a service-impacting event: a status page, or an SNS "
+        "topic, SES or Pinpoint channel that customers or their account teams subscribe to, "
+        "kept apart from the topic that pages operators."
+    )
+
+    def run(self, repo_path: Path, language: str = "typescript") -> List[Finding]:
+        alarms, _plans = event_signals(repo_path)
+        if not alarms:
+            return []
+        for rel, text in iac_texts(repo_path):
+            if _MESSAGING.search(text) and _CUSTOMER_CHANNEL.search(text):
+                return []
+        return [self._finding(
+            f"The IaC declares CloudWatch alarms ({_listed(alarms)}); searched it for an SNS "
+            "topic, SES or Pinpoint resource with a customer, subscriber or status-page "
+            "name; found none",
+            file=alarms[0],
+        )]
+
+
+class EventStatusDashboardMissing(_RepoRule):
+    id = "REPO-111"
+    title = "No dashboard shows the state of the alarms"
+    severity = "Low"
+    themes = ("observability",)
+    recommendation = (
+        "Show event status in one place: add a CloudWatch dashboard with an alarm status "
+        "widget (or an alarm widget) for the workload's alarms, separate from the dashboard "
+        "of workload metrics, so responders and stakeholders see which alarms are firing."
+    )
+
+    def run(self, repo_path: Path, language: str = "typescript") -> List[Finding]:
+        alarms, _plans = event_signals(repo_path)
+        if not alarms:
+            return []
+        dashboards = 0
+        for rel, text in iac_texts(repo_path):
+            if not _DASHBOARD.search(text):
+                continue
+            dashboards += 1
+            if any(_ALARM_WIDGET.search(part) for part in _dashboard_texts(rel, text)):
+                return []
+        seen = (f"found {dashboards} dashboard file(s) with no alarm status widget"
+                if dashboards else "found no CloudWatch dashboard")
+        return [self._finding(
+            f"The IaC declares CloudWatch alarms ({_listed(alarms)}); searched it for a "
+            f"dashboard with an alarm status widget; {seen}",
+            file=alarms[0],
+        )]
+
+
+class EventResponseNotAutomated(_RepoRule):
+    id = "REPO-112"
+    title = "Events start no automated response beyond a notification"
+    severity = "Medium"
+    themes = ("observability",)
+    recommendation = (
+        "Automate the first response to an event: route alarm state changes through an "
+        "EventBridge rule to an SSM Automation runbook or a Lambda function, point an alarm "
+        "action at an SSM OpsItem or automation, or give the Incident Manager response plan "
+        "an SSM Automation action, so a notification is not the only thing that happens."
+    )
+
+    def run(self, repo_path: Path, language: str = "typescript") -> List[Finding]:
+        alarms, plans = event_signals(repo_path)
+        if not alarms and not plans:
+            return []
+        responses = {
+            kind: rel for kind, rel in automated_responses(repo_path).items()
+            if kind != "scaling policy"
+        }
+        if responses:
+            return []
+        if any(_RESPONSE_AUTOMATION.search(text) for _, text in iac_texts(repo_path)):
+            return []
+        return [self._finding(
+            f"The IaC declares {'alarms' if alarms else 'response plans'} "
+            f"({_listed(alarms or plans)}); searched it for an alarm action that runs "
+            "automation, an EventBridge rule on alarm state changes, and an SSM Automation "
+            "target or response-plan action; found none",
+            file=(alarms or plans)[0],
+        )]
+
+
+# Change flow (OPS 5): version control (REPO-113), a configuration store (REPO-114), a code
+# quality gate in CI (REPO-115) and small, reversible changes (REPO-116).
+_HOSTED_REPO = re.compile(
+    _cf_type(r"CodeCommit::Repository") + r"|resource\s+\"aws_codecommit_repository\""
+    r"|\bcodecommit\.(?:Cfn)?Repository\(|\bcodestarconnections\b|\bCodeStarConnections\b"
+    r"|\baws_codestarconnections_connection\b|\bcodeconnections\b|\bAWS::CodeConnections::"
+    r"|\bCodePipelineSource\.(?:gitHub|connection|codeCommit|git_hub|code_commit)\("
+    r"|\bConnectionSourceAction\b|\bCodeCommitSourceAction\b"
+)
+_CONFIG_STORE = re.compile(
+    _cf_type(r"SSM::Parameter|SecretsManager::Secret|AppConfig::\w+")
+    + r"|resource\s+\"aws_(?:ssm_parameter|secretsmanager_secret|appconfig_\w+)\""
+    r"|\bssm\.(?:Cfn)?StringParameter\(|\bStringParameter\.(?:value\w*|from\w+)\("
+    r"|\bsecretsmanager\.(?:Cfn)?Secret\(|\bSecret\.from\w+\("
+    r"|\{\{resolve:(?:ssm|ssm-secure|secretsmanager):|\bvalueForStringParameter\("
+    r"|\bdata\s+\"aws_(?:ssm_parameter|secretsmanager_secret\w*)\""
+    r"|\bssm:GetParameter|\bsecretsmanager:GetSecretValue"
+)
+_ENV_CONFIG_FILE = re.compile(
+    r"(?:^|/)(?:config|conf|settings|environments?|envs)/(?:[^/]*[-_.])?"
+    r"(?:dev|development|test|qa|uat|stage|staging|prod|production)(?:[-_.][^/]*)?"
+    r"\.(?:json|ya?ml|toml|ts|js)$"
+    r"|(?:^|/)(?:config|conf|settings|environments?|envs)/(?:dev|development|test|qa|uat|stage"
+    r"|staging|prod|production)/[^/]+$"
+    r"|\.tfvars(?:\.json)?$|(?:^|/)(?:cdk\.context|context)[^/]*\.json$"
+    r"|(?:^|/)[^/]*(?:param|parameters|config)[-_.](?:dev|test|stage|staging|prod|production)"
+    r"[^/]*\.(?:json|ya?ml)$",
+    re.IGNORECASE,
+)
+_QUALITY_GATE = re.compile(
+    r"(?<!\w)(?:eslint|ruff|flake8|pylint|pycodestyle|black\s+--check|prettier\s+--check|biome"
+    r"|mypy|pyright|tsc\b[^\n]*--noEmit|golangci-lint|rubocop|checkstyle|spotbugs|sonar\w*"
+    r"|codeql|cfn-lint|tflint|cdk-nag|terraform\s+validate|cargo\s+clippy"
+    r"|--cov-fail-under|--fail-under|--coverage-threshold|coverageThreshold"
+    r"|npm\s+run\s+(?:lint|typecheck|type-check|check)|make\s+(?:lint|check))\b",
+    re.IGNORECASE,
+)
+_SMALL_STEP_DEPLOY = re.compile(
+    r"blue[-_ /]?green|BlueGreen|canary[-_ ]?(?:deploy\w*|release|traffic)|Canary\d+Percent"
+    r"|Linear\d+Percent|\btraffic_?shifting\b|AdditionalVersionWeights|\badditional_?versions\b"
+    r"|\brouting_?config\b|RoutingConfig"
+    r"|AWS::CodeDeploy::DeploymentGroup|resource\s+\"aws_codedeploy_deployment_group\"",
+    re.IGNORECASE,
+)
+
+
+def _is_git_checkout(repo_path: Path) -> bool:
+    """A .git entry (a directory, or a file in a worktree or submodule) in the scanned
+    folder or any folder above it."""
+    try:
+        start = repo_path.resolve()
+    except OSError:
+        start = repo_path
+    return any((folder / ".git").exists() for folder in (start, *start.parents))
+
+
+class VersionControlMissing(_RepoRule):
+    id = "REPO-113"
+    title = "The workload is not in version control"
+    severity = "Low"
+    themes = ("resilience",)
+    recommendation = (
+        "Keep the infrastructure and application code in version control (a git repository, "
+        "or AWS CodeCommit or a CodeConnections-linked repository) so every change is "
+        "recorded, reviewed and can be reverted."
+    )
+
+    def run(self, repo_path: Path, language: str = "typescript") -> List[Finding]:
+        if _is_git_checkout(repo_path):
+            return []
+        for _rel, text in iac_texts(repo_path):
+            if _HOSTED_REPO.search(text):
+                return []
+        return [self._finding(
+            "Searched the scanned folder and the folders above it for a .git entry, and the "
+            "IaC for a CodeCommit repository, a CodeConnections or CodeStar connection and a "
+            "pipeline source from a hosted repository; found none"
+        )]
+
+
+class ConfigurationStoreMissing(_RepoRule):
+    id = "REPO-114"
+    title = "Configuration is not kept in a configuration store or per-environment files"
+    severity = "Low"
+    themes = ("resilience",)
+    recommendation = (
+        "Keep configuration out of the code: store it in SSM Parameter Store, Secrets "
+        "Manager or AppConfig, or in a file per environment (tfvars, cdk.context or a config "
+        "directory), so a change to configuration is a reviewed, versioned change that does "
+        "not need a code edit."
+    )
+
+    def run(self, repo_path: Path, language: str = "typescript") -> List[Finding]:
+        compute = _in_iac(repo_path, _COMPUTE)
+        if not compute:
+            return []
+        for _rel, text in iac_texts(repo_path):
+            if _CONFIG_STORE.search(text):
+                return []
+        for path in walk(repo_path):
+            if _ENV_CONFIG_FILE.search("/".join(_rel_parts(path, repo_path))):
+                return []
+        return [self._finding(
+            f"Runs {_named(compute)}; searched the IaC for SSM parameters, Secrets Manager "
+            "secrets, AppConfig and parameter lookups, and the repo for a tfvars, cdk.context "
+            "or config directory file per environment; found none",
+            file=next(iter(compute.values())),
+        )]
+
+
+def quality_gates(repo_path: Path) -> dict[str, str]:
+    """Lint, type-check, static analysis and coverage-threshold commands in the build
+    configs and the package.json scripts they run: command -> first place."""
+    builds = build_texts(repo_path)
+    found: dict[str, str] = {}
+    for rel, text in builds:
+        for match in _QUALITY_GATE.finditer(text):
+            found.setdefault(match.group(0).split()[0].lower(), rel)
+    for script, command in _scripts_run([text for _rel, text in builds],
+                                        _package_scripts(repo_path)):
+        for match in _QUALITY_GATE.finditer(command):
+            found.setdefault(match.group(0).split()[0].lower(), f"package.json script {script}")
+    return found
+
+
+class QualityGateMissing(_RepoRule):
+    id = "REPO-115"
+    title = "No CI step lints, type-checks or sets a coverage gate"
+    severity = "Medium"
+    themes = ("resilience",)
+    recommendation = (
+        "Make code quality a gate: run a linter or type checker (ESLint, ruff, mypy, tsc "
+        "--noEmit, golangci-lint), a static analyzer (CodeQL, SonarQube, cfn-lint, tflint, "
+        "cdk-nag) or a coverage threshold in the CI workflow or pipeline, and fail the build "
+        "on findings."
+    )
+
+    def run(self, repo_path: Path, language: str = "typescript") -> List[Finding]:
+        builds = [rel for rel, _text in build_texts(repo_path)]
+        if quality_gates(repo_path):
+            return []
+        seen = (f"searched the build configs ({_listed(builds)}) and the package.json "
+                "scripts they run" if builds else "found no CI config or pipeline")
+        return [self._finding(
+            f"{seen[0].upper()}{seen[1:]} for a linter, type checker, static analyzer or "
+            "coverage threshold; found none",
+            file=builds[0] if builds else None,
+        )]
+
+
+class SmallReversibleChangesMissing(_RepoRule):
+    id = "REPO-116"
+    title = "Deployments have no rollback, blue/green or canary step"
+    severity = "Low"
+    themes = ("resilience",)
+    recommendation = (
+        "Ship small changes that can be undone: deploy through CodeDeploy with a canary or "
+        "linear traffic shift (SAM DeploymentPreference, Lambda alias weights), blue/green, "
+        "an ECS deployment circuit breaker, or a pipeline stage that rolls back on failure."
+    )
+
+    def run(self, repo_path: Path, language: str = "typescript") -> List[Finding]:
+        compute = _in_iac(repo_path, _COMPUTE)
+        if not compute or rollback_controls(repo_path):
+            return []
+        places = list(iac_texts(repo_path)) + build_texts(repo_path)
+        if any(_SMALL_STEP_DEPLOY.search(text) for _rel, text in places):
+            return []
+        return [self._finding(
+            f"Runs {_named(compute)}; searched the IaC and builds for a rollback control, "
+            "blue/green, a canary or linear traffic shift, a CodeDeploy deployment group and "
+            "Lambda alias weights; found none",
+            file=next(iter(compute.values())),
+        )]
+
+
+# Application security practices (SEC 11): training (REPO-117), penetration testing
+# (REPO-118), code review (REPO-119), programmatic deploys (REPO-120) and security ownership
+# (REPO-121). They fire only on a repo that holds IaC.
+_TRAINING_NAME = re.compile(
+    r"security[-_ ]?(?:awareness[-_ ]?)?training|security[-_ ]?awareness|secure[-_ ]?coding"
+    r"|app(?:lication)?[-_ ]?sec(?:urity)?[-_ ]?training"
+)
+_TRAINING_HEADING = re.compile(
+    r"(?i).*\b(?:security[- ](?:awareness[- ])?training|security[- ]awareness"
+    r"|secure[- ]coding|app(?:lication)?[- ]?sec(?:urity)?[- ]training)\b.*"
+)
+_PENTEST_NAME = re.compile(r"pen[-_ ]?tests?|pentests?|penetration[-_ ]?test(?:s|ing)?")
+_PENTEST_HEADING = re.compile(r"(?i).*\b(?:pen[- ]?tests?|penetration[- ]test(?:s|ing)?)\b.*")
+_CODEOWNERS_PATHS = frozenset({"CODEOWNERS", ".github/CODEOWNERS", "docs/CODEOWNERS",
+                               ".gitlab/CODEOWNERS"})
+_REVIEW_ENFORCED = re.compile(
+    r"resource\s+\"github_(?:branch_protection(?:_v3)?|repository_ruleset)\""
+    r"|resource\s+\"aws_codecommit_approval_rule_template\""
+    r"|[\"']?required_?[pP]ull_?[rR]equest_?[rR]eviews[\"']?\s*[:={]"
+    r"|[\"']?required_?[aA]pproving_?[rR]eview_?[cC]ount[\"']?\s*[:=]"
+    r"|[aA]pprovalRuleTemplate\b"
+    r"|resource\s+\"gitlab_(?:branch_protection|project_approval_rule)\""
+)
+_REVIEW_CONFIG_PATHS = (".github/settings.yml", ".github/settings.yaml", ".github/rulesets/")
+_SECURITY_OWNER_NAME = re.compile(
+    r"^security(?:[-_ ]?(?:owners?|champions?|team|contacts?|ownership))?$"
+    r"|^security[-_ ]?owners?$|^security[-_ ]?champions?$"
+)
+_SECURITY_OWNER_HEADING = re.compile(
+    r"(?i).*\b(?:security[- ](?:owners?|champions?|ownership|contacts?)"
+    r"|who owns security)\b.*"
+)
+_OWNER_TOKEN = re.compile(r"(?:^|\s)(@[\w./-]+|[\w.+-]+@[\w-]+\.[\w.]+)(?=\s|$)")
+
+
+def _codeowners(repo_path: Path) -> Iterator[tuple[str, List[List[str]]]]:
+    """(path, owners per rule line) of each CODEOWNERS file; comments and lines with no owner
+    are left out, so an empty or comment-only file yields no lines."""
+    for path in walk(repo_path):
+        parts = _rel_parts(path, repo_path)
+        if "/".join(parts) not in _CODEOWNERS_PATHS:
+            continue
+        lines: List[List[str]] = []
+        for line in read_text_safe(path).splitlines():
+            line = line.split("#", 1)[0]
+            owners = [m.group(1) for m in _OWNER_TOKEN.finditer(line)]
+            if owners:
+                lines.append(owners)
+        yield "/".join(parts), lines
+
+
+def review_enforced(repo_path: Path) -> str | None:
+    """A CODEOWNERS file, or branch protection, a ruleset or an approval rule in the IaC or
+    the repo settings: the first place."""
+    for rel, lines in _codeowners(repo_path):
+        if lines:
+            return rel
+    for rel, text in iac_texts(repo_path):
+        if _REVIEW_ENFORCED.search(text):
+            return rel
+    for path in walk(repo_path):
+        rel = "/".join(_rel_parts(path, repo_path))
+        if rel.startswith(_REVIEW_CONFIG_PATHS) and _REVIEW_ENFORCED.search(read_text_safe(path)):
+            return rel
+        if rel.lower() in (".github/settings.yml", ".github/settings.yaml") and re.search(
+            r"(?m)^\s*required_pull_request_reviews\s*:", read_text_safe(path)
+        ):
+            return rel
+    return None
+
+
+def security_owner_note(repo_path: Path) -> str | None:
+    """A SECURITY.md, a note named or headed for security ownership, or a CODEOWNERS line
+    that names security."""
+    for rel, text in note_texts(repo_path):
+        stem = rel.rsplit("/", 1)[-1].lower().rsplit(".", 1)[0]
+        if stem == "security" or _SECURITY_OWNER_NAME.search(stem) or any(
+            _SECURITY_OWNER_HEADING.fullmatch(h.group(2).strip()) for h in _HEADING.finditer(text)
+        ):
+            return rel
+    for rel, lines in _codeowners(repo_path):
+        if any("security" in owner.lower() for owners in lines for owner in owners):
+            return rel
+    return None
+
+
+def pentest_note(repo_path: Path) -> str | None:
+    """The first dated note named or headed for a penetration test."""
+    for rel, text in note_texts(repo_path):
+        stem = rel.rsplit("/", 1)[-1].lower().rsplit(".", 1)[0]
+        titled = _PENTEST_NAME.search(stem) or any(
+            _PENTEST_HEADING.fullmatch(h.group(2).strip()) for h in _HEADING.finditer(text)
+        )
+        if titled and _DATE.search(text):
+            return rel
+    return None
+
+
+def _holds_iac(repo_path: Path) -> str:
+    held = iac_files(repo_path)
+    return "; ".join(f"{kind}: {count} file{'s' if count > 1 else ''}"
+                     for kind, count in sorted(held.items()))
+
+
+class SecurityTrainingMissing(_RepoRule):
+    id = "REPO-117"
+    title = "No note records application security training"
+    category = "Security"
+    severity = "Low"
+    themes = ("security-baseline",)
+    recommendation = (
+        "Record how the team learns application security: a SECURITY_TRAINING.md or a "
+        "\"Security training\" section in the README or docs that names the training (secure "
+        "coding, OWASP, a vendor course), who takes it and how often."
+    )
+
+    def run(self, repo_path: Path, language: str = "typescript") -> List[Finding]:
+        held = _holds_iac(repo_path)
+        if not held or _titled_note(repo_path, _TRAINING_NAME, _TRAINING_HEADING):
+            return []
+        return [self._finding(
+            f"Holds IaC ({held}); searched the notes for a file or heading on security "
+            "training, security awareness or secure coding; found none"
+        )]
+
+
+class PenetrationTestMissing(_RepoRule):
+    id = "REPO-118"
+    title = "No dated penetration test record is in the repo"
+    category = "Security"
+    severity = "Low"
+    themes = ("security-baseline",)
+    recommendation = (
+        "Test the application with a penetration test on a schedule and keep the dated "
+        "result in the repo (docs/pentest-2026-03.md): scope, date, findings and their "
+        "status, so the next test starts from the last one."
+    )
+
+    def run(self, repo_path: Path, language: str = "typescript") -> List[Finding]:
+        held = _holds_iac(repo_path)
+        if not held or pentest_note(repo_path):
+            return []
+        return [self._finding(
+            f"Holds IaC ({held}); searched the notes for a dated file or heading on a "
+            "penetration test; found none"
+        )]
+
+
+class CodeReviewNotEnforced(_RepoRule):
+    id = "REPO-119"
+    title = "Nothing requires a code review before a change merges"
+    category = "Security"
+    severity = "Medium"
+    themes = ("security-baseline",)
+    recommendation = (
+        "Require a review: add a CODEOWNERS file, and protect the main branch so a pull "
+        "request needs an approving review (a github_branch_protection or "
+        "github_repository_ruleset resource, repository settings as code, or a CodeCommit "
+        "approval rule template)."
+    )
+
+    def run(self, repo_path: Path, language: str = "typescript") -> List[Finding]:
+        held = _holds_iac(repo_path)
+        if not held or review_enforced(repo_path):
+            return []
+        return [self._finding(
+            f"Holds IaC ({held}); searched for a CODEOWNERS file, branch protection or a "
+            "ruleset with required reviews, repository settings with required pull request "
+            "reviews, and a CodeCommit approval rule; found none"
+        )]
+
+
+class ProgrammaticDeployMissing(_RepoRule):
+    id = "REPO-120"
+    title = "Software is not deployed programmatically"
+    category = "Security"
+    severity = "Medium"
+    themes = ("security-baseline",)
+    recommendation = (
+        "Deploy from a pipeline with a role of its own, not from a person's laptop: a CI "
+        "job or CodeBuild project that runs the CDK, CloudFormation, SAM or Terraform "
+        "deploy, a CodePipeline, or CDK pipelines, so every release is repeatable and "
+        "logged."
+    )
+
+    def run(self, repo_path: Path, language: str = "typescript") -> List[Finding]:
+        held = _holds_iac(repo_path)
+        if not held or automated_deploys(repo_path):
+            return []
+        return [self._finding(
+            f"Holds IaC ({held}); searched the build configs, the package.json scripts they "
+            "run and the IaC for a deploy step or a pipeline; found none"
+        )]
+
+
+class SecurityOwnershipMissing(_RepoRule):
+    id = "REPO-121"
+    title = "No file names who owns security for the workload"
+    category = "Security"
+    severity = "Low"
+    themes = ("security-baseline",)
+    recommendation = (
+        "Name who owns security in the team: a SECURITY.md with a contact and the owner, a "
+        "security-owners or security-champions note, or a CODEOWNERS entry for security-"
+        "sensitive paths that names a security team."
+    )
+
+    def run(self, repo_path: Path, language: str = "typescript") -> List[Finding]:
+        held = _holds_iac(repo_path)
+        if not held or security_owner_note(repo_path):
+            return []
+        return [self._finding(
+            f"Holds IaC ({held}); searched for a SECURITY.md, a security owners or champions "
+            "note, and a CODEOWNERS line that names security; found none"
+        )]
+
+
+# Reliability testing practices (REL 12): failure playbooks (REPO-122), post-incident analysis
+# (REPO-123) and game days (REPO-124). They read notes and fire only on a repo that holds IaC.
+_PLAYBOOK_NAME = re.compile(
+    r"playbooks?|failure[-_ ]?investigations?|troubleshooting[-_ ]?(?:guide|playbook)s?"
+)
+_PLAYBOOK_HEADING = re.compile(
+    r"(?i).*\b(?:playbooks?|failure investigations?|troubleshooting guide)\b.*"
+)
+_POST_INCIDENT_NAME = re.compile(
+    r"post[-_ ]?(?:incident|mortems?)|postmortems?|incident[-_ ]?(?:review|report|analysis)"
+    r"|root[-_ ]?cause|rcas?(?:$|[-_ .])|blameless"
+)
+_POST_INCIDENT_HEADING = re.compile(
+    r"(?i).*\b(?:post[- ]?incident|post[- ]?mortems?|incident (?:review|report|analysis)"
+    r"|root cause analysis|blameless)\b.*"
+)
+_GAME_DAY_NAME = re.compile(r"game[-_ ]?days?|gamedays?|chaos[-_ ]?days?|fire[-_ ]?drills?")
+_GAME_DAY_HEADING = re.compile(
+    r"(?i).*\b(?:game[- ]?days?|chaos days?|fire drills?|failure drills?)\b.*"
+)
+
+
+def _noted(repo_path: Path, name: re.Pattern[str], heading: re.Pattern[str]) -> str | None:
+    """The first note whose file stem or folder name matches, or that has a matching heading."""
+    for rel, text in note_texts(repo_path):
+        parts = rel.lower().split("/")
+        names = [*parts[:-1], parts[-1].rsplit(".", 1)[0]]
+        if any(name.search(part) for part in names) or any(
+            heading.fullmatch(h.group(2).strip()) for h in _HEADING.finditer(text)
+        ):
+            return rel
+    return None
+
+
+class FailurePlaybookMissing(_RepoRule):
+    id = "REPO-122"
+    title = "No playbook is in the repo for investigating failures"
+    category = "Reliability"
+    severity = "Low"
+    themes = ("resilience",)
+    recommendation = (
+        "Write down how to investigate a failure: a playbook per likely failure (a "
+        "docs/playbooks directory or PLAYBOOK.md) that names the symptoms, the dashboards "
+        "and logs to open, the checks to run and who to call, and keep it with the code it "
+        "describes."
+    )
+
+    def run(self, repo_path: Path, language: str = "typescript") -> List[Finding]:
+        held = _holds_iac(repo_path)
+        if not held or _noted(repo_path, _PLAYBOOK_NAME, _PLAYBOOK_HEADING):
+            return []
+        return [self._finding(
+            f"Holds IaC ({held}); searched the notes for a file or heading on a playbook, a "
+            "failure investigation or a troubleshooting guide; found none"
+        )]
+
+
+class PostIncidentAnalysisMissing(_RepoRule):
+    id = "REPO-123"
+    title = "No post-incident template or record is in the repo"
+    category = "Reliability"
+    severity = "Low"
+    themes = ("resilience",)
+    recommendation = (
+        "Learn from every incident: keep a post-incident (postmortem) template in the repo, "
+        "such as docs/postmortem-template.md or an issue template, with the timeline, the "
+        "root cause, what worked, what did not and the follow-ups, and file the analysis "
+        "next to the code."
+    )
+
+    def run(self, repo_path: Path, language: str = "typescript") -> List[Finding]:
+        held = _holds_iac(repo_path)
+        if not held or _noted(repo_path, _POST_INCIDENT_NAME, _POST_INCIDENT_HEADING):
+            return []
+        return [self._finding(
+            f"Holds IaC ({held}); searched the notes for a file or heading on a post-incident "
+            "review, a postmortem or a root cause analysis; found none"
+        )]
+
+
+class GameDayMissing(_RepoRule):
+    id = "REPO-124"
+    title = "No game day is recorded in the repo"
+    category = "Reliability"
+    severity = "Low"
+    themes = ("resilience",)
+    recommendation = (
+        "Practise failure on a schedule: keep a game-day plan in the repo (docs/game-days.md) "
+        "that lists the scenarios, the dates or the cadence, who takes part and what the last "
+        "one found, and run the scenarios against a non-production copy first."
+    )
+
+    def run(self, repo_path: Path, language: str = "typescript") -> List[Finding]:
+        held = _holds_iac(repo_path)
+        if not held or _noted(repo_path, _GAME_DAY_NAME, _GAME_DAY_HEADING):
+            return []
+        return [self._finding(
+            f"Holds IaC ({held}); searched the notes for a file or heading on a game day, a "
+            "chaos day or a fire drill; found none"
+        )]
+
+
+# Incident readiness (SEC 10): key contacts (REPO-125), an incident plan (REPO-126), security
+# playbooks (REPO-127), pre-provisioned response access (REPO-128), simulations (REPO-129)
+# and learning from incidents (REPO-130). REPO-007 and REPO-008 answer SEC10-BP03 and
+# SEC10-BP06 (forensics and containment). They fire only on a repo that holds IaC.
+_CONTACTS_IN_IAC = re.compile(
+    _cf_type(r"SSMContacts::\w+") + r"|resource\s+\"aws_ssmcontacts_(?:contact|plan|rotation)\""
+    r"|\bssmcontacts\.(?:Cfn)?\w+\("
+)
+_CONTACTS_NAME = re.compile(
+    r"contacts?|on[-_ ]?call|key[-_ ]?personnel|escalation|responders?|incident[-_ ]?team"
+)
+_CONTACTS_HEADING = re.compile(
+    r"(?i).*\b(?:key personnel|security contacts?|on-?call|escalation contacts?"
+    r"|incident (?:contacts?|team)|responders?)\b.*"
+)
+_IR_PLAN_NAME = re.compile(
+    r"incident[-_ ]?(?:management|response)[-_ ]?plan|incident[-_ ]?response|ir[-_ ]?plan"
+)
+_IR_PLAN_HEADING = re.compile(
+    r"(?i).*\b(?:incident (?:management|response) plan|incident response|security incident plan)\b.*"
+)
+_SECURITY_PLAYBOOK_NAME = re.compile(
+    r"security[-_ ]?(?:incident[-_ ]?)?playbooks?|ir[-_ ]?playbooks?"
+    r"|incident[-_ ]?response[-_ ]?playbooks?"
+)
+_SECURITY_PLAYBOOK_HEADING = re.compile(
+    r"(?i).*\b(?:security (?:incident )?playbooks?|incident response playbooks?|ir playbooks?)\b.*"
+)
+_IAM_ROLE_DECL = re.compile(
+    r"AWS::IAM::Role\b|resource\s+\"aws_iam_role\"|\biam\.(?:Cfn)?Role\(|\bnew\s+Role\("
+    r"|\bSSO::PermissionSet\b|resource\s+\"aws_ssoadmin_permission_set\""
+)
+_IR_ROLE_NAME = re.compile(
+    r"(?i)(?:incident|security)[-_ ]?(?:response|responder|investigat\w*|forensic\w*)"
+    r"|\bIncidentResponse\w*|\bSecurityIR\w*|\bforensic[-_ ]?(?:analyst|access|role)\b"
+)
+_SECURITY_LEARNING_NAME = re.compile(
+    r"security[-_ ]?(?:post[-_ ]?incident|postmortem|incident[-_ ]?review|lessons?)"
+)
+_SECURITY_LEARNING_HEADING = re.compile(
+    r"(?i).*\b(?:security (?:post[- ]?incident|post[- ]?mortem|incident review|lessons learned))\b.*"
+)
+
+
+def _in_iac_text(repo_path: Path, pattern: re.Pattern[str]) -> str | None:
+    """The first IaC file outside tests whose text matches."""
+    for rel, text in iac_texts(repo_path):
+        if pattern.search(text):
+            return rel
+    return None
+
+
+def _ir_role(repo_path: Path) -> str | None:
+    for rel, text in iac_texts(repo_path):
+        if _IAM_ROLE_DECL.search(text) and _IR_ROLE_NAME.search(text):
+            return rel
+    return None
+
+
+class _IncidentRule(_RepoRule):
+    """A SEC 10 rule: it fires on a repo that holds IaC when nothing answers the practice."""
+
+    category = "Security"
+    severity = "Low"
+    themes = ("security-baseline",)
+    searched = ""
+
+    def present(self, repo_path: Path) -> str | None:
+        raise NotImplementedError
+
+    def run(self, repo_path: Path, language: str = "typescript") -> List[Finding]:
+        held = _holds_iac(repo_path)
+        if not held or self.present(repo_path):
+            return []
+        return [self._finding(f"Holds IaC ({held}); searched {self.searched}; found none")]
+
+
+class KeyContactsMissing(_IncidentRule):
+    id = "REPO-125"
+    title = "No Incident Manager contact or note names who responds to security incidents"
+    themes = ("security-baseline",)
+    recommendation = (
+        "Name who responds: define Incident Manager contacts and an escalation plan "
+        "(AWS::SSMContacts::Contact and Plan), or keep a contacts note in the repo with the "
+        "security responders, the on-call rotation and the external resources (the AWS "
+        "account team, a retainer) to call."
+    )
+    searched = (
+        "the IaC for Incident Manager contacts and plans, and the notes for a file or heading "
+        "on contacts, on-call, key personnel or responders"
+    )
+
+    def present(self, repo_path: Path) -> str | None:
+        return (_in_iac_text(repo_path, _CONTACTS_IN_IAC)
+                or _noted(repo_path, _CONTACTS_NAME, _CONTACTS_HEADING))
+
+
+class IncidentPlanMissing(_IncidentRule):
+    id = "REPO-126"
+    title = "No security incident management plan is in the template or the repo"
+    themes = ("security-baseline",)
+    recommendation = (
+        "Write the plan before the incident: an Incident Manager response plan in the IaC, or "
+        "an incident response plan note (docs/incident-response-plan.md) that says what "
+        "counts as an incident, who leads, how to contain it and how to communicate."
+    )
+    searched = (
+        "the IaC for an Incident Manager response plan, and the notes for a file or heading "
+        "on an incident management or response plan"
+    )
+
+    def present(self, repo_path: Path) -> str | None:
+        return (_in_iac_text(repo_path, _RESPONSE_PLAN)
+                or _noted(repo_path, _IR_PLAN_NAME, _IR_PLAN_HEADING))
+
+
+class SecurityPlaybookMissing(_IncidentRule):
+    id = "REPO-127"
+    title = "No security incident response playbook is in the repo"
+    themes = ("security-baseline",)
+    recommendation = (
+        "Write playbooks for the incidents you expect (leaked credentials, a compromised "
+        "instance, public data exposure): detection, triage, containment, eradication and "
+        "recovery steps, kept as docs/security-playbooks and exercised in a simulation."
+    )
+    searched = "the notes for a file, folder or heading on security incident playbooks"
+
+    def present(self, repo_path: Path) -> str | None:
+        return _noted(repo_path, _SECURITY_PLAYBOOK_NAME, _SECURITY_PLAYBOOK_HEADING)
+
+
+class ResponseAccessMissing(_IncidentRule):
+    id = "REPO-128"
+    title = "No incident response role is provisioned before an incident"
+    themes = ("security-baseline",)
+    recommendation = (
+        "Provision responder access in advance: an IAM role or an Identity Center permission "
+        "set for incident response (IncidentResponder, SecurityInvestigator) with the read "
+        "and containment permissions it needs, assumed with MFA, so nobody creates access "
+        "in the middle of an incident."
+    )
+    searched = (
+        "the IaC for an IAM role or permission set named for incident response, a responder, "
+        "an investigator or forensics"
+    )
+
+    def present(self, repo_path: Path) -> str | None:
+        return _ir_role(repo_path)
+
+
+class SecuritySimulationMissing(_IncidentRule):
+    id = "REPO-129"
+    title = "No simulation of an incident is defined"
+    themes = ("security-baseline",)
+    recommendation = (
+        "Run simulations so the response is practised: define an AWS FIS experiment template "
+        "for the failures you plan for, and run it with the responders on a schedule."
+    )
+    searched = "the IaC for an AWS FIS experiment template"
+
+    def present(self, repo_path: Path) -> str | None:
+        return _in_iac_text(repo_path, _FIS_IN_IAC)
+
+
+class IncidentLearningMissing(_IncidentRule):
+    id = "REPO-130"
+    title = "No security post-incident template is in the repo"
+    themes = ("security-baseline",)
+    recommendation = (
+        "Learn from security incidents: keep a security post-incident template "
+        "(docs/security-postmortem-template.md) with the timeline, the root cause, the "
+        "detection and response gaps and the follow-ups, and review each one."
+    )
+    searched = "the notes for a file or heading on a security post-incident review or postmortem"
+
+    def present(self, repo_path: Path) -> str | None:
+        return _noted(repo_path, _SECURITY_LEARNING_NAME, _SECURITY_LEARNING_HEADING)
+
+
+# Network connectivity (REL 2): a public endpoint behind a load balancer (REPO-131) and more
+# than one link to an on-premises network (REPO-132). They share their detection with
+# REPO-064 and REPO-066, which answer the same conditions under PERF 4.
+
+
+_GLOBAL_ACCELERATOR = re.compile(
+    r"AWS::GlobalAccelerator::Accelerator\b|resource\s+\"aws_globalaccelerator_accelerator\""
+    r"|\bglobalaccelerator\.(?:Cfn)?Accelerator\("
+)
+
+
+class PublicEndpointNotHighlyAvailable(_RepoRule):
+    id = "REPO-131"
+    title = "A public endpoint is an instance with a public IP, not a load balancer"
+    category = "Reliability"
+    severity = "Medium"
+    themes = ("resilience",)
+    recommendation = (
+        "Do not serve the public from one instance's address: put the endpoint behind an "
+        "Application or Network Load Balancer across at least two Availability Zones, or "
+        "AWS Global Accelerator, and keep the instances in private subnets."
+    )
+
+    def run(self, repo_path: Path, language: str = "typescript") -> List[Finding]:
+        exposed = public_instances(repo_path)
+        if not exposed or _in_iac(repo_path, _LOAD_BALANCERS) or _in_iac_text(
+            repo_path, _GLOBAL_ACCELERATOR
+        ):
+            return []
+        names = [f"{name} in {rel}" for name, rel in exposed]
+        return [self._finding(
+            f"Declares an EC2 instance with a public IP or an Elastic IP ({_listed(names)}); "
+            "searched the IaC for an Application, Network or Classic Load Balancer and a Global "
+            "Accelerator; found none",
+            file=exposed[0][1],
+        )]
+
+
+class SingleOnPremLink(_RepoRule):
+    id = "REPO-132"
+    title = "Only one link connects the VPC to the on-premises network"
+    category = "Reliability"
+    severity = "Medium"
+    themes = ("resilience",)
+    recommendation = (
+        "Provision a second path to the on-premises network: a second Site-to-Site VPN "
+        "connection to a second customer gateway device, a second Direct Connect connection "
+        "or virtual interface in another location, or a VPN as the backup for Direct Connect."
+    )
+
+    def run(self, repo_path: Path, language: str = "typescript") -> List[Finding]:
+        single = single_hybrid_link(repo_path)
+        if not single:
+            return []
+        what, rel = single
+        return [self._finding(
+            f"Declares one {what} in {rel}; searched the IaC for a second link: another "
+            "Direct Connect connection or virtual interface, a LAG, or a Site-to-Site VPN "
+            "connection on another customer gateway; found none",
+            file=rel,
+        )]
+
+
+# Service quotas (REL 1): quotas managed across accounts and Regions (REPO-133), quota
+# increases automated (REPO-134) and fixed quotas designed around (REPO-135).
+_SERVICE_QUOTAS_RESOURCE = re.compile(
+    r"AWS::ServiceQuotas::\w+|resource\s+\"aws_servicequotas_\w+\""
+    r"|\bservicequotas\.(?:Cfn)?\w+\("
+    r"|\bmodule\s+\"[^\"]*quotas?[^\"]*\"|\bsource\s*=\s*\"[^\"]*quotas?[^\"]*\""
+)
+_QUOTA_INCREASE = re.compile(
+    r"resource\s+\"aws_servicequotas_(?:service_quota|template)\"|AWS::ServiceQuotas::\w+"
+    r"|\bservicequotas\.(?:Cfn)?\w+\("
+    r"|RequestServiceQuotaIncrease|request_service_quota_increase"
+    r"|servicequotas:RequestServiceQuotaIncrease"
+    r"|put[-_]service[-_]quota[-_]increase[-_]request[-_]into[-_]template"
+    r"|PutServiceQuotaIncreaseRequestIntoTemplate"
+)
+_FIFO_QUEUE = re.compile(
+    r"[\"']?(?:FifoQueue|fifo_queue)[\"']?\s*[:=]\s*[\"']?(?:true|True)\b"
+    r"|\bfifo\s*[:=]\s*(?:true|True)\b"
+)
+_FIFO_HIGH_THROUGHPUT = re.compile(
+    r"per_?[mM]essage_?[gG]roup_?[iI]d|PER_MESSAGE_GROUP_ID"
+)
+_KINESIS_STREAM = re.compile(
+    _cf_type(r"Kinesis::Stream") + r"|resource\s+\"aws_kinesis_stream\""
+    r"|\bkinesis\.(?:Cfn)?Stream\("
+)
+_ONE_SHARD = re.compile(r"[\"']?(?:ShardCount|shard_count|shardCount)[\"']?\s*[:=]\s*[\"']?1\b(?!\d)")
+_ON_DEMAND_STREAM = re.compile(r"\bON_DEMAND\b|StreamMode\.ON_DEMAND")
+
+
+def fixed_quota_designs(repo_path: Path) -> list[str]:
+    """FIFO queues without high-throughput mode and one-shard provisioned Kinesis streams,
+    as "kind in file"."""
+    found: list[str] = []
+    for rel, text in iac_texts(repo_path):
+        if _FIFO_QUEUE.search(text) and not _FIFO_HIGH_THROUGHPUT.search(text):
+            found.append(f"a FIFO queue without high-throughput mode in {rel}")
+        if (_KINESIS_STREAM.search(text) and _ONE_SHARD.search(text)
+                and not _ON_DEMAND_STREAM.search(text)):
+            found.append(f"a one-shard provisioned Kinesis stream in {rel}")
+    return found
+
+
+class QuotasNotManaged(_RepoRule):
+    id = "REPO-133"
+    title = "Service quotas are not managed as code across accounts and Regions"
+    category = "Reliability"
+    severity = "Low"
+    themes = ("resilience",)
+    recommendation = (
+        "Manage service quotas where the workload runs: Service Quotas resources "
+        "(aws_servicequotas_service_quota, a Service Quotas request template for the "
+        "organization) or a quotas module applied to every account and Region the stack "
+        "uses, so a new Region starts with the quotas the workload needs."
+    )
+
+    def run(self, repo_path: Path, language: str = "typescript") -> List[Finding]:
+        compute = _in_iac(repo_path, _COMPUTE)
+        if not compute or _in_iac_text(repo_path, _SERVICE_QUOTAS_RESOURCE):
+            return []
+        return [self._finding(
+            f"Runs {_named(compute)}; searched the IaC for Service Quotas resources and a "
+            "quotas module; found none",
+            file=next(iter(compute.values())),
+        )]
+
+
+class QuotaIncreaseNotAutomated(_RepoRule):
+    id = "REPO-134"
+    title = "No quota increase is requested by the template or by automation"
+    category = "Reliability"
+    severity = "Low"
+    themes = ("resilience",)
+    recommendation = (
+        "Automate quota increases: declare the quota in the template (aws_servicequotas_"
+        "service_quota or a Service Quotas template), or let an alarm on quota usage start a "
+        "function that calls RequestServiceQuotaIncrease."
+    )
+
+    def run(self, repo_path: Path, language: str = "typescript") -> List[Finding]:
+        compute = _in_iac(repo_path, _COMPUTE)
+        if not compute:
+            return []
+        if _in_iac_text(repo_path, _QUOTA_INCREASE):
+            return []
+        for rel, text in note_texts_code(repo_path):
+            if _QUOTA_INCREASE.search(text):
+                return []
+        return [self._finding(
+            f"Runs {_named(compute)}; searched the IaC and the function code for a Service "
+            "Quotas resource or template and a RequestServiceQuotaIncrease call; found none",
+            file=next(iter(compute.values())),
+        )]
+
+
+def note_texts_code(repo_path: Path) -> Iterator[tuple[str, str]]:
+    """(repo-relative path, text) of function code outside tests."""
+    for path in walk(repo_path):
+        parts = _rel_parts(path, repo_path)
+        if path.suffix.lower() not in _FUNCTION_CODE_SUFFIXES or _in_test_dir(parts):
+            continue
+        if _TEST_NAME.search(path.name.lower()):
+            continue
+        yield "/".join(parts), read_text_safe(path)
+
+
+class FixedQuotaNotDesignedAround(_RepoRule):
+    id = "REPO-135"
+    title = "A fixed service quota is not designed around"
+    category = "Reliability"
+    severity = "Low"
+    themes = ("resilience",)
+    recommendation = (
+        "Design around quotas you cannot raise: turn on SQS FIFO high-throughput mode "
+        "(deduplication scope per message group, throughput limit per message group id) or "
+        "partition across queues, and use on-demand capacity mode or more shards for Kinesis, "
+        "so one queue or stream is not the ceiling for the workload."
+    )
+
+    def run(self, repo_path: Path, language: str = "typescript") -> List[Finding]:
+        designs = fixed_quota_designs(repo_path)
+        if not designs:
+            return []
+        return [self._finding(
+            f"Declares {_listed(designs)}; searched for FIFO high-throughput mode "
+            "(per message group deduplication and throughput) and for an on-demand or "
+            "multi-shard stream; found none",
+            file=designs[0].rsplit(" in ", 1)[-1],
+        )]
+
+
+# Security operations (SEC 1): control objectives (REPO-136), a smaller security management
+# scope (REPO-137), a threat model (REPO-138) and new security services (REPO-139). REPO-006
+# answers the root user (SEC01-BP02). They fire only on a repo that holds IaC.
+_CONTROL_OBJECTIVES = re.compile(
+    r"AWS::SecurityHub::StandardsSubscription|resource\s+\"aws_securityhub_standards_subscription\""
+    r"|AWS::Config::(?:Organization)?ConformancePack"
+    r"|resource\s+\"aws_config_(?:organization_)?conformance_pack\""
+    r"|\bsecurityhub\.Cfn\w*Standard\w*\(|\bconfig\.Cfn(?:Organization)?ConformancePack\("
+)
+_DELEGATED_ADMIN = re.compile(
+    r"resource\s+\"aws_(?:organizations_delegated_administrator|securityhub_organization_admin_account"
+    r"|guardduty_organization_admin_account|macie2_organization_admin_account"
+    r"|inspector2_delegated_admin_account|fms_admin_account|controltower_control"
+    r"|detective_organization_admin_account|auditmanager_organization_admin_account)\""
+    r"|AWS::ControlTower::EnabledControl|\bCfnEnabledControl\("
+    r"|\bDelegatedAdmin\b|\bdelegated_administrator\b"
+)
+_THREAT_MODEL_PATH = re.compile(r"threat[-_ ]?model|threat[-_ ]?dragon|\.tm7$|\.threatmodel$")
+_THREAT_MODEL_HEADING = re.compile(r"(?i).*\bthreat model(?:l?ing)?\b.*")
+_SECURITY_SERVICE = re.compile(
+    r"AWS::AccessAnalyzer::Analyzer|resource\s+\"aws_accessanalyzer_analyzer\""
+    r"|\baccessanalyzer\.(?:Cfn)?Analyzer\(|AWS::InspectorV2::\w+|AWS::Inspector::\w+"
+    r"|resource\s+\"aws_inspector2?_\w+\"|\binspectorv2\.\w+\(|\binspector2\.\w+\("
+)
+_SECURITY_REVIEW_NAME = re.compile(
+    r"security[-_ ]?(?:service[-_ ]?)?reviews?|new[-_ ]?security[-_ ]?(?:services?|features?)"
+    r"|security[-_ ]?roadmap"
+)
+_SECURITY_REVIEW_HEADING = re.compile(
+    r"(?i).*\b(?:security (?:service )?reviews?|new security (?:services?|features?)"
+    r"|security roadmap)\b.*"
+)
+
+
+def threat_model(repo_path: Path) -> str | None:
+    """A file named for a threat model, or a note with a threat model heading."""
+    for path in walk(repo_path):
+        parts = _rel_parts(path, repo_path)
+        rel = "/".join(parts).lower()
+        if not _in_test_dir(parts) and _THREAT_MODEL_PATH.search(rel):
+            return "/".join(parts)
+    for rel, text in note_texts(repo_path):
+        if any(_THREAT_MODEL_HEADING.fullmatch(h.group(2).strip()) for h in _HEADING.finditer(text)):
+            return rel
+    return None
+
+
+def security_service_review(repo_path: Path) -> str | None:
+    """Access Analyzer or Inspector in the IaC, or a dated security review note."""
+    found = _in_iac_text(repo_path, _SECURITY_SERVICE)
+    if found:
+        return found
+    for rel, text in note_texts(repo_path):
+        parts = rel.lower().split("/")
+        names = [*parts[:-1], parts[-1].rsplit(".", 1)[0]]
+        titled = any(_SECURITY_REVIEW_NAME.search(n) for n in names) or any(
+            _SECURITY_REVIEW_HEADING.fullmatch(h.group(2).strip()) for h in _HEADING.finditer(text)
+        )
+        if titled and _DATE.search(text):
+            return rel
+    return None
+
+
+class ControlObjectivesMissing(_IncidentRule):
+    id = "REPO-136"
+    title = "No Security Hub standard or Config conformance pack validates control objectives"
+    themes = ("security-baseline",)
+    recommendation = (
+        "Turn the control objectives into checks that run: enable a Security Hub standard "
+        "(AWS Foundational Security Best Practices, CIS) or deploy a Config conformance pack "
+        "that matches your compliance requirements, and review the failed controls."
+    )
+    searched = (
+        "the IaC for a Security Hub standards subscription and a Config conformance pack "
+        "(account or organization)"
+    )
+
+    def present(self, repo_path: Path) -> str | None:
+        return _in_iac_text(repo_path, _CONTROL_OBJECTIVES)
+
+
+class SecurityScopeNotReduced(_IncidentRule):
+    id = "REPO-137"
+    title = "Security services are not centralized through a delegated administrator or controls"
+    themes = ("security-baseline",)
+    recommendation = (
+        "Reduce what each workload team manages: designate a security account as the "
+        "delegated administrator for GuardDuty, Security Hub, Inspector and Macie "
+        "(aws_organizations_delegated_administrator and the *_organization_admin_account "
+        "resources), or deploy preventive and detective controls with AWS Control Tower."
+    )
+    searched = (
+        "the IaC for an Organizations delegated administrator, a service organization admin "
+        "account and a Control Tower control"
+    )
+
+    def present(self, repo_path: Path) -> str | None:
+        return _in_iac_text(repo_path, _DELEGATED_ADMIN)
+
+
+class ThreatModelMissing(_IncidentRule):
+    id = "REPO-138"
+    title = "No threat model is in the repo"
+    themes = ("security-baseline",)
+    recommendation = (
+        "Model the threats: keep a threat model in the repo (docs/threat-model.md, an OWASP "
+        "Threat Dragon file or a Threagile model) that lists the assets, the trust boundaries, "
+        "the threats (STRIDE) and the mitigations, and update it when the design changes."
+    )
+    searched = "the repo for a file named for a threat model and a note with a threat model heading"
+
+    def present(self, repo_path: Path) -> str | None:
+        return threat_model(repo_path)
+
+
+class SecurityServiceReviewMissing(_IncidentRule):
+    id = "REPO-139"
+    title = "No IAM Access Analyzer, Inspector or dated security service review is in the repo"
+    themes = ("security-baseline",)
+    recommendation = (
+        "Keep up with new security services: enable IAM Access Analyzer and Amazon Inspector "
+        "in the IaC, or keep a dated security service review (docs/security-review-2026-03.md) "
+        "that records which new AWS security services and features you evaluated and adopted."
+    )
+    searched = (
+        "the IaC for IAM Access Analyzer and Amazon Inspector, and the notes for a dated "
+        "security service review"
+    )
+
+    def present(self, repo_path: Path) -> str | None:
+        return security_service_review(repo_path)
+
+
 _COMPUTE_TRACING = _kinds(
     ("Lambda active tracing",
      r"[\"']?Tracing[\"']?\s*:\s*[\"']?Active\b"
@@ -6631,6 +7883,25 @@ def hybrid_links(repo_path: Path) -> dict[str, tuple[int, str]]:
     return counts
 
 
+def single_hybrid_link(repo_path: Path) -> tuple[str, str] | None:
+    """(what, file) when the production IaC declares exactly one link to an on-premises
+    network and no second path: one Direct Connect connection or virtual interface with no
+    LAG and no VPN, or one VPN connection on one customer gateway with no Direct Connect."""
+    links = hybrid_links(repo_path)
+
+    def n(kind: str) -> int:
+        return links.get(kind, (0, ""))[0]
+
+    dx, vif = n("Direct Connect connection"), n("Direct Connect virtual interface")
+    vpn, lag = n("VPN connection"), n("Direct Connect LAG")
+    if (dx or vif) and dx <= 1 and vif <= 1 and not lag and not vpn:
+        kind = "Direct Connect connection" if dx else "Direct Connect virtual interface"
+        return kind, links[kind][1]
+    if vpn == 1 and not (dx or vif or lag) and n("customer gateway") <= 1:
+        return "VPN connection", links["VPN connection"][1]
+    return None
+
+
 class SingleHybridLink(_RepoRule):
     id = "REPO-066"
     title = "Dedicated connectivity or VPN has no redundant link"
@@ -6644,29 +7915,22 @@ class SingleHybridLink(_RepoRule):
     )
 
     def run(self, repo_path: Path, language: str = "typescript") -> List[Finding]:
-        links = hybrid_links(repo_path)
-
-        def n(kind: str) -> int:
-            return links.get(kind, (0, ""))[0]
-
-        dx, vif = n("Direct Connect connection"), n("Direct Connect virtual interface")
-        vpn, lag = n("VPN connection"), n("Direct Connect LAG")
-        if (dx or vif) and dx <= 1 and vif <= 1 and not lag and not vpn:
-            kind = "Direct Connect connection" if dx else "Direct Connect virtual interface"
+        single = single_hybrid_link(repo_path)
+        if not single:
+            return []
+        kind, rel = single
+        if kind == "VPN connection":
             return [self._finding(
-                f"Declares one {kind} in {links[kind][1]}; searched the IaC for a second "
-                "Direct Connect connection or virtual interface, a LAG, and a Site-to-Site "
-                "VPN backup; found none",
-                file=links[kind][1],
+                f"Declares one VPN connection in {rel}; searched the IaC for a second VPN "
+                "connection on another customer gateway and for Direct Connect; found none",
+                file=rel,
             )]
-        if vpn == 1 and not (dx or vif or lag) and n("customer gateway") <= 1:
-            return [self._finding(
-                f"Declares one VPN connection in {links['VPN connection'][1]}; searched the "
-                "IaC for a second VPN connection on another customer gateway and for Direct "
-                "Connect; found none",
-                file=links["VPN connection"][1],
-            )]
-        return []
+        return [self._finding(
+            f"Declares one {kind} in {rel}; searched the IaC for a second Direct Connect "
+            "connection or virtual interface, a LAG, and a Site-to-Site VPN backup; found "
+            "none",
+            file=rel,
+        )]
 
 
 _LOAD_BALANCERS = _kinds(
@@ -10113,6 +11377,18 @@ REPO_RULES: List[Rule] = [
     DependencyScanMissing(), ArtifactScanMissing(), CentralPackageRepoMissing(),
     QuotaAlarmMissing(), FailoverHeadroomMissing(), VpcCidrOverlap(),
     IdempotencyMissing(), DependencyUrlHardcoded(), SyncCallNoTimeoutOrQueue(),
+    EventSeverityMissing(), CustomerCommunicationMissing(), EventStatusDashboardMissing(),
+    EventResponseNotAutomated(), VersionControlMissing(), ConfigurationStoreMissing(),
+    QualityGateMissing(), SmallReversibleChangesMissing(),
+    SecurityTrainingMissing(), PenetrationTestMissing(), CodeReviewNotEnforced(),
+    ProgrammaticDeployMissing(), SecurityOwnershipMissing(),
+    FailurePlaybookMissing(), PostIncidentAnalysisMissing(), GameDayMissing(),
+    KeyContactsMissing(), IncidentPlanMissing(), SecurityPlaybookMissing(),
+    ResponseAccessMissing(), SecuritySimulationMissing(),
+    IncidentLearningMissing(), PublicEndpointNotHighlyAvailable(), SingleOnPremLink(),
+    QuotasNotManaged(), QuotaIncreaseNotAutomated(), FixedQuotaNotDesignedAround(),
+    ControlObjectivesMissing(), SecurityScopeNotReduced(), ThreatModelMissing(),
+    SecurityServiceReviewMissing(),
     FaultInjectionMissing(), LoadTestMissing(),
     KpiMetricMissing(), EdgeTelemetryMissing(), DependencyTelemetryMissing(),
     DeployTestGateMissing(), AutomatedRollbackMissing(),

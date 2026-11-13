@@ -874,6 +874,192 @@
     "positive_ts": "const res = await fetch(process.env.PAYMENTS_URL!);",
     "positive_py": "resp = requests.post(url, json=payload)"
   },
+  "REPO-109": {
+    "negative_ts": "new cloudwatch.Alarm(this, 'Sev2Errors', { alarmName: 'sev2-api-errors', metric, threshold: 1, evaluationPeriods: 1 });",
+    "negative_py": "cloudwatch.Alarm(self, 'Errors', alarm_name='sev2-api-errors', metric=metric, threshold=1, evaluation_periods=1)",
+    "positive_ts": "new cloudwatch.Alarm(this, 'Errors', { metric, threshold: 1, evaluationPeriods: 1 });",
+    "positive_py": "cloudwatch.Alarm(self, 'Errors', metric=metric, threshold=1, evaluation_periods=1)"
+  },
+  "REPO-110": {
+    "negative_ts": "new cloudwatch.Alarm(this, 'Errors', { metric, threshold: 1, evaluationPeriods: 1 });\nnew sns.Topic(this, 'CustomerStatus');",
+    "negative_py": "cloudwatch.Alarm(self, 'Errors', metric=metric, threshold=1, evaluation_periods=1)\nsns.Topic(self, 'StatusPageUpdates')",
+    "positive_ts": "new cloudwatch.Alarm(this, 'Errors', { metric, threshold: 1, evaluationPeriods: 1 });",
+    "positive_py": "cloudwatch.Alarm(self, 'Errors', metric=metric, threshold=1, evaluation_periods=1)"
+  },
+  "REPO-111": {
+    "negative_ts": "new cloudwatch.Alarm(this, 'Errors', { metric, threshold: 1, evaluationPeriods: 1 });\nnew cloudwatch.Dashboard(this, 'D', { widgets: [[new cloudwatch.AlarmStatusWidget({ alarms: [alarm] })]] });",
+    "negative_py": "cloudwatch.Alarm(self, 'Errors', metric=metric, threshold=1, evaluation_periods=1)\ncloudwatch.Dashboard(self, 'D', widgets=[[cloudwatch.AlarmStatusWidget(alarms=[alarm])]])",
+    "positive_ts": "new cloudwatch.Alarm(this, 'Errors', { metric, threshold: 1, evaluationPeriods: 1 });",
+    "positive_py": "cloudwatch.Alarm(self, 'Errors', metric=metric, threshold=1, evaluation_periods=1)"
+  },
+  "REPO-112": {
+    "negative_ts": "new cloudwatch.Alarm(this, 'Errors', { metric, threshold: 1, evaluationPeriods: 1 });\nnew events.Rule(this, 'R', { eventPattern: { detailType: ['CloudWatch Alarm State Change'] }, targets: [new targets.LambdaFunction(fn)] });",
+    "negative_py": "cloudwatch.Alarm(self, 'Errors', metric=metric, threshold=1, evaluation_periods=1)\nevents.Rule(self, 'R', event_pattern=events.EventPattern(detail_type=['CloudWatch Alarm State Change']), targets=[targets.LambdaFunction(fn)])",
+    "positive_ts": "new cloudwatch.Alarm(this, 'Errors', { metric, threshold: 1, evaluationPeriods: 1 });",
+    "positive_py": "cloudwatch.Alarm(self, 'Errors', metric=metric, threshold=1, evaluation_periods=1)"
+  },
+  "REPO-113": {
+    "negative_ts": "new codecommit.Repository(this, 'Repo', { repositoryName: 'workload' });",
+    "negative_py": "codecommit.Repository(self, 'Repo', repository_name='workload')",
+    "positive_ts": "new s3.Bucket(this, 'Bucket');",
+    "positive_py": "s3.Bucket(self, 'Bucket')"
+  },
+  "REPO-114": {
+    "negative_ts": "const fn = new lambda.Function(this, 'Fn', { runtime: lambda.Runtime.NODEJS_20_X, handler: 'index.handler', code: lambda.Code.fromAsset('src') });\nconst table = ssm.StringParameter.valueForStringParameter(this, '/app/table');",
+    "negative_py": "fn = _lambda.Function(self, 'Fn', runtime=_lambda.Runtime.PYTHON_3_12, handler='index.handler', code=_lambda.Code.from_asset('src'))\ntable = ssm.StringParameter.value_for_string_parameter(self, '/app/table')",
+    "positive_ts": "const fn = new lambda.Function(this, 'Fn', { runtime: lambda.Runtime.NODEJS_20_X, handler: 'index.handler', code: lambda.Code.fromAsset('src') });",
+    "positive_py": "fn = _lambda.Function(self, 'Fn', runtime=_lambda.Runtime.PYTHON_3_12, handler='index.handler', code=_lambda.Code.from_asset('src'))"
+  },
+  "REPO-115": {
+    "negative_ts": "new pipelines.ShellStep('Lint', { commands: ['npx eslint .', 'npm run build'] });",
+    "negative_py": "pipelines.ShellStep('Lint', commands=['ruff check .', 'mypy src'])",
+    "positive_ts": "new pipelines.ShellStep('Build', { commands: ['npm ci', 'npm run build'] });",
+    "positive_py": "pipelines.ShellStep('Build', commands=['pip install -r requirements.txt', 'python build.py'])"
+  },
+  "REPO-116": {
+    "negative_ts": "const fn = new lambda.Function(this, 'Fn', { runtime: lambda.Runtime.NODEJS_20_X, handler: 'index.handler', code: lambda.Code.fromAsset('src') });\nnew codedeploy.LambdaDeploymentGroup(this, 'DG', { alias, deploymentConfig: codedeploy.LambdaDeploymentConfig.CANARY_10PERCENT_5MINUTES });",
+    "negative_py": "fn = _lambda.Function(self, 'Fn', runtime=_lambda.Runtime.PYTHON_3_12, handler='index.handler', code=_lambda.Code.from_asset('src'))\ncodedeploy.LambdaDeploymentGroup(self, 'DG', alias=alias, deployment_config=codedeploy.LambdaDeploymentConfig.CANARY_10_PERCENT_5_MINUTES)",
+    "positive_ts": "const fn = new lambda.Function(this, 'Fn', { runtime: lambda.Runtime.NODEJS_20_X, handler: 'index.handler', code: lambda.Code.fromAsset('src') });",
+    "positive_py": "fn = _lambda.Function(self, 'Fn', runtime=_lambda.Runtime.PYTHON_3_12, handler='index.handler', code=_lambda.Code.from_asset('src'))"
+  },
+  "REPO-117": {
+    "negative_ts": "const answer = 42;",
+    "negative_py": "answer = 42",
+    "positive_ts": "new s3.Bucket(this, 'Bucket');",
+    "positive_py": "s3.Bucket(self, 'Bucket')"
+  },
+  "REPO-118": {
+    "negative_ts": "const answer = 42;",
+    "negative_py": "answer = 42",
+    "positive_ts": "new s3.Bucket(this, 'Bucket');",
+    "positive_py": "s3.Bucket(self, 'Bucket')"
+  },
+  "REPO-119": {
+    "negative_ts": "const answer = 42;",
+    "negative_py": "answer = 42",
+    "positive_ts": "new s3.Bucket(this, 'Bucket');",
+    "positive_py": "s3.Bucket(self, 'Bucket')"
+  },
+  "REPO-121": {
+    "negative_ts": "const answer = 42;",
+    "negative_py": "answer = 42",
+    "positive_ts": "new s3.Bucket(this, 'Bucket');",
+    "positive_py": "s3.Bucket(self, 'Bucket')"
+  },
+  "REPO-120": {
+    "negative_ts": "new pipelines.CodePipeline(this, 'Pipe', { synth: new pipelines.ShellStep('Synth', { commands: ['npm ci', 'npx cdk synth'] }) });",
+    "negative_py": "pipelines.CodePipeline(self, 'Pipe', synth=pipelines.ShellStep('Synth', commands=['pip install -r requirements.txt', 'cdk synth']))",
+    "positive_ts": "new s3.Bucket(this, 'Bucket');",
+    "positive_py": "s3.Bucket(self, 'Bucket')"
+  },
+  "REPO-122": {
+    "negative_ts": "const answer = 42;",
+    "negative_py": "answer = 42",
+    "positive_ts": "new s3.Bucket(this, 'Bucket');",
+    "positive_py": "s3.Bucket(self, 'Bucket')"
+  },
+  "REPO-123": {
+    "negative_ts": "const answer = 42;",
+    "negative_py": "answer = 42",
+    "positive_ts": "new s3.Bucket(this, 'Bucket');",
+    "positive_py": "s3.Bucket(self, 'Bucket')"
+  },
+  "REPO-124": {
+    "negative_ts": "const answer = 42;",
+    "negative_py": "answer = 42",
+    "positive_ts": "new s3.Bucket(this, 'Bucket');",
+    "positive_py": "s3.Bucket(self, 'Bucket')"
+  },
+  "REPO-125": {
+    "negative_ts": "const answer = 42;",
+    "negative_py": "answer = 42",
+    "positive_ts": "new s3.Bucket(this, 'Bucket');",
+    "positive_py": "s3.Bucket(self, 'Bucket')"
+  },
+  "REPO-126": {
+    "negative_ts": "const answer = 42;",
+    "negative_py": "answer = 42",
+    "positive_ts": "new s3.Bucket(this, 'Bucket');",
+    "positive_py": "s3.Bucket(self, 'Bucket')"
+  },
+  "REPO-127": {
+    "negative_ts": "const answer = 42;",
+    "negative_py": "answer = 42",
+    "positive_ts": "new s3.Bucket(this, 'Bucket');",
+    "positive_py": "s3.Bucket(self, 'Bucket')"
+  },
+  "REPO-128": {
+    "negative_ts": "const answer = 42;",
+    "negative_py": "answer = 42",
+    "positive_ts": "new s3.Bucket(this, 'Bucket');",
+    "positive_py": "s3.Bucket(self, 'Bucket')"
+  },
+  "REPO-129": {
+    "negative_ts": "const answer = 42;",
+    "negative_py": "answer = 42",
+    "positive_ts": "new s3.Bucket(this, 'Bucket');",
+    "positive_py": "s3.Bucket(self, 'Bucket')"
+  },
+  "REPO-130": {
+    "negative_ts": "const answer = 42;",
+    "negative_py": "answer = 42",
+    "positive_ts": "new s3.Bucket(this, 'Bucket');",
+    "positive_py": "s3.Bucket(self, 'Bucket')"
+  },
+  "REPO-131": {
+    "negative_ts": "new ec2.Instance(this, 'Web', { vpc, instanceType, machineImage, associatePublicIpAddress: true });\nnew elbv2.ApplicationLoadBalancer(this, 'Lb', { vpc, internetFacing: true });",
+    "negative_py": "ec2.Instance(self, 'Web', vpc=vpc, instance_type=t, machine_image=m, associate_public_ip_address=True)\nelbv2.ApplicationLoadBalancer(self, 'Lb', vpc=vpc, internet_facing=True)",
+    "positive_ts": "new ec2.Instance(this, 'Web', { vpc, instanceType, machineImage, associatePublicIpAddress: true });",
+    "positive_py": "ec2.Instance(self, 'Web', vpc=vpc, instance_type=t, machine_image=m, associate_public_ip_address=True)"
+  },
+  "REPO-132": {
+    "negative_ts": "new ec2.VpnConnection(this, 'VpnA', { vpc, ip: '1.2.3.4' });\nnew ec2.VpnConnection(this, 'VpnB', { vpc, ip: '5.6.7.8' });",
+    "negative_py": "ec2.VpnConnection(self, 'VpnA', vpc=vpc, ip='1.2.3.4')\nec2.VpnConnection(self, 'VpnB', vpc=vpc, ip='5.6.7.8')",
+    "positive_ts": "new ec2.VpnConnection(this, 'VpnA', { vpc, ip: '1.2.3.4' });",
+    "positive_py": "ec2.VpnConnection(self, 'VpnA', vpc=vpc, ip='1.2.3.4')"
+  },
+  "REPO-133": {
+    "negative_ts": "new lambda.Function(this, 'Fn', { runtime, handler, code });\nnew servicequotas.CfnTemplate(this, 'T', {});",
+    "negative_py": "_lambda.Function(self, 'Fn', runtime=r, handler='h', code=c)\nservicequotas.CfnTemplate(self, 'T')",
+    "positive_ts": "new lambda.Function(this, 'Fn', { runtime, handler, code });",
+    "positive_py": "_lambda.Function(self, 'Fn', runtime=r, handler='h', code=c)"
+  },
+  "REPO-134": {
+    "negative_ts": "new lambda.Function(this, 'Fn', { runtime, handler, code });\nnew servicequotas.CfnTemplate(this, 'T', {});",
+    "negative_py": "_lambda.Function(self, 'Fn', runtime=r, handler='h', code=c)\nservicequotas.CfnTemplate(self, 'T')",
+    "positive_ts": "new lambda.Function(this, 'Fn', { runtime, handler, code });",
+    "positive_py": "_lambda.Function(self, 'Fn', runtime=r, handler='h', code=c)"
+  },
+  "REPO-135": {
+    "negative_ts": "new sqs.Queue(this, 'Q', { fifo: true, deduplicationScope: sqs.DeduplicationScope.MESSAGE_GROUP, fifoThroughputLimit: sqs.FifoThroughputLimit.PER_MESSAGE_GROUP_ID });",
+    "negative_py": "sqs.Queue(self, 'Q', fifo=True, deduplication_scope=sqs.DeduplicationScope.MESSAGE_GROUP, fifo_throughput_limit=sqs.FifoThroughputLimit.PER_MESSAGE_GROUP_ID)",
+    "positive_ts": "new sqs.Queue(this, 'Q', { fifo: true });",
+    "positive_py": "sqs.Queue(self, 'Q', fifo=True)"
+  },
+  "REPO-136": {
+    "negative_ts": "const answer = 42;",
+    "negative_py": "answer = 42",
+    "positive_ts": "new s3.Bucket(this, 'Bucket');",
+    "positive_py": "s3.Bucket(self, 'Bucket')"
+  },
+  "REPO-137": {
+    "negative_ts": "const answer = 42;",
+    "negative_py": "answer = 42",
+    "positive_ts": "new s3.Bucket(this, 'Bucket');",
+    "positive_py": "s3.Bucket(self, 'Bucket')"
+  },
+  "REPO-138": {
+    "negative_ts": "const answer = 42;",
+    "negative_py": "answer = 42",
+    "positive_ts": "new s3.Bucket(this, 'Bucket');",
+    "positive_py": "s3.Bucket(self, 'Bucket')"
+  },
+  "REPO-139": {
+    "negative_ts": "const answer = 42;",
+    "negative_py": "answer = 42",
+    "positive_ts": "new s3.Bucket(this, 'Bucket');",
+    "positive_py": "s3.Bucket(self, 'Bucket')"
+  },
   "REPO-016": {
     "negative_ts": "new fis.CfnExperimentTemplate(this, 'StopInstances', { description: 'stop one AZ', roleArn: role.roleArn, stopConditions: [{ source: 'aws:cloudwatch:alarm', value: alarm.alarmArn }], targets: {}, actions: {} });",
     "negative_py": "pipelines.ShellStep('Chaos', commands=['aws fis start-experiment --experiment-template-id EXT123'])",
