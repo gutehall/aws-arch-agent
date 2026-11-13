@@ -15,7 +15,7 @@ Which CDK rules have a template check, and which AWS Foundational Security Best 
 
 ## CDK rules
 
-295 rules: 132 covered, 7 partial, 10 account, 5 cdk-only, 25 advice, 116 repo.
+300 rules: 132 covered, 7 partial, 10 account, 5 cdk-only, 25 advice, 121 repo.
 
 | Rule | Title | Template check | Status | Note |
 | -- | -- | -- | -- | -- |
@@ -314,6 +314,11 @@ Which CDK rules have a template check, and which AWS Foundational Security Best 
 | REPO-114 | Configuration is not kept in a configuration store or per-environment files |  | `repo` | Fires when the IaC runs compute and has no SSM parameter, Secrets Manager secret, AppConfig resource or parameter lookup, and the repo has no tfvars, cdk.context or config-directory file per environment. |
 | REPO-115 | No CI step lints, type-checks or sets a coverage gate |  | `repo` | Fires when no build config, and no package.json script a build runs, calls a linter, type checker, static analyzer or coverage threshold. A repo with no CI also fires. |
 | REPO-116 | Deployments have no rollback, blue/green or canary step |  | `repo` | Fires when the IaC runs compute and has no rollback control (as REPO-022), blue/green, canary or linear traffic shift, CodeDeploy deployment group or Lambda alias weights. |
+| REPO-117 | No note records application security training |  | `repo` | Fires when the repo holds IaC and no note is named or headed for security training, security awareness or secure coding. |
+| REPO-118 | No dated penetration test record is in the repo |  | `repo` | Fires when the repo holds IaC and no note named or headed for a penetration test holds a date. |
+| REPO-119 | Nothing requires a code review before a change merges |  | `repo` | Fires when the repo holds IaC and has no CODEOWNERS file, branch protection or ruleset with required reviews, repository settings as code, or CodeCommit approval rule. |
+| REPO-120 | Software is not deployed programmatically |  | `repo` | Fires when the repo holds IaC and no build config or pipeline deploys it (the detection REPO-025 uses). |
+| REPO-121 | No file names who owns security for the workload |  | `repo` | Fires when the repo holds IaC and has no SECURITY.md, security owners or champions note, or CODEOWNERS line that names security. |
 
 ## FSBP controls
 

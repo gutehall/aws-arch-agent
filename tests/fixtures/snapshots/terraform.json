@@ -425,5 +425,40 @@
     "file": "main.tf",
     "line": null,
     "evidence": "Runs Lambda (main.tf); searched the IaC and builds for a rollback control, blue/green, a canary or linear traffic shift, a CodeDeploy deployment group and Lambda alias weights; found none"
+  },
+  {
+    "id": "REPO-117",
+    "severity": "Low",
+    "file": null,
+    "line": null,
+    "evidence": "Holds IaC (Terraform: 3 files); searched the notes for a file or heading on security training, security awareness or secure coding; found none"
+  },
+  {
+    "id": "REPO-118",
+    "severity": "Low",
+    "file": null,
+    "line": null,
+    "evidence": "Holds IaC (Terraform: 3 files); searched the notes for a dated file or heading on a penetration test; found none"
+  },
+  {
+    "id": "REPO-119",
+    "severity": "Medium",
+    "file": null,
+    "line": null,
+    "evidence": "Holds IaC (Terraform: 3 files); searched for a CODEOWNERS file, branch protection or a ruleset with required reviews, repository settings with required pull request reviews, and a CodeCommit approval rule; found none"
+  },
+  {
+    "id": "REPO-120",
+    "severity": "Medium",
+    "file": null,
+    "line": null,
+    "evidence": "Holds IaC (Terraform: 3 files); searched the build configs, the package.json scripts they run and the IaC for a deploy step or a pipeline; found none"
+  },
+  {
+    "id": "REPO-121",
+    "severity": "Low",
+    "file": null,
+    "line": null,
+    "evidence": "Holds IaC (Terraform: 3 files); searched for a SECURITY.md, a security owners or champions note, and a CODEOWNERS line that names security; found none"
   }
 ]

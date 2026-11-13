@@ -697,6 +697,12 @@ def test_cli_html_with_no_findings_writes_a_page(tmp_path: Path) -> None:
     # smoke-tests the deploy, runs a load test and a FIS experiment, and two environments: the
     # repo-level rules have nothing to say.
     (tmp_path / ".git").mkdir()
+    # Notes for SEC 11: security training, a dated pen test and who owns security.
+    (tmp_path / "docs").mkdir()
+    (tmp_path / "docs" / "security-training.md").write_text("Yearly course.\n", encoding="utf-8")
+    (tmp_path / "docs" / "pentest.md").write_text("Run on 2026-03-14.\n", encoding="utf-8")
+    (tmp_path / "SECURITY.md").write_text("Owner: @alice\n", encoding="utf-8")
+    (tmp_path / "CODEOWNERS").write_text("* @org/platform\n", encoding="utf-8")
     for rel in (".github/workflows/ci.yml", "tests/main.tftest.hcl", "dev.tfvars", "prod.tfvars"):
         (tmp_path / rel).parent.mkdir(parents=True, exist_ok=True)
         (tmp_path / rel).write_text("\n", encoding="utf-8")

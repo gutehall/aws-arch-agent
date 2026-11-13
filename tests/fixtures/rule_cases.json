@@ -922,6 +922,36 @@
     "positive_ts": "const fn = new lambda.Function(this, 'Fn', { runtime: lambda.Runtime.NODEJS_20_X, handler: 'index.handler', code: lambda.Code.fromAsset('src') });",
     "positive_py": "fn = _lambda.Function(self, 'Fn', runtime=_lambda.Runtime.PYTHON_3_12, handler='index.handler', code=_lambda.Code.from_asset('src'))"
   },
+  "REPO-117": {
+    "negative_ts": "const answer = 42;",
+    "negative_py": "answer = 42",
+    "positive_ts": "new s3.Bucket(this, 'Bucket');",
+    "positive_py": "s3.Bucket(self, 'Bucket')"
+  },
+  "REPO-118": {
+    "negative_ts": "const answer = 42;",
+    "negative_py": "answer = 42",
+    "positive_ts": "new s3.Bucket(this, 'Bucket');",
+    "positive_py": "s3.Bucket(self, 'Bucket')"
+  },
+  "REPO-119": {
+    "negative_ts": "const answer = 42;",
+    "negative_py": "answer = 42",
+    "positive_ts": "new s3.Bucket(this, 'Bucket');",
+    "positive_py": "s3.Bucket(self, 'Bucket')"
+  },
+  "REPO-121": {
+    "negative_ts": "const answer = 42;",
+    "negative_py": "answer = 42",
+    "positive_ts": "new s3.Bucket(this, 'Bucket');",
+    "positive_py": "s3.Bucket(self, 'Bucket')"
+  },
+  "REPO-120": {
+    "negative_ts": "new pipelines.CodePipeline(this, 'Pipe', { synth: new pipelines.ShellStep('Synth', { commands: ['npm ci', 'npx cdk synth'] }) });",
+    "negative_py": "pipelines.CodePipeline(self, 'Pipe', synth=pipelines.ShellStep('Synth', commands=['pip install -r requirements.txt', 'cdk synth']))",
+    "positive_ts": "new s3.Bucket(this, 'Bucket');",
+    "positive_py": "s3.Bucket(self, 'Bucket')"
+  },
   "REPO-016": {
     "negative_ts": "new fis.CfnExperimentTemplate(this, 'StopInstances', { description: 'stop one AZ', roleArn: role.roleArn, stopConditions: [{ source: 'aws:cloudwatch:alarm', value: alarm.alarmArn }], targets: {}, actions: {} });",
     "negative_py": "pipelines.ShellStep('Chaos', commands=['aws fis start-experiment --experiment-template-id EXT123'])",

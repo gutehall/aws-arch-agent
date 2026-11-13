@@ -160,6 +160,19 @@ Change flow (OPS 5) runs by default:
   REPO-022), blue/green, a canary or linear traffic shift, a CodeDeploy deployment group or
   Lambda alias weights passes.
 
+Application security practices (SEC 11) run by default on a repo that holds IaC:
+
+- REPO-117 training: a note named or headed for security training, security awareness or
+  secure coding passes.
+- REPO-118 penetration test: a note named or headed for a penetration test that holds a date
+  passes.
+- REPO-119 code review: a CODEOWNERS file, branch protection or a ruleset with required
+  reviews (IaC or repository settings as code) or a CodeCommit approval rule passes.
+- REPO-120 programmatic deploy: a build config or pipeline that deploys passes (the detection
+  REPO-025 uses).
+- REPO-121 security ownership: a SECURITY.md, a security owners or champions note, or a
+  CODEOWNERS line that names security passes.
+
 Reliability testing (REL 12) runs by default and reads the IaC and the builds REPO-009 reads
 (CI configs, inline buildspecs, CodeBuild projects and pipelines in the IaC, and the
 package.json scripts they run):
@@ -5265,6 +5278,213 @@ class SmallReversibleChangesMissing(_RepoRule):
             "blue/green, a canary or linear traffic shift, a CodeDeploy deployment group and "
             "Lambda alias weights; found none",
             file=next(iter(compute.values())),
+        )]
+
+
+# Application security practices (SEC 11): training (REPO-117), penetration testing
+# (REPO-118), code review (REPO-119), programmatic deploys (REPO-120) and security ownership
+# (REPO-121). They fire only on a repo that holds IaC.
+_TRAINING_NAME = re.compile(
+    r"security[-_ ]?(?:awareness[-_ ]?)?training|security[-_ ]?awareness|secure[-_ ]?coding"
+    r"|app(?:lication)?[-_ ]?sec(?:urity)?[-_ ]?training"
+)
+_TRAINING_HEADING = re.compile(
+    r"(?i).*\b(?:security[- ](?:awareness[- ])?training|security[- ]awareness"
+    r"|secure[- ]coding|app(?:lication)?[- ]?sec(?:urity)?[- ]training)\b.*"
+)
+_PENTEST_NAME = re.compile(r"pen[-_ ]?tests?|pentests?|penetration[-_ ]?test(?:s|ing)?")
+_PENTEST_HEADING = re.compile(r"(?i).*\b(?:pen[- ]?tests?|penetration[- ]test(?:s|ing)?)\b.*")
+_CODEOWNERS_PATHS = frozenset({"CODEOWNERS", ".github/CODEOWNERS", "docs/CODEOWNERS",
+                               ".gitlab/CODEOWNERS"})
+_REVIEW_ENFORCED = re.compile(
+    r"resource\s+\"github_(?:branch_protection(?:_v3)?|repository_ruleset)\""
+    r"|resource\s+\"aws_codecommit_approval_rule_template\""
+    r"|[\"']?required_?[pP]ull_?[rR]equest_?[rR]eviews[\"']?\s*[:={]"
+    r"|[\"']?required_?[aA]pproving_?[rR]eview_?[cC]ount[\"']?\s*[:=]"
+    r"|[aA]pprovalRuleTemplate\b"
+    r"|resource\s+\"gitlab_(?:branch_protection|project_approval_rule)\""
+)
+_REVIEW_CONFIG_PATHS = (".github/settings.yml", ".github/settings.yaml", ".github/rulesets/")
+_SECURITY_OWNER_NAME = re.compile(
+    r"^security(?:[-_ ]?(?:owners?|champions?|team|contacts?|ownership))?$"
+    r"|^security[-_ ]?owners?$|^security[-_ ]?champions?$"
+)
+_SECURITY_OWNER_HEADING = re.compile(
+    r"(?i).*\b(?:security[- ](?:owners?|champions?|ownership|contacts?)"
+    r"|who owns security)\b.*"
+)
+_SECURITY_CODEOWNER = re.compile(r"(?im)^[^#\n]*\S+\s+.*\bsecurity\b")
+
+
+def _codeowners(repo_path: Path) -> Iterator[tuple[str, str]]:
+    for path in walk(repo_path):
+        parts = _rel_parts(path, repo_path)
+        if "/".join(parts) in _CODEOWNERS_PATHS:
+            yield "/".join(parts), read_text_safe(path)
+
+
+def review_enforced(repo_path: Path) -> str | None:
+    """A CODEOWNERS file, or branch protection, a ruleset or an approval rule in the IaC or
+    the repo settings: the first place."""
+    for rel, _text in _codeowners(repo_path):
+        return rel
+    for rel, text in iac_texts(repo_path):
+        if _REVIEW_ENFORCED.search(text):
+            return rel
+    for path in walk(repo_path):
+        rel = "/".join(_rel_parts(path, repo_path))
+        if rel.startswith(_REVIEW_CONFIG_PATHS) and _REVIEW_ENFORCED.search(read_text_safe(path)):
+            return rel
+        if rel.lower() in (".github/settings.yml", ".github/settings.yaml") and re.search(
+            r"(?m)^\s*required_pull_request_reviews\s*:", read_text_safe(path)
+        ):
+            return rel
+    return None
+
+
+def security_owner_note(repo_path: Path) -> str | None:
+    """A SECURITY.md, a note named or headed for security ownership, or a CODEOWNERS line
+    that names security."""
+    for rel, text in note_texts(repo_path):
+        stem = rel.rsplit("/", 1)[-1].lower().rsplit(".", 1)[0]
+        if stem == "security" or _SECURITY_OWNER_NAME.search(stem) or any(
+            _SECURITY_OWNER_HEADING.fullmatch(h.group(2).strip()) for h in _HEADING.finditer(text)
+        ):
+            return rel
+    for rel, text in _codeowners(repo_path):
+        if _SECURITY_CODEOWNER.search(text):
+            return rel
+    return None
+
+
+def pentest_note(repo_path: Path) -> str | None:
+    """The first dated note named or headed for a penetration test."""
+    for rel, text in note_texts(repo_path):
+        stem = rel.rsplit("/", 1)[-1].lower().rsplit(".", 1)[0]
+        titled = _PENTEST_NAME.search(stem) or any(
+            _PENTEST_HEADING.fullmatch(h.group(2).strip()) for h in _HEADING.finditer(text)
+        )
+        if titled and _DATE.search(text):
+            return rel
+    return None
+
+
+def _holds_iac(repo_path: Path) -> str:
+    held = iac_files(repo_path)
+    return "; ".join(f"{kind}: {count} file{'s' if count > 1 else ''}"
+                     for kind, count in sorted(held.items()))
+
+
+class SecurityTrainingMissing(_RepoRule):
+    id = "REPO-117"
+    title = "No note records application security training"
+    category = "Security"
+    severity = "Low"
+    themes = ("security-baseline",)
+    recommendation = (
+        "Record how the team learns application security: a SECURITY_TRAINING.md or a "
+        "\"Security training\" section in the README or docs that names the training (secure "
+        "coding, OWASP, a vendor course), who takes it and how often."
+    )
+
+    def run(self, repo_path: Path, language: str = "typescript") -> List[Finding]:
+        held = _holds_iac(repo_path)
+        if not held or _titled_note(repo_path, _TRAINING_NAME, _TRAINING_HEADING):
+            return []
+        return [self._finding(
+            f"Holds IaC ({held}); searched the notes for a file or heading on security "
+            "training, security awareness or secure coding; found none"
+        )]
+
+
+class PenetrationTestMissing(_RepoRule):
+    id = "REPO-118"
+    title = "No dated penetration test record is in the repo"
+    category = "Security"
+    severity = "Low"
+    themes = ("security-baseline",)
+    recommendation = (
+        "Test the application with a penetration test on a schedule and keep the dated "
+        "result in the repo (docs/pentest-2026-03.md): scope, date, findings and their "
+        "status, so the next test starts from the last one."
+    )
+
+    def run(self, repo_path: Path, language: str = "typescript") -> List[Finding]:
+        held = _holds_iac(repo_path)
+        if not held or pentest_note(repo_path):
+            return []
+        return [self._finding(
+            f"Holds IaC ({held}); searched the notes for a dated file or heading on a "
+            "penetration test; found none"
+        )]
+
+
+class CodeReviewNotEnforced(_RepoRule):
+    id = "REPO-119"
+    title = "Nothing requires a code review before a change merges"
+    category = "Security"
+    severity = "Medium"
+    themes = ("security-baseline",)
+    recommendation = (
+        "Require a review: add a CODEOWNERS file, and protect the main branch so a pull "
+        "request needs an approving review (a github_branch_protection or "
+        "github_repository_ruleset resource, repository settings as code, or a CodeCommit "
+        "approval rule template)."
+    )
+
+    def run(self, repo_path: Path, language: str = "typescript") -> List[Finding]:
+        held = _holds_iac(repo_path)
+        if not held or review_enforced(repo_path):
+            return []
+        return [self._finding(
+            f"Holds IaC ({held}); searched for a CODEOWNERS file, branch protection or a "
+            "ruleset with required reviews, repository settings with required pull request "
+            "reviews, and a CodeCommit approval rule; found none"
+        )]
+
+
+class ProgrammaticDeployMissing(_RepoRule):
+    id = "REPO-120"
+    title = "Software is not deployed programmatically"
+    category = "Security"
+    severity = "Medium"
+    themes = ("security-baseline",)
+    recommendation = (
+        "Deploy from a pipeline with a role of its own, not from a person's laptop: a CI "
+        "job or CodeBuild project that runs the CDK, CloudFormation, SAM or Terraform "
+        "deploy, a CodePipeline, or CDK pipelines, so every release is repeatable and "
+        "logged."
+    )
+
+    def run(self, repo_path: Path, language: str = "typescript") -> List[Finding]:
+        held = _holds_iac(repo_path)
+        if not held or automated_deploys(repo_path):
+            return []
+        return [self._finding(
+            f"Holds IaC ({held}); searched the build configs, the package.json scripts they "
+            "run and the IaC for a deploy step or a pipeline; found none"
+        )]
+
+
+class SecurityOwnershipMissing(_RepoRule):
+    id = "REPO-121"
+    title = "No file names who owns security for the workload"
+    category = "Security"
+    severity = "Low"
+    themes = ("security-baseline",)
+    recommendation = (
+        "Name who owns security in the team: a SECURITY.md with a contact and the owner, a "
+        "security-owners or security-champions note, or a CODEOWNERS entry for security-"
+        "sensitive paths that names a security team."
+    )
+
+    def run(self, repo_path: Path, language: str = "typescript") -> List[Finding]:
+        held = _holds_iac(repo_path)
+        if not held or security_owner_note(repo_path):
+            return []
+        return [self._finding(
+            f"Holds IaC ({held}); searched for a SECURITY.md, a security owners or champions "
+            "note, and a CODEOWNERS line that names security; found none"
         )]
 
 
@@ -10474,6 +10694,8 @@ REPO_RULES: List[Rule] = [
     EventSeverityMissing(), CustomerCommunicationMissing(), EventStatusDashboardMissing(),
     EventResponseNotAutomated(), VersionControlMissing(), ConfigurationStoreMissing(),
     QualityGateMissing(), SmallReversibleChangesMissing(),
+    SecurityTrainingMissing(), PenetrationTestMissing(), CodeReviewNotEnforced(),
+    ProgrammaticDeployMissing(), SecurityOwnershipMissing(),
     FaultInjectionMissing(), LoadTestMissing(),
     KpiMetricMissing(), EdgeTelemetryMissing(), DependencyTelemetryMissing(),
     DeployTestGateMissing(), AutomatedRollbackMissing(),
