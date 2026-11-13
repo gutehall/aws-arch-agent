@@ -1659,5 +1659,11 @@
     "negative_py": "pipelines.ShellStep('LoadTest', commands=['artillery run load/artillery.yml'])",
     "positive_ts": "new ShellStep('Synth', { commands: ['npm ci', 'npx cdk synth'] });",
     "positive_py": "pipelines.ShellStep('Synth', commands=['pip install -r requirements.txt', 'cdk synth'])"
+  },
+  "REPO-149": {
+    "negative_ts": "new autoscaling.AutoScalingGroup(this, 'Asg', { vpc, instanceType, machineImage });",
+    "negative_py": "answer = 42",
+    "positive_ts": "new ec2.Instance(this, 'Web', { instanceType, machineImage, vpc });",
+    "positive_py": "ec2.Instance(self, 'Web', instance_type=instance_type, machine_image=image, vpc=vpc)"
   }
 }

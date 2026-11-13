@@ -2067,6 +2067,14 @@ TOPICS: dict[str, tuple[str, str, str, str]] = {
         "Well-Architected REL07-BP04: Load test your workload",
         "/wellarchitected/latest/reliability-pillar/rel_adapt_to_changes_load_tested_adapt.html",
     ),
+    "data_plane_recovery": (
+        "Amazon EC2 Auto Scaling: health checks",
+        "/autoscaling/ec2/userguide/ec2-auto-scaling-health-checks.html",
+        "Well-Architected REL11-BP04: Rely on the data plane and not the control plane during "
+        "recovery",
+        "/wellarchitected/latest/reliability-pillar/"
+        "rel_withstand_component_failures_avoid_control_plane.html",
+    ),
     "repo_tests": (
         "AWS CDK: testing constructs",
         "/cdk/v2/guide/testing.html",
@@ -2796,6 +2804,7 @@ RULE_TOPICS: dict[str, str] = {
     "REPO-146": "data_lifecycle",
     "REPO-147": "monitoring_review",
     "REPO-148": "demand_load_testing",
+    "REPO-149": "data_plane_recovery",
     "REPO-016": "fault_injection",
     "REPO-017": "load_testing",
     "REPO-018": "app_kpi_metrics",

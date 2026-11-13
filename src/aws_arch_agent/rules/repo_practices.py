@@ -260,6 +260,12 @@ Demand (REL 7) runs by default (CF-ASG-006 answers automation of scaling):
 - REPO-148 load test: the same search as REPO-017 for a load test in the builds, answering
   REL07-BP04; no load test fires.
 
+Recovery (REL 11) runs by default (REPO-057 to REPO-059 answer health checks, failover and
+healing):
+
+- REPO-149 data plane recovery: an EC2 instance in the IaC and no Auto Scaling group, target group,
+  Route 53 health check or recovery alarm fires.
+
 Reliability testing (REL 12) runs by default and reads the IaC and the builds REPO-009 reads
 (CI configs, inline buildspecs, CodeBuild projects and pipelines in the IaC, and the
 package.json scripts they run):
@@ -6540,6 +6546,50 @@ class MonitoringScopeNotReviewed(_RepoRule):
         )]
 
 
+# Recovery on the data plane (REL 11): a lone instance has no health check, scaling group or
+# target group to replace it (REPO-149). REPO-057 to REPO-059 answer health checks, failover
+# and healing.
+_EC2_INSTANCE = re.compile(
+    _cf_type(r"EC2::Instance") + r"|resource\s+\"aws_instance\""
+    r"|\bec2\.(?:Cfn)?Instance\("
+)
+_DATA_PLANE_RECOVERY = re.compile(
+    _cf_type(r"AutoScaling::AutoScalingGroup|Route53::HealthCheck"
+             r"|ElasticLoadBalancingV2::TargetGroup")
+    + r"|resource\s+\"aws_(?:autoscaling_group|route53_health_check|lb_target_group"
+    r"|alb_target_group)\""
+    r"|\bautoscaling\.(?:Cfn)?AutoScalingGroup\(|\broute53\.CfnHealthCheck\("
+    r"|\b(?:Application|Network)TargetGroup\(|\belbv2\.Cfn\w*TargetGroup\("
+    r"|\bec2\.Instance\([^)]*\bautoRecovery\b|\brecovery[-_ ]?alarm\b"
+    r"|\bec2:recover\b|\bautomate:[\w-]+:recover\b"
+)
+
+
+class ControlPlaneOnlyRecovery(_RepoRule):
+    id = "REPO-149"
+    title = "A lone EC2 instance has no data plane recovery"
+    category = "Reliability"
+    severity = "Low"
+    themes = ("resilience",)
+    recommendation = (
+        "Recover on the data plane: run instances in an Auto Scaling group behind a target "
+        "group with health checks, or add a Route 53 health check with failover, so a failed "
+        "instance is replaced without anyone calling a control plane API (a pipeline run, "
+        "RunInstances or a console action) in the middle of the incident."
+    )
+
+    def run(self, repo_path: Path, language: str = "typescript") -> List[Finding]:
+        instance = _in_iac_text(repo_path, _EC2_INSTANCE)
+        if not instance or _in_iac_text(repo_path, _DATA_PLANE_RECOVERY):
+            return []
+        return [self._finding(
+            f"{instance} runs an EC2 instance on its own; searched the IaC for an Auto Scaling "
+            "group, a load balancer target group, a Route 53 health check and an instance "
+            "recovery alarm; found none",
+            file=instance,
+        )]
+
+
 _COMPUTE_TRACING = _kinds(
     ("Lambda active tracing",
      r"[\"']?Tracing[\"']?\s*:\s*[\"']?Active\b"
@@ -11776,6 +11826,7 @@ REPO_RULES: List[Rule] = [
     ClassifiedDataWithoutLifecycle(),
     MonitoringScopeNotReviewed(),
     LoadTestForDemand(),
+    ControlPlaneOnlyRecovery(),
     FaultInjectionMissing(), LoadTestMissing(),
     KpiMetricMissing(), EdgeTelemetryMissing(), DependencyTelemetryMissing(),
     DeployTestGateMissing(), AutomatedRollbackMissing(),

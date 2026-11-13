@@ -4,7 +4,7 @@ This document provides a comprehensive list of all rules checked by AWS Arch Age
 
 ## Overview
 
-AWS Arch Agent checks **327 static analysis rules** and **283 template checks** across all 6 AWS Well-Architected Framework pillars. 139 of the 327 CDK rules (43%) have a template check, so they also run for CloudFormation, Terraform and synthesised CDK. [COVERAGE.md](COVERAGE.md) gives the reason for each of the others.
+AWS Arch Agent checks **328 static analysis rules** and **283 template checks** across all 6 AWS Well-Architected Framework pillars. 139 of the 328 CDK rules (42%) have a template check, so they also run for CloudFormation, Terraform and synthesised CDK. [COVERAGE.md](COVERAGE.md) gives the reason for each of the others.
 
 ## Static Analysis Rules (V1 & V2 Modes)
 
@@ -146,7 +146,7 @@ These rules run on your CDK TypeScript/Python code and execute in both V1 and V2
 - REPO-145: Compute protection is not automated with Inspector or an SSM association
 - REPO-146: Data classified by tag has no lifecycle or retention rule
 
-### Reliability (73 rules)
+### Reliability (74 rules)
 
 **High Availability:**
 - REL-001: RDS instance missing multi-AZ
@@ -254,6 +254,7 @@ These rules run on your CDK TypeScript/Python code and execute in both V1 and V2
 - REPO-059: No one is notified when availability drops
 - REPO-147: No dated review record lists the stateful resources and their alarms
 - REPO-148: No load test shows that the workload adapts to changes in demand
+- REPO-149: A lone EC2 instance has no data plane recovery
 
 ### Operational Excellence (46 rules)
 
@@ -1294,6 +1295,7 @@ Every rule has one or more themes, which cut across pillars: `finops`, `security
 | REPO-146 | data-protection |
 | REPO-147 | observability |
 | REPO-148 | resilience |
+| REPO-149 | resilience |
 | SEC-001 | identity |
 | SEC-002 | identity |
 | SEC-003 | network-exposure |
