@@ -134,8 +134,7 @@ def test_rules_answer_rel4() -> None:
     assert RULE_BEST_PRACTICES["CF-LAM-009"] == ("REL04-BP02",)
     assert RULE_BEST_PRACTICES["REL-033"] == ("REL04-BP02",)
     assert RULE_BEST_PRACTICES["REPO-015"] == ("REL04-BP04",)
-    assert {"REL04-BP02", "REL04-BP04"}.isdisjoint(NOT_CHECKED)
-    assert {"REL04-BP01", "REL04-BP03"} <= NOT_CHECKED
+    assert {"REL04-BP01", "REL04-BP02", "REL04-BP03", "REL04-BP04"}.isdisjoint(NOT_CHECKED)
 
 
 # --- CF-LAM-009: a function's role may invoke another function of the stack ---

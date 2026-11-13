@@ -15,7 +15,7 @@ Which CDK rules have a template check, and which AWS Foundational Security Best 
 
 ## CDK rules
 
-285 rules: 132 covered, 7 partial, 10 account, 5 cdk-only, 25 advice, 106 repo.
+287 rules: 132 covered, 7 partial, 10 account, 5 cdk-only, 25 advice, 108 repo.
 
 | Rule | Title | Template check | Status | Note |
 | -- | -- | -- | -- | -- |
@@ -304,6 +304,8 @@ Which CDK rules have a template check, and which AWS Foundational Security Best 
 | REPO-104 | Compute at its resource ceiling with no profile of the code |  | `repo` | Fires when a Lambda function (10240 MB, or 900 s with 3008 MB or more) or an ECS/Fargate task definition (16384 CPU units, 122880 MiB, or the largest memory for its CPU size) sits at its ceiling and the repo has no CodeGuru Profiler, Lambda Insights, AWS Lambda Power Tuning or note on a load test or profile with figures. |
 | REPO-105 | Impact on end-user devices is not addressed |  | `repo` | Fires when the repo builds for end-user devices (Android, iOS, Flutter, React Native, Expo, Capacitor or Cordova sources, or IaC for an IoT fleet, a Pinpoint app or an Amplify mobile app) and has no Device Farm project, no `aws devicefarm` build step and no note on supported devices, minimum OS, battery, energy or hardware lifecycle. Silent for a server-side workload. |
 | REPO-106 | Storage is not matched to the data access pattern |  | `repo` | Fires on the same gap as REPO-063: production data kept only on instance volumes, instance store or a database engine run on the host, with no managed data store in the IaC. |
+| REPO-107 | Function code calls a hardcoded external URL |  | `repo` | A literal http(s) host in a requests, httpx, urlopen, fetch, axios or got call in Python, TypeScript or JavaScript outside tests. Local, link-local and AWS endpoints and URLs built from a variable do not fire. |
+| REPO-108 | Synchronous calls have no timeout, and no queue or schedule sits behind them |  | `repo` | Fires on a file with a synchronous HTTP call and no timeout or abort signal, when the IaC has no SQS queue, Kinesis stream, event source mapping or schedule. |
 
 ## FSBP controls
 
