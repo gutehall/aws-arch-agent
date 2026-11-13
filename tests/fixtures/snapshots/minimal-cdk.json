@@ -362,5 +362,19 @@
     "file": null,
     "line": null,
     "evidence": "Holds IaC (CDK: 2 files); searched the notes for a file or heading on a performance review, report, improvement process or KPIs; found none"
+  },
+  {
+    "id": "REPO-190",
+    "severity": "Low",
+    "file": null,
+    "line": null,
+    "evidence": "Holds IaC (CDK: 2 files); searched the notes for a file or heading on sustainability, carbon, emissions or green software; found none"
+  },
+  {
+    "id": "REPO-191",
+    "severity": "Low",
+    "file": null,
+    "line": null,
+    "evidence": "Holds IaC (CDK: 2 files); searched the repo for a Dependabot or Renovate config; found none"
   }
 ]

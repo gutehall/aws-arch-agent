@@ -256,7 +256,7 @@ ALL_RULES = [
     EbsIo2BlockExpress(),
     CloudWatchContributorInsights(),
     RdsProxyMissing(),
-    # Sustainability (23 rules: these 7, and REPO-098 to REPO-106 in REPO_RULES)
+    # Sustainability (27 rules: these 7, and REPO-098 to REPO-106 in REPO_RULES)
     SpotNotConsidered(),
     RightSizingHint(),
     ScheduledScalingMissing(),

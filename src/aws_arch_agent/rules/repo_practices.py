@@ -7755,6 +7755,134 @@ class UnusedRegion(_RepoRule):
         )]
 
 
+# Sustainability processes (SUS 6): goals (REPO-190), up-to-date dependencies (REPO-191),
+# build environments (REPO-192) and device testing (REPO-193).
+class SustainabilityGoalsMissing(_NoteRule):
+    id = "REPO-190"
+    title = "No sustainability note states the goals and the methods to reach them"
+    category = "Sustainability"
+    themes = ("sustainability",)
+    note_name = re.compile(r"sustainab\w*|carbon|green[-_ ]?(?:it|software|ops)|emissions?")
+    note_heading = re.compile(
+        r"(?i).*\b(?:sustainability|carbon(?: footprint| intensity)?|green (?:it|software)"
+        r"|emissions?)\b.*"
+    )
+    recommendation = (
+        "Write the sustainability goals down (docs/sustainability.md): what the workload "
+        "should achieve (carbon, energy, idle capacity), who is told, and the methods the "
+        "team uses to reach it (the Customer Carbon Footprint Tool, right-sizing reviews, "
+        "Graviton, shutting down idle environments)."
+    )
+    searched = (
+        "the notes for a file or heading on sustainability, carbon, emissions or green "
+        "software"
+    )
+
+
+_DEPENDENCY_UPDATE_FILES = frozenset({
+    ".github/dependabot.yml", ".github/dependabot.yaml", "renovate.json", "renovate.json5",
+    ".renovaterc", ".renovaterc.json", ".github/renovate.json", ".github/renovate.json5",
+    ".gitlab/renovate.json",
+})
+
+
+class DependencyUpdatesMissing(_RepoRule):
+    id = "REPO-191"
+    title = "Nothing proposes updates to dependencies, runtimes and base images"
+    category = "Sustainability"
+    severity = "Low"
+    themes = ("sustainability",)
+    recommendation = (
+        "Keep the workload current: turn on Dependabot (.github/dependabot.yml) or Renovate "
+        "(renovate.json) for packages, GitHub Actions and Docker base images, and review "
+        "the updates weekly, because newer runtimes and images are usually more efficient."
+    )
+
+    def run(self, repo_path: Path, language: str = "typescript") -> List[Finding]:
+        held = _holds_iac(repo_path)
+        if not held:
+            return []
+        for path in walk(repo_path):
+            if "/".join(_rel_parts(path, repo_path)).lower() in _DEPENDENCY_UPDATE_FILES:
+                return []
+        return [self._finding(
+            f"Holds IaC ({held}); searched the repo for a Dependabot or Renovate config; "
+            "found none"
+        )]
+
+
+_BUILD_FLEET = re.compile(
+    _cf_type(r"CodeBuild::Fleet") + r"|resource\s+\"aws_codebuild_fleet\""
+    r"|\bcodebuild\.(?:Cfn)?Fleet\("
+    r"|resource\s+\"aws_(?:instance|launch_template|autoscaling_group)\"\s+\"[\w-]*"
+    r"(?:runner|jenkins|build[-_]?(?:agent|server|node|fleet))[\w-]*\""
+    r"|\bec2\.(?:Cfn)?Instance\(\s*(?:this|self)\s*,\s*[\"'][\w-]*(?:Runner|Jenkins|Build(?:Agent|Server|Node|Fleet))"
+    r"|[\"'][\w-]*(?:Runner|Jenkins|Build(?:Agent|Server|Node|Fleet))\w*[\"']\s*:\s*\{\s*[\"']Type[\"']"
+    r"\s*:\s*[\"']AWS::EC2::Instance[\"']"
+    r"|^\s*[\w-]*(?:Runner|Jenkins|Build(?:Agent|Server|Node|Fleet))\w*:\s*\n\s*Type:\s*AWS::EC2::Instance",
+    re.MULTILINE,
+)
+_SPOT_CAPACITY = re.compile(r"(?i)\bspot\b|instance_market_options|SpotOptions|MarketType")
+
+
+class BuildFleetAlwaysOn(_RepoRule):
+    id = "REPO-192"
+    title = "A dedicated always-on fleet runs builds"
+    category = "Sustainability"
+    severity = "Low"
+    themes = ("sustainability", "finops")
+    recommendation = (
+        "Share build capacity: run builds on CodeBuild or GitHub hosted runners that exist "
+        "only while a job runs, or put the self-hosted runners on Spot in an Auto Scaling "
+        "group that scales to zero when the queue is empty."
+    )
+
+    def run(self, repo_path: Path, language: str = "typescript") -> List[Finding]:
+        for rel, text in iac_texts(repo_path):
+            match = _BUILD_FLEET.search(text)
+            if match and not _SPOT_CAPACITY.search(text):
+                return [self._finding(
+                    f"{rel} declares a build fleet and no Spot capacity; searched the file "
+                    "for Spot options, a mixed instances policy and a market type",
+                    file=rel,
+                    line=_line_of(text, match.start()),
+                )]
+        return []
+
+
+_FARM_WORDS = re.compile(
+    r"(?i)device[-_ ]?farm|firebase test lab|browserstack|sauce ?labs"
+)
+_NOT_A_MOBILE_APP = frozenset({"AWS IoT thing", "Pinpoint app"})
+
+
+class DeviceFarmMissing(_RepoRule):
+    id = "REPO-193"
+    title = "A mobile app is built and no device farm tests it"
+    category = "Sustainability"
+    severity = "Low"
+    themes = ("sustainability",)
+    recommendation = (
+        "Test on shared devices instead of buying a drawer of phones: run the test suite on "
+        "AWS Device Farm (AWS::DeviceFarm::Project) from the pipeline, and retire the devices "
+        "the team keeps only for testing."
+    )
+
+    def run(self, repo_path: Path, language: str = "typescript") -> List[Finding]:
+        apps = {k: v for k, v in device_targets(repo_path).items() if k not in _NOT_A_MOBILE_APP}
+        if not apps:
+            return []
+        kind, rel = next(iter(apps.items()))
+        texts = [*iac_texts(repo_path), *build_texts(repo_path), *note_texts(repo_path)]
+        if any(_FARM_WORDS.search(text) for _rel, text in texts):
+            return []
+        return [self._finding(
+            f"{rel} is a {kind}; searched the IaC, the build configs and the notes for AWS "
+            "Device Farm or another shared device service; found none",
+            file=rel,
+        )]
+
+
 _COMPUTE_TRACING = _kinds(
     ("Lambda active tracing",
      r"[\"']?Tracing[\"']?\s*:\s*[\"']?Active\b"
@@ -13184,4 +13312,5 @@ REPO_RULES: List[Rule] = [
     PerformanceKpiMissing(), PerformanceRemediationMissing(), PerformanceLoadTestMissing(), PerformanceReviewMissing(),
     ServiceBoundaryMissing(),
     UnusedRegion(),
+    SustainabilityGoalsMissing(), DependencyUpdatesMissing(), BuildFleetAlwaysOn(), DeviceFarmMissing(),
 ]

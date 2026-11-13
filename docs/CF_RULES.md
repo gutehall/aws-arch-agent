@@ -4,7 +4,7 @@ This document provides a comprehensive list of all rules checked by AWS Arch Age
 
 ## Overview
 
-AWS Arch Agent checks **368 static analysis rules** and **283 template checks** across all 6 AWS Well-Architected Framework pillars. 139 of the 368 CDK rules (38%) have a template check, so they also run for CloudFormation, Terraform and synthesised CDK. [COVERAGE.md](COVERAGE.md) gives the reason for each of the others.
+AWS Arch Agent checks **372 static analysis rules** and **283 template checks** across all 6 AWS Well-Architected Framework pillars. 139 of the 372 CDK rules (37%) have a template check, so they also run for CloudFormation, Terraform and synthesised CDK. [COVERAGE.md](COVERAGE.md) gives the reason for each of the others.
 
 ## Static Analysis Rules (V1 & V2 Modes)
 
@@ -489,7 +489,7 @@ These rules run on your CDK TypeScript/Python code and execute in both V1 and V2
 - BP-004: CDK Aspects not used for policy enforcement
 - BP-005: CDK context not used for environment-specific config
 
-### Sustainability (23 rules)
+### Sustainability (27 rules)
 
 - SUST-001: Spot instances not considered for batch/non-critical workloads
 - SUST-002: Resource right-sizing opportunities detected
@@ -520,6 +520,10 @@ These rules run on your CDK TypeScript/Python code and execute in both V1 and V2
 - REPO-155: Several EBS volumes hold data and no shared file system or bucket does
 - REPO-156: A backup plan covers a cache or a temporary bucket
 - REPO-189: A Terraform provider for an extra Region is declared and no resource uses it
+- REPO-190: No sustainability note states the goals and the methods to reach them
+- REPO-191: Nothing proposes updates to dependencies, runtimes and base images
+- REPO-192: A dedicated always-on fleet runs builds
+- REPO-193: A mobile app is built and no device farm tests it
 
 ## CloudFormation Template Rules
 
@@ -1375,6 +1379,10 @@ Every rule has one or more themes, which cut across pillars: `finops`, `security
 | REPO-187 | observability |
 | REPO-188 | resilience |
 | REPO-189 | sustainability, finops |
+| REPO-190 | sustainability |
+| REPO-191 | sustainability |
+| REPO-192 | sustainability, finops |
+| REPO-193 | sustainability |
 | SEC-001 | identity |
 | SEC-002 | identity |
 | SEC-003 | network-exposure |

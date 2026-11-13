@@ -15,7 +15,7 @@ Which CDK rules have a template check, and which AWS Foundational Security Best 
 
 ## CDK rules
 
-368 rules: 132 covered, 7 partial, 10 account, 5 cdk-only, 25 advice, 189 repo.
+372 rules: 132 covered, 7 partial, 10 account, 5 cdk-only, 25 advice, 193 repo.
 
 | Rule | Title | Template check | Status | Note |
 | -- | -- | -- | -- | -- |
@@ -387,6 +387,10 @@ Which CDK rules have a template check, and which AWS Foundational Security Best 
 | REPO-187 | No performance review note names how the team improves and reviews performance |  | `repo` | Fires when the repo holds IaC and no note named or headed for a performance review, report, improvement process or KPIs exists. |
 | REPO-188 | One stack declares many compute services and data stores with no stack, module or API boundary |  | `repo` | Fires when a single IaC file holds all the workload resources, declares at least four compute resources and four data stores and has no nested stack, module or second stack class. |
 | REPO-189 | A Terraform provider for an extra Region is declared and no resource uses it |  | `repo` | Fires when a Terraform aws provider with an alias sets a Region and no resource, module or data source refers to that alias. |
+| REPO-190 | No sustainability note states the goals and the methods to reach them |  | `repo` | Fires when the repo holds IaC and no note named or headed for sustainability, carbon, emissions or green software exists. |
+| REPO-191 | Nothing proposes updates to dependencies, runtimes and base images |  | `repo` | Fires when the repo holds IaC and has no Dependabot or Renovate config. Deprecated Lambda runtimes stay on SEC 6. |
+| REPO-192 | A dedicated always-on fleet runs builds |  | `repo` | Fires when the IaC declares a CodeBuild fleet, or an instance, launch template or Auto Scaling group named for a runner, Jenkins or a build agent, and the file has no Spot option. |
+| REPO-193 | A mobile app is built and no device farm tests it |  | `repo` | Fires when the repo holds a mobile app (an AndroidManifest.xml, Podfile, Xcode project, Info.plist or pubspec.yaml) and neither the IaC, the build configs nor the notes name AWS Device Farm or another shared device service. |
 
 ## FSBP controls
 
