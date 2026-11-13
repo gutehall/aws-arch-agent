@@ -7665,6 +7665,52 @@ class PerformanceReviewMissing(_NoteRule):
     )
 
 
+# Service architecture (REL 3): a workload that mixes many services and stores in one stack
+# with no stack, module or API boundary (REPO-188).
+_BOUNDARY_MARKERS = re.compile(
+    _cf_type(r"CloudFormation::Stack") + r"|resource\s+\"aws_cloudformation_stack\""
+    r"|^\s*module\s+\"|\bNestedStack\b|\bcfn\.CfnStack\("
+    r"|\bclass\s+\w+\s*\(\s*(?:cdk\.)?(?:Nested)?Stack\b"
+    r"|\bclass\s+\w+\s+extends\s+(?:cdk\.)?(?:Nested)?Stack\b",
+    re.MULTILINE,
+)
+_BOUNDARY_LIMIT = 4
+
+
+def _declared(text: str, kinds: tuple[tuple[str, re.Pattern[str]], ...]) -> int:
+    return sum(len(pattern.findall(text)) for _name, pattern in kinds)
+
+
+class ServiceBoundaryMissing(_RepoRule):
+    id = "REPO-188"
+    title = "One stack declares many compute services and data stores with no stack, module or API boundary"
+    category = "Reliability"
+    severity = "Low"
+    themes = ("resilience",)
+    recommendation = (
+        "Segment the workload by business domain: give each domain its own stack, module or "
+        "API (orders, billing, notifications), so a change or a failure in one does not "
+        "reach the others and each team owns what it runs. Keep a stack to one purpose."
+    )
+
+    def run(self, repo_path: Path, language: str = "typescript") -> List[Finding]:
+        files = [(rel, text) for rel, text in iac_texts(repo_path)
+                 if _declared(text, _COMPUTE) or _declared(text, _DATA_STORES)]
+        if len(files) != 1:
+            return []
+        rel, text = files[0]
+        compute, stores = _declared(text, _COMPUTE), _declared(text, _DATA_STORES)
+        if (compute < _BOUNDARY_LIMIT or stores < _BOUNDARY_LIMIT
+                or len(_BOUNDARY_MARKERS.findall(text)) > 1):
+            return []
+        return [self._finding(
+            f"{rel} declares {compute} compute resources and {stores} data stores and is the "
+            "only IaC file with workload resources; searched it for nested stacks, modules "
+            "and a second stack class; found none",
+            file=rel,
+        )]
+
+
 _COMPUTE_TRACING = _kinds(
     ("Lambda active tracing",
      r"[\"']?Tracing[\"']?\s*:\s*[\"']?Active\b"
@@ -13092,4 +13138,5 @@ REPO_RULES: List[Rule] = [
     CostReviewMissing(),
     ArchitectureDecisionIncomplete(),
     PerformanceKpiMissing(), PerformanceRemediationMissing(), PerformanceLoadTestMissing(), PerformanceReviewMissing(),
+    ServiceBoundaryMissing(),
 ]

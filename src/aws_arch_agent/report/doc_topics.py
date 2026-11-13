@@ -2309,6 +2309,12 @@ TOPICS: dict[str, tuple[str, str, str, str]] = {
         "Well-Architected PERF05-BP07: Review metrics at regular intervals",
         "/wellarchitected/latest/performance-efficiency-pillar/perf_process_culture_review_metrics.html",
     ),
+    "service_boundaries": (
+        "AWS Whitepaper: microservices on AWS",
+        "/whitepapers/latest/microservices-on-aws/microservices-on-aws.html",
+        "Well-Architected REL03-BP01: Choose how to segment your workload",
+        "/wellarchitected/latest/reliability-pillar/rel_service_architecture_monolith_soa_microservice.html",
+    ),
     "repo_tests": (
         "AWS CDK: testing constructs",
         "/cdk/v2/guide/testing.html",
@@ -3077,6 +3083,7 @@ RULE_TOPICS: dict[str, str] = {
     "REPO-185": "performance_remediation",
     "REPO-186": "performance_load_test",
     "REPO-187": "performance_review",
+    "REPO-188": "service_boundaries",
     "REPO-016": "fault_injection",
     "REPO-017": "load_testing",
     "REPO-018": "app_kpi_metrics",
