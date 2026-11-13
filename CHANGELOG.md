@@ -2,6 +2,23 @@
 
 New releases go at the top. See [CONTRIBUTING.md](CONTRIBUTING.md#releases) for when to cut one and how the version is bumped.
 
+## v0.2.0 - 2026-11-13
+
+### Features
+
+- Check more in CloudFormation and Terraform templates: network, load balancer, RDS, Lambda, API Gateway, CodeBuild, CodePipeline, KMS, SSM parameters, OpenSearch, MSK, Kinesis, Redshift, DocumentDB, Neptune, Step Functions, EventBridge, SQS, AWS Backup, DynamoDB, ElastiCache, and EFS (#79, #80, #81, #82, #83, #84, #85, #86, #87, #88)
+- Report each problem once, and add a coverage table that says which rules have a template check (#79)
+- Review findings with a model: a verdict per finding, hypotheses marked unverified, a hard prompt cap, and self-hosted models only (#89, #90)
+- Answer every Well-Architected question from the findings, in the Markdown, HTML, and JSON reports (#91, #92)
+- Check hardcoded dependency URLs and synchronous calls with no timeout or queue (#93)
+- Check the 307 Well-Architected best practices with repo-level rules that read the repo tree: security, reliability, operations, performance, cost, and sustainability (#94, #95, #96)
+- Say "off unless rules.org is on" for best practices that only account-level rules answer, and list them under `needs_org` in the JSON answers (#98)
+
+### Chores
+
+- Run the tests in parallel in CI, which cuts the Windows job from about 70 to 25 minutes (#97)
+- Test each repo-level rule with a repo that lacks the control and the same repo with it (#98)
+
 ## v0.1.1 - 2026-11-07
 
 ### Fixes
