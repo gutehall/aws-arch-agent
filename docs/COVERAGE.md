@@ -15,7 +15,7 @@ Which CDK rules have a template check, and which AWS Foundational Security Best 
 
 ## CDK rules
 
-367 rules: 132 covered, 7 partial, 10 account, 5 cdk-only, 25 advice, 188 repo.
+368 rules: 132 covered, 7 partial, 10 account, 5 cdk-only, 25 advice, 189 repo.
 
 | Rule | Title | Template check | Status | Note |
 | -- | -- | -- | -- | -- |
@@ -386,6 +386,7 @@ Which CDK rules have a template check, and which AWS Foundational Security Best 
 | REPO-186 | No load test shows how the workload performs under load |  | `repo` | Fires on the same gap as REPO-017, for PERF05-BP04: no build config runs a load test. |
 | REPO-187 | No performance review note names how the team improves and reviews performance |  | `repo` | Fires when the repo holds IaC and no note named or headed for a performance review, report, improvement process or KPIs exists. |
 | REPO-188 | One stack declares many compute services and data stores with no stack, module or API boundary |  | `repo` | Fires when a single IaC file holds all the workload resources, declares at least four compute resources and four data stores and has no nested stack, module or second stack class. |
+| REPO-189 | A Terraform provider for an extra Region is declared and no resource uses it |  | `repo` | Fires when a Terraform aws provider with an alias sets a Region and no resource, module or data source refers to that alias. |
 
 ## FSBP controls
 

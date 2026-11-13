@@ -7587,7 +7587,7 @@ _PERF_METRIC = re.compile(
     r"|cpuutilization|cpu[-_ ]?utili[sz]ation|memoryutili[sz]ation|throttl\w*|queuedepth"
     r"|approximatenumberofmessagesvisible|iterator[-_ ]?age|p9[0-9](?:\.\d+)?)\b"
 )
-_NUMERIC_THRESHOLD = re.compile(r"(?i)\bthreshold[\"']?\s*[:=]\s*[\"']?\d")
+_ALARM_THRESHOLD = re.compile(r"(?i)\bthreshold[\"']?\s*[:=]\s*[\"']?\d")
 
 
 class PerformanceKpiMissing(_RepoRule):
@@ -7607,7 +7607,7 @@ class PerformanceKpiMissing(_RepoRule):
         if not compute:
             return []
         for _rel, text in iac_texts(repo_path):
-            if _ALARM.search(text) and _PERF_METRIC.search(text) and _NUMERIC_THRESHOLD.search(text):
+            if _ALARM.search(text) and _PERF_METRIC.search(text) and _ALARM_THRESHOLD.search(text):
                 return []
         return [self._finding(
             f"Runs {_named(compute)}; searched the IaC for a CloudWatch alarm on a latency, "
@@ -7708,6 +7708,50 @@ class ServiceBoundaryMissing(_RepoRule):
             "only IaC file with workload resources; searched it for nested stacks, modules "
             "and a second stack class; found none",
             file=rel,
+        )]
+
+
+# Region selection (SUS 1): an extra Region that no resource uses (REPO-189).
+_REGION_PROVIDER = re.compile(
+    r"provider\s+\"aws\"\s*\{(?P<body>[^{}]*)\}", re.DOTALL
+)
+_REGION_ALIAS = re.compile(r"\balias\s*=\s*\"(?P<alias>[\w-]+)\"")
+
+
+class UnusedRegion(_RepoRule):
+    id = "REPO-189"
+    title = "A Terraform provider for an extra Region is declared and no resource uses it"
+    category = "Sustainability"
+    severity = "Low"
+    themes = ("sustainability", "finops")
+    recommendation = (
+        "Run in the Regions you need: remove the provider alias for a Region that no "
+        "resource, module or data source uses, or point the workload that belongs there at "
+        "it. Choose each Region from a variable or a config file, and give the reason in a "
+        "comment (latency, data residency, a lower carbon intensity)."
+    )
+
+    def run(self, repo_path: Path, language: str = "typescript") -> List[Finding]:
+        tf = [(rel, text) for rel, text in iac_texts(repo_path) if rel.endswith(".tf")]
+        declared: List[tuple[str, str, int]] = []
+        for rel, text in tf:
+            for match in _REGION_PROVIDER.finditer(text):
+                alias = _REGION_ALIAS.search(match.group("body"))
+                if alias and re.search(r"\bregion\s*=", match.group("body")):
+                    declared.append((rel, alias.group("alias"), _line_of(text, match.start())))
+        unused = [
+            (rel, alias, line) for rel, alias, line in declared
+            if not any(re.search(rf"\baws\.{re.escape(alias)}\b", text) for _r, text in tf)
+        ]
+        if not unused:
+            return []
+        rel, _first, line = unused[0]
+        names = _listed([a for _r, a, _l in unused])
+        return [self._finding(
+            f"The provider alias {names} sets a Region and no resource, module or data "
+            "source refers to it (provider = aws.<alias> or providers = { aws = aws.<alias> })",
+            file=rel,
+            line=line,
         )]
 
 
@@ -13139,4 +13183,5 @@ REPO_RULES: List[Rule] = [
     ArchitectureDecisionIncomplete(),
     PerformanceKpiMissing(), PerformanceRemediationMissing(), PerformanceLoadTestMissing(), PerformanceReviewMissing(),
     ServiceBoundaryMissing(),
+    UnusedRegion(),
 ]

@@ -675,10 +675,10 @@ RULE_BEST_PRACTICES: dict[str, tuple[str, ...]] = {
     "REPO-186": ("PERF05-BP04",),
     "REPO-187": ("PERF05-BP03", "PERF05-BP07"),
     "REPO-188": ("REL03-BP01", "REL03-BP02"),
+    "REPO-189": ("SUS01-BP01",),
 }
 
 NOT_CHECKED: frozenset[str] = frozenset({
     
-    "SUS01-BP01",
     "SUS06-BP01", "SUS06-BP02", "SUS06-BP03", "SUS06-BP04", "SUS06-BP05",
 })

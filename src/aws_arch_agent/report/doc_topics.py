@@ -2315,6 +2315,12 @@ TOPICS: dict[str, tuple[str, str, str, str]] = {
         "Well-Architected REL03-BP01: Choose how to segment your workload",
         "/wellarchitected/latest/reliability-pillar/rel_service_architecture_monolith_soa_microservice.html",
     ),
+    "region_choice": (
+        "AWS: Regions and Availability Zones",
+        "/AWSEC2/latest/UserGuide/using-regions-availability-zones.html",
+        "Well-Architected SUS01-BP01: Choose Region based on both business requirements and sustainability goals",
+        "/wellarchitected/latest/sustainability-pillar/sus_sus_region_a2.html",
+    ),
     "repo_tests": (
         "AWS CDK: testing constructs",
         "/cdk/v2/guide/testing.html",
@@ -3084,6 +3090,7 @@ RULE_TOPICS: dict[str, str] = {
     "REPO-186": "performance_load_test",
     "REPO-187": "performance_review",
     "REPO-188": "service_boundaries",
+    "REPO-189": "region_choice",
     "REPO-016": "fault_injection",
     "REPO-017": "load_testing",
     "REPO-018": "app_kpi_metrics",
