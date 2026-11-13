@@ -2273,6 +2273,12 @@ TOPICS: dict[str, tuple[str, str, str, str]] = {
         "Well-Architected COST05-BP04: Select software with cost-effective licensing",
         "/wellarchitected/latest/cost-optimization-pillar/cost_select_service_licensing.html",
     ),
+    "cost_review": (
+        "AWS Data Exports: creating exports",
+        "/cur/latest/userguide/dataexports-create.html",
+        "Well-Architected COST10-BP02: Review and analyze this workload regularly",
+        "/wellarchitected/latest/cost-optimization-pillar/cost_evaluate_new_services_review_workload.html",
+    ),
     "repo_tests": (
         "AWS CDK: testing constructs",
         "/cdk/v2/guide/testing.html",
@@ -3035,6 +3041,7 @@ RULE_TOPICS: dict[str, str] = {
     "REPO-179": "cost_requirements",
     "REPO-180": "component_costs",
     "REPO-181": "license_terms",
+    "REPO-182": "cost_review",
     "REPO-016": "fault_injection",
     "REPO-017": "load_testing",
     "REPO-018": "app_kpi_metrics",

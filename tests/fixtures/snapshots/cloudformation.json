@@ -705,5 +705,12 @@
     "file": null,
     "line": null,
     "evidence": "Declares Lambda in stack.yaml, S3 bucket in stack.yaml, RDS database in stack.yaml; searched CI for infracost breakdown, diff or comment, the repo for an Infracost or cost-estimate config, and notes named or headed cost estimate, cost model, estimated cost or pricing that give an amount or a Pricing Calculator link; found none"
+  },
+  {
+    "id": "REPO-182",
+    "severity": "Low",
+    "file": null,
+    "line": null,
+    "evidence": "Holds IaC (CloudFormation: 1 file); searched the IaC for a Data Export, a cost and usage report or a cost anomaly subscription, and the notes for a dated file or heading on a cost review, report or checklist; found none"
   }
 ]

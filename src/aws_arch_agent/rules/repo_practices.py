@@ -12819,6 +12819,43 @@ class LicenseTermsUnrecorded(_RepoRule):
         )]
 
 
+# Evaluating new services (COST 10): a recurring review of the workload's cost (REPO-182).
+_COST_REPORT_IN_IAC = re.compile(
+    _cf_type(r"BCMDataExports::Export|CUR::ReportDefinition|CE::AnomalySubscription")
+    + r"|resource\s+\"aws_(?:bcmdataexports_export|cur_report_definition"
+    r"|ce_anomaly_subscription)\""
+)
+_COST_REVIEW_NAME = re.compile(
+    r"(?:cost|finops|budget|spend)[-_ ]?(?:review|report|checklist|retro(?:spective)?)s?"
+    r"|(?:review|checklist)[-_ ]?(?:of[-_ ])?(?:cost|spend)"
+)
+_COST_REVIEW_HEADING = re.compile(
+    r"(?i).*\b(?:cost (?:review|report|checklist)|finops review|budget review|spend review"
+    r"|new services review)\b.*"
+)
+
+
+class CostReviewMissing(_NoteRule):
+    id = "REPO-182"
+    title = "No dated cost review or scheduled cost report is in the repo"
+    category = "Cost"
+    themes = ("finops",)
+    note_name = _COST_REVIEW_NAME
+    note_heading = _COST_REVIEW_HEADING
+    note_needs = _DATE
+    iac = _COST_REPORT_IN_IAC
+    recommendation = (
+        "Review cost on a schedule and when AWS ships something new: keep a dated cost review "
+        "(docs/cost-review-2026-03.md) with a checklist of the services and prices you "
+        "re-checked and what you decided, or schedule a cost report (a Data Export or a cost "
+        "anomaly subscription) in the IaC."
+    )
+    searched = (
+        "the IaC for a Data Export, a cost and usage report or a cost anomaly subscription, "
+        "and the notes for a dated file or heading on a cost review, report or checklist"
+    )
+
+
 REPO_RULES: List[Rule] = [
     RepoTestsMissing(), RepoPipelineMissing(), SingleEnvironment(),
     OrgGuardrailsMissing(), AccountBaselineMissing(), RootUserUnchecked(),
@@ -12907,4 +12944,5 @@ REPO_RULES: List[Rule] = [
     RunbooksMissing(), OperationalPlaybooksMissing(), SupportPlanMissing(), ReadinessReviewMissing(),
     PostIncidentLessonsMissing(), FeedbackLoopMissing(), ImprovementLoopMissing(),
     CostRequirementsMissing(), ComponentCostNotAnalysed(), LicenseTermsUnrecorded(),
+    CostReviewMissing(),
 ]

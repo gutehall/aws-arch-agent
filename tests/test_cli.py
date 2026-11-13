@@ -755,6 +755,8 @@ def test_cli_html_with_no_findings_writes_a_page(tmp_path: Path) -> None:
     # A note for COST 5: the cost requirements at steady usage and at peak.
     (tmp_path / "docs" / "cost-requirements.md").write_text(
         "Steady usage is $400 a month; peak is $900.\n", encoding="utf-8")
+    (tmp_path / "docs" / "cost-review-2026-03.md").write_text("Reviewed 2026-03-02.\n",
+                                                               encoding="utf-8")
     (tmp_path / "CODEOWNERS").write_text("* @org/platform\n", encoding="utf-8")
     for rel in (".github/workflows/ci.yml", "tests/main.tftest.hcl", "dev.tfvars", "prod.tfvars"):
         (tmp_path / rel).parent.mkdir(parents=True, exist_ok=True)

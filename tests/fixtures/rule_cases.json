@@ -1857,5 +1857,11 @@
     "negative_py": "answer = 42",
     "positive_ts": "const ami = ec2.MachineImage.lookup({ name: 'x', owners: ['aws-marketplace'] }); new ec2.CfnHost(this, 'H', { instanceType: 'm5.large', availabilityZone: 'a' });",
     "positive_py": "ami = ec2.MachineImage.lookup(name='x', owners=['aws-marketplace']); ec2.CfnHost(self, 'H', instance_type='m5.large', availability_zone='a')"
+  },
+  "REPO-182": {
+    "negative_ts": "const answer = 42;",
+    "negative_py": "answer = 42",
+    "positive_ts": "new s3.Bucket(this, 'Bucket');",
+    "positive_py": "s3.Bucket(self, 'Bucket')"
   }
 }
