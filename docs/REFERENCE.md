@@ -101,7 +101,7 @@ Keys: `format`, `fail_on`, `no_llm`, `llm_mode`, `out`, `severity_threshold`, `t
 Use the composite action, pinned to a release tag (`@main` changes with every merged check; see the README's CI section). It runs on Linux, macOS, and Windows runners and installs ripgrep if the runner lacks it:
 
 ```yaml
-- uses: gutehall/aws-arch-agent/.github/actions/aws-arch-agent@v0.1.1
+- uses: gutehall/aws-arch-agent/.github/actions/aws-arch-agent@v0.2.0
   with:
     repo: .
     fail-on: high
