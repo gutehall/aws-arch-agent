@@ -1968,6 +1968,25 @@ TOPICS: dict[str, tuple[str, str, str, str]] = {
         "networks in the cloud and on-premises environments",
         "/wellarchitected/latest/reliability-pillar/rel_planning_network_topology_ha_conn_private_networks.html",
     ),
+    "quotas_across_accounts": (
+        "Service Quotas: quota request templates",
+        "/servicequotas/latest/userguide/organization-templates.html",
+        "Well-Architected REL01-BP02: Manage service quotas across accounts and regions",
+        "/wellarchitected/latest/reliability-pillar/rel_manage_service_limits_limits_considered.html",
+    ),
+    "quota_automation": (
+        "Service Quotas: requesting a quota increase",
+        "/servicequotas/latest/userguide/request-quota-increase.html",
+        "Well-Architected REL01-BP05: Automate quota management",
+        "/wellarchitected/latest/reliability-pillar/rel_manage_service_limits_automated_monitor_limits.html",
+    ),
+    "fixed_quotas": (
+        "Amazon SQS: high throughput for FIFO queues",
+        "/AWSSimpleQueueService/latest/SQSDeveloperGuide/high-throughput-fifo.html",
+        "Well-Architected REL01-BP03: Accommodate fixed service quotas and constraints "
+        "through architecture",
+        "/wellarchitected/latest/reliability-pillar/rel_manage_service_limits_aware_fixed_limits.html",
+    ),
     "repo_tests": (
         "AWS CDK: testing constructs",
         "/cdk/v2/guide/testing.html",
@@ -2681,6 +2700,9 @@ RULE_TOPICS: dict[str, str] = {
     "REPO-130": "incident_learning",
     "REPO-131": "public_endpoint_ha",
     "REPO-132": "redundant_onprem_links",
+    "REPO-133": "quotas_across_accounts",
+    "REPO-134": "quota_automation",
+    "REPO-135": "fixed_quotas",
     "REPO-016": "fault_injection",
     "REPO-017": "load_testing",
     "REPO-018": "app_kpi_metrics",

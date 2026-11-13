@@ -203,6 +203,15 @@ Network connectivity (REL 2) runs by default:
 - REPO-132 on-premises links: exactly one VPN connection, Direct Connect connection or virtual
   interface in the IaC fires; none, or two or more, pass.
 
+Service quotas (REL 1) run by default (REPO-012 and REPO-013 answer alarms and headroom):
+
+- REPO-133 managed quotas: compute with no Service Quotas resource, template or quotas module
+  fires.
+- REPO-134 quota automation: compute with no Service Quotas resource or template and no
+  RequestServiceQuotaIncrease call or permission fires.
+- REPO-135 fixed quotas: an SQS FIFO queue without high-throughput mode, or a provisioned
+  one-shard Kinesis stream with no on-demand mode, fires.
+
 Reliability testing (REL 12) runs by default and reads the IaC and the builds REPO-009 reads
 (CI configs, inline buildspecs, CodeBuild projects and pipelines in the IaC, and the
 package.json scripts they run):
@@ -5892,6 +5901,137 @@ class SingleOnPremLink(_RepoRule):
         )]
 
 
+# Service quotas (REL 1): quotas managed across accounts and Regions (REPO-133), quota
+# increases automated (REPO-134) and fixed quotas designed around (REPO-135).
+_SERVICE_QUOTAS_RESOURCE = re.compile(
+    r"AWS::ServiceQuotas::\w+|resource\s+\"aws_servicequotas_\w+\""
+    r"|\bservicequotas\.(?:Cfn)?\w+\("
+    r"|\bmodule\s+\"[^\"]*quotas?[^\"]*\"|\bsource\s*=\s*\"[^\"]*quotas?[^\"]*\""
+)
+_QUOTA_INCREASE = re.compile(
+    r"resource\s+\"aws_servicequotas_(?:service_quota|template)\"|AWS::ServiceQuotas::\w+"
+    r"|\bservicequotas\.(?:Cfn)?\w+\("
+    r"|RequestServiceQuotaIncrease|request_service_quota_increase"
+    r"|servicequotas:RequestServiceQuotaIncrease"
+    r"|put[-_]service[-_]quota[-_]increase[-_]request[-_]into[-_]template"
+    r"|PutServiceQuotaIncreaseRequestIntoTemplate"
+)
+_FIFO_QUEUE = re.compile(
+    r"[\"']?(?:FifoQueue|fifo_queue)[\"']?\s*[:=]\s*[\"']?(?:true|True)\b"
+    r"|\bfifo\s*[:=]\s*(?:true|True)\b"
+)
+_FIFO_HIGH_THROUGHPUT = re.compile(
+    r"per_?[mM]essage_?[gG]roup_?[iI]d|PER_MESSAGE_GROUP_ID"
+)
+_KINESIS_STREAM = re.compile(
+    _cf_type(r"Kinesis::Stream") + r"|resource\s+\"aws_kinesis_stream\""
+    r"|\bkinesis\.(?:Cfn)?Stream\("
+)
+_ONE_SHARD = re.compile(r"[\"']?(?:ShardCount|shard_count|shardCount)[\"']?\s*[:=]\s*[\"']?1\b(?!\d)")
+_ON_DEMAND_STREAM = re.compile(r"\bON_DEMAND\b|StreamMode\.ON_DEMAND")
+
+
+def fixed_quota_designs(repo_path: Path) -> list[str]:
+    """FIFO queues without high-throughput mode and one-shard provisioned Kinesis streams,
+    as "kind in file"."""
+    found: list[str] = []
+    for rel, text in iac_texts(repo_path):
+        if _FIFO_QUEUE.search(text) and not _FIFO_HIGH_THROUGHPUT.search(text):
+            found.append(f"a FIFO queue without high-throughput mode in {rel}")
+        if (_KINESIS_STREAM.search(text) and _ONE_SHARD.search(text)
+                and not _ON_DEMAND_STREAM.search(text)):
+            found.append(f"a one-shard provisioned Kinesis stream in {rel}")
+    return found
+
+
+class QuotasNotManaged(_RepoRule):
+    id = "REPO-133"
+    title = "Service quotas are not managed as code across accounts and Regions"
+    category = "Reliability"
+    severity = "Low"
+    themes = ("resilience",)
+    recommendation = (
+        "Manage service quotas where the workload runs: Service Quotas resources "
+        "(aws_servicequotas_service_quota, a Service Quotas request template for the "
+        "organization) or a quotas module applied to every account and Region the stack "
+        "uses, so a new Region starts with the quotas the workload needs."
+    )
+
+    def run(self, repo_path: Path, language: str = "typescript") -> List[Finding]:
+        compute = _in_iac(repo_path, _COMPUTE)
+        if not compute or _in_iac_text(repo_path, _SERVICE_QUOTAS_RESOURCE):
+            return []
+        return [self._finding(
+            f"Runs {_named(compute)}; searched the IaC for Service Quotas resources and a "
+            "quotas module; found none",
+            file=next(iter(compute.values())),
+        )]
+
+
+class QuotaIncreaseNotAutomated(_RepoRule):
+    id = "REPO-134"
+    title = "No quota increase is requested by the template or by automation"
+    category = "Reliability"
+    severity = "Low"
+    themes = ("resilience",)
+    recommendation = (
+        "Automate quota increases: declare the quota in the template (aws_servicequotas_"
+        "service_quota or a Service Quotas template), or let an alarm on quota usage start a "
+        "function that calls RequestServiceQuotaIncrease."
+    )
+
+    def run(self, repo_path: Path, language: str = "typescript") -> List[Finding]:
+        compute = _in_iac(repo_path, _COMPUTE)
+        if not compute:
+            return []
+        if _in_iac_text(repo_path, _QUOTA_INCREASE):
+            return []
+        for rel, text in note_texts_code(repo_path):
+            if _QUOTA_INCREASE.search(text):
+                return []
+        return [self._finding(
+            f"Runs {_named(compute)}; searched the IaC and the function code for a Service "
+            "Quotas resource or template and a RequestServiceQuotaIncrease call; found none",
+            file=next(iter(compute.values())),
+        )]
+
+
+def note_texts_code(repo_path: Path) -> Iterator[tuple[str, str]]:
+    """(repo-relative path, text) of function code outside tests."""
+    for path in walk(repo_path):
+        parts = _rel_parts(path, repo_path)
+        if path.suffix.lower() not in _FUNCTION_CODE_SUFFIXES or _in_test_dir(parts):
+            continue
+        if _TEST_NAME.search(path.name.lower()):
+            continue
+        yield "/".join(parts), read_text_safe(path)
+
+
+class FixedQuotaNotDesignedAround(_RepoRule):
+    id = "REPO-135"
+    title = "A fixed service quota is not designed around"
+    category = "Reliability"
+    severity = "Low"
+    themes = ("resilience",)
+    recommendation = (
+        "Design around quotas you cannot raise: turn on SQS FIFO high-throughput mode "
+        "(deduplication scope per message group, throughput limit per message group id) or "
+        "partition across queues, and use on-demand capacity mode or more shards for Kinesis, "
+        "so one queue or stream is not the ceiling for the workload."
+    )
+
+    def run(self, repo_path: Path, language: str = "typescript") -> List[Finding]:
+        designs = fixed_quota_designs(repo_path)
+        if not designs:
+            return []
+        return [self._finding(
+            f"Declares {_listed(designs)}; searched for FIFO high-throughput mode "
+            "(per message group deduplication and throughput) and for an on-demand or "
+            "multi-shard stream; found none",
+            file=designs[0].rsplit(" in ", 1)[-1],
+        )]
+
+
 _COMPUTE_TRACING = _kinds(
     ("Lambda active tracing",
      r"[\"']?Tracing[\"']?\s*:\s*[\"']?Active\b"
@@ -11104,6 +11244,7 @@ REPO_RULES: List[Rule] = [
     KeyContactsMissing(), IncidentPlanMissing(), SecurityPlaybookMissing(),
     ResponseAccessMissing(), SecuritySimulationMissing(),
     IncidentLearningMissing(), PublicEndpointNotHighlyAvailable(), SingleOnPremLink(),
+    QuotasNotManaged(), QuotaIncreaseNotAutomated(), FixedQuotaNotDesignedAround(),
     FaultInjectionMissing(), LoadTestMissing(),
     KpiMetricMissing(), EdgeTelemetryMissing(), DependencyTelemetryMissing(),
     DeployTestGateMissing(), AutomatedRollbackMissing(),

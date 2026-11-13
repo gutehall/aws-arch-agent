@@ -4,7 +4,7 @@ This document provides a comprehensive list of all rules checked by AWS Arch Age
 
 ## Overview
 
-AWS Arch Agent checks **311 static analysis rules** and **283 template checks** across all 6 AWS Well-Architected Framework pillars. 139 of the 311 CDK rules (45%) have a template check, so they also run for CloudFormation, Terraform and synthesised CDK. [COVERAGE.md](COVERAGE.md) gives the reason for each of the others.
+AWS Arch Agent checks **314 static analysis rules** and **283 template checks** across all 6 AWS Well-Architected Framework pillars. 139 of the 314 CDK rules (44%) have a template check, so they also run for CloudFormation, Terraform and synthesised CDK. [COVERAGE.md](COVERAGE.md) gives the reason for each of the others.
 
 ## Static Analysis Rules (V1 & V2 Modes)
 
@@ -135,7 +135,7 @@ These rules run on your CDK TypeScript/Python code and execute in both V1 and V2
 - REPO-040: Data classified as sensitive has no customer managed key
 - REPO-041: Nothing stops unencrypted storage from being created
 
-### Reliability (68 rules)
+### Reliability (71 rules)
 
 **High Availability:**
 - REL-001: RDS instance missing multi-AZ
@@ -185,6 +185,9 @@ These rules run on your CDK TypeScript/Python code and execute in both V1 and V2
 **Service quotas (repo-level, REL 1):**
 - REPO-012: No Service Quotas usage alarm for the services the stack uses (org-level: runs with `rules.org` or `rules.include`)
 - REPO-013: Limits the IaC sets leave no room for failover
+- REPO-133: Service quotas are not managed as code across accounts and Regions
+- REPO-134: No quota increase is requested by the template or by automation
+- REPO-135: A fixed service quota is not designed around
 
 **Network address plan (repo-level, REL 2):**
 - REPO-014: VPC CIDR ranges overlap
@@ -1262,6 +1265,9 @@ Every rule has one or more themes, which cut across pillars: `finops`, `security
 | REPO-130 | security-baseline |
 | REPO-131 | resilience |
 | REPO-132 | resilience |
+| REPO-133 | resilience |
+| REPO-134 | resilience |
+| REPO-135 | resilience |
 | SEC-001 | identity |
 | SEC-002 | identity |
 | SEC-003 | network-exposure |

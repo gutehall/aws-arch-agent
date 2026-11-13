@@ -1018,6 +1018,24 @@
     "positive_ts": "new ec2.VpnConnection(this, 'VpnA', { vpc, ip: '1.2.3.4' });",
     "positive_py": "ec2.VpnConnection(self, 'VpnA', vpc=vpc, ip='1.2.3.4')"
   },
+  "REPO-133": {
+    "negative_ts": "new lambda.Function(this, 'Fn', { runtime, handler, code });\nnew servicequotas.CfnTemplate(this, 'T', {});",
+    "negative_py": "_lambda.Function(self, 'Fn', runtime=r, handler='h', code=c)\nservicequotas.CfnTemplate(self, 'T')",
+    "positive_ts": "new lambda.Function(this, 'Fn', { runtime, handler, code });",
+    "positive_py": "_lambda.Function(self, 'Fn', runtime=r, handler='h', code=c)"
+  },
+  "REPO-134": {
+    "negative_ts": "new lambda.Function(this, 'Fn', { runtime, handler, code });\nnew servicequotas.CfnTemplate(this, 'T', {});",
+    "negative_py": "_lambda.Function(self, 'Fn', runtime=r, handler='h', code=c)\nservicequotas.CfnTemplate(self, 'T')",
+    "positive_ts": "new lambda.Function(this, 'Fn', { runtime, handler, code });",
+    "positive_py": "_lambda.Function(self, 'Fn', runtime=r, handler='h', code=c)"
+  },
+  "REPO-135": {
+    "negative_ts": "new sqs.Queue(this, 'Q', { fifo: true, deduplicationScope: sqs.DeduplicationScope.MESSAGE_GROUP, fifoThroughputLimit: sqs.FifoThroughputLimit.PER_MESSAGE_GROUP_ID });",
+    "negative_py": "sqs.Queue(self, 'Q', fifo=True, deduplication_scope=sqs.DeduplicationScope.MESSAGE_GROUP, fifo_throughput_limit=sqs.FifoThroughputLimit.PER_MESSAGE_GROUP_ID)",
+    "positive_ts": "new sqs.Queue(this, 'Q', { fifo: true });",
+    "positive_py": "sqs.Queue(self, 'Q', fifo=True)"
+  },
   "REPO-016": {
     "negative_ts": "new fis.CfnExperimentTemplate(this, 'StopInstances', { description: 'stop one AZ', roleArn: role.roleArn, stopConditions: [{ source: 'aws:cloudwatch:alarm', value: alarm.alarmArn }], targets: {}, actions: {} });",
     "negative_py": "pipelines.ShellStep('Chaos', commands=['aws fis start-experiment --experiment-template-id EXT123'])",

@@ -143,9 +143,9 @@ ALL_RULES = [
     IamUserConsolePassword(),
     IamAccessKeyCreated(),
     IamUserDirectPolicies(),
-    # Reliability (68 rules: these 33, and REPO-012 to REPO-017, REPO-023 to REPO-026,
-    # REPO-042 to REPO-059, REPO-107, REPO-108, REPO-122 to REPO-124, REPO-131 and
-    # REPO-132 in REPO_RULES)
+    # Reliability (71 rules: these 33, and REPO-012 to REPO-017, REPO-023 to REPO-026,
+    # REPO-042 to REPO-059, REPO-107, REPO-108, REPO-122 to REPO-124 and REPO-131 to
+    # REPO-135 in REPO_RULES)
     RdsMultiAzMissing(),
     BackupRetentionMissing(),
     LambdaDlqMissing(),
