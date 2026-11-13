@@ -2057,7 +2057,7 @@ TOPICS: dict[str, tuple[str, str, str, str]] = {
     ),
     "monitoring_review": (
         "CloudWatch: using Amazon CloudWatch alarms",
-        "/AmazonCloudWatch/latest/monitoring/AlarmThatSendsEmail.html",
+        "/AmazonCloudWatch/latest/monitoring/CloudWatch_Alarms.html",
         "Well-Architected REL06-BP06: Regularly review monitoring scope and metrics",
         "/wellarchitected/latest/reliability-pillar/rel_monitor_aws_resources_review_monitoring.html",
     ),
@@ -2082,8 +2082,8 @@ TOPICS: dict[str, tuple[str, str, str, str]] = {
         "/wellarchitected/latest/sustainability-pillar/sus_sus_hardware_a5.html",
     ),
     "sustainability_data_classification": (
-        "Data Classification whitepaper: leveraging AWS to support data classification",
-        "/whitepapers/latest/data-classification/leveraging-aws-cloud-to-support-data-classification.html",
+        "AWS Organizations: tag policies",
+        "/organizations/latest/userguide/orgs_manage_policies_tag-policies.html",
         "Well-Architected SUS04-BP01: Implement a data classification policy",
         "/wellarchitected/latest/sustainability-pillar/sus_sus_data_a2.html",
     ),
