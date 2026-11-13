@@ -244,6 +244,11 @@ REPO-038 integrity and hardened images):
 - REPO-145 automated protection: compute in the IaC with no Inspector enablement and no SSM
   association or patch baseline fires; it runs only with rules.org.
 
+Data lifecycle (SEC 7) runs by default (REPO-039 and REPO-040 answer classification):
+
+- REPO-146 retention: a data store in a file tagged with a classification (or in an app tagged
+  with one) with no lifecycle, TTL, backup retention or delete-after setting fires.
+
 Reliability testing (REL 12) runs by default and reads the IaC and the builds REPO-009 reads
 (CI configs, inline buildspecs, CodeBuild projects and pipelines in the IaC, and the
 package.json scripts they run):
@@ -6417,6 +6422,51 @@ class ComputeProtectionNotAutomated(_RepoRule):
         )]
 
 
+# Data lifecycle (SEC 7): classified data with no retention rule (REPO-146). REPO-039 and
+# REPO-040 answer the classification scheme and the controls it implies.
+_RETENTION = re.compile(
+    r"LifecycleConfiguration|\baws_s3_bucket_lifecycle_configuration\b|\blifecycle_rule\b"
+    r"|\blifecycle_?[rR]ules\b|\blifecycleConfiguration\b"
+    r"|TimeToLiveSpecification|\btime_to_live_attribute\b|\btimeToLiveAttribute\b"
+    r"|\bttl\s*\{|\bttl\s*=\s*\{"
+    r"|[\"']?BackupRetentionPeriod[\"']?\s*:|\bbackup_retention_period\b|\bbackupRetention\b"
+    r"|\bRetentionInDays\b|\bretention_in_days\b|\bretentionPeriod\b|\bretention_period\b"
+    r"|\bDeleteAfterDays\b|\bdelete_after\b|\bdeleteAfter\b"
+)
+
+
+class ClassifiedDataWithoutLifecycle(_RepoRule):
+    id = "REPO-146"
+    title = "Data classified by tag has no lifecycle or retention rule"
+    category = "Security"
+    severity = "Low"
+    themes = ("data-protection",)
+    recommendation = (
+        "Manage the data's lifecycle at scale: give each classified store a retention rule "
+        "that follows its class (an S3 lifecycle rule that expires or transitions objects, a "
+        "DynamoDB TTL attribute, database backup retention, an AWS Backup plan with "
+        "DeleteAfterDays), so data is deleted when its purpose ends."
+    )
+
+    def run(self, repo_path: Path, language: str = "typescript") -> List[Finding]:
+        app = _app_classified(repo_path)
+        found: List[str] = []
+        for rel, text in iac_texts(repo_path):
+            kinds = [name for name, pattern in _DATA_STORES if pattern.search(text)]
+            if not kinds or _RETENTION.search(text):
+                continue
+            if app or _CLASS_TAG.search(text):
+                found.append(f"{kinds[0]} in {rel}")
+        if not found:
+            return []
+        return [self._finding(
+            f"Declares classified data in {_listed(found)} with no retention rule; searched for "
+            "an S3 lifecycle rule, a DynamoDB TTL, database backup retention and an AWS "
+            "Backup delete-after setting",
+            file=found[0].rsplit(" in ", 1)[-1],
+        )]
+
+
 _COMPUTE_TRACING = _kinds(
     ("Lambda active tracing",
      r"[\"']?Tracing[\"']?\s*:\s*[\"']?Active\b"
@@ -11650,6 +11700,7 @@ REPO_RULES: List[Rule] = [
     OrgShareOpenToExternal(),
     InteractiveAccessWithKeyPair(),
     ComputeProtectionNotAutomated(),
+    ClassifiedDataWithoutLifecycle(),
     FaultInjectionMissing(), LoadTestMissing(),
     KpiMetricMissing(), EdgeTelemetryMissing(), DependencyTelemetryMissing(),
     DeployTestGateMissing(), AutomatedRollbackMissing(),

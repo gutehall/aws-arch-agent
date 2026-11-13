@@ -2049,6 +2049,12 @@ TOPICS: dict[str, tuple[str, str, str, str]] = {
         "Well-Architected SEC06-BP05: Automate compute protection",
         "/wellarchitected/latest/security-pillar/sec_protect_compute_auto_protection.html",
     ),
+    "data_lifecycle": (
+        "Amazon S3: managing your storage lifecycle",
+        "/AmazonS3/latest/userguide/object-lifecycle-mgmt.html",
+        "Well-Architected SEC07-BP04: Define scalable data lifecycle management",
+        "/wellarchitected/latest/security-pillar/sec_data_classification_lifecycle_management.html",
+    ),
     "repo_tests": (
         "AWS CDK: testing constructs",
         "/cdk/v2/guide/testing.html",
@@ -2775,6 +2781,7 @@ RULE_TOPICS: dict[str, str] = {
     "REPO-143": "org_resource_sharing",
     "REPO-144": "session_manager_access",
     "REPO-145": "compute_protection_automation",
+    "REPO-146": "data_lifecycle",
     "REPO-016": "fault_injection",
     "REPO-017": "load_testing",
     "REPO-018": "app_kpi_metrics",

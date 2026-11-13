@@ -15,7 +15,7 @@ Which CDK rules have a template check, and which AWS Foundational Security Best 
 
 ## CDK rules
 
-324 rules: 132 covered, 7 partial, 10 account, 5 cdk-only, 25 advice, 145 repo.
+325 rules: 132 covered, 7 partial, 10 account, 5 cdk-only, 25 advice, 146 repo.
 
 | Rule | Title | Template check | Status | Note |
 | -- | -- | -- | -- | -- |
@@ -343,6 +343,7 @@ Which CDK rules have a template check, and which AWS Foundational Security Best 
 | REPO-143 | A RAM resource share is not limited to the organization |  | `repo` | Fires on a RAM resource share in a file that does not set AllowExternalPrincipals to false. |
 | REPO-144 | EC2 instances use an SSH key pair and no Session Manager access |  | `repo` | Fires when an EC2 instance, launch template or Auto Scaling group sets an SSH key pair and the IaC grants no Session Manager access (AmazonSSMManagedInstanceCore, ssm:StartSession, ssmSessionPermissions). |
 | REPO-145 | Compute protection is not automated with Inspector or an SSM association |  | `repo` | Fires when the IaC runs compute and enables no Inspector and defines no SSM association or patch baseline. Org-level: runs with `rules.org` or `rules.include`. |
+| REPO-146 | Data classified by tag has no lifecycle or retention rule |  | `repo` | Fires when a data store sits in a file tagged with a classification (or an app tagged with one) and the file sets no lifecycle rule, TTL, backup retention or delete-after. |
 
 ## FSBP controls
 
