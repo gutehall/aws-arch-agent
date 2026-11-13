@@ -4,7 +4,7 @@ Local-first AWS architecture review for infrastructure code. It scans **CDK** (T
 
 No AWS credentials. No cloud calls. LLM output is optional.
 
-> Early-stage: 314 static rules and 283 template checks are implemented and tested. 139 of the 314 CDK rules (44%) have a template check, so they also run for CloudFormation, Terraform and synthesised CDK. [docs/COVERAGE.md](docs/COVERAGE.md) gives the reason for each of the others. Expect some false positives and negatives, and API changes.
+> Early-stage: 318 static rules and 283 template checks are implemented and tested. 139 of the 318 CDK rules (44%) have a template check, so they also run for CloudFormation, Terraform and synthesised CDK. [docs/COVERAGE.md](docs/COVERAGE.md) gives the reason for each of the others. Expect some false positives and negatives, and API changes.
 
 ## Install
 
@@ -51,7 +51,7 @@ Each finding has a severity, a pillar, a file and line, evidence, a recommendati
 
 | Pillar | Rules | Examples |
 |--------|------:|----------|
-| **Security** | 101 | Missing encryption, public access, hardcoded secrets, no MFA |
+| **Security** | 105 | Missing encryption, public access, hardcoded secrets, no MFA |
 | **Reliability** | 71 | Missing DLQs, no backups, single-AZ, no health checks, untraced requests, fixed-size fleets |
 | **Operational Excellence** | 46 | No logging, alarms, tracing, KPI metrics, log and trace analysis, test gates, or rollback |
 | **Performance Efficiency** | 28 | No caching, oversized instances, no Graviton, no compute metrics or dynamic scaling, data kept on the instance, unwatched edge latency, no load balancer, single VPN or Direct Connect link, old protocols |

@@ -15,7 +15,7 @@ Which CDK rules have a template check, and which AWS Foundational Security Best 
 
 ## CDK rules
 
-314 rules: 132 covered, 7 partial, 10 account, 5 cdk-only, 25 advice, 135 repo.
+318 rules: 132 covered, 7 partial, 10 account, 5 cdk-only, 25 advice, 139 repo.
 
 | Rule | Title | Template check | Status | Note |
 | -- | -- | -- | -- | -- |
@@ -333,6 +333,10 @@ Which CDK rules have a template check, and which AWS Foundational Security Best 
 | REPO-133 | Service quotas are not managed as code across accounts and Regions |  | `repo` | Fires when the IaC runs compute and has no Service Quotas resource, template or quotas module. |
 | REPO-134 | No quota increase is requested by the template or by automation |  | `repo` | Fires when the IaC runs compute and no Service Quotas resource or template, and no RequestServiceQuotaIncrease call or permission, is in the IaC or function code. |
 | REPO-135 | A fixed service quota is not designed around |  | `repo` | Fires on an SQS FIFO queue without high-throughput mode or a provisioned Kinesis stream with one shard and no on-demand mode. |
+| REPO-136 | No Security Hub standard or Config conformance pack validates control objectives |  | `repo` | Fires when the repo holds IaC and defines no Security Hub standards subscription or Config conformance pack. |
+| REPO-137 | Security services are not centralized through a delegated administrator or controls |  | `repo` | Fires when the repo holds IaC and defines no Organizations delegated administrator, service organization admin account or Control Tower control. |
+| REPO-138 | No threat model is in the repo |  | `repo` | Fires when the repo holds IaC and has no file named for a threat model and no note with a threat model heading. |
+| REPO-139 | No IAM Access Analyzer, Inspector or dated security service review is in the repo |  | `repo` | Fires when the repo holds IaC and defines no Access Analyzer or Inspector and has no dated security review note. |
 
 ## FSBP controls
 

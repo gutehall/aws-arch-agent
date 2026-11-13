@@ -537,5 +537,33 @@
     "file": "stack.yaml",
     "line": null,
     "evidence": "Runs Lambda (stack.yaml); searched the IaC and the function code for a Service Quotas resource or template and a RequestServiceQuotaIncrease call; found none"
+  },
+  {
+    "id": "REPO-136",
+    "severity": "Low",
+    "file": null,
+    "line": null,
+    "evidence": "Holds IaC (CloudFormation: 1 file); searched the IaC for a Security Hub standards subscription and a Config conformance pack (account or organization); found none"
+  },
+  {
+    "id": "REPO-137",
+    "severity": "Low",
+    "file": null,
+    "line": null,
+    "evidence": "Holds IaC (CloudFormation: 1 file); searched the IaC for an Organizations delegated administrator, a service organization admin account and a Control Tower control; found none"
+  },
+  {
+    "id": "REPO-138",
+    "severity": "Low",
+    "file": null,
+    "line": null,
+    "evidence": "Holds IaC (CloudFormation: 1 file); searched the repo for a file named for a threat model and a note with a threat model heading; found none"
+  },
+  {
+    "id": "REPO-139",
+    "severity": "Low",
+    "file": null,
+    "line": null,
+    "evidence": "Holds IaC (CloudFormation: 1 file); searched the IaC for IAM Access Analyzer and Amazon Inspector, and the notes for a dated security service review; found none"
   }
 ]

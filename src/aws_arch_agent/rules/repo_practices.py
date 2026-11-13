@@ -212,6 +212,18 @@ Service quotas (REL 1) run by default (REPO-012 and REPO-013 answer alarms and h
 - REPO-135 fixed quotas: an SQS FIFO queue without high-throughput mode, or a provisioned
   one-shard Kinesis stream with no on-demand mode, fires.
 
+Security operations (SEC 1) run by default on a repo that holds IaC (REPO-006 answers the root
+user):
+
+- REPO-136 control objectives: a Security Hub standards subscription or a Config conformance
+  pack passes.
+- REPO-137 management scope: an Organizations delegated administrator, a service organization
+  admin account or a Control Tower control passes.
+- REPO-138 threat model: a file named for a threat model, or a note with a threat model
+  heading, passes.
+- REPO-139 new security services: IAM Access Analyzer or Inspector in the IaC, or a dated
+  security service review note, passes.
+
 Reliability testing (REL 12) runs by default and reads the IaC and the builds REPO-009 reads
 (CI configs, inline buildspecs, CodeBuild projects and pipelines in the IaC, and the
 package.json scripts they run):
@@ -6032,6 +6044,139 @@ class FixedQuotaNotDesignedAround(_RepoRule):
         )]
 
 
+# Security operations (SEC 1): control objectives (REPO-136), a smaller security management
+# scope (REPO-137), a threat model (REPO-138) and new security services (REPO-139). REPO-006
+# answers the root user (SEC01-BP02). They fire only on a repo that holds IaC.
+_CONTROL_OBJECTIVES = re.compile(
+    r"AWS::SecurityHub::StandardsSubscription|resource\s+\"aws_securityhub_standards_subscription\""
+    r"|AWS::Config::(?:Organization)?ConformancePack"
+    r"|resource\s+\"aws_config_(?:organization_)?conformance_pack\""
+    r"|\bsecurityhub\.Cfn\w*Standard\w*\(|\bconfig\.Cfn(?:Organization)?ConformancePack\("
+)
+_DELEGATED_ADMIN = re.compile(
+    r"resource\s+\"aws_(?:organizations_delegated_administrator|securityhub_organization_admin_account"
+    r"|guardduty_organization_admin_account|macie2_organization_admin_account"
+    r"|inspector2_delegated_admin_account|fms_admin_account|controltower_control"
+    r"|detective_organization_admin_account|auditmanager_organization_admin_account)\""
+    r"|AWS::ControlTower::EnabledControl|\bCfnEnabledControl\("
+    r"|\bDelegatedAdmin\b|\bdelegated_administrator\b"
+)
+_THREAT_MODEL_PATH = re.compile(r"threat[-_ ]?model|threat[-_ ]?dragon|\.tm7$|\.threatmodel$")
+_THREAT_MODEL_HEADING = re.compile(r"(?i).*\bthreat model(?:l?ing)?\b.*")
+_SECURITY_SERVICE = re.compile(
+    r"AWS::AccessAnalyzer::Analyzer|resource\s+\"aws_accessanalyzer_analyzer\""
+    r"|\baccessanalyzer\.(?:Cfn)?Analyzer\(|AWS::InspectorV2::\w+|AWS::Inspector::\w+"
+    r"|resource\s+\"aws_inspector2?_\w+\"|\binspectorv2\.\w+\(|\binspector2\.\w+\("
+)
+_SECURITY_REVIEW_NAME = re.compile(
+    r"security[-_ ]?(?:service[-_ ]?)?reviews?|new[-_ ]?security[-_ ]?(?:services?|features?)"
+    r"|security[-_ ]?roadmap"
+)
+_SECURITY_REVIEW_HEADING = re.compile(
+    r"(?i).*\b(?:security (?:service )?reviews?|new security (?:services?|features?)"
+    r"|security roadmap)\b.*"
+)
+
+
+def threat_model(repo_path: Path) -> str | None:
+    """A file named for a threat model, or a note with a threat model heading."""
+    for path in walk(repo_path):
+        parts = _rel_parts(path, repo_path)
+        rel = "/".join(parts).lower()
+        if not _in_test_dir(parts) and _THREAT_MODEL_PATH.search(rel):
+            return "/".join(parts)
+    for rel, text in note_texts(repo_path):
+        if any(_THREAT_MODEL_HEADING.fullmatch(h.group(2).strip()) for h in _HEADING.finditer(text)):
+            return rel
+    return None
+
+
+def security_service_review(repo_path: Path) -> str | None:
+    """Access Analyzer or Inspector in the IaC, or a dated security review note."""
+    found = _in_iac_text(repo_path, _SECURITY_SERVICE)
+    if found:
+        return found
+    for rel, text in note_texts(repo_path):
+        parts = rel.lower().split("/")
+        names = [*parts[:-1], parts[-1].rsplit(".", 1)[0]]
+        titled = any(_SECURITY_REVIEW_NAME.search(n) for n in names) or any(
+            _SECURITY_REVIEW_HEADING.fullmatch(h.group(2).strip()) for h in _HEADING.finditer(text)
+        )
+        if titled and _DATE.search(text):
+            return rel
+    return None
+
+
+class ControlObjectivesMissing(_IncidentRule):
+    id = "REPO-136"
+    title = "No Security Hub standard or Config conformance pack validates control objectives"
+    themes = ("security-baseline",)
+    recommendation = (
+        "Turn the control objectives into checks that run: enable a Security Hub standard "
+        "(AWS Foundational Security Best Practices, CIS) or deploy a Config conformance pack "
+        "that matches your compliance requirements, and review the failed controls."
+    )
+    searched = (
+        "the IaC for a Security Hub standards subscription and a Config conformance pack "
+        "(account or organization)"
+    )
+
+    def present(self, repo_path: Path) -> str | None:
+        return _in_iac_text(repo_path, _CONTROL_OBJECTIVES)
+
+
+class SecurityScopeNotReduced(_IncidentRule):
+    id = "REPO-137"
+    title = "Security services are not centralized through a delegated administrator or controls"
+    themes = ("security-baseline",)
+    recommendation = (
+        "Reduce what each workload team manages: designate a security account as the "
+        "delegated administrator for GuardDuty, Security Hub, Inspector and Macie "
+        "(aws_organizations_delegated_administrator and the *_organization_admin_account "
+        "resources), or deploy preventive and detective controls with AWS Control Tower."
+    )
+    searched = (
+        "the IaC for an Organizations delegated administrator, a service organization admin "
+        "account and a Control Tower control"
+    )
+
+    def present(self, repo_path: Path) -> str | None:
+        return _in_iac_text(repo_path, _DELEGATED_ADMIN)
+
+
+class ThreatModelMissing(_IncidentRule):
+    id = "REPO-138"
+    title = "No threat model is in the repo"
+    themes = ("security-baseline",)
+    recommendation = (
+        "Model the threats: keep a threat model in the repo (docs/threat-model.md, an OWASP "
+        "Threat Dragon file or a Threagile model) that lists the assets, the trust boundaries, "
+        "the threats (STRIDE) and the mitigations, and update it when the design changes."
+    )
+    searched = "the repo for a file named for a threat model and a note with a threat model heading"
+
+    def present(self, repo_path: Path) -> str | None:
+        return threat_model(repo_path)
+
+
+class SecurityServiceReviewMissing(_IncidentRule):
+    id = "REPO-139"
+    title = "No IAM Access Analyzer, Inspector or dated security service review is in the repo"
+    themes = ("security-baseline",)
+    recommendation = (
+        "Keep up with new security services: enable IAM Access Analyzer and Amazon Inspector "
+        "in the IaC, or keep a dated security service review (docs/security-review-2026-03.md) "
+        "that records which new AWS security services and features you evaluated and adopted."
+    )
+    searched = (
+        "the IaC for IAM Access Analyzer and Amazon Inspector, and the notes for a dated "
+        "security service review"
+    )
+
+    def present(self, repo_path: Path) -> str | None:
+        return security_service_review(repo_path)
+
+
 _COMPUTE_TRACING = _kinds(
     ("Lambda active tracing",
      r"[\"']?Tracing[\"']?\s*:\s*[\"']?Active\b"
@@ -11245,6 +11390,8 @@ REPO_RULES: List[Rule] = [
     ResponseAccessMissing(), SecuritySimulationMissing(),
     IncidentLearningMissing(), PublicEndpointNotHighlyAvailable(), SingleOnPremLink(),
     QuotasNotManaged(), QuotaIncreaseNotAutomated(), FixedQuotaNotDesignedAround(),
+    ControlObjectivesMissing(), SecurityScopeNotReduced(), ThreatModelMissing(),
+    SecurityServiceReviewMissing(),
     FaultInjectionMissing(), LoadTestMissing(),
     KpiMetricMissing(), EdgeTelemetryMissing(), DependencyTelemetryMissing(),
     DeployTestGateMissing(), AutomatedRollbackMissing(),

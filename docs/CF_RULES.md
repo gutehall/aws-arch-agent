@@ -4,13 +4,13 @@ This document provides a comprehensive list of all rules checked by AWS Arch Age
 
 ## Overview
 
-AWS Arch Agent checks **314 static analysis rules** and **283 template checks** across all 6 AWS Well-Architected Framework pillars. 139 of the 314 CDK rules (44%) have a template check, so they also run for CloudFormation, Terraform and synthesised CDK. [COVERAGE.md](COVERAGE.md) gives the reason for each of the others.
+AWS Arch Agent checks **318 static analysis rules** and **283 template checks** across all 6 AWS Well-Architected Framework pillars. 139 of the 318 CDK rules (44%) have a template check, so they also run for CloudFormation, Terraform and synthesised CDK. [COVERAGE.md](COVERAGE.md) gives the reason for each of the others.
 
 ## Static Analysis Rules (V1 & V2 Modes)
 
 These rules run on your CDK TypeScript/Python code and execute in both V1 and V2 modes.
 
-### Security (101 rules)
+### Security (105 rules)
 
 **Encryption & Data Protection:**
 - SEC-006: S3 bucket encryption missing
@@ -107,6 +107,10 @@ These rules run on your CDK TypeScript/Python code and execute in both V1 and V2
 - REPO-004: No organization guardrails in the scanned IaC (org-level: runs with `rules.org` or `rules.include`)
 - REPO-005: Account is defined without a security baseline
 - REPO-006: Account baseline does not check root MFA or root access keys
+- REPO-136: No Security Hub standard or Config conformance pack validates control objectives
+- REPO-137: Security services are not centralized through a delegated administrator or controls
+- REPO-138: No threat model is in the repo
+- REPO-139: No IAM Access Analyzer, Inspector or dated security service review is in the repo
 - REPO-007: No forensic capture is automated for security findings (org-level: runs with `rules.org` or `rules.include`)
 - REPO-008: No containment control is deployed (org-level: runs with `rules.org` or `rules.include`)
 - REPO-125: No Incident Manager contact or note names who responds to security incidents
@@ -1268,6 +1272,10 @@ Every rule has one or more themes, which cut across pillars: `finops`, `security
 | REPO-133 | resilience |
 | REPO-134 | resilience |
 | REPO-135 | resilience |
+| REPO-136 | security-baseline |
+| REPO-137 | security-baseline |
+| REPO-138 | security-baseline |
+| REPO-139 | security-baseline |
 | SEC-001 | identity |
 | SEC-002 | identity |
 | SEC-003 | network-exposure |

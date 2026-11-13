@@ -710,6 +710,15 @@ def test_cli_html_with_no_findings_writes_a_page(tmp_path: Path) -> None:
     for note in ("security-contacts.md", "incident-response-plan.md", "security-playbook.md",
                  "security-postmortem-template.md"):
         (tmp_path / "docs" / note).write_text("Notes.\n", encoding="utf-8")
+    # Notes and IaC for SEC 1: a threat model, a dated security review, a standards subscription
+    # and a delegated administrator.
+    (tmp_path / "docs" / "threat-model.md").write_text("Assets.\n", encoding="utf-8")
+    (tmp_path / "docs" / "security-review.md").write_text("Reviewed 2026-03-02.\n", encoding="utf-8")
+    (tmp_path / "controls.tf").write_text(
+        'resource "aws_securityhub_standards_subscription" "s" {\n  standards_arn = "a"\n}\n'
+        'resource "aws_organizations_delegated_administrator" "d" {\n  account_id = "1"\n}\n',
+        encoding="utf-8",
+    )
     (tmp_path / "response.tf").write_text(
         'resource "aws_iam_role" "ir" {\n  name = "IncidentResponder"\n'
         '  permissions_boundary = "arn:aws:iam::123456789012:policy/boundary"\n}\n'

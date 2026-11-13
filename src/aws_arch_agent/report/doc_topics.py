@@ -1987,6 +1987,32 @@ TOPICS: dict[str, tuple[str, str, str, str]] = {
         "through architecture",
         "/wellarchitected/latest/reliability-pillar/rel_manage_service_limits_aware_fixed_limits.html",
     ),
+    "control_objectives": (
+        "Security Hub: security standards",
+        "/securityhub/latest/userguide/standards-view-manage.html",
+        "Well-Architected SEC01-BP03: Identify and validate control objectives",
+        "/wellarchitected/latest/security-pillar/sec_securely_operate_control_objectives.html",
+    ),
+    "security_scope": (
+        "Organizations: delegated administrator for AWS services",
+        "/organizations/latest/userguide/orgs_integrate_delegated_admin.html",
+        "Well-Architected SEC01-BP05: Reduce security management scope",
+        "/wellarchitected/latest/security-pillar/sec_securely_operate_reduce_management_scope.html",
+    ),
+    "threat_modeling": (
+        "AWS Prescriptive Guidance: threat modeling for builders",
+        "/prescriptive-guidance/latest/threat-modeling-aws/introduction.html",
+        "Well-Architected SEC01-BP07: Identify threats and prioritize mitigations using a "
+        "threat model",
+        "/wellarchitected/latest/security-pillar/sec_securely_operate_threat_model.html",
+    ),
+    "security_services_review": (
+        "IAM Access Analyzer: what is Access Analyzer",
+        "/IAM/latest/UserGuide/what-is-access-analyzer.html",
+        "Well-Architected SEC01-BP08: Evaluate and implement new security services and "
+        "features regularly",
+        "/wellarchitected/latest/security-pillar/sec_securely_operate_new_services.html",
+    ),
     "repo_tests": (
         "AWS CDK: testing constructs",
         "/cdk/v2/guide/testing.html",
@@ -2703,6 +2729,10 @@ RULE_TOPICS: dict[str, str] = {
     "REPO-133": "quotas_across_accounts",
     "REPO-134": "quota_automation",
     "REPO-135": "fixed_quotas",
+    "REPO-136": "control_objectives",
+    "REPO-137": "security_scope",
+    "REPO-138": "threat_modeling",
+    "REPO-139": "security_services_review",
     "REPO-016": "fault_injection",
     "REPO-017": "load_testing",
     "REPO-018": "app_kpi_metrics",
