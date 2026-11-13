@@ -107,8 +107,8 @@ These rules run on your CDK TypeScript/Python code and execute in both V1 and V2
 - REPO-004: No organization guardrails in the scanned IaC (org-level: runs with `rules.org` or `rules.include`)
 - REPO-005: Account is defined without a security baseline
 - REPO-006: Account baseline does not check root MFA or root access keys
-- REPO-136: No Security Hub standard or Config conformance pack validates control objectives
-- REPO-137: Security services are not centralized through a delegated administrator or controls
+- REPO-136: No Security Hub standard or Config conformance pack validates control objectives (org-level: runs with `rules.org` or `rules.include`)
+- REPO-137: Security services are not centralized through a delegated administrator or controls (org-level: runs with `rules.org` or `rules.include`)
 - REPO-138: No threat model is in the repo
 - REPO-139: No IAM Access Analyzer, Inspector or dated security service review is in the repo
 - REPO-007: No forensic capture is automated for security findings (org-level: runs with `rules.org` or `rules.include`)
@@ -189,8 +189,8 @@ These rules run on your CDK TypeScript/Python code and execute in both V1 and V2
 **Service quotas (repo-level, REL 1):**
 - REPO-012: No Service Quotas usage alarm for the services the stack uses (org-level: runs with `rules.org` or `rules.include`)
 - REPO-013: Limits the IaC sets leave no room for failover
-- REPO-133: Service quotas are not managed as code across accounts and Regions
-- REPO-134: No quota increase is requested by the template or by automation
+- REPO-133: Service quotas are not managed as code across accounts and Regions (org-level: runs with `rules.org` or `rules.include`)
+- REPO-134: No quota increase is requested by the template or by automation (org-level: runs with `rules.org` or `rules.include`)
 - REPO-135: A fixed service quota is not designed around
 
 **Network address plan (repo-level, REL 2):**

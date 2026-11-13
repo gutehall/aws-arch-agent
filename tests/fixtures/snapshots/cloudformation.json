@@ -525,34 +525,6 @@
     "evidence": "Holds IaC (CloudFormation: 1 file); searched the notes for a file or heading on a security post-incident review or postmortem; found none"
   },
   {
-    "id": "REPO-133",
-    "severity": "Low",
-    "file": "stack.yaml",
-    "line": null,
-    "evidence": "Runs Lambda (stack.yaml); searched the IaC for Service Quotas resources and a quotas module; found none"
-  },
-  {
-    "id": "REPO-134",
-    "severity": "Low",
-    "file": "stack.yaml",
-    "line": null,
-    "evidence": "Runs Lambda (stack.yaml); searched the IaC and the function code for a Service Quotas resource or template and a RequestServiceQuotaIncrease call; found none"
-  },
-  {
-    "id": "REPO-136",
-    "severity": "Low",
-    "file": null,
-    "line": null,
-    "evidence": "Holds IaC (CloudFormation: 1 file); searched the IaC for a Security Hub standards subscription and a Config conformance pack (account or organization); found none"
-  },
-  {
-    "id": "REPO-137",
-    "severity": "Low",
-    "file": null,
-    "line": null,
-    "evidence": "Holds IaC (CloudFormation: 1 file); searched the IaC for an Organizations delegated administrator, a service organization admin account and a Control Tower control; found none"
-  },
-  {
     "id": "REPO-138",
     "severity": "Low",
     "file": null,

@@ -175,20 +175,6 @@
     "evidence": "Holds IaC (CDK: 2 files); searched the notes for a file or heading on a security post-incident review or postmortem; found none"
   },
   {
-    "id": "REPO-136",
-    "severity": "Low",
-    "file": null,
-    "line": null,
-    "evidence": "Holds IaC (CDK: 2 files); searched the IaC for a Security Hub standards subscription and a Config conformance pack (account or organization); found none"
-  },
-  {
-    "id": "REPO-137",
-    "severity": "Low",
-    "file": null,
-    "line": null,
-    "evidence": "Holds IaC (CDK: 2 files); searched the IaC for an Organizations delegated administrator, a service organization admin account and a Control Tower control; found none"
-  },
-  {
     "id": "REPO-138",
     "severity": "Low",
     "file": null,

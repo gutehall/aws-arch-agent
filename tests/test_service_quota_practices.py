@@ -32,7 +32,7 @@ def _write(path: Path, text: str) -> None:
 def _scan(root: Path, files: dict[str, str]) -> list:
     for rel, text in files.items():
         _write(root / "prod" / rel, text)
-    _report, _ctx, findings, _w = analyze_v1(root, use_llm=False)
+    _report, _ctx, findings, _w = analyze_v1(root, use_llm=False, rules_org=True)
     return findings
 
 
