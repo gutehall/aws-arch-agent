@@ -1647,5 +1647,11 @@
     "negative_py": "answer = 42",
     "positive_ts": "Tags.of(app).add('DataClassification', 'internal');\nnew s3.Bucket(this, 'Bucket');",
     "positive_py": "Tags.of(app).add('DataClassification', 'internal')\ns3.Bucket(self, 'Bucket')"
+  },
+  "REPO-147": {
+    "negative_ts": "const answer = 42;",
+    "negative_py": "answer = 42",
+    "positive_ts": "new s3.Bucket(this, 'Bucket');",
+    "positive_py": "s3.Bucket(self, 'Bucket')"
   }
 }

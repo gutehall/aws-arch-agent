@@ -544,5 +544,12 @@
     "file": null,
     "line": null,
     "evidence": "Holds IaC (Terraform: 3 files); searched the IaC for a permissions boundary and for two or more IAM roles, and the notes for a file or heading on access requirements or the access model; found none"
+  },
+  {
+    "id": "REPO-147",
+    "severity": "Low",
+    "file": "main.tf",
+    "line": null,
+    "evidence": "Declares S3 bucket (main.tf), RDS database (main.tf); searched the notes for a dated monitoring or alarm review (a file or heading named for a monitoring review, scope, coverage or inventory); found none"
   }
 ]

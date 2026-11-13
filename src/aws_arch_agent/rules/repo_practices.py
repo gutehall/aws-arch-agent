@@ -249,6 +249,12 @@ Data lifecycle (SEC 7) runs by default (REPO-039 and REPO-040 answer classificat
 - REPO-146 retention: a data store in a file tagged with a classification (or in an app tagged
   with one) with no lifecycle, TTL, backup retention or delete-after setting fires.
 
+Monitoring scope (REL 6) runs by default (REPO-045 to REPO-048 answer metrics, logs, responses
+and traces):
+
+- REPO-147 monitoring review: a data store in the IaC with no dated note named for a monitoring,
+  alarm or observability review, scope, coverage or inventory fires.
+
 Reliability testing (REL 12) runs by default and reads the IaC and the builds REPO-009 reads
 (CI configs, inline buildspecs, CodeBuild projects and pipelines in the IaC, and the
 package.json scripts they run):
@@ -6467,6 +6473,54 @@ class ClassifiedDataWithoutLifecycle(_RepoRule):
         )]
 
 
+# Monitoring scope (REL 6): a dated record of what the alarms cover (REPO-147). REPO-045 to
+# REPO-048 answer the metrics, the log analysis, the automated response and the traces.
+_MONITORING_REVIEW_NAME = re.compile(
+    r"(?:monitoring|alarms?|alerting|observability)[-_ ]?(?:review|scope|coverage|inventory)"
+)
+_MONITORING_REVIEW_HEADING = re.compile(
+    r"(?i).*\b(?:monitoring|alarm|alerting|observability) (?:review|scope|coverage|inventory)\b.*"
+)
+
+
+def monitoring_review(repo_path: Path) -> str | None:
+    """A dated note on the scope of monitoring: file name or heading, and a date."""
+    for rel, text in note_texts(repo_path):
+        parts = rel.lower().split("/")
+        names = [*parts[:-1], parts[-1].rsplit(".", 1)[0]]
+        titled = any(_MONITORING_REVIEW_NAME.search(n) for n in names) or any(
+            _MONITORING_REVIEW_HEADING.fullmatch(h.group(2).strip())
+            for h in _HEADING.finditer(text)
+        )
+        if titled and _DATE.search(text):
+            return rel
+    return None
+
+
+class MonitoringScopeNotReviewed(_RepoRule):
+    id = "REPO-147"
+    title = "No dated review record lists the stateful resources and their alarms"
+    category = "Reliability"
+    severity = "Low"
+    themes = ("observability",)
+    recommendation = (
+        "Review the monitoring scope on a schedule: keep a dated note "
+        "(docs/monitoring-review-2026-03.md) that lists each stateful resource, the alarms "
+        "that watch it, what changed since the last review and which gaps you accepted."
+    )
+
+    def run(self, repo_path: Path, language: str = "typescript") -> List[Finding]:
+        stores = _in_iac(repo_path, _DATA_STORES)
+        if not stores or monitoring_review(repo_path):
+            return []
+        return [self._finding(
+            f"Declares {_named(stores)}; searched the notes for a dated monitoring or alarm "
+            "review (a file or heading named for a monitoring review, scope, coverage or "
+            "inventory); found none",
+            file=next(iter(stores.values())),
+        )]
+
+
 _COMPUTE_TRACING = _kinds(
     ("Lambda active tracing",
      r"[\"']?Tracing[\"']?\s*:\s*[\"']?Active\b"
@@ -11701,6 +11755,7 @@ REPO_RULES: List[Rule] = [
     InteractiveAccessWithKeyPair(),
     ComputeProtectionNotAutomated(),
     ClassifiedDataWithoutLifecycle(),
+    MonitoringScopeNotReviewed(),
     FaultInjectionMissing(), LoadTestMissing(),
     KpiMetricMissing(), EdgeTelemetryMissing(), DependencyTelemetryMissing(),
     DeployTestGateMissing(), AutomatedRollbackMissing(),
