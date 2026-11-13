@@ -1041,6 +1041,20 @@ TOPICS: dict[str, tuple[str, str, str, str]] = {
         "Well-Architected REL04-BP04: Make mutating operations idempotent",
         "/wellarchitected/latest/reliability-pillar/rel_prevent_interaction_failure_idempotent.html",
     ),
+    "dependency_endpoints": (
+        "Lambda: using environment variables",
+        "/lambda/latest/dg/configuration-envvars.html",
+        "Well-Architected REL04-BP01: Identify the kind of distributed systems you depend on",
+        "/wellarchitected/latest/reliability-pillar/"
+        "rel_prevent_interaction_failure_identify.html",
+    ),
+    "constant_work": (
+        "Amazon SQS: queue types and standard queues",
+        "/AWSSimpleQueueService/latest/SQSDeveloperGuide/standard-queues.html",
+        "Well-Architected REL04-BP03: Do constant work",
+        "/wellarchitected/latest/reliability-pillar/"
+        "rel_prevent_interaction_failure_constant_work.html",
+    ),
     "fault_injection": (
         "AWS FIS: experiment template components",
         "/fis/latest/userguide/experiment-templates.html",
@@ -2493,6 +2507,8 @@ RULE_TOPICS: dict[str, str] = {
     "REPO-013": "quota_headroom",
     "REPO-014": "vpc_ip_plan",
     "REPO-015": "idempotent_workers",
+    "REPO-107": "dependency_endpoints",
+    "REPO-108": "constant_work",
     "REPO-016": "fault_injection",
     "REPO-017": "load_testing",
     "REPO-018": "app_kpi_metrics",
