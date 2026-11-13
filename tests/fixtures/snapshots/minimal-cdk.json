@@ -110,5 +110,26 @@
     "file": null,
     "line": null,
     "evidence": "Holds IaC (CDK: 2 files); searched for a SECURITY.md, a security owners or champions note, and a CODEOWNERS line that names security; found none"
+  },
+  {
+    "id": "REPO-122",
+    "severity": "Low",
+    "file": null,
+    "line": null,
+    "evidence": "Holds IaC (CDK: 2 files); searched the notes for a file or heading on a playbook, a failure investigation or a troubleshooting guide; found none"
+  },
+  {
+    "id": "REPO-123",
+    "severity": "Low",
+    "file": null,
+    "line": null,
+    "evidence": "Holds IaC (CDK: 2 files); searched the notes for a file or heading on a post-incident review, a postmortem or a root cause analysis; found none"
+  },
+  {
+    "id": "REPO-124",
+    "severity": "Low",
+    "file": null,
+    "line": null,
+    "evidence": "Holds IaC (CDK: 2 files); searched the notes for a file or heading on a game day, a chaos day or a fire drill; found none"
   }
 ]

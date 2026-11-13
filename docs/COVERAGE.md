@@ -15,7 +15,7 @@ Which CDK rules have a template check, and which AWS Foundational Security Best 
 
 ## CDK rules
 
-300 rules: 132 covered, 7 partial, 10 account, 5 cdk-only, 25 advice, 121 repo.
+303 rules: 132 covered, 7 partial, 10 account, 5 cdk-only, 25 advice, 124 repo.
 
 | Rule | Title | Template check | Status | Note |
 | -- | -- | -- | -- | -- |
@@ -319,6 +319,9 @@ Which CDK rules have a template check, and which AWS Foundational Security Best 
 | REPO-119 | Nothing requires a code review before a change merges |  | `repo` | Fires when the repo holds IaC and has no CODEOWNERS file, branch protection or ruleset with required reviews, repository settings as code, or CodeCommit approval rule. |
 | REPO-120 | Software is not deployed programmatically |  | `repo` | Fires when the repo holds IaC and no build config or pipeline deploys it (the detection REPO-025 uses). |
 | REPO-121 | No file names who owns security for the workload |  | `repo` | Fires when the repo holds IaC and has no SECURITY.md, security owners or champions note, or CODEOWNERS line that names security. |
+| REPO-122 | No playbook is in the repo for investigating failures |  | `repo` | Fires when the repo holds IaC and no note, or folder, is named or headed for a playbook, a failure investigation or a troubleshooting guide. |
+| REPO-123 | No post-incident template or record is in the repo |  | `repo` | Fires when the repo holds IaC and no note is named or headed for a post-incident review, postmortem, incident report or root cause analysis. |
+| REPO-124 | No game day is recorded in the repo |  | `repo` | Fires when the repo holds IaC and no note is named or headed for a game day, chaos day or fire drill. |
 
 ## FSBP controls
 

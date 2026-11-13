@@ -4,7 +4,7 @@ This document provides a comprehensive list of all rules checked by AWS Arch Age
 
 ## Overview
 
-AWS Arch Agent checks **300 static analysis rules** and **283 template checks** across all 6 AWS Well-Architected Framework pillars. 139 of the 300 CDK rules (46%) have a template check, so they also run for CloudFormation, Terraform and synthesised CDK. [COVERAGE.md](COVERAGE.md) gives the reason for each of the others.
+AWS Arch Agent checks **303 static analysis rules** and **283 template checks** across all 6 AWS Well-Architected Framework pillars. 139 of the 303 CDK rules (46%) have a template check, so they also run for CloudFormation, Terraform and synthesised CDK. [COVERAGE.md](COVERAGE.md) gives the reason for each of the others.
 
 ## Static Analysis Rules (V1 & V2 Modes)
 
@@ -129,7 +129,7 @@ These rules run on your CDK TypeScript/Python code and execute in both V1 and V2
 - REPO-040: Data classified as sensitive has no customer managed key
 - REPO-041: Nothing stops unencrypted storage from being created
 
-### Reliability (63 rules)
+### Reliability (66 rules)
 
 **High Availability:**
 - REL-001: RDS instance missing multi-AZ
@@ -193,6 +193,9 @@ These rules run on your CDK TypeScript/Python code and execute in both V1 and V2
 **Reliability testing (repo-level, REL 12):**
 - REPO-016: No fault injection experiment targets the workload
 - REPO-017: No load test runs in the pipeline
+- REPO-122: No playbook is in the repo for investigating failures
+- REPO-123: No post-incident template or record is in the repo
+- REPO-124: No game day is recorded in the repo
 
 **Change management (repo-level, REL 8):**
 - REPO-023: Live instances are changed in place
@@ -1240,6 +1243,9 @@ Every rule has one or more themes, which cut across pillars: `finops`, `security
 | REPO-119 | security-baseline |
 | REPO-120 | security-baseline |
 | REPO-121 | security-baseline |
+| REPO-122 | resilience |
+| REPO-123 | resilience |
+| REPO-124 | resilience |
 | SEC-001 | identity |
 | SEC-002 | identity |
 | SEC-003 | network-exposure |

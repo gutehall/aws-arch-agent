@@ -173,6 +173,14 @@ Application security practices (SEC 11) run by default on a repo that holds IaC:
 - REPO-121 security ownership: a SECURITY.md, a security owners or champions note, or a
   CODEOWNERS line that names security passes.
 
+Reliability testing practices (REL 12) run by default on a repo that holds IaC:
+
+- REPO-122 playbooks: a note or folder named or headed for playbooks, failure investigations
+  or a troubleshooting guide passes.
+- REPO-123 post-incident analysis: a note named or headed for a post-incident review,
+  postmortem, incident report or root cause analysis passes.
+- REPO-124 game days: a note named or headed for a game day, chaos day or fire drill passes.
+
 Reliability testing (REL 12) runs by default and reads the IaC and the builds REPO-009 reads
 (CI configs, inline buildspecs, CodeBuild projects and pipelines in the IaC, and the
 package.json scripts they run):
@@ -5488,6 +5496,108 @@ class SecurityOwnershipMissing(_RepoRule):
         )]
 
 
+# Reliability testing practices (REL 12): failure playbooks (REPO-122), post-incident analysis
+# (REPO-123) and game days (REPO-124). They read notes and fire only on a repo that holds IaC.
+_PLAYBOOK_NAME = re.compile(
+    r"playbooks?|failure[-_ ]?investigations?|troubleshooting[-_ ]?(?:guide|playbook)s?"
+)
+_PLAYBOOK_HEADING = re.compile(
+    r"(?i).*\b(?:playbooks?|failure investigations?|troubleshooting guide)\b.*"
+)
+_POST_INCIDENT_NAME = re.compile(
+    r"post[-_ ]?(?:incident|mortems?)|postmortems?|incident[-_ ]?(?:review|report|analysis)"
+    r"|root[-_ ]?cause|rcas?(?:$|[-_ .])|blameless"
+)
+_POST_INCIDENT_HEADING = re.compile(
+    r"(?i).*\b(?:post[- ]?incident|post[- ]?mortems?|incident (?:review|report|analysis)"
+    r"|root cause analysis|blameless)\b.*"
+)
+_GAME_DAY_NAME = re.compile(r"game[-_ ]?days?|gamedays?|chaos[-_ ]?days?|fire[-_ ]?drills?")
+_GAME_DAY_HEADING = re.compile(
+    r"(?i).*\b(?:game[- ]?days?|chaos days?|fire drills?|failure drills?)\b.*"
+)
+
+
+def _noted(repo_path: Path, name: re.Pattern[str], heading: re.Pattern[str]) -> str | None:
+    """The first note whose file stem or folder name matches, or that has a matching heading."""
+    for rel, text in note_texts(repo_path):
+        parts = rel.lower().split("/")
+        names = [*parts[:-1], parts[-1].rsplit(".", 1)[0]]
+        if any(name.search(part) for part in names) or any(
+            heading.fullmatch(h.group(2).strip()) for h in _HEADING.finditer(text)
+        ):
+            return rel
+    return None
+
+
+class FailurePlaybookMissing(_RepoRule):
+    id = "REPO-122"
+    title = "No playbook is in the repo for investigating failures"
+    category = "Reliability"
+    severity = "Low"
+    themes = ("resilience",)
+    recommendation = (
+        "Write down how to investigate a failure: a playbook per likely failure (a "
+        "docs/playbooks directory or PLAYBOOK.md) that names the symptoms, the dashboards "
+        "and logs to open, the checks to run and who to call, and keep it with the code it "
+        "describes."
+    )
+
+    def run(self, repo_path: Path, language: str = "typescript") -> List[Finding]:
+        held = _holds_iac(repo_path)
+        if not held or _noted(repo_path, _PLAYBOOK_NAME, _PLAYBOOK_HEADING):
+            return []
+        return [self._finding(
+            f"Holds IaC ({held}); searched the notes for a file or heading on a playbook, a "
+            "failure investigation or a troubleshooting guide; found none"
+        )]
+
+
+class PostIncidentAnalysisMissing(_RepoRule):
+    id = "REPO-123"
+    title = "No post-incident template or record is in the repo"
+    category = "Reliability"
+    severity = "Low"
+    themes = ("resilience",)
+    recommendation = (
+        "Learn from every incident: keep a post-incident (postmortem) template in the repo, "
+        "such as docs/postmortem-template.md or an issue template, with the timeline, the "
+        "root cause, what worked, what did not and the follow-ups, and file the analysis "
+        "next to the code."
+    )
+
+    def run(self, repo_path: Path, language: str = "typescript") -> List[Finding]:
+        held = _holds_iac(repo_path)
+        if not held or _noted(repo_path, _POST_INCIDENT_NAME, _POST_INCIDENT_HEADING):
+            return []
+        return [self._finding(
+            f"Holds IaC ({held}); searched the notes for a file or heading on a post-incident "
+            "review, a postmortem or a root cause analysis; found none"
+        )]
+
+
+class GameDayMissing(_RepoRule):
+    id = "REPO-124"
+    title = "No game day is recorded in the repo"
+    category = "Reliability"
+    severity = "Low"
+    themes = ("resilience",)
+    recommendation = (
+        "Practise failure on a schedule: keep a game-day plan in the repo (docs/game-days.md) "
+        "that lists the scenarios, the dates or the cadence, who takes part and what the last "
+        "one found, and run the scenarios against a non-production copy first."
+    )
+
+    def run(self, repo_path: Path, language: str = "typescript") -> List[Finding]:
+        held = _holds_iac(repo_path)
+        if not held or _noted(repo_path, _GAME_DAY_NAME, _GAME_DAY_HEADING):
+            return []
+        return [self._finding(
+            f"Holds IaC ({held}); searched the notes for a file or heading on a game day, a "
+            "chaos day or a fire drill; found none"
+        )]
+
+
 _COMPUTE_TRACING = _kinds(
     ("Lambda active tracing",
      r"[\"']?Tracing[\"']?\s*:\s*[\"']?Active\b"
@@ -10696,6 +10806,7 @@ REPO_RULES: List[Rule] = [
     QualityGateMissing(), SmallReversibleChangesMissing(),
     SecurityTrainingMissing(), PenetrationTestMissing(), CodeReviewNotEnforced(),
     ProgrammaticDeployMissing(), SecurityOwnershipMissing(),
+    FailurePlaybookMissing(), PostIncidentAnalysisMissing(), GameDayMissing(),
     FaultInjectionMissing(), LoadTestMissing(),
     KpiMetricMissing(), EdgeTelemetryMissing(), DependencyTelemetryMissing(),
     DeployTestGateMissing(), AutomatedRollbackMissing(),

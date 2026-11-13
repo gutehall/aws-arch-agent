@@ -151,12 +151,14 @@ def test_v2_reports_the_repo_rules(tmp_path: Path) -> None:
     # bucket has no cost attribution tag. COST 1: no cost note names an owner. COST 2: no
     # cost control applies to the bucket. COST 4: no created-by or owner tag. COST 6: no
     # cost estimate. SUS 2: no SLA note and no team resources note. OPS 5: no version
-    # control, no quality gate. SEC 11: no training, pen test, review, deploy or owner note.
+    # control, no quality gate. SEC 11: no training, pen test, review, deploy or owner note. REL 12: no playbook,
+    # post-incident or game-day note.
     assert repo == [
         *REPO_IDS, "REPO-009", "REPO-011", "REPO-016", "REPO-017", "REPO-025", "REPO-039",
         "REPO-041", "REPO-052", "REPO-070", "REPO-077", "REPO-078", "REPO-079",
         "REPO-081", "REPO-086", "REPO-088", "REPO-098", "REPO-101", "REPO-113", "REPO-115",
-        "REPO-117", "REPO-118", "REPO-119", "REPO-120", "REPO-121",
+        "REPO-117", "REPO-118", "REPO-119", "REPO-120", "REPO-121", "REPO-122", "REPO-123",
+        "REPO-124",
     ]
     assert set(REPO_IDS) <= set(ctx.rules_run)
 
