@@ -15,7 +15,7 @@ Which CDK rules have a template check, and which AWS Foundational Security Best 
 
 ## CDK rules
 
-309 rules: 132 covered, 7 partial, 10 account, 5 cdk-only, 25 advice, 130 repo.
+311 rules: 132 covered, 7 partial, 10 account, 5 cdk-only, 25 advice, 132 repo.
 
 | Rule | Title | Template check | Status | Note |
 | -- | -- | -- | -- | -- |
@@ -328,6 +328,8 @@ Which CDK rules have a template check, and which AWS Foundational Security Best 
 | REPO-128 | No incident response role is provisioned before an incident |  | `repo` | Fires when the repo holds IaC and no IAM role or permission set is named for incident response, a responder, an investigator or forensics. |
 | REPO-129 | No simulation of an incident is defined |  | `repo` | Fires when the repo holds IaC and defines no AWS FIS experiment template. |
 | REPO-130 | No security post-incident template is in the repo |  | `repo` | Fires when the repo holds IaC and no note or heading is for a security post-incident review or postmortem. |
+| REPO-131 | A public endpoint is an instance with a public IP, not a load balancer |  | `repo` | Fires when the IaC has an EC2 instance with a public IP address and no load balancer or Global Accelerator anywhere. |
+| REPO-132 | Only one link connects the VPC to the on-premises network |  | `repo` | Fires when the IaC declares exactly one VPN connection, Direct Connect connection or virtual interface. No link, or two or more, passes. |
 
 ## FSBP controls
 

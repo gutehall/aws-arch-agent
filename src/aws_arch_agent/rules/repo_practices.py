@@ -196,6 +196,13 @@ answer forensics and containment):
 - REPO-130 learning: a note or heading for a security post-incident review or postmortem
   passes.
 
+Network connectivity (REL 2) runs by default:
+
+- REPO-131 public endpoint: an EC2 instance with a public IP address and no load balancer or
+  Global Accelerator in the IaC fires; an EIP on a NAT gateway does not count.
+- REPO-132 on-premises links: exactly one VPN connection, Direct Connect connection or virtual
+  interface in the IaC fires; none, or two or more, pass.
+
 Reliability testing (REL 12) runs by default and reads the IaC and the builds REPO-009 reads
 (CI configs, inline buildspecs, CodeBuild projects and pipelines in the IaC, and the
 package.json scripts they run):
@@ -5792,6 +5799,99 @@ class IncidentLearningMissing(_IncidentRule):
         return _noted(repo_path, _SECURITY_LEARNING_NAME, _SECURITY_LEARNING_HEADING)
 
 
+# Network connectivity (REL 2): a public endpoint behind a load balancer or accelerator
+# (REPO-131) and more than one link to an on-premises network (REPO-132).
+_EC2_INSTANCE = re.compile(
+    r"AWS::EC2::Instance\b|resource\s+\"aws_instance\"|\bec2\.(?:Cfn)?Instance\("
+)
+_PUBLIC_INSTANCE_IP = re.compile(
+    r"[\"']?[aA]ssociate_?[pP]ublic_?[iI]p_?[aA]ddress[\"']?\s*[:=]\s*[\"']?(?:true|True)\b"
+    r"|AWS::EC2::EIPAssociation\b|resource\s+\"aws_eip_association\""
+    r"|\bec2\.CfnEIPAssociation\("
+)
+_LOAD_BALANCER_OR_ACCELERATOR = re.compile(
+    r"AWS::ElasticLoadBalancing(?:V2)?::LoadBalancer\b|resource\s+\"aws_(?:lb|alb|elb)\""
+    r"|\b(?:Application|Network)LoadBalancer\(|\belbv2\.CfnLoadBalancer\("
+    r"|\b(?:Application|Network)LoadBalanced\w+\("
+    r"|AWS::GlobalAccelerator::Accelerator\b|resource\s+\"aws_globalaccelerator_accelerator\""
+    r"|\bglobalaccelerator\.(?:Cfn)?Accelerator\("
+)
+_ONPREM_LINK = re.compile(
+    r"AWS::EC2::VPNConnection\b|resource\s+\"aws_vpn_connection\""
+    r"|\bec2\.(?:Cfn)?VpnConnection\(|\bnew\s+VpnConnection\("
+    r"|resource\s+\"aws_dx_(?:private|transit|public|hosted_private|hosted_transit|hosted_public)"
+    r"_virtual_interface\""
+    r"|resource\s+\"aws_dx_connection\"|\bdirectconnect\.Cfn\w*VirtualInterface\("
+)
+
+
+def public_ip_instances(repo_path: Path) -> list[str]:
+    """Files that declare an EC2 instance with a public IP address."""
+    return [
+        rel for rel, text in iac_texts(repo_path)
+        if _EC2_INSTANCE.search(text) and _PUBLIC_INSTANCE_IP.search(text)
+    ]
+
+
+def onprem_links(repo_path: Path) -> dict[str, int]:
+    """Links to an on-premises network the IaC declares: file -> how many."""
+    found: dict[str, int] = {}
+    for rel, text in iac_texts(repo_path):
+        count = len(_ONPREM_LINK.findall(text))
+        if count:
+            found[rel] = count
+    return found
+
+
+class PublicEndpointNotHighlyAvailable(_RepoRule):
+    id = "REPO-131"
+    title = "A public endpoint is an instance with a public IP, not a load balancer"
+    category = "Reliability"
+    severity = "Medium"
+    themes = ("resilience",)
+    recommendation = (
+        "Do not serve the public from one instance's address: put the endpoint behind an "
+        "Application or Network Load Balancer across at least two Availability Zones, or "
+        "AWS Global Accelerator, and keep the instances in private subnets."
+    )
+
+    def run(self, repo_path: Path, language: str = "typescript") -> List[Finding]:
+        exposed = public_ip_instances(repo_path)
+        if not exposed or _in_iac_text(repo_path, _LOAD_BALANCER_OR_ACCELERATOR):
+            return []
+        return [self._finding(
+            f"Declares an EC2 instance with a public IP address ({_listed(exposed)}); searched "
+            "the IaC for an Application or Network Load Balancer, a Classic Load Balancer and "
+            "a Global Accelerator; found none",
+            file=exposed[0],
+        )]
+
+
+class SingleOnPremLink(_RepoRule):
+    id = "REPO-132"
+    title = "Only one link connects the VPC to the on-premises network"
+    category = "Reliability"
+    severity = "Medium"
+    themes = ("resilience",)
+    recommendation = (
+        "Provision a second path to the on-premises network: a second Site-to-Site VPN "
+        "connection to a second customer gateway device, a second Direct Connect connection "
+        "or virtual interface in another location, or a VPN as the backup for Direct Connect."
+    )
+
+    def run(self, repo_path: Path, language: str = "typescript") -> List[Finding]:
+        links = onprem_links(repo_path)
+        if not links or sum(links.values()) > 1:
+            return []
+        (rel,) = links
+        return [self._finding(
+            f"Declares one link to an on-premises network ({rel}); searched the IaC for a "
+            "second Site-to-Site VPN connection, Direct Connect connection or virtual "
+            "interface; found none",
+            file=rel,
+        )]
+
+
 _COMPUTE_TRACING = _kinds(
     ("Lambda active tracing",
      r"[\"']?Tracing[\"']?\s*:\s*[\"']?Active\b"
@@ -11003,7 +11103,7 @@ REPO_RULES: List[Rule] = [
     FailurePlaybookMissing(), PostIncidentAnalysisMissing(), GameDayMissing(),
     KeyContactsMissing(), IncidentPlanMissing(), SecurityPlaybookMissing(),
     ResponseAccessMissing(), SecuritySimulationMissing(),
-    IncidentLearningMissing(),
+    IncidentLearningMissing(), PublicEndpointNotHighlyAvailable(), SingleOnPremLink(),
     FaultInjectionMissing(), LoadTestMissing(),
     KpiMetricMissing(), EdgeTelemetryMissing(), DependencyTelemetryMissing(),
     DeployTestGateMissing(), AutomatedRollbackMissing(),

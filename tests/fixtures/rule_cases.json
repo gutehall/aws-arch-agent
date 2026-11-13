@@ -1006,6 +1006,18 @@
     "positive_ts": "new s3.Bucket(this, 'Bucket');",
     "positive_py": "s3.Bucket(self, 'Bucket')"
   },
+  "REPO-131": {
+    "negative_ts": "new ec2.Instance(this, 'Web', { vpc, instanceType, machineImage, associatePublicIpAddress: true });\nnew elbv2.ApplicationLoadBalancer(this, 'Lb', { vpc, internetFacing: true });",
+    "negative_py": "ec2.Instance(self, 'Web', vpc=vpc, instance_type=t, machine_image=m, associate_public_ip_address=True)\nelbv2.ApplicationLoadBalancer(self, 'Lb', vpc=vpc, internet_facing=True)",
+    "positive_ts": "new ec2.Instance(this, 'Web', { vpc, instanceType, machineImage, associatePublicIpAddress: true });",
+    "positive_py": "ec2.Instance(self, 'Web', vpc=vpc, instance_type=t, machine_image=m, associate_public_ip_address=True)"
+  },
+  "REPO-132": {
+    "negative_ts": "new ec2.VpnConnection(this, 'VpnA', { vpc, ip: '1.2.3.4' });\nnew ec2.VpnConnection(this, 'VpnB', { vpc, ip: '5.6.7.8' });",
+    "negative_py": "ec2.VpnConnection(self, 'VpnA', vpc=vpc, ip='1.2.3.4')\nec2.VpnConnection(self, 'VpnB', vpc=vpc, ip='5.6.7.8')",
+    "positive_ts": "new ec2.VpnConnection(this, 'VpnA', { vpc, ip: '1.2.3.4' });",
+    "positive_py": "ec2.VpnConnection(self, 'VpnA', vpc=vpc, ip='1.2.3.4')"
+  },
   "REPO-016": {
     "negative_ts": "new fis.CfnExperimentTemplate(this, 'StopInstances', { description: 'stop one AZ', roleArn: role.roleArn, stopConditions: [{ source: 'aws:cloudwatch:alarm', value: alarm.alarmArn }], targets: {}, actions: {} });",
     "negative_py": "pipelines.ShellStep('Chaos', commands=['aws fis start-experiment --experiment-template-id EXT123'])",

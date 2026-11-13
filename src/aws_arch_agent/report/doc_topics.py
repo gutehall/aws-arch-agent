@@ -1954,6 +1954,20 @@ TOPICS: dict[str, tuple[str, str, str, str]] = {
         "Well-Architected SEC10-BP08: Establish a framework for learning from incidents",
         "/wellarchitected/latest/security-pillar/sec_incident_response_learn_from_incidents.html",
     ),
+    "public_endpoint_ha": (
+        "Elastic Load Balancing: what is an Application Load Balancer",
+        "/elasticloadbalancing/latest/application/introduction.html",
+        "Well-Architected REL02-BP01: Use highly available network connectivity for your "
+        "workload public endpoints",
+        "/wellarchitected/latest/reliability-pillar/rel_planning_network_topology_ha_conn_users.html",
+    ),
+    "redundant_onprem_links": (
+        "Site-to-Site VPN: tunnel options and redundancy",
+        "/vpn/latest/s2svpn/vpn-redundant-connection.html",
+        "Well-Architected REL02-BP02: Provision redundant connectivity between private "
+        "networks in the cloud and on-premises environments",
+        "/wellarchitected/latest/reliability-pillar/rel_planning_network_topology_ha_conn_private_networks.html",
+    ),
     "repo_tests": (
         "AWS CDK: testing constructs",
         "/cdk/v2/guide/testing.html",
@@ -2665,6 +2679,8 @@ RULE_TOPICS: dict[str, str] = {
     "REPO-128": "response_access",
     "REPO-129": "incident_simulation",
     "REPO-130": "incident_learning",
+    "REPO-131": "public_endpoint_ha",
+    "REPO-132": "redundant_onprem_links",
     "REPO-016": "fault_injection",
     "REPO-017": "load_testing",
     "REPO-018": "app_kpi_metrics",
