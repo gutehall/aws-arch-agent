@@ -15,7 +15,7 @@ Which CDK rules have a template check, and which AWS Foundational Security Best 
 
 ## CDK rules
 
-354 rules: 132 covered, 7 partial, 10 account, 5 cdk-only, 25 advice, 175 repo.
+357 rules: 132 covered, 7 partial, 10 account, 5 cdk-only, 25 advice, 178 repo.
 
 | Rule | Title | Template check | Status | Note |
 | -- | -- | -- | -- | -- |
@@ -373,6 +373,9 @@ Which CDK rules have a template check, and which AWS Foundational Security Best 
 | REPO-173 | No playbook is in the repo for investigating issues in the workload |  | `repo` | Fires on the same gap as REPO-122, for OPS07-BP04: the repo holds IaC and no note named or headed for a playbook, failure investigation or troubleshooting guide exists. |
 | REPO-174 | No note or resource names the support plan for production |  | `repo` | Fires when the repo holds IaC and neither the IaC (an AWS Support resource) nor a note named or headed for a support plan, AWS Support or support cases exists. |
 | REPO-175 | No operational readiness checklist is in the repo |  | `repo` | Fires when the repo holds IaC and no note named or headed for operational readiness, a launch checklist or a go-live checklist exists. |
+| REPO-176 | No post-incident template or review records the lessons learned |  | `repo` | Fires when the repo holds IaC and no note named or headed for a post-incident review, post-mortem or root cause analysis has a lessons learned or action items section. |
+| REPO-177 | No issue template, pipeline notification or note records what a change did |  | `repo` | Fires when the repo holds IaC and has no issue template, no pipeline notification rule in the IaC and no note named or headed for feedback, retrospectives or change outcomes. |
+| REPO-178 | No improvement note names how the team improves, shares knowledge and finds time |  | `repo` | Fires when the repo holds IaC and no note named or headed for continuous improvement, retrospectives, knowledge management or a learning loop exists. |
 
 ## FSBP controls
 

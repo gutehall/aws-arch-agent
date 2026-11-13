@@ -7446,6 +7446,80 @@ class ReadinessReviewMissing(_NoteRule):
     )
 
 
+# Evolving operations (OPS 11): lessons from incidents (REPO-176), feedback on changes
+# (REPO-177) and one note on the improvement loop (REPO-178).
+class PostIncidentLessonsMissing(_NoteRule):
+    id = "REPO-176"
+    title = "No post-incident template or review records the lessons learned"
+    note_name = _POST_INCIDENT_NAME
+    note_heading = _POST_INCIDENT_HEADING
+    note_needs = re.compile(r"(?i)\blessons?(?:[- ]learned)?\b|\bwhat we learned\b|\baction items?\b")
+    recommendation = (
+        "Learn from every incident: keep a post-incident template (docs/post-incident-"
+        "template.md) with the timeline, the cause, what went well, what did not, the lessons "
+        "learned and the action items with owners, and share each review with the team."
+    )
+    searched = (
+        "the notes for a post-incident file or heading that has a lessons learned or action "
+        "items section"
+    )
+
+
+_FEEDBACK_IN_IAC = re.compile(
+    _cf_type(r"CodeStarNotifications::NotificationRule")
+    + r"|resource\s+\"aws_codestarnotifications_notification_rule\""
+    r"|\bnotifications\.NotificationRule\(|\.notifyOn\w*\(|\.notify_on_\w+\("
+)
+_FEEDBACK_NAME = re.compile(r"feedback|retro(?:spective)?s?(?:$|[-_ .])|change[-_ ]?outcomes?")
+_FEEDBACK_HEADING = re.compile(r"(?i).*\b(?:feedback|retrospectives?|change outcomes?)\b.*")
+
+
+class FeedbackLoopMissing(_NoteRule):
+    id = "REPO-177"
+    title = "No issue template, pipeline notification or note records what a change did"
+    note_name = _FEEDBACK_NAME
+    note_heading = _FEEDBACK_HEADING
+    iac = _FEEDBACK_IN_IAC
+    recommendation = (
+        "Close the loop on every change: send the pipeline's success and failure events to "
+        "the team (a CodeStar notification rule), keep an issue template that asks what the "
+        "change did, and review the outcomes in a retrospective."
+    )
+    searched = (
+        "the IaC for a pipeline notification rule, the repo for an issue template, and the "
+        "notes for a file or heading on feedback, retrospectives or change outcomes"
+    )
+
+    def present(self, repo_path: Path) -> str | None:
+        for path in walk(repo_path):
+            rel = "/".join(_rel_parts(path, repo_path))
+            if rel.lower().startswith((".github/issue_template", ".gitlab/issue_templates")):
+                return rel
+        return super().present(repo_path)
+
+
+class ImprovementLoopMissing(_NoteRule):
+    id = "REPO-178"
+    title = "No improvement note names how the team improves, shares knowledge and finds time"
+    note_name = re.compile(
+        r"improvements?|retro(?:spective)?s?(?:$|[-_ .])|kaizen|knowledge|learning[-_ ]?loop"
+    )
+    note_heading = re.compile(
+        r"(?i).*\b(?:continuous improvement|improvements?(?: process| backlog)?|knowledge"
+        r"(?: management| sharing)?|learning loop|retrospectives?)\b.*"
+    )
+    recommendation = (
+        "Write down the improvement loop (docs/improvement.md): what drives an improvement "
+        "(incidents, metrics, cost), how an insight is checked before it becomes work, where "
+        "the knowledge lives, how metrics are reviewed and how much time the team reserves "
+        "for it."
+    )
+    searched = (
+        "the notes for a file or heading on continuous improvement, retrospectives, knowledge "
+        "management or a learning loop"
+    )
+
+
 _COMPUTE_TRACING = _kinds(
     ("Lambda active tracing",
      r"[\"']?Tracing[\"']?\s*:\s*[\"']?Active\b"
@@ -12740,4 +12814,5 @@ REPO_RULES: List[Rule] = [
     ProcedureOwnerMissing(), ActivityOwnerMissing(), OwnershipMechanismMissing(), ChangeRequestPathMissing(),
     EscalationMissing(), OperatorChannelMissing(), OperationsCultureMissing(),
     RunbooksMissing(), OperationalPlaybooksMissing(), SupportPlanMissing(), ReadinessReviewMissing(),
+    PostIncidentLessonsMissing(), FeedbackLoopMissing(), ImprovementLoopMissing(),
 ]

@@ -746,6 +746,12 @@ def test_cli_html_with_no_findings_writes_a_page(tmp_path: Path) -> None:
     (tmp_path / "docs" / "playbooks" / "latency.md").write_text("Open it.\n", encoding="utf-8")
     (tmp_path / "docs" / "support-plan.md").write_text("Enterprise Support.\n", encoding="utf-8")
     (tmp_path / "docs" / "readiness.md").write_text("- [ ] alarms\n", encoding="utf-8")
+    # Notes for OPS 11: a post-incident template, feedback on changes and an improvement loop.
+    (tmp_path / "docs" / "post-incident-template.md").write_text(
+        "## Lessons learned\n", encoding="utf-8")
+    (tmp_path / "docs" / "retrospectives.md").write_text("Weekly.\n", encoding="utf-8")
+    (tmp_path / "docs" / "continuous-improvement.md").write_text("One fix a sprint.\n",
+                                                                  encoding="utf-8")
     (tmp_path / "CODEOWNERS").write_text("* @org/platform\n", encoding="utf-8")
     for rel in (".github/workflows/ci.yml", "tests/main.tftest.hcl", "dev.tfvars", "prod.tfvars"):
         (tmp_path / rel).parent.mkdir(parents=True, exist_ok=True)

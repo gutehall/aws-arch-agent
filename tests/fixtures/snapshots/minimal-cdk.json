@@ -306,5 +306,26 @@
     "file": null,
     "line": null,
     "evidence": "Holds IaC (CDK: 2 files); searched the notes for a file or heading on operational readiness, a launch checklist or a go-live checklist; found none"
+  },
+  {
+    "id": "REPO-176",
+    "severity": "Low",
+    "file": null,
+    "line": null,
+    "evidence": "Holds IaC (CDK: 2 files); searched the notes for a post-incident file or heading that has a lessons learned or action items section; found none"
+  },
+  {
+    "id": "REPO-177",
+    "severity": "Low",
+    "file": null,
+    "line": null,
+    "evidence": "Holds IaC (CDK: 2 files); searched the IaC for a pipeline notification rule, the repo for an issue template, and the notes for a file or heading on feedback, retrospectives or change outcomes; found none"
+  },
+  {
+    "id": "REPO-178",
+    "severity": "Low",
+    "file": null,
+    "line": null,
+    "evidence": "Holds IaC (CDK: 2 files); searched the notes for a file or heading on continuous improvement, retrospectives, knowledge management or a learning loop; found none"
   }
 ]
