@@ -33,7 +33,7 @@ jobs:
           .venv/bin/pip install types-PyYAML
 
       - name: Run tests with coverage
-        run: .venv/bin/pytest tests/ -v --cov=aws_arch_agent --cov-fail-under=70
+        run: .venv/bin/pytest tests/ -n auto -q --cov=aws_arch_agent --cov-fail-under=70
 
       - name: Lint (ruff)
         run: .venv/bin/ruff check src tests
@@ -106,6 +106,8 @@ jobs:
         uses: actions/setup-python@v5
         with:
           python-version: "3.12"
+          cache: pip
+          cache-dependency-path: pyproject.toml
 
       - name: Set up Node
         uses: actions/setup-node@v4
@@ -126,8 +128,10 @@ jobs:
         working-directory: tests/fixtures/minimal-cdk
         run: npm install
 
-      - name: Run tests with coverage
-        run: python -m pytest tests/ -v --cov=aws_arch_agent --cov-fail-under=70
+      - name: Run tests in parallel
+        # The 70% coverage gate runs in the review job on Linux. Coverage and a serial run
+        # made this job take over an hour; the tests here check subprocesses and paths.
+        run: python -m pytest tests/ -n auto -q --no-cov
 
   action-smoke:
     # The composite action must install and run on every runner OS.
