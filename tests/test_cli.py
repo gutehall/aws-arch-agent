@@ -728,6 +728,45 @@ def test_cli_html_with_no_findings_writes_a_page(tmp_path: Path) -> None:
     # Notes and IaC for OPS 9: a dated operations review and an error budget.
     (tmp_path / "docs" / "ops-review.md").write_text("Reviewed 2026-03-02.\n", encoding="utf-8")
     (tmp_path / "slo.tf").write_text("locals {\n  error_budget = 0.001\n}\n", encoding="utf-8")
+    # Notes for OPS 1: the customers and an architecture decision with its tradeoff.
+    (tmp_path / "docs" / "customers.md").write_text("Shops and support.\n", encoding="utf-8")
+    (tmp_path / "docs" / "adr").mkdir()
+    (tmp_path / "docs" / "adr" / "0001-queue.md").write_text(
+        "We considered SQS and Kinesis, following the Well-Architected guidance and the reference "
+        "architecture. The cost comparison is $40 against $120. The tradeoff is cold starts. A "
+        "benchmark gave measured results, which is the data we used.\n", encoding="utf-8")
+    # Notes and a pull request template for OPS 2: an owned runbook and who is on call.
+    (tmp_path / "docs" / "runbooks").mkdir()
+    (tmp_path / "docs" / "runbooks" / "restore.md").write_text("Owner: platform\n", encoding="utf-8")
+    (tmp_path / "docs" / "on-call.md").write_text("Platform is on call.\n", encoding="utf-8")
+    (tmp_path / ".github" / "pull_request_template.md").parent.mkdir(exist_ok=True)
+    (tmp_path / ".github" / "pull_request_template.md").write_text("What changed?\n", encoding="utf-8")
+    # Notes for OPS 3: escalation and the operations ownership.
+    (tmp_path / "docs" / "escalation.md").write_text("Page the lead.\n", encoding="utf-8")
+    (tmp_path / "docs" / "ops-ownership.md").write_text("Sponsor: the CTO.\n", encoding="utf-8")
+    # Notes for OPS 7: playbooks, a support plan and the readiness checklist.
+    (tmp_path / "docs" / "playbooks").mkdir()
+    (tmp_path / "docs" / "playbooks" / "latency.md").write_text("Open it.\n", encoding="utf-8")
+    (tmp_path / "docs" / "support-plan.md").write_text("Enterprise Support.\n", encoding="utf-8")
+    (tmp_path / "docs" / "readiness.md").write_text("- [ ] alarms\n- [ ] team trained\n",
+                                                    encoding="utf-8")
+    # Notes for OPS 11: a post-incident template, feedback on changes and an improvement loop.
+    (tmp_path / "docs" / "post-incident-template.md").write_text(
+        "## Lessons learned\n", encoding="utf-8")
+    (tmp_path / "docs" / "retrospectives.md").write_text("Weekly.\n", encoding="utf-8")
+    (tmp_path / "docs" / "continuous-improvement.md").write_text("One fix a sprint.\n",
+                                                                  encoding="utf-8")
+    # A note for COST 5: the cost requirements at steady usage and at peak.
+    (tmp_path / "docs" / "cost-requirements.md").write_text(
+        "Steady usage is $400 a month; peak is $900.\n", encoding="utf-8")
+    (tmp_path / "docs" / "cost-review-2026-03.md").write_text("Reviewed 2026-03-02.\n",
+                                                               encoding="utf-8")
+    # A note for PERF 5.
+    (tmp_path / "docs" / "performance-review.md").write_text("Monthly.\n", encoding="utf-8")
+    # A note and a dependency update config for SUS 6.
+    (tmp_path / "docs" / "sustainability.md").write_text("Cut idle capacity.\n", encoding="utf-8")
+    (tmp_path / ".github" / "dependabot.yml").parent.mkdir(exist_ok=True)
+    (tmp_path / ".github" / "dependabot.yml").write_text("version: 2\n", encoding="utf-8")
     (tmp_path / "CODEOWNERS").write_text("* @org/platform\n", encoding="utf-8")
     for rel in (".github/workflows/ci.yml", "tests/main.tftest.hcl", "dev.tfvars", "prod.tfvars"):
         (tmp_path / rel).parent.mkdir(parents=True, exist_ok=True)

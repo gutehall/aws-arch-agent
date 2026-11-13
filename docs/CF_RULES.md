@@ -4,7 +4,7 @@ This document provides a comprehensive list of all rules checked by AWS Arch Age
 
 ## Overview
 
-AWS Arch Agent checks **339 static analysis rules** and **283 template checks** across all 6 AWS Well-Architected Framework pillars. 139 of the 339 CDK rules (41%) have a template check, so they also run for CloudFormation, Terraform and synthesised CDK. [COVERAGE.md](COVERAGE.md) gives the reason for each of the others.
+AWS Arch Agent checks **372 static analysis rules** and **283 template checks** across all 6 AWS Well-Architected Framework pillars. 139 of the 372 CDK rules (37%) have a template check, so they also run for CloudFormation, Terraform and synthesised CDK. [COVERAGE.md](COVERAGE.md) gives the reason for each of the others.
 
 ## Static Analysis Rules (V1 & V2 Modes)
 
@@ -147,7 +147,7 @@ These rules run on your CDK TypeScript/Python code and execute in both V1 and V2
 - REPO-146: Data classified by tag has no lifecycle or retention rule
 - REPO-151: Data stores carry no classification tag to drive retention and storage tiers
 
-### Reliability (74 rules)
+### Reliability (75 rules)
 
 **High Availability:**
 - REL-001: RDS instance missing multi-AZ
@@ -256,8 +256,9 @@ These rules run on your CDK TypeScript/Python code and execute in both V1 and V2
 - REPO-147: No dated review record lists the stateful resources and their alarms
 - REPO-148: No load test shows that the workload adapts to changes in demand
 - REPO-149: A lone EC2 instance has no data plane recovery
+- REPO-188: One stack declares many compute services and data stores with no stack, module or API boundary
 
-### Operational Excellence (49 rules)
+### Operational Excellence (67 rules)
 
 **Logging:**
 - OPS-001: CloudTrail not enabled
@@ -330,8 +331,26 @@ These rules run on your CDK TypeScript/Python code and execute in both V1 and V2
 - REPO-157: No operations metric (deploys, alarms, error budget) is measured
 - REPO-158: No dashboard or status topic shows operations status to operators
 - REPO-159: No dated review of the operations metrics is in the repo
+- REPO-161: No note names the external and internal customers the workload serves
+- REPO-162: No conformance pack, Security Hub standard, SCP or compliance note names the controls
+- REPO-163: Neither GuardDuty, Security Hub nor a threat model covers the threats to the workload
+- REPO-164: No architecture decision record weighs a tradeoff
+- REPO-165: No runbook, playbook or procedure names an owner
+- REPO-166: No Incident Manager contact or note names who owns operations activities
+- REPO-167: No CODEOWNERS file, escalation plan or ownership note says who owns what
+- REPO-168: No pull request check, manual approval or request template shows how to ask for a change
+- REPO-169: No escalation plan or note says who to turn to when the first responder cannot fix it
+- REPO-170: No chat channel, subscription, on-call schedule or note tells operators what is wrong
+- REPO-171: No ownership note says how the team is sponsored, empowered, trained and staffed
+- REPO-172: No runbook is in the repo for deploying and operating the workload
+- REPO-173: No playbook is in the repo for investigating issues in the workload
+- REPO-174: No note names the support plan for production
+- REPO-175: No operational readiness checklist that covers the team's capability is in the repo
+- REPO-176: No post-incident template or review records the lessons learned
+- REPO-177: No issue template that asks for the outcome, pipeline notification or note records what a change did
+- REPO-178: No improvement note names how the team improves, shares knowledge and finds time
 
-### Performance Efficiency (28 rules)
+### Performance Efficiency (33 rules)
 
 **Compute Optimization:**
 - PERF-001: Compute may not use Graviton/ARM
@@ -376,8 +395,13 @@ These rules run on your CDK TypeScript/Python code and execute in both V1 and V2
 - REPO-066: Dedicated connectivity or VPN has no redundant link
 - REPO-067: Traffic is not spread by a load balancer
 - REPO-068: Edge uses an older network protocol
+- REPO-183: No architecture decision record covers the services, guidance, cost, tradeoff, reference architecture, benchmark and data
+- REPO-184: No alarm on latency or saturation has a numeric threshold
+- REPO-185: Nothing remediates performance problems automatically
+- REPO-186: No load test shows how the workload performs under load
+- REPO-187: No performance review note names how the team improves and reviews performance
 
-### Cost Optimization (48 rules)
+### Cost Optimization (52 rules)
 
 **Resource Right-Sizing:**
 - COST-002: Compute resources may miss autoscaling
@@ -452,6 +476,10 @@ These rules run on your CDK TypeScript/Python code and execute in both V1 and V2
 - REPO-096: Workload demand is not analysed
 - REPO-097: Demand has no buffer or throttle
 - REPO-160: EC2 instances have no SSM association and no pipeline automates operations
+- REPO-179: No budget or cost note states the cost requirements for peak and steady usage
+- REPO-180: No cost estimate is in the repo for the components the workload declares
+- REPO-181: A Marketplace image runs on a dedicated host with no licensing note
+- REPO-182: No dated cost review or scheduled cost report is in the repo
 
 ### Best Practices (5 rules)
 
@@ -461,7 +489,7 @@ These rules run on your CDK TypeScript/Python code and execute in both V1 and V2
 - BP-004: CDK Aspects not used for policy enforcement
 - BP-005: CDK context not used for environment-specific config
 
-### Sustainability (22 rules)
+### Sustainability (27 rules)
 
 - SUST-001: Spot instances not considered for batch/non-critical workloads
 - SUST-002: Resource right-sizing opportunities detected
@@ -491,6 +519,11 @@ These rules run on your CDK TypeScript/Python code and execute in both V1 and V2
 - REPO-154: S3 buckets have no rule that deletes unneeded data
 - REPO-155: Several EBS volumes hold data and no shared file system or bucket does
 - REPO-156: A backup plan covers a cache or a temporary bucket
+- REPO-189: A Terraform provider for an extra Region is declared and no resource uses it
+- REPO-190: No sustainability note states the goals and the methods to reach them
+- REPO-191: Nothing proposes updates to dependencies, runtimes and base images
+- REPO-192: A dedicated always-on fleet runs builds
+- REPO-193: A mobile app is built and no device farm tests it
 
 ## CloudFormation Template Rules
 
@@ -771,7 +804,6 @@ Like Infracost's view, it is an approximation: on-demand prices, 730 hours a mon
 Every rule has one or more themes, which cut across pillars: `finops`, `security-baseline`, `identity`, `data-protection`, `network-exposure`, `resilience`, `observability`, `sustainability`. `--theme finops` (repeatable, or comma-separated; config `themes`) limits a scan to those themes. JSON findings carry `themes`. SARIF carries them as result `properties.themes` and rule `properties.tags`. `--group-by theme` (config `group_by`) groups Markdown findings by theme; a finding in two themes is listed under both. The HTML report has a theme filter next to the severity tabs, and the Markdown and JSON summary add one line per theme. CDK source rules declare their themes in their class; template checks declare them in `CF_THEMES` in `rules/cf_template.py`.
 
 <!-- themes:start -->
-
 | Rule | Themes |
 |------|--------|
 | CF-ACM-001 | resilience |
@@ -1318,6 +1350,39 @@ Every rule has one or more themes, which cut across pillars: `finops`, `security
 | REPO-158 | observability |
 | REPO-159 | observability |
 | REPO-160 | finops |
+| REPO-161 | observability |
+| REPO-162 | security-baseline |
+| REPO-163 | security-baseline |
+| REPO-164 | observability |
+| REPO-165 | observability |
+| REPO-166 | observability |
+| REPO-167 | observability |
+| REPO-168 | observability |
+| REPO-169 | observability |
+| REPO-170 | observability |
+| REPO-171 | observability |
+| REPO-172 | observability |
+| REPO-173 | observability |
+| REPO-174 | observability |
+| REPO-175 | observability |
+| REPO-176 | observability |
+| REPO-177 | observability |
+| REPO-178 | observability |
+| REPO-179 | finops |
+| REPO-180 | finops |
+| REPO-181 | finops |
+| REPO-182 | finops |
+| REPO-183 | observability |
+| REPO-184 | observability |
+| REPO-185 | observability |
+| REPO-186 | observability |
+| REPO-187 | observability |
+| REPO-188 | resilience |
+| REPO-189 | sustainability, finops |
+| REPO-190 | sustainability |
+| REPO-191 | sustainability |
+| REPO-192 | sustainability, finops |
+| REPO-193 | sustainability |
 | SEC-001 | identity |
 | SEC-002 | identity |
 | SEC-003 | network-exposure |
@@ -1396,5 +1461,4 @@ Every rule has one or more themes, which cut across pillars: `finops`, `security
 | SUST-005 | sustainability |
 | SUST-006 | sustainability, finops |
 | SUST-007 | sustainability, finops |
-
 <!-- themes:end -->
