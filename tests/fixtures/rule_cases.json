@@ -1653,5 +1653,11 @@
     "negative_py": "answer = 42",
     "positive_ts": "new s3.Bucket(this, 'Bucket');",
     "positive_py": "s3.Bucket(self, 'Bucket')"
+  },
+  "REPO-148": {
+    "negative_ts": "new ShellStep('LoadTest', { commands: ['k6 run load/checkout.js'] });",
+    "negative_py": "pipelines.ShellStep('LoadTest', commands=['artillery run load/artillery.yml'])",
+    "positive_ts": "new ShellStep('Synth', { commands: ['npm ci', 'npx cdk synth'] });",
+    "positive_py": "pipelines.ShellStep('Synth', commands=['pip install -r requirements.txt', 'cdk synth'])"
   }
 }

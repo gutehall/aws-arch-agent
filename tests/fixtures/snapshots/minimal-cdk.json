@@ -194,5 +194,12 @@
     "file": null,
     "line": null,
     "evidence": "Holds IaC (CDK: 2 files); searched the IaC for a permissions boundary and for two or more IAM roles, and the notes for a file or heading on access requirements or the access model; found none"
+  },
+  {
+    "id": "REPO-148",
+    "severity": "Low",
+    "file": null,
+    "line": null,
+    "evidence": "Searched the repo for a build to run a load test (a CI config, or a CodeBuild buildspec or pipeline in the IaC); found none"
   }
 ]

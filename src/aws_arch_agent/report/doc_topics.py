@@ -2061,6 +2061,12 @@ TOPICS: dict[str, tuple[str, str, str, str]] = {
         "Well-Architected REL06-BP06: Regularly review monitoring scope and metrics",
         "/wellarchitected/latest/reliability-pillar/rel_monitor_aws_resources_review_monitoring.html",
     ),
+    "demand_load_testing": (
+        "Distributed Load Testing on AWS",
+        "/solutions/latest/distributed-load-testing-on-aws/solution-overview.html",
+        "Well-Architected REL07-BP04: Load test your workload",
+        "/wellarchitected/latest/reliability-pillar/rel_adapt_to_changes_load_tested_adapt.html",
+    ),
     "repo_tests": (
         "AWS CDK: testing constructs",
         "/cdk/v2/guide/testing.html",
@@ -2789,6 +2795,7 @@ RULE_TOPICS: dict[str, str] = {
     "REPO-145": "compute_protection_automation",
     "REPO-146": "data_lifecycle",
     "REPO-147": "monitoring_review",
+    "REPO-148": "demand_load_testing",
     "REPO-016": "fault_injection",
     "REPO-017": "load_testing",
     "REPO-018": "app_kpi_metrics",

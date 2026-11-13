@@ -15,7 +15,7 @@ Which CDK rules have a template check, and which AWS Foundational Security Best 
 
 ## CDK rules
 
-326 rules: 132 covered, 7 partial, 10 account, 5 cdk-only, 25 advice, 147 repo.
+327 rules: 132 covered, 7 partial, 10 account, 5 cdk-only, 25 advice, 148 repo.
 
 | Rule | Title | Template check | Status | Note |
 | -- | -- | -- | -- | -- |
@@ -345,6 +345,7 @@ Which CDK rules have a template check, and which AWS Foundational Security Best 
 | REPO-145 | Compute protection is not automated with Inspector or an SSM association |  | `repo` | Fires when the IaC runs compute and enables no Inspector and defines no SSM association or patch baseline. Org-level: runs with `rules.org` or `rules.include`. |
 | REPO-146 | Data classified by tag has no lifecycle or retention rule |  | `repo` | Fires when a data store sits in a file tagged with a classification (or an app tagged with one) and the file sets no lifecycle rule, TTL, backup retention or delete-after. |
 | REPO-147 | No dated review record lists the stateful resources and their alarms |  | `repo` | Fires when the IaC declares a data store and no note named for a monitoring, alarm or observability review, scope, coverage or inventory carries a date. |
+| REPO-148 | No load test shows that the workload adapts to changes in demand |  | `repo` | Fires on the same condition as REPO-017 (no load test in a build config, package script or IaC pipeline); each answers its own question (REL 7 and REL 12). |
 
 ## FSBP controls
 

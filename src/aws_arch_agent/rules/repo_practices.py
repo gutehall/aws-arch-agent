@@ -255,6 +255,11 @@ and traces):
 - REPO-147 monitoring review: a data store in the IaC with no dated note named for a monitoring,
   alarm or observability review, scope, coverage or inventory fires.
 
+Demand (REL 7) runs by default (CF-ASG-006 answers automation of scaling):
+
+- REPO-148 load test: the same search as REPO-017 for a load test in the builds, answering
+  REL07-BP04; no load test fires.
+
 Reliability testing (REL 12) runs by default and reads the IaC and the builds REPO-009 reads
 (CI configs, inline buildspecs, CodeBuild projects and pipelines in the IaC, and the
 package.json scripts they run):
@@ -2580,6 +2585,20 @@ class LoadTestMissing(_RepoRule):
             f"Searched the build configs ({_listed(builds)}) and the package.json scripts "
             f"they run for a load test ({_LOAD_TOOL_NAMES}); found none"
         )]
+
+
+class LoadTestForDemand(LoadTestMissing):
+    """The same search as REPO-017, answering REL07-BP04 for the question on demand."""
+
+    id = "REPO-148"
+    title = "No load test shows that the workload adapts to changes in demand"
+    themes = ("resilience",)
+    recommendation = (
+        "Prove the workload scales with demand: run a load test in the pipeline (k6, "
+        "Artillery, Locust, JMeter or Distributed Load Testing on AWS) that ramps traffic "
+        "past the current peak against a pre-production environment, and watch the Auto "
+        "Scaling activity, the throttles and the error rates while it runs."
+    )
 
 
 # Observability (OPS 4): an application KPI (REPO-018), user experience telemetry on the edge
@@ -11756,6 +11775,7 @@ REPO_RULES: List[Rule] = [
     ComputeProtectionNotAutomated(),
     ClassifiedDataWithoutLifecycle(),
     MonitoringScopeNotReviewed(),
+    LoadTestForDemand(),
     FaultInjectionMissing(), LoadTestMissing(),
     KpiMetricMissing(), EdgeTelemetryMissing(), DependencyTelemetryMissing(),
     DeployTestGateMissing(), AutomatedRollbackMissing(),

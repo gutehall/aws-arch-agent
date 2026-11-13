@@ -551,5 +551,12 @@
     "file": "stack.yaml",
     "line": null,
     "evidence": "Declares S3 bucket (stack.yaml), RDS database (stack.yaml); searched the notes for a dated monitoring or alarm review (a file or heading named for a monitoring review, scope, coverage or inventory); found none"
+  },
+  {
+    "id": "REPO-148",
+    "severity": "Low",
+    "file": null,
+    "line": null,
+    "evidence": "Searched the repo for a build to run a load test (a CI config, or a CodeBuild buildspec or pipeline in the IaC); found none"
   }
 ]
