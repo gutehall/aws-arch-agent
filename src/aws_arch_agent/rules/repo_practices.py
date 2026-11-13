@@ -224,13 +224,13 @@ user):
 - REPO-139 new security services: IAM Access Analyzer or Inspector in the IaC, or a dated
   security service review note, passes.
 
-Permissions (SEC 3) run by default (REPO-031 and REPO-032 answer guardrails and emergency
-access):
+Permissions (SEC 3) run by default, except REPO-141, which runs only with rules.org
+(REPO-031 and REPO-032 answer guardrails and emergency access):
 
 - REPO-140 access requirements: a permissions boundary or two IAM roles in the IaC, or an access
   requirements note, passes; it fires only on a repo that holds IaC.
 - REPO-141 permission reduction: an IAM Access Analyzer in the IaC, or a dated access review
-  note, passes; it fires only on a repo that holds IaC.
+  note, passes; it fires only on a repo that holds IaC, and only with rules.org.
 - REPO-142 access lifecycle: an IAM user or access key in the IaC fires.
 - REPO-143 organization sharing: a RAM resource share that does not set AllowExternalPrincipals
   to false fires.
@@ -6666,7 +6666,8 @@ class AcceleratorUtilizationUnchecked(_RepoRule):
 # Data management (SUS 4): a classification tag (REPO-151), data that is not tied to an
 # instance store (REPO-152), block storage that grows (REPO-153), data that is deleted
 # (REPO-154), common data on shared storage (REPO-155) and no backup of what is cheap to
-# recreate (REPO-156). SUS04-BP03 and BP07 are answered by REL-018, CF-EFS-003 and SUST-006.
+# recreate (REPO-156). SUS04-BP03 and BP07 are answered by REL-018, CF-EFS-003 and SUST-006. REPO-154 answers
+# SUS04-BP05 for S3 with the same fact as COST-013, because a rule maps to one question.
 _INSTANCE_STORE = re.compile(
     r"\bephemeral\d\b|[\"']?VirtualName[\"']?\s*:\s*[\"']?ephemeral|\bvirtual_name\s*=\s*\"ephemeral"
     r"|\b(?:i3(?:en)?|i4[a-z]+|im4gn|is4gen|d3(?:en)?|d2|[mcrzx]\d+[a-z]*d[a-z]*)"
@@ -6681,7 +6682,7 @@ _PERSISTENT_STORE = re.compile(
 )
 _VOLUME_DECL = _EBS_VOLUME
 _VOLUME_SIZE = re.compile(
-    r"[\"']?(?:Size|VolumeSize)[\"']?\s*:\s*[\"']?(\d+)|\b(?:size|volume_size)\s*=\s*(\d+)"
+    r"(?<![A-Za-z])[\"']?(?:Size|VolumeSize)[\"']?\s*:\s*[\"']?(\d+)|\b(?:size|volume_size)\s*=\s*(\d+)"
     r"|\b(?:size|volumeSize)\s*[:=]\s*(?:\w+\.)?Size\.gibibytes\((\d+)\)"
 )
 _VOLUME_GROWS = re.compile(
@@ -6704,7 +6705,7 @@ _RECREATABLE = re.compile(
     + r"|resource\s+\"aws_elasticache_(?:cluster|replication_group|serverless_cache)\""
     r"|\belasticache\.Cfn(?:CacheCluster|ReplicationGroup|ServerlessCache)\("
     r"|\b(?:Bucket|bucket|BucketName|bucket_name|aws_s3_bucket\"\s+\")[\"']?\s*[:=(,]?\s*"
-    r"[\"']?[\w.${}-]*(?:tmp|temp|scratch|cache)[\w.${}-]*",
+    r"[\"']?[\w.${}-]*?(?<![a-z])(?:tmp|temp|scratch|cache)(?![a-z])[\w.${}-]*",
     re.IGNORECASE,
 )
 
@@ -6789,14 +6790,14 @@ class BlockStorageFixedAndLarge(_RepoRule):
 
 class UnneededDataNotDeleted(_RepoRule):
     id = "REPO-154"
-    title = "S3 buckets and log groups have no rule that deletes unneeded data"
+    title = "S3 buckets have no rule that deletes unneeded data"
     category = "Sustainability"
     severity = "Low"
     themes = ("sustainability", "finops")
     recommendation = (
         "Delete what nobody needs: give each S3 bucket a lifecycle rule that expires old "
-        "objects and incomplete multipart uploads, and set a retention period on each "
-        "CloudWatch log group, so data does not accumulate and keep consuming storage."
+        "objects and incomplete multipart uploads, so data does not accumulate and keep "
+        "consuming storage."
     )
 
     def run(self, repo_path: Path, language: str = "typescript") -> List[Finding]:
@@ -6804,8 +6805,8 @@ class UnneededDataNotDeleted(_RepoRule):
             if _DATA_STORES[0][1].search(text) and not _RETENTION.search(text):
                 return [self._finding(
                     f"{rel} declares an S3 bucket and sets no lifecycle expiration or "
-                    "retention; searched the file for an S3 lifecycle rule, a log retention "
-                    "period, a DynamoDB TTL and a backup delete-after; found none",
+                    "retention; searched the file for an S3 lifecycle rule, a DynamoDB TTL, a log "
+                    "retention period and a backup delete-after; found none",
                     file=rel,
                 )]
         return []
@@ -6934,7 +6935,8 @@ class OperatorStatusMissing(_RepoRule):
                 return []
         return [self._finding(
             f"The IaC declares CloudWatch alarms ({_listed(alarms)}); searched it for a "
-            "CloudWatch dashboard and for an SNS topic with a status name; found none",
+            "CloudWatch dashboard and for an SNS, SES or Pinpoint resource that names a "
+            "status, customer or subscriber channel; found none",
             file=alarms[0],
         )]
 

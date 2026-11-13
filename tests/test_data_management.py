@@ -76,17 +76,19 @@ def test_large_fixed_volume_fires(tmp_path: Path) -> None:
 
 
 @pytest.mark.parametrize(
-    "files",
+    ("files", "fires"),
     [
-        {"v.tf": _VOLUME.format(n="d", size=100)},
-        {"v.tf": _VOLUME.format(n="d", size=1000) + "# runs ebs-autoscale on boot\n"},
-        {"v.tf": _VOLUME.format(n="d", size=1000), "u.sh": "x"},
+        ({"v.tf": _VOLUME.format(n="d", size=100)}, False),
+        ({"v.tf": _VOLUME.format(n="d", size=1000) + "# runs ebs-autoscale on boot\n"}, False),
+        ({"v.tf": _VOLUME.format(n="d", size=10) + "  max_size = 900\n  MaxSize: 900\n"}, False),
+        ({"v.tf": _VOLUME.format(n="d", size=1000), "u.sh": "x"}, True),
     ],
-    ids=["small", "autoscale", "unrelated-file"],
+    ids=["small", "autoscale", "max-size-is-not-a-volume", "large-and-fixed"],
 )
-def test_small_or_growing_volume_passes_unless_nothing_grows_it(tmp_path: Path, files: dict) -> None:
-    findings = _hits(_scan(tmp_path, files), "REPO-153")
-    assert bool(findings) == (list(files) == ["v.tf", "u.sh"])
+def test_large_fixed_volume_fires_only_when_nothing_grows_it(
+    tmp_path: Path, files: dict, fires: bool
+) -> None:
+    assert bool(_hits(_scan(tmp_path, files), "REPO-153")) is fires
 
 
 def test_bucket_without_retention_fires(tmp_path: Path) -> None:
@@ -131,6 +133,12 @@ def test_one_volume_passes(tmp_path: Path) -> None:
 def test_backup_of_recreatable_data_fires(tmp_path: Path, resource: str) -> None:
     (hit,) = _hits(_scan(tmp_path, {"b.tf": _PLAN + resource}), "REPO-156")
     assert hit.question == "SUS 4" and hit.line
+
+
+@pytest.mark.parametrize("name", ["attempts", "user-templates", "cachet"])
+def test_bucket_name_containing_a_word_part_passes(tmp_path: Path, name: str) -> None:
+    text = _PLAN + f'resource "aws_s3_bucket" "b" {{\n  bucket = "{name}"\n}}\n'
+    assert not _hits(_scan(tmp_path, {"b.tf": text}), "REPO-156")
 
 
 def test_backup_of_durable_data_passes(tmp_path: Path) -> None:

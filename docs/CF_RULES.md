@@ -488,7 +488,7 @@ These rules run on your CDK TypeScript/Python code and execute in both V1 and V2
 - REPO-150: Accelerator instances have no utilization alarm or batch window
 - REPO-152: Instances keep their data on instance store with no durable store behind it
 - REPO-153: A large EBS volume is a fixed size with nothing to grow it
-- REPO-154: S3 buckets and log groups have no rule that deletes unneeded data
+- REPO-154: S3 buckets have no rule that deletes unneeded data
 - REPO-155: Several EBS volumes hold data and no shared file system or bucket does
 - REPO-156: A backup plan covers a cache or a temporary bucket
 
