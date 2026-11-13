@@ -1629,5 +1629,17 @@
     "negative_py": "answer = 42",
     "positive_ts": "new ram.CfnResourceShare(this, 'Share', { name: 'share' });",
     "positive_py": "ram.CfnResourceShare(self, 'Share', name='share')"
+  },
+  "REPO-144": {
+    "negative_ts": "const answer = 42;",
+    "negative_py": "answer = 42",
+    "positive_ts": "new ec2.Instance(this, 'Web', { instanceType, machineImage, vpc, keyName: 'ops' });",
+    "positive_py": "ec2.Instance(self, 'Web', instance_type=instance_type, machine_image=image, vpc=vpc, key_name='ops')"
+  },
+  "REPO-145": {
+    "negative_ts": "const answer = 42;",
+    "negative_py": "answer = 42",
+    "positive_ts": "new ec2.Instance(this, 'Web', { instanceType, machineImage, vpc });",
+    "positive_py": "ec2.Instance(self, 'Web', instance_type=instance_type, machine_image=image, vpc=vpc)"
   }
 }

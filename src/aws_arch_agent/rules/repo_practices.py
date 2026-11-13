@@ -235,6 +235,15 @@ access):
 - REPO-143 organization sharing: a RAM resource share that does not set AllowExternalPrincipals
   to false fires.
 
+Compute protection (SEC 6) runs by default (REPO-010 answers artifact scanning, REPO-037 and
+REPO-038 integrity and hardened images):
+
+- REPO-144 interactive access: an EC2 instance, launch template or Auto Scaling group with an SSH
+  key pair and no Session Manager access (AmazonSSMManagedInstanceCore, ssm:StartSession,
+  ssmSessionPermissions) in the IaC fires.
+- REPO-145 automated protection: compute in the IaC with no Inspector enablement and no SSM
+  association or patch baseline fires; it runs only with rules.org.
+
 Reliability testing (REL 12) runs by default and reads the IaC and the builds REPO-009 reads
 (CI configs, inline buildspecs, CodeBuild projects and pipelines in the IaC, and the
 package.json scripts they run):
@@ -6326,6 +6335,88 @@ class OrgShareOpenToExternal(_RepoRule):
         return []
 
 
+# Compute protection (SEC 6): interactive access (REPO-144) and automated protection
+# (REPO-145). REPO-010 answers scanning of artifacts (SEC06-BP01).
+_EC2_HOST = re.compile(
+    _cf_type(r"EC2::(?:Instance|LaunchTemplate)|AutoScaling::LaunchConfiguration")
+    + r"|resource\s+\"aws_(?:instance|launch_template|launch_configuration)\""
+    r"|\bec2\.(?:Cfn)?(?:Instance|LaunchTemplate)\(|\bautoscaling\.AutoScalingGroup\("
+)
+_KEY_PAIR = re.compile(
+    r"[\"']?KeyName[\"']?\s*:|\bkey_name\s*=|\bkeyName\s*:|\bkey_name\s*:"
+    r"|\bkey_pair\s*[=:]|\bkeyPair\s*:|\bKeyPair\.from\w+\("
+)
+_SESSION_MANAGER = re.compile(
+    r"AmazonSSMManagedInstanceCore|AmazonSSMManagedEC2InstanceDefaultPolicy"
+    r"|\bssm:StartSession\b|\bssmSessionPermissions\s*:\s*true\b"
+    r"|\bssm_session_permissions\s*=\s*True\b|\bSSMManagedInstanceCore\b"
+)
+_SSM_BASELINE = re.compile(
+    r"AWS::SSM::(?:Association|PatchBaseline)\b"
+    r"|resource\s+\"aws_ssm_(?:association|patch_baseline|default_patch_baseline)\""
+    r"|\bssm\.Cfn(?:Association|PatchBaseline)\("
+)
+
+
+class InteractiveAccessWithKeyPair(_RepoRule):
+    id = "REPO-144"
+    title = "EC2 instances use an SSH key pair and no Session Manager access"
+    category = "Security"
+    severity = "Medium"
+    themes = ("identity", "network-exposure")
+    recommendation = (
+        "Reduce interactive access: manage instances through AWS Systems Manager Session "
+        "Manager (attach AmazonSSMManagedInstanceCore to the instance role, or set "
+        "ssmSessionPermissions in CDK), drop the key pair and close port 22. Session "
+        "Manager logs each session to CloudTrail and S3 or CloudWatch Logs."
+    )
+
+    def run(self, repo_path: Path, language: str = "typescript") -> List[Finding]:
+        keyed: tuple[str, int] | None = None
+        for rel, text in iac_texts(repo_path):
+            if _SESSION_MANAGER.search(text):
+                return []
+            if keyed is None and _EC2_HOST.search(text):
+                key = _KEY_PAIR.search(text)
+                if key:
+                    keyed = (rel, _line_of(text, key.start()))
+        if keyed is None:
+            return []
+        return [self._finding(
+            f"{keyed[0]} gives EC2 instances an SSH key pair; searched the IaC for Session "
+            "Manager access (AmazonSSMManagedInstanceCore, ssm:StartSession, "
+            "ssmSessionPermissions); found none",
+            file=keyed[0],
+            line=keyed[1],
+        )]
+
+
+class ComputeProtectionNotAutomated(_RepoRule):
+    id = "REPO-145"
+    title = "Compute protection is not automated with Inspector or an SSM association"
+    category = "Security"
+    severity = "Low"
+    themes = ("security-baseline",)
+    recommendation = (
+        "Automate compute protection: enable Amazon Inspector for EC2, ECR and Lambda (the "
+        "aws_inspector2_enabler resource or an Inspector2 Enable custom resource), and "
+        "apply the hardening baseline with an SSM State Manager association or a patch "
+        "baseline so every instance is configured and patched without a person."
+    )
+
+    def run(self, repo_path: Path, language: str = "typescript") -> List[Finding]:
+        compute = _in_iac(repo_path, _COMPUTE)
+        if not compute:
+            return []
+        if _in_iac_text(repo_path, _INSPECTOR) or _in_iac_text(repo_path, _SSM_BASELINE):
+            return []
+        return [self._finding(
+            f"Runs {_named(compute)}; searched the IaC for Amazon Inspector enablement and "
+            "for an SSM association or patch baseline; found none",
+            file=next(iter(compute.values())),
+        )]
+
+
 _COMPUTE_TRACING = _kinds(
     ("Lambda active tracing",
      r"[\"']?Tracing[\"']?\s*:\s*[\"']?Active\b"
@@ -11557,6 +11648,8 @@ REPO_RULES: List[Rule] = [
     PermissionsNotReduced(),
     LongLivedIdentity(),
     OrgShareOpenToExternal(),
+    InteractiveAccessWithKeyPair(),
+    ComputeProtectionNotAutomated(),
     FaultInjectionMissing(), LoadTestMissing(),
     KpiMetricMissing(), EdgeTelemetryMissing(), DependencyTelemetryMissing(),
     DeployTestGateMissing(), AutomatedRollbackMissing(),

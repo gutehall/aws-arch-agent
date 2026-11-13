@@ -2037,6 +2037,18 @@ TOPICS: dict[str, tuple[str, str, str, str]] = {
         "Well-Architected SEC03-BP08: Share resources securely within your organization",
         "/wellarchitected/latest/security-pillar/sec_permissions_share_securely.html",
     ),
+    "session_manager_access": (
+        "AWS Systems Manager Session Manager",
+        "/systems-manager/latest/userguide/session-manager.html",
+        "Well-Architected SEC06-BP03: Reduce manual management and interactive access",
+        "/wellarchitected/latest/security-pillar/sec_protect_compute_reduce_manual_management.html",
+    ),
+    "compute_protection_automation": (
+        "Amazon Inspector: what is Amazon Inspector",
+        "/inspector/latest/user/what-is-inspector.html",
+        "Well-Architected SEC06-BP05: Automate compute protection",
+        "/wellarchitected/latest/security-pillar/sec_protect_compute_auto_protection.html",
+    ),
     "repo_tests": (
         "AWS CDK: testing constructs",
         "/cdk/v2/guide/testing.html",
@@ -2761,6 +2773,8 @@ RULE_TOPICS: dict[str, str] = {
     "REPO-141": "permission_reduction",
     "REPO-142": "access_lifecycle",
     "REPO-143": "org_resource_sharing",
+    "REPO-144": "session_manager_access",
+    "REPO-145": "compute_protection_automation",
     "REPO-016": "fault_injection",
     "REPO-017": "load_testing",
     "REPO-018": "app_kpi_metrics",
