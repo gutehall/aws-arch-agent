@@ -4,13 +4,13 @@ This document provides a comprehensive list of all rules checked by AWS Arch Age
 
 ## Overview
 
-AWS Arch Agent checks **287 static analysis rules** and **283 template checks** across all 6 AWS Well-Architected Framework pillars. 139 of the 287 CDK rules (48%) have a template check, so they also run for CloudFormation, Terraform and synthesised CDK. [COVERAGE.md](COVERAGE.md) gives the reason for each of the others.
+AWS Arch Agent checks **318 static analysis rules** and **283 template checks** across all 6 AWS Well-Architected Framework pillars. 139 of the 318 CDK rules (44%) have a template check, so they also run for CloudFormation, Terraform and synthesised CDK. [COVERAGE.md](COVERAGE.md) gives the reason for each of the others.
 
 ## Static Analysis Rules (V1 & V2 Modes)
 
 These rules run on your CDK TypeScript/Python code and execute in both V1 and V2 modes.
 
-### Security (90 rules)
+### Security (105 rules)
 
 **Encryption & Data Protection:**
 - SEC-006: S3 bucket encryption missing
@@ -107,11 +107,26 @@ These rules run on your CDK TypeScript/Python code and execute in both V1 and V2
 - REPO-004: No organization guardrails in the scanned IaC (org-level: runs with `rules.org` or `rules.include`)
 - REPO-005: Account is defined without a security baseline
 - REPO-006: Account baseline does not check root MFA or root access keys
+- REPO-136: No Security Hub standard or Config conformance pack validates control objectives (org-level: runs with `rules.org` or `rules.include`)
+- REPO-137: Security services are not centralized through a delegated administrator or controls (org-level: runs with `rules.org` or `rules.include`)
+- REPO-138: No threat model is in the repo
+- REPO-139: No IAM Access Analyzer, Inspector or dated security service review is in the repo
 - REPO-007: No forensic capture is automated for security findings (org-level: runs with `rules.org` or `rules.include`)
 - REPO-008: No containment control is deployed (org-level: runs with `rules.org` or `rules.include`)
+- REPO-125: No Incident Manager contact or note names who responds to security incidents
+- REPO-126: No security incident management plan is in the template or the repo
+- REPO-127: No security incident response playbook is in the repo
+- REPO-128: No incident response role is provisioned before an incident
+- REPO-129: No simulation of an incident is defined
+- REPO-130: No security post-incident template is in the repo
 - REPO-009: The build does not scan dependencies
 - REPO-010: Container or function artifacts are not scanned before deploy
 - REPO-011: Packages are not pulled through a central repository
+- REPO-117: No note records application security training
+- REPO-118: No dated penetration test record is in the repo
+- REPO-119: Nothing requires a code review before a change merges
+- REPO-120: Software is not deployed programmatically
+- REPO-121: No file names who owns security for the workload
 - REPO-031: IAM roles have no permissions boundary or SCP to cap them
 - REPO-032: No break-glass role kept apart from the workload's roles
 - REPO-033: Security findings have no place to meet
@@ -124,7 +139,7 @@ These rules run on your CDK TypeScript/Python code and execute in both V1 and V2
 - REPO-040: Data classified as sensitive has no customer managed key
 - REPO-041: Nothing stops unencrypted storage from being created
 
-### Reliability (63 rules)
+### Reliability (71 rules)
 
 **High Availability:**
 - REL-001: RDS instance missing multi-AZ
@@ -174,20 +189,28 @@ These rules run on your CDK TypeScript/Python code and execute in both V1 and V2
 **Service quotas (repo-level, REL 1):**
 - REPO-012: No Service Quotas usage alarm for the services the stack uses (org-level: runs with `rules.org` or `rules.include`)
 - REPO-013: Limits the IaC sets leave no room for failover
+- REPO-133: Service quotas are not managed as code across accounts and Regions (org-level: runs with `rules.org` or `rules.include`)
+- REPO-134: No quota increase is requested by the template or by automation (org-level: runs with `rules.org` or `rules.include`)
+- REPO-135: A fixed service quota is not designed around
 
 **Network address plan (repo-level, REL 2):**
 - REPO-014: VPC CIDR ranges overlap
+- REPO-131: A public endpoint is an instance with a public IP, not a load balancer
+- REPO-132: Only one link connects the VPC to the on-premises network
 
 **Idempotent workers (repo-level, REL 4):**
 - REPO-015: Queue and stream workers have no idempotency key or dedupe store
 
 **Dependencies and constant work (repo-level, REL 4):**
-- REPO-107: Function code calls a hardcoded external URL
+- REPO-107: Code calls a hardcoded external URL
 - REPO-108: Synchronous calls have no timeout, and no queue or schedule sits behind them
 
 **Reliability testing (repo-level, REL 12):**
 - REPO-016: No fault injection experiment targets the workload
 - REPO-017: No load test runs in the pipeline
+- REPO-122: No playbook is in the repo for investigating failures
+- REPO-123: No post-incident template or record is in the repo
+- REPO-124: No game day is recorded in the repo
 
 **Change management (repo-level, REL 8):**
 - REPO-023: Live instances are changed in place
@@ -223,7 +246,7 @@ These rules run on your CDK TypeScript/Python code and execute in both V1 and V2
 - REPO-058: No availability target on the user-facing edge
 - REPO-059: No one is notified when availability drops
 
-### Operational Excellence (38 rules)
+### Operational Excellence (46 rules)
 
 **Logging:**
 - OPS-001: CloudTrail not enabled
@@ -281,6 +304,18 @@ These rules run on your CDK TypeScript/Python code and execute in both V1 and V2
 - REPO-028: Workload logs are not analyzed
 - REPO-029: Workload traces are not analyzed
 - REPO-030: Dashboards show no workload metric
+
+**Event management (repo-level, OPS 10):**
+- REPO-109: Alarms and response plans carry no severity
+- REPO-110: No customer communication channel is separate from the operator alarms
+- REPO-111: No dashboard shows the state of the alarms
+- REPO-112: Events start no automated response beyond a notification
+
+**Change flow (repo-level, OPS 5):**
+- REPO-113: The workload is not in version control
+- REPO-114: Configuration is not kept in a configuration store or per-environment files
+- REPO-115: No CI step lints, type-checks or sets a coverage gate
+- REPO-116: Deployments have no rollback, blue/green or canary step
 
 ### Performance Efficiency (28 rules)
 
@@ -1210,6 +1245,37 @@ Every rule has one or more themes, which cut across pillars: `finops`, `security
 | REPO-106 | sustainability, finops |
 | REPO-107 | resilience |
 | REPO-108 | resilience |
+| REPO-109 | observability |
+| REPO-110 | observability |
+| REPO-111 | observability |
+| REPO-112 | observability |
+| REPO-113 | resilience |
+| REPO-114 | resilience |
+| REPO-115 | resilience |
+| REPO-116 | resilience |
+| REPO-117 | security-baseline |
+| REPO-118 | security-baseline |
+| REPO-119 | security-baseline |
+| REPO-120 | security-baseline |
+| REPO-121 | security-baseline |
+| REPO-122 | resilience |
+| REPO-123 | resilience |
+| REPO-124 | resilience |
+| REPO-125 | security-baseline |
+| REPO-126 | security-baseline |
+| REPO-127 | security-baseline |
+| REPO-128 | security-baseline |
+| REPO-129 | security-baseline |
+| REPO-130 | security-baseline |
+| REPO-131 | resilience |
+| REPO-132 | resilience |
+| REPO-133 | resilience |
+| REPO-134 | resilience |
+| REPO-135 | resilience |
+| REPO-136 | security-baseline |
+| REPO-137 | security-baseline |
+| REPO-138 | security-baseline |
+| REPO-139 | security-baseline |
 | SEC-001 | identity |
 | SEC-002 | identity |
 | SEC-003 | network-exposure |

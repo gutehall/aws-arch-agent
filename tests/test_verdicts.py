@@ -33,6 +33,15 @@ from aws_arch_agent.report.sarif import render_sarif
 from aws_arch_agent.rules.cards import STATIC_CARDS
 from aws_arch_agent.tools.llm import LLMResult
 
+
+# The batch cap is 100 findings. The repo-level practice rules added since (REPO-107 to
+# REPO-139) fire on this bare repo and push it past the cap, so these tests leave them out.
+_QUIET = [f"REPO-{n}" for n in range(107, 140)]
+
+
+def _analyze(repo, **kwargs):
+    return analyze_v1(repo, rules_exclude=_QUIET, **kwargs)
+
 STACK = """// Action: "*" appears here only in a comment
 const policy = { Action: "*", Resource: "*" };
 new s3.Bucket(this, "B");
@@ -128,7 +137,7 @@ def test_two_findings_of_one_rule_get_their_own_verdicts(tmp_path: Path, monkeyp
         return _ok(json.dumps(items))
 
     _use(monkeypatch, reply)
-    _report, _ctx, findings, _w = analyze_v1(_repo(tmp_path))
+    _report, _ctx, findings, _w = _analyze(_repo(tmp_path))
     labels = {f.line: f.verdict.verdict for f in findings if f.id == "SEC-001"}
     assert sorted(labels.values()) == ["confirm", "false_positive"]
 
@@ -387,8 +396,8 @@ def test_fallback_text_is_never_parsed_and_not_retried(tmp_path: Path) -> None:
 
 def test_fallback_scan_has_no_labels(tmp_path: Path, monkeypatch) -> None:
     fake = _use(monkeypatch, lambda p: LLMResult(p, "fallback", "ollama", "m", "Ollama request failed"))
-    plain, _c, _f, _w = analyze_v1(_repo(tmp_path), use_llm=False)
-    report, ctx, findings, _w = analyze_v1(tmp_path)
+    plain, _c, _f, _w = _analyze(_repo(tmp_path), use_llm=False)
+    report, ctx, findings, _w = _analyze(tmp_path)
     assert ctx.llm.status == "fallback" and len(fake.prompts) == 1
     assert not any(f.verdict for f in findings)
     assert GENERATED.sub("", report) == GENERATED.sub("", plain)
@@ -399,8 +408,8 @@ def test_fallback_scan_has_no_labels(tmp_path: Path, monkeypatch) -> None:
 
 def test_v1_findings_section_matches_no_llm(tmp_path: Path, monkeypatch) -> None:
     _use(monkeypatch, _all("false_positive"))
-    plain, _c, _f, _w = analyze_v1(_repo(tmp_path), use_llm=False)
-    report, ctx, findings, _w = analyze_v1(tmp_path)
+    plain, _c, _f, _w = _analyze(_repo(tmp_path), use_llm=False)
+    report, ctx, findings, _w = _analyze(tmp_path)
     assert ctx.llm.status == "ok"
     assert report.count("- LLM verdict: **likely false positive** — `because`") == len(findings)
     assert _plain(report) == GENERATED.sub("", plain)
@@ -434,7 +443,7 @@ def test_unknown_id_is_absent(tmp_path: Path, monkeypatch) -> None:
         return _ok(json.dumps(items))
 
     _use(monkeypatch, reply)
-    report, _c, _f, _w = analyze_v1(_repo(tmp_path))
+    report, _c, _f, _w = _analyze(_repo(tmp_path))
     assert "known" in report
     assert "BARE" not in report and "GHOST" not in report
 
@@ -463,6 +472,9 @@ def test_false_positive_label_does_not_change_the_exit_code(tmp_path: Path, monk
 def test_cli_line_says_how_many_were_judged(tmp_path: Path, monkeypatch) -> None:
     (tmp_path / "repo").mkdir()
     repo = _repo(tmp_path / "repo")
+    (repo / ".aws-arch-agent.yml").write_text(
+        "rules:\n  exclude: [" + ", ".join(_QUIET) + "]\n", encoding="utf-8"
+    )
     out = tmp_path / "report.md"
     result = _cli(["--repo", str(repo), "--out", str(out)], monkeypatch, _all("unsure"))
     assert result.exit_code == 0, result.output
@@ -497,8 +509,8 @@ def test_cli_invalid_run_has_no_verdict_line_and_equals_no_llm(tmp_path: Path, m
 
 def test_sinks_ignore_the_verdict_except_where_shown(tmp_path: Path, monkeypatch) -> None:
     _use(monkeypatch, _all("false_positive"))
-    _r, ctx0, plain, _w = analyze_v1(_repo(tmp_path), use_llm=False)
-    _r, ctx, judged, _w = analyze_v1(tmp_path)
+    _r, ctx0, plain, _w = _analyze(_repo(tmp_path), use_llm=False)
+    _r, ctx, judged, _w = _analyze(tmp_path)
     assert all(f.verdict for f in judged)
 
     assert merge_into_baseline(set(), judged) == merge_into_baseline(set(), plain)

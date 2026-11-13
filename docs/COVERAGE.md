@@ -15,7 +15,7 @@ Which CDK rules have a template check, and which AWS Foundational Security Best 
 
 ## CDK rules
 
-287 rules: 132 covered, 7 partial, 10 account, 5 cdk-only, 25 advice, 108 repo.
+318 rules: 132 covered, 7 partial, 10 account, 5 cdk-only, 25 advice, 139 repo.
 
 | Rule | Title | Template check | Status | Note |
 | -- | -- | -- | -- | -- |
@@ -304,8 +304,39 @@ Which CDK rules have a template check, and which AWS Foundational Security Best 
 | REPO-104 | Compute at its resource ceiling with no profile of the code |  | `repo` | Fires when a Lambda function (10240 MB, or 900 s with 3008 MB or more) or an ECS/Fargate task definition (16384 CPU units, 122880 MiB, or the largest memory for its CPU size) sits at its ceiling and the repo has no CodeGuru Profiler, Lambda Insights, AWS Lambda Power Tuning or note on a load test or profile with figures. |
 | REPO-105 | Impact on end-user devices is not addressed |  | `repo` | Fires when the repo builds for end-user devices (Android, iOS, Flutter, React Native, Expo, Capacitor or Cordova sources, or IaC for an IoT fleet, a Pinpoint app or an Amplify mobile app) and has no Device Farm project, no `aws devicefarm` build step and no note on supported devices, minimum OS, battery, energy or hardware lifecycle. Silent for a server-side workload. |
 | REPO-106 | Storage is not matched to the data access pattern |  | `repo` | Fires on the same gap as REPO-063: production data kept only on instance volumes, instance store or a database engine run on the host, with no managed data store in the IaC. |
-| REPO-107 | Function code calls a hardcoded external URL |  | `repo` | A literal http(s) host in a requests, httpx, urlopen, fetch, axios or got call in Python, TypeScript or JavaScript outside tests. Local, link-local and AWS endpoints and URLs built from a variable do not fire. |
+| REPO-107 | Code calls a hardcoded external URL |  | `repo` | A literal http(s) host in a requests, httpx, urlopen, fetch, axios or got call in Python, TypeScript or JavaScript outside tests. Local, link-local and AWS endpoints and URLs built from a variable do not fire. |
 | REPO-108 | Synchronous calls have no timeout, and no queue or schedule sits behind them |  | `repo` | Fires on a file with a synchronous HTTP call and no timeout or abort signal, when the IaC has no SQS queue, Kinesis stream, event source mapping or schedule. |
+| REPO-109 | Alarms and response plans carry no severity |  | `repo` | Fires when the IaC has a CloudWatch alarm or an Incident Manager response plan and no file with one names a severity, priority or impact. |
+| REPO-110 | No customer communication channel is separate from the operator alarms |  | `repo` | Fires when the IaC has alarms and no SNS, SES or Pinpoint resource in a file that names customers, subscribers or a status page. |
+| REPO-111 | No dashboard shows the state of the alarms |  | `repo` | Fires when the IaC has alarms and no dashboard with an alarm status or alarm widget. |
+| REPO-112 | Events start no automated response beyond a notification |  | `repo` | Fires when the IaC has alarms or response plans and no alarm action that runs automation, EventBridge rule on alarm state changes, or SSM Automation target. A scaling policy alone does not count. |
+| REPO-113 | The workload is not in version control |  | `repo` | Fires when no `.git` entry exists in the scanned folder or above it and the IaC names no CodeCommit repository, CodeConnections or CodeStar connection or hosted pipeline source. |
+| REPO-114 | Configuration is not kept in a configuration store or per-environment files |  | `repo` | Fires when the IaC runs compute and has no SSM parameter, Secrets Manager secret, AppConfig resource or parameter lookup, and the repo has no tfvars, cdk.context or config-directory file per environment. |
+| REPO-115 | No CI step lints, type-checks or sets a coverage gate |  | `repo` | Fires when no build config, and no package.json script a build runs, calls a linter, type checker, static analyzer or coverage threshold. A repo with no CI also fires. |
+| REPO-116 | Deployments have no rollback, blue/green or canary step |  | `repo` | Fires when the IaC runs compute and has no rollback control (as REPO-022), blue/green, canary or linear traffic shift, CodeDeploy deployment group or Lambda alias weights. |
+| REPO-117 | No note records application security training |  | `repo` | Fires when the repo holds IaC and no note is named or headed for security training, security awareness or secure coding. |
+| REPO-118 | No dated penetration test record is in the repo |  | `repo` | Fires when the repo holds IaC and no note named or headed for a penetration test holds a date. |
+| REPO-119 | Nothing requires a code review before a change merges |  | `repo` | Fires when the repo holds IaC and has no CODEOWNERS file, branch protection or ruleset with required reviews, repository settings as code, or CodeCommit approval rule. |
+| REPO-120 | Software is not deployed programmatically |  | `repo` | Fires when the repo holds IaC and no build config or pipeline deploys it (the detection REPO-025 uses). |
+| REPO-121 | No file names who owns security for the workload |  | `repo` | Fires when the repo holds IaC and has no SECURITY.md, security owners or champions note, or CODEOWNERS line that names security. |
+| REPO-122 | No playbook is in the repo for investigating failures |  | `repo` | Fires when the repo holds IaC and no note, or folder, is named or headed for a playbook, a failure investigation or a troubleshooting guide. |
+| REPO-123 | No post-incident template or record is in the repo |  | `repo` | Fires when the repo holds IaC and no note is named or headed for a post-incident review, postmortem, incident report or root cause analysis. |
+| REPO-124 | No game day is recorded in the repo |  | `repo` | Fires when the repo holds IaC and no note is named or headed for a game day, chaos day or fire drill. |
+| REPO-125 | No Incident Manager contact or note names who responds to security incidents |  | `repo` | Fires when the repo holds IaC and has no Incident Manager contact or plan and no note, or folder, named or headed for contacts, on-call, key personnel or responders. |
+| REPO-126 | No security incident management plan is in the template or the repo |  | `repo` | Fires when the repo holds IaC and has no Incident Manager response plan and no note named or headed for an incident management or response plan. |
+| REPO-127 | No security incident response playbook is in the repo |  | `repo` | Fires when the repo holds IaC and no note, folder or heading is for security incident playbooks. |
+| REPO-128 | No incident response role is provisioned before an incident |  | `repo` | Fires when the repo holds IaC and no IAM role or permission set is named for incident response, a responder, an investigator or forensics. |
+| REPO-129 | No simulation of an incident is defined |  | `repo` | Fires when the repo holds IaC and defines no AWS FIS experiment template. |
+| REPO-130 | No security post-incident template is in the repo |  | `repo` | Fires when the repo holds IaC and no note or heading is for a security post-incident review or postmortem. |
+| REPO-131 | A public endpoint is an instance with a public IP, not a load balancer |  | `repo` | Fires when the IaC has an EC2 instance with a public IP address and no load balancer or Global Accelerator anywhere. |
+| REPO-132 | Only one link connects the VPC to the on-premises network |  | `repo` | Fires on the same condition as REPO-066 (one Direct Connect connection or virtual interface with no LAG and no VPN, or one VPN connection on one customer gateway with no Direct Connect); each answers its own question (REL 2 and PERF 4). No link, or a second path, passes. |
+| REPO-133 | Service quotas are not managed as code across accounts and Regions |  | `repo` | Fires when the IaC runs compute and has no Service Quotas resource, template or quotas module. Org-level: runs with `rules.org` or `rules.include`. |
+| REPO-134 | No quota increase is requested by the template or by automation |  | `repo` | Fires when the IaC runs compute and no Service Quotas resource or template, and no RequestServiceQuotaIncrease call or permission, is in the IaC or function code. Org-level: runs with `rules.org` or `rules.include`. |
+| REPO-135 | A fixed service quota is not designed around |  | `repo` | Fires on an SQS FIFO queue without high-throughput mode or a provisioned Kinesis stream with one shard and no on-demand mode. |
+| REPO-136 | No Security Hub standard or Config conformance pack validates control objectives |  | `repo` | Fires when the repo holds IaC and defines no Security Hub standards subscription or Config conformance pack. Org-level: runs with `rules.org` or `rules.include`. |
+| REPO-137 | Security services are not centralized through a delegated administrator or controls |  | `repo` | Fires when the repo holds IaC and defines no Organizations delegated administrator, service organization admin account or Control Tower control. Org-level: runs with `rules.org` or `rules.include`. |
+| REPO-138 | No threat model is in the repo |  | `repo` | Fires when the repo holds IaC and has no file named for a threat model and no note with a threat model heading. |
+| REPO-139 | No IAM Access Analyzer, Inspector or dated security service review is in the repo |  | `repo` | Fires when the repo holds IaC and defines no Access Analyzer or Inspector and has no dated security review note. |
 
 ## FSBP controls
 

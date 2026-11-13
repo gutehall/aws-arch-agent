@@ -88,7 +88,7 @@ def test_rules_answer_rel2() -> None:
     assert RULE_BEST_PRACTICES["CF-VPC-006"] == ("REL02-BP04",)
     assert RULE_BEST_PRACTICES["REPO-014"] == ("REL02-BP05",)
     assert {"REL02-BP03", "REL02-BP04", "REL02-BP05"}.isdisjoint(NOT_CHECKED)
-    assert {"REL02-BP01", "REL02-BP02"} <= NOT_CHECKED
+    assert {"REL02-BP01", "REL02-BP02"}.isdisjoint(NOT_CHECKED)
 
 
 # --- CF-VPC-004: a subnet tier in one Availability Zone (REL02-BP03) ---

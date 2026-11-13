@@ -693,14 +693,44 @@ def test_cli_html_escapes_scanned_source(tmp_path: Path) -> None:
 
 def test_cli_html_with_no_findings_writes_a_page(tmp_path: Path) -> None:
     (tmp_path / "main.tf").write_text('variable "x" {}\n', encoding="utf-8")
-    # Tests, a CI workflow that scans dependencies, deploys behind a test, smoke-tests the
-    # deploy, runs a load test and a FIS experiment, and two environments: the repo-level
-    # rules have nothing to say.
+    # Tests, a git checkout, a CI workflow that lints, scans dependencies, deploys behind a test,
+    # smoke-tests the deploy, runs a load test and a FIS experiment, and two environments: the
+    # repo-level rules have nothing to say.
+    (tmp_path / ".git").mkdir()
+    # Notes for SEC 11: security training, a dated pen test and who owns security.
+    (tmp_path / "docs").mkdir()
+    (tmp_path / "docs" / "security-training.md").write_text("Yearly course.\n", encoding="utf-8")
+    (tmp_path / "docs" / "pentest.md").write_text("Run on 2026-03-14.\n", encoding="utf-8")
+    (tmp_path / "SECURITY.md").write_text("Owner: @alice\n", encoding="utf-8")
+    # Notes for REL 12: a failure playbook, a post-incident template and a game day plan.
+    for note in ("playbook.md", "postmortem-template.md", "game-days.md"):
+        (tmp_path / "docs" / note).write_text("Notes.\n", encoding="utf-8")
+    # Notes and IaC for SEC 10: contacts, an incident plan, security playbooks, a response
+    # role, a simulation and a security post-incident template.
+    for note in ("security-contacts.md", "incident-response-plan.md", "security-playbook.md",
+                 "security-postmortem-template.md"):
+        (tmp_path / "docs" / note).write_text("Notes.\n", encoding="utf-8")
+    # Notes and IaC for SEC 1: a threat model, a dated security review, a standards subscription
+    # and a delegated administrator.
+    (tmp_path / "docs" / "threat-model.md").write_text("Assets.\n", encoding="utf-8")
+    (tmp_path / "docs" / "security-review.md").write_text("Reviewed 2026-03-02.\n", encoding="utf-8")
+    (tmp_path / "controls.tf").write_text(
+        'resource "aws_securityhub_standards_subscription" "s" {\n  standards_arn = "a"\n}\n'
+        'resource "aws_organizations_delegated_administrator" "d" {\n  account_id = "1"\n}\n',
+        encoding="utf-8",
+    )
+    (tmp_path / "response.tf").write_text(
+        'resource "aws_iam_role" "ir" {\n  name = "IncidentResponder"\n'
+        '  permissions_boundary = "arn:aws:iam::123456789012:policy/boundary"\n}\n'
+        'resource "aws_fis_experiment_template" "t" {\n  description = "d"\n}\n',
+        encoding="utf-8",
+    )
+    (tmp_path / "CODEOWNERS").write_text("* @org/platform\n", encoding="utf-8")
     for rel in (".github/workflows/ci.yml", "tests/main.tftest.hcl", "dev.tfvars", "prod.tfvars"):
         (tmp_path / rel).parent.mkdir(parents=True, exist_ok=True)
         (tmp_path / rel).write_text("\n", encoding="utf-8")
     (tmp_path / ".github/workflows/ci.yml").write_text(
-        "jobs:\n  build:\n    steps:\n      - run: osv-scanner -r .\n"
+        "jobs:\n  build:\n    steps:\n      - run: tflint\n      - run: osv-scanner -r .\n"
         "      - run: terraform test\n      - run: terraform apply -auto-approve\n"
         "      - run: curl -fsS https://example.com/health\n"
         "      - run: k6 run load/smoke.js\n"

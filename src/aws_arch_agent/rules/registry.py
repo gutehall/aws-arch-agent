@@ -70,8 +70,9 @@ from aws_arch_agent.rules.sustainability import (
 )
 
 ALL_RULES = [
-    # Security (90 rules: these 71, and REPO-004 to REPO-011 and REPO-031 to REPO-041
-    # in REPO_RULES below)
+    # Security (105 rules: these 71, and REPO-004 to REPO-011, REPO-031 to REPO-041,
+    # REPO-117 to REPO-121, REPO-125 to REPO-130 and REPO-136 to REPO-139 in REPO_RULES
+    # below)
     IamWildcardAction(),
     IamWildcardResource(),
     OpenSshToWorld(),
@@ -143,8 +144,9 @@ ALL_RULES = [
     IamUserConsolePassword(),
     IamAccessKeyCreated(),
     IamUserDirectPolicies(),
-    # Reliability (63 rules: these 33, and REPO-012 to REPO-017, REPO-023 to REPO-026,
-    # REPO-042 to REPO-059, REPO-107 and REPO-108 in REPO_RULES)
+    # Reliability (71 rules: these 33, and REPO-012 to REPO-017, REPO-023 to REPO-026,
+    # REPO-042 to REPO-059, REPO-107, REPO-108, REPO-122 to REPO-124 and REPO-131 to
+    # REPO-135 in REPO_RULES)
     RdsMultiAzMissing(),
     BackupRetentionMissing(),
     LambdaDlqMissing(),
@@ -203,9 +205,9 @@ ALL_RULES = [
     ResourceNamingConvention(),
     CdkAspectsMissing(),
     CdkContextMissing(),
-    # Operational Excellence (38 rules)
-    # These 26, and REPO-001 to REPO-003, REPO-018 to REPO-022 and REPO-027 to REPO-030 in
-    # REPO_RULES.
+    # Operational Excellence (46 rules)
+    # These 26, and REPO-001 to REPO-003, REPO-018 to REPO-022, REPO-027 to REPO-030 and
+    # REPO-109 to REPO-116 in REPO_RULES.
     CloudTrailMissing(),
     VpcFlowLogsMissing(),
     XRayTracingMissing(),
