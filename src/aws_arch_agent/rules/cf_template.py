@@ -1,5 +1,7 @@
 """CloudFormation template-based rules (S3, RDS, ALB, CloudTrail, KMS, Lambda, DynamoDB, etc.) run after cdk synth."""
 from __future__ import annotations
+import fnmatch
+import ipaddress
 import json
 import re
 from contextlib import contextmanager
@@ -38,6 +40,7 @@ SENSITIVE_PORTS = {
 CF_COVERS_STATIC: dict[str, tuple[str, ...]] = {
     "CF-ALARM-001": ("OPS-010",),
     "CF-ALARM-002": ("OPS-011",),
+    "CF-ALARM-003": ("OPS-027",),
     "CF-DASH-001": ("OPS-021",),
     "CF-R53-002": ("SEC-032",),
     "CF-R53-003": ("SEC-031",),
@@ -60,6 +63,7 @@ CF_COVERS_STATIC: dict[str, tuple[str, ...]] = {
     "CF-S3-002": ("SEC-006",),
     "CF-VPC-001": ("SEC-022",),
     "CF-FL-001": ("OPS-002",),
+    "CF-PATCH-001": ("OPS-026",),
     "CF-EC2-001": ("SEC-066",),
     "CF-SNS-001": ("SEC-014",),
     "CF-LAM-003": ("SEC-068",),
@@ -110,6 +114,9 @@ CF_COVERS_STATIC: dict[str, tuple[str, ...]] = {
     "CF-IAM-003": ("SEC-002",),
     # Action "*" on Resource "*" is reported once, as admin, so it covers both wildcards.
     "CF-IAM-008": ("SEC-067", "SEC-001", "SEC-002"),
+    "CF-IAM-009": ("SEC-069",),
+    "CF-IAM-010": ("SEC-070",),
+    "CF-IAM-011": ("SEC-071",),
     "CF-SQS-001": ("SEC-013",),
     "CF-SQS-002": ("REL-008",),
     "CF-SQS-003": ("REL-024",),
@@ -123,6 +130,7 @@ CF_COVERS_STATIC: dict[str, tuple[str, ...]] = {
     "CF-SG-002": ("SEC-003", "SEC-004"),
     "CF-SG-003": ("SEC-054",),
     "CF-NAT-001": ("REL-012",),
+    "CF-VPC-004": ("REL-032",),
     "CF-TGW-002": ("OPS-016",),
     "CF-DDB-001": ("REL-004",),
     "CF-DDB-002": ("SEC-008",),
@@ -153,6 +161,7 @@ CF_COVERS_STATIC: dict[str, tuple[str, ...]] = {
     "CF-LAM-005": ("SEC-017", "BP-002"),
     "CF-LAM-006": ("REL-027",),
     "CF-LAM-007": ("REL-009",),
+    "CF-LAM-009": ("REL-033",),
     "CF-RDS-002": ("REL-002",),
     "CF-RDS-004": ("SEC-064",),
     "CF-RDS-005": ("REL-030",),
@@ -371,6 +380,7 @@ CHECK_PROPERTIES: dict[str, frozenset[str]] = {
         "CF-ALB-001": {"LoadBalancerAttributes"},
         "CF-ALB-002": {"Protocol", "DefaultActions"},
         "CF-ALB-003": {"Protocol", "SslPolicy"},
+        "CF-NLB-001": {"Protocol", "Port"},
         "CF-ALB-004": {"LoadBalancerAttributes", "Type"},
         "CF-ALB-005": {"LoadBalancerAttributes"},
         "CF-ALB-006": {"LoadBalancerAttributes", "Type"},
@@ -461,6 +471,7 @@ CHECK_PROPERTIES: dict[str, frozenset[str]] = {
                               "CF-SQS-003")},
         # Template-level: _warehouse_findings skips what it cannot read.
         **{c: set() for c in ("CF-RS-002", "CF-RS-003", "CF-RS-004", "CF-RS-005", "CF-RS-006", "CF-RS-007",
+                              "CF-RS-008",
                               "CF-DOCDB-002", "CF-DOCDB-003", "CF-DOCDB-004", "CF-NEP-002", "CF-NEP-003",
                               "CF-NEP-004", "CF-NEP-005")},
         # Template-level: _search_streaming_findings skips what it cannot read.
@@ -499,7 +510,8 @@ CHECK_PROPERTIES: dict[str, frozenset[str]] = {
         **{c: set() for c in ("CF-R53-001", "CF-R53-002", "CF-R53-003", "CF-ACM-001", "CF-ACM-002",
                               "CF-ACM-003", "CF-GA-001")},
         # Template-level: _monitoring_findings skips what it cannot read.
-        **{c: set() for c in ("CF-ALARM-001", "CF-ALARM-002", "CF-DASH-001", "CF-CT-005")},
+        **{c: set() for c in ("CF-ALARM-001", "CF-ALARM-002", "CF-ALARM-003", "CF-DASH-001",
+                              "CF-CT-005")},
         # Template-level: _account_baseline_findings skips what it cannot read.
         **{c: set() for c in ("CF-GD-001", "CF-SH-001", "CF-CFG-001", "CF-MACIE-001", "CF-BUDGET-001")},
         # Template-level: _backup_findings skips what it cannot read.
@@ -519,6 +531,8 @@ CHECK_PROPERTIES: dict[str, frozenset[str]] = {
         "CF-IAM-003": {"PolicyDocument", "Policies"},
         # Known admin access stays admin whatever else is unknown, so nothing drops it.
         "CF-IAM-008": set(),
+        # Template-level: _identity_findings skips what it cannot read.
+        **{c: set() for c in ("CF-IAM-009", "CF-IAM-010", "CF-IAM-011")},
         "CF-IAM-004": {"AssumeRolePolicyDocument"},
         "CF-IAM-005": {"AssumeRolePolicyDocument"},
         "CF-IAM-006": {"AssumeRolePolicyDocument"},
@@ -538,7 +552,8 @@ _F, _SB, _ID, _DP, _NET, _RES, _OBS, _SUS = (
 CF_THEMES: dict[str, tuple[str, ...]] = {
     "CF-GD-001": (_SB,), "CF-SH-001": (_SB,), "CF-CFG-001": (_OBS, _SB), "CF-MACIE-001": (_DP, _SB),
     "CF-BUDGET-001": (_F,),
-    "CF-ALARM-001": (_OBS,), "CF-ALARM-002": (_OBS,), "CF-DASH-001": (_OBS,),
+    "CF-ALARM-001": (_OBS,), "CF-ALARM-002": (_OBS,), "CF-ALARM-003": (_OBS,),
+    "CF-DASH-001": (_OBS,),
     "CF-CT-004": (_OBS, _SB), "CF-CT-005": (_OBS, _DP),
     "CF-R53-001": (_OBS, _SB), "CF-R53-002": (_SB,), "CF-R53-003": (_RES,),
     "CF-ACM-001": (_RES,), "CF-ACM-002": (_DP,), "CF-ACM-003": (_SB,), "CF-GA-001": (_RES,),
@@ -557,6 +572,7 @@ CF_THEMES: dict[str, tuple[str, ...]] = {
     "CF-ASG-001": (_RES,), "CF-ASG-002": (_RES,), "CF-ASG-003": (_SB, _ID), "CF-ASG-004": (_NET,),
     "CF-ASG-005": (_SB,), "CF-ASG-006": (_F,),
     "CF-ALB-001": (_OBS,), "CF-ALB-002": (_DP, _NET), "CF-ALB-003": (_DP, _NET),
+    "CF-NLB-001": (_DP, _NET), "CF-RS-008": (_DP, _NET),
     "CF-ALB-004": (_NET,), "CF-ALB-005": (_RES,), "CF-ALB-006": (_NET,), "CF-ALB-007": (_RES,),
     "CF-CLB-001": (_DP, _NET), "CF-CLB-002": (_DP,), "CF-CLB-003": (_OBS,), "CF-CLB-004": (_RES,),
     "CF-CLB-005": (_RES,), "CF-APIGW-001": (_OBS,), "CF-APIGW-002": (_OBS,),
@@ -583,9 +599,11 @@ CF_THEMES: dict[str, tuple[str, ...]] = {
     "CF-EIP-001": (_F,), "CF-EKS-001": (_OBS,), "CF-EKS-002": (_NET,), "CF-EKS-003": (_DP,),
     "CF-ENV-001": (_F,), "CF-ENV-002": (_F,), "CF-ENV-003": (_F,), "CF-ENV-004": (_F,),
     "CF-ENV-005": (_F,), "CF-ENV-006": (_F,), "CF-FL-001": (_OBS, _NET),
+    "CF-PATCH-001": (_SB,),
     "CF-GEN-001": (_F, _SUS), "CF-IAM-001": (_ID,), "CF-IAM-002": (_ID,), "CF-IAM-003": (_ID,),
     "CF-IAM-004": (_ID,), "CF-IAM-005": (_ID,), "CF-IAM-006": (_ID,), "CF-IAM-007": (_ID,),
-    "CF-IAM-008": (_ID,), "CF-KIN-001": (_DP,), "CF-KMS-001": (_ID, _DP),
+    "CF-IAM-008": (_ID,), "CF-IAM-009": (_ID,), "CF-IAM-010": (_ID,), "CF-IAM-011": (_ID,),
+    "CF-KIN-001": (_DP,), "CF-KMS-001": (_ID, _DP),
     "CF-RS-002": (_NET,), "CF-RS-003": (_RES,), "CF-RS-004": (_OBS,), "CF-RS-005": (_SB,),
     "CF-RS-006": (_NET,), "CF-RS-007": (_SB,), "CF-DOCDB-002": (_RES,), "CF-DOCDB-003": (_OBS,),
     "CF-DOCDB-004": (_RES, _DP), "CF-NEP-002": (_OBS,), "CF-NEP-003": (_RES, _DP), "CF-NEP-004": (_RES,),
@@ -595,7 +613,7 @@ CF_THEMES: dict[str, tuple[str, ...]] = {
     "CF-KMS-002": (_DP,), "CF-KMS-003": (_RES,), "CF-SSM-001": (_DP,), "CF-SSM-002": (_F,),
     "CF-LAM-001": (_RES,), "CF-LAM-002": (_OBS,), "CF-LAM-003": (_SB,),
     "CF-LAM-004": (_ID, _NET), "CF-LAM-005": (_DP, _ID), "CF-LAM-006": (_RES,),
-    "CF-LAM-007": (_RES,), "CF-LAM-008": (_RES,),
+    "CF-LAM-007": (_RES,), "CF-LAM-008": (_RES,), "CF-LAM-009": (_RES,),
     "CF-MSK-001": (_DP,), "CF-NEP-001": (_DP,), "CF-OS-001": (_DP,), "CF-OS-002": (_DP,),
     "CF-PAR-001": (_DP, _ID), "CF-PAR-002": (_DP, _ID),
     "CF-PERF-001": (_F, _SUS), "CF-PERF-002": (_RES,), "CF-PERF-003": (_F,), "CF-PERF-004": (_F,),
@@ -618,6 +636,7 @@ CF_THEMES: dict[str, tuple[str, ...]] = {
     "CF-SQS-001": (_DP,), "CF-SQS-002": (_RES,),
     "CF-SUST-001": (_SUS, _F), "CF-SUST-002": (_SUS, _F), "CF-SUST-003": (_SUS, _F),
     "CF-TAG-001": (_F,), "CF-VPC-001": (_NET, _F), "CF-VPC-002": (_F,), "CF-VPC-003": (_F,), "CF-WAF-001": (_NET,),
+    "CF-VPC-004": (_RES,), "CF-VPC-005": (_RES,), "CF-VPC-006": (_RES,),
 }
 
 # Title of each template check, for the rule catalog. A check with a computed title or
@@ -628,9 +647,11 @@ CF_TITLES: dict[str, str] = {
     "CF-ACM-003": "ACM certificate opts out of certificate transparency logging",
     "CF-ALARM-001": "Stack has no CloudWatch alarm on its main resources",
     "CF-ALARM-002": "CloudWatch alarm has no action",
+    "CF-ALARM-003": "Alarms have no escalation path in this template",
     "CF-ALB-001": "ALB access logs not enabled (template-level)",
     "CF-ALB-002": "HTTP listener does not redirect to HTTPS",
     "CF-ALB-003": "Listener TLS policy allows TLS 1.0 or 1.1",
+    "CF-NLB-001": "Load balancer listener passes plain TCP",
     "CF-ALB-004": "ALB does not drop invalid HTTP headers",
     "CF-ALB-005": "Load balancer deletion protection not enabled",
     "CF-ALB-006": "ALB desync mitigation mode is monitor",
@@ -772,6 +793,7 @@ CF_TITLES: dict[str, str] = {
     "CF-ENV-006": "Provisioned DynamoDB capacity in a non-production stack",
     "CF-FH-001": "Firehose delivery stream is not encrypted at rest",
     "CF-FL-001": "VPC has no flow logs in this template",
+    "CF-PATCH-001": "EC2 instances have no patch baseline in this template",
     "CF-FSX-001": "FSx file system has no customer managed key",
     "CF-FSX-002": "FSx file system does not copy tags to backups",
     "CF-FSX-003": "FSx file system has automatic backups off",
@@ -789,6 +811,9 @@ CF_TITLES: dict[str, str] = {
     "CF-IAM-006": "IAM service role trust has no aws:SourceAccount or aws:SourceArn",
     "CF-IAM-007": "IAM role trusts GitHub Actions OIDC without restricting the repository",
     "CF-IAM-008": "IAM principal has full admin access",
+    "CF-IAM-009": "IAM user has a console password",
+    "CF-IAM-010": "IAM access key is created in the template",
+    "CF-IAM-011": "IAM user has policies attached directly",
     "CF-KIN-001": "Kinesis stream is not encrypted at rest",
     "CF-KIN-002": "Kinesis stream keeps records for only 24 hours",
     "CF-KMS-001": "KMS key policy allows any principal",
@@ -802,6 +827,7 @@ CF_TITLES: dict[str, str] = {
     "CF-LAM-006": "Lambda function has no reserved concurrency",
     "CF-LAM-007": "Lambda timeout does not fit its trigger",
     "CF-LAM-008": "Lambda function in a VPC uses subnets in one AZ",
+    "CF-LAM-009": "Lambda function invokes another function synchronously",
     "CF-MACIE-001": "Macie session is paused",
     "CF-MSK-001": "MSK cluster allows unencrypted traffic",
     "CF-MSK-002": "MSK cluster allows unauthenticated clients",
@@ -851,6 +877,7 @@ CF_TITLES: dict[str, str] = {
     "CF-RS-005": "Redshift cluster does not take major version upgrades",
     "CF-RS-006": "Redshift cluster does not use enhanced VPC routing",
     "CF-RS-007": "Redshift cluster uses a default name",
+    "CF-RS-008": "Redshift cluster does not require SSL",
     "CF-S3-001": "S3 bucket may miss full PublicAccessBlock",
     "CF-S3-002": "S3 bucket encryption explicitly disabled",
     "CF-S3-003": "S3 bucket versioning not enabled",
@@ -894,6 +921,9 @@ CF_TITLES: dict[str, str] = {
     "CF-VPC-001": "VPC has no VPC endpoints in this template",
     "CF-VPC-002": "S3 traffic goes through the NAT gateway",
     "CF-VPC-003": "DynamoDB traffic goes through the NAT gateway",
+    "CF-VPC-004": "A subnet tier uses one Availability Zone",
+    "CF-VPC-005": "Subnets leave no room in the VPC CIDR to grow",
+    "CF-VPC-006": "VPCs are peered in a mesh with no transit gateway",
     "CF-WAF-001": "Load balancer or API stage has no WAF web ACL in this template",
 }
 
@@ -1956,6 +1986,15 @@ def _load_balancer_findings(res: Resource, template_path: Path) -> List[Finding]
                 "Make the HTTP listener's default action a redirect to HTTPS (port 443, HTTP_301), so "
                 "no request is served in clear text (Security Hub ELB.1). In CDK: redirectHTTP: true, or "
                 "ListenerAction.redirect({ protocol: 'HTTPS', port: '443' }).")
+        port = props.get("Port")
+        port = int(port) if isinstance(port, str) and port.isdigit() else port
+        if protocol == "TCP" and isinstance(port, int) and not isinstance(port, bool) \
+                and port not in _TLS_PASSTHROUGH_PORTS:
+            add("CF-NLB-001", "Load balancer listener passes plain TCP", "Low", "Security",
+                f"This listener takes plain TCP on port {port}, so the load balancer does not "
+                "encrypt the connection. Use a TLS listener with an ACM certificate (Protocol: TLS, "
+                "Certificates, SslPolicy). Port 443 and 8443 are read as TLS passed through to the "
+                "targets. In CDK: protocol: elbv2.Protocol.TLS, certificates: [cert].")
         if protocol in ("HTTPS", "TLS"):
             policy = props.get("SslPolicy", _DEFAULT_ELB_POLICY)
             if isinstance(policy, str) and _WEAK_ELB_POLICY.match(policy):
@@ -2113,6 +2152,111 @@ def _lambda_wiring_findings(resources: List[Resource], template_path: Path) -> L
                     "All of this function's subnets are in one Availability Zone, so an AZ failure "
                     "stops it. Give it subnets in at least two AZs (Security Hub Lambda.5). In CDK: "
                     "vpcSubnets: { subnetType: ec2.SubnetType.PRIVATE_WITH_EGRESS }.")))
+    return out
+
+
+_INVOKE_ACTION = "lambda:invokefunction"
+# The functions cr.Provider adds to run a custom resource handler at deploy time.
+_CDK_PROVIDER_FRAMEWORK = re.compile(r"framework-?(?:onEvent|isComplete|onTimeout)", re.I)
+# Policy resources that attach to the role named in Roles (or RoleName) / the role block.
+_ROLE_POLICY_TYPES = (
+    "AWS::IAM::Policy", "AWS::IAM::ManagedPolicy", "AWS::IAM::RolePolicy", "aws_iam_role_policy",
+)
+_ROLE_ATTACHMENT_TYPES = (
+    "aws_iam_role_policy_attachment", "aws_iam_role_policy_attachments_exclusive",
+    "aws_iam_policy_attachment",
+)
+_EVENT_INVOKE_TYPES = ("AWS::Lambda::EventInvokeConfig", "aws_lambda_function_event_invoke_config")
+_LAMBDA_CHAIN_RECOMMENDATION = (
+    "This function's role lets it call the other function synchronously, so the caller waits "
+    "on the callee and fails, times out or is throttled with it. Put an SQS queue, an "
+    "EventBridge bus or a Step Functions state machine between them, or invoke "
+    "asynchronously (InvocationType Event) with an on-failure destination "
+    "(AWS::Lambda::EventInvokeConfig, Terraform aws_lambda_function_event_invoke_config). "
+    "In CDK: a queue with SqsEventSource, or onFailure on the callee, instead of grantInvoke."
+)
+
+
+def _role_documents(role: Resource, resources: List[Resource]) -> list[dict]:
+    """Policy documents attached to a role: inline Policies, policy resources naming it,
+    managed policies of this template it lists, and Terraform policy attachments."""
+    docs = [doc for _label, doc in _policy_documents(role.properties)]
+    policies = [r for r in resources if r.type == "iam_policy" and not r.malformed]
+    attached: set[str] = set()
+    for pol in policies:
+        if pol.source_type in _ROLE_POLICY_TYPES and (
+                _points_at(pol, "Roles", role) or _points_at(pol, "RoleName", role)):
+            attached.add(pol.name)
+        elif pol.source_type in _ROLE_ATTACHMENT_TYPES and role.name in pol.references:
+            attached |= {p.name for p in policies if p.name in pol.references}
+        elif _points_at(role, "ManagedPolicyArns", pol):
+            attached.add(pol.name)
+    for pol in policies:
+        if pol.name in attached:
+            docs.extend(doc for _label, doc in _policy_documents(pol.properties))
+    return docs
+
+
+def _invokes(doc: dict, callee: Resource) -> bool:
+    """True when an Allow statement grants lambda:InvokeFunction (or a wildcard that covers
+    it) on the callee, named by Ref, GetAtt, Sub or Terraform address."""
+    for stmt in iam_policy.statements(doc):
+        if stmt.get("Effect") != "Allow" or "Resource" not in stmt:
+            continue
+        actions = iam_policy.literals(stmt.get("Action"))
+        if not any(fnmatch.fnmatchcase(_INVOKE_ACTION, a.lower()) for a in actions):
+            continue
+        if _references(json.dumps(stmt["Resource"], default=str), callee.name):
+            return True
+    return False
+
+
+def _async_with_destination(callee: Resource, configs: List[Resource]) -> bool:
+    """The callee has an event invoke config with an on-success or on-failure destination."""
+    for config in configs:
+        if not _points_at(config, "FunctionName", callee):
+            continue
+        destinations = config.properties.get("DestinationConfig")
+        if "DestinationConfig" in config.unresolved:
+            return True  # set from a variable: assume it routes somewhere
+        if isinstance(destinations, dict) and any(
+                destinations.get(key) for key in ("OnFailure", "OnSuccess")):
+            return True
+    return False
+
+
+def _lambda_chain_findings(resources: List[Resource], template_path: Path) -> List[Finding]:
+    """CF-LAM-009: a function whose role may invoke another function of this template, when
+    the callee has no event invoke config with a destination (a sign it is called
+    asynchronously). Step Functions and other services' roles are not function roles, so
+    orchestration does not fire. CDK's custom resource helpers are skipped."""
+    functions = [r for r in resources if r.type == "lambda_function" and not r.malformed]
+    if len(functions) < 2:
+        return []
+    roles = [r for r in resources if r.type == "iam_role" and not r.malformed]
+    configs = [r for r in resources if r.source_type in _EVENT_INVOKE_TYPES and not r.malformed]
+    out: List[Finding] = []
+    for caller in functions:
+        if _CDK_HELPER_FUNCTION.search(caller.name) or _CDK_PROVIDER_FRAMEWORK.search(caller.name):
+            continue
+        role = next((r for r in roles if _points_at(caller, "Role", r)), None)
+        if role is None:
+            continue
+        docs = _role_documents(role, resources)
+        callees = [
+            fn.name for fn in functions
+            if fn is not caller and any(_invokes(doc, fn) for doc in docs)
+            and not _async_with_destination(fn, configs)
+        ]
+        if callees:
+            out.append(Finding(
+                id="CF-LAM-009", title=CF_TITLES["CF-LAM-009"], severity="Medium",
+                category="Reliability", file=caller.file or str(template_path),
+                line=caller.line,
+                evidence=(f"{caller.name} ({caller.source_type}): role {role.name} allows "
+                          f"lambda:InvokeFunction on {', '.join(callees)}"),
+                recommendation=_LAMBDA_CHAIN_RECOMMENDATION,
+            ))
     return out
 
 
@@ -3667,6 +3811,108 @@ def _trail_may_reach(trail: Resource, bucket: Resource, buckets: List[Resource])
     return any(_advanced_selector_may_reach(selector, bucket, buckets) for selector in advanced or [])
 
 
+def _alarm_actions(alarm: Resource) -> Any:
+    """The alarm's actions: a list, None when they cannot be read, [] when it has none or
+    ActionsEnabled is false."""
+    if "AlarmActions" in alarm.unresolved:
+        return None
+    enabled = alarm.properties.get("ActionsEnabled", True)
+    if "ActionsEnabled" not in alarm.unresolved and (
+            enabled is False or (type(enabled) is str and enabled.lower() == "false")):
+        return []
+    actions = alarm.properties.get("AlarmActions", [])
+    return actions if isinstance(actions, list) else None
+
+
+_ESCALATION_TF_TYPES = (
+    "aws_ssmincidents_response_plan", "aws_ssmcontacts_contact", "aws_ssmcontacts_plan",
+)
+_ESCALATION_RECOMMENDATION = (
+    "The alarms here notify, and nothing in this template escalates when nobody responds: no "
+    "Incident Manager response plan that engages contacts (AWS::SSMIncidents::ResponsePlan "
+    "Engagements, Terraform aws_ssmincidents_response_plan engagements), no escalation contact "
+    "or plan of two or more stages (AWS::SSMContacts::Contact, Terraform aws_ssmcontacts_plan), "
+    "and no alarm action that starts an incident. Add a response plan whose engagements "
+    "include an escalation plan, and point the alarm action at its ARN. Exclude this check if "
+    "another stack or an on-call tool outside AWS escalates. In CDK: new "
+    "ssmincidents.CfnResponsePlan() and alarm.addAlarmAction(new SsmIncidentAction(plan))."
+)
+_WHOLE_INTERPOLATION = re.compile(r"\$\{([^${}]+)\}")
+_TF_ADDRESS = re.compile(r"^(aws_[a-z0-9_]+)\.[A-Za-z0-9_-]+(?:\[[^\]]*\])?\.")
+
+
+def _arn_text_may_page(text: str, by_name: dict[str, Resource]) -> bool:
+    """True when an action string may be an Incident Manager response plan. A literal ARN of
+    another service, or a reference to another resource in the template, is not one."""
+    whole = _WHOLE_INTERPOLATION.fullmatch(text)
+    if whole:
+        text = whole.group(1)
+    if "ssm-incidents" in text and "response-plan" in text:
+        return True
+    if text.startswith("arn:"):
+        return False
+    address = _TF_ADDRESS.match(text)
+    if address:
+        return address.group(1) == "aws_ssmincidents_response_plan"
+    target = by_name.get(text.split(".", 1)[0])
+    if target is not None:
+        return target.type == "ssm_incidents_response_plan"
+    return True  # a data source, module output or function: not known
+
+
+def _action_may_page(action: Any, by_name: dict[str, Resource]) -> bool:
+    """True when one alarm action may target a response plan. What cannot be read counts."""
+    if isinstance(action, str):
+        return _arn_text_may_page(action, by_name)
+    if not isinstance(action, dict) or len(action) != 1:
+        return True
+    (fn, arg), = action.items()
+    if fn == "Ref" and isinstance(arg, str):
+        return _arn_text_may_page(arg, by_name)
+    if fn == "Fn::GetAtt":
+        name = arg[0] if isinstance(arg, list) and arg else arg
+        return _arn_text_may_page(name, by_name) if isinstance(name, str) else True
+    if fn == "Fn::Join" and isinstance(arg, list) and len(arg) == 2 and isinstance(arg[1], list):
+        # CDK writes ARNs as joins of the partition, region and account with literal parts.
+        text = "".join(p if isinstance(p, str) else "${?}" for p in arg[1])
+        return _arn_text_may_page(text, by_name) if text.startswith("arn:") else True
+    if fn == "Fn::Sub":
+        text = arg[0] if isinstance(arg, list) and arg else arg
+        return _arn_text_may_page(text, by_name) if isinstance(text, str) else True
+    return True
+
+
+def _listed_or_unread(res: Resource, key: str, at_least: int) -> bool:
+    """True when res lists at least this many items under key, or the value cannot be read."""
+    if res.malformed or key in res.unresolved:
+        return True
+    value = res.properties.get(key)
+    if value is None:
+        return False
+    return not isinstance(value, list) or len(value) >= at_least
+
+
+def _escalation_defined(resources: List[Resource], alarms: List[Resource]) -> bool:
+    """A response plan that engages contacts, an escalation contact or plan of two or more
+    stages, or an alarm that starts an incident. A value the scan cannot read counts."""
+    for r in resources:
+        if r.type == "ssm_incidents_response_plan" and _listed_or_unread(r, "Engagements", 1):
+            return True
+        if r.type == "ssm_contacts_plan" and _listed_or_unread(r, "Stages", 2):
+            return True
+        if r.type == "ssm_contacts_contact":
+            kind = r.properties.get("Type")
+            if (r.malformed or "Type" in r.unresolved or (kind is not None and type(kind) is not str)
+                    or kind == "ESCALATION" or _listed_or_unread(r, "Plan", 2)):
+                return True
+    by_name = {r.name: r for r in resources}
+    for alarm in alarms:
+        actions = _alarm_actions(alarm)
+        if actions is None or any(_action_may_page(a, by_name) for a in actions):
+            return True
+    return False
+
+
 def _monitoring_findings(resources: List[Resource], template_path: Path) -> List[Finding]:
     """CloudWatch alarms (CF-ALARM-001..002), a dashboard (CF-DASH-001) and S3 data events on a
     trail (CF-CT-005). A value the scan cannot read is not judged."""
@@ -3693,14 +3939,20 @@ def _monitoring_findings(resources: List[Resource], template_path: Path) -> List
             "affected. Another stack or a central monitoring setup may cover it: if so, exclude this check. "
             "In CDK: metric.createAlarm() on each resource.")
 
-    for alarm in (r for r in usable if r.type in ("cloudwatch_alarm", "cloudwatch_composite_alarm")):
-        actions = None if "AlarmActions" in alarm.unresolved else alarm.properties.get("AlarmActions", [])
-        if actions == [] and not _alarm_is_read(alarm, resources):
+    alarms = [r for r in usable if r.type in ("cloudwatch_alarm", "cloudwatch_composite_alarm")]
+    for alarm in alarms:
+        if _alarm_actions(alarm) == [] and not _alarm_is_read(alarm, resources):
             add(alarm, "CF-ALARM-002", "CloudWatch alarm has no action", "Operational Excellence",
                 "This alarm has no AlarmActions, and nothing in this template reads its state, so when it "
                 "fires nobody is told. Point AlarmActions at an SNS topic, or exclude this check if a "
                 "composite alarm or EventBridge rule in another stack reads it. In CDK: "
                 "alarm.addAlarmAction(new SnsAction(topic)).")
+
+    notifying = [a for a in alarms if _alarm_actions(a) != []]
+    if (notifying and not _escalation_defined(resources, notifying)
+            and not _may_be_out_of_sight(resources, _ESCALATION_TF_TYPES)):
+        add(notifying[0], "CF-ALARM-003", CF_TITLES["CF-ALARM-003"], "Operational Excellence",
+            _ESCALATION_RECOMMENDATION)
 
     # Wiring such as a security group rule or a permission does not make a stack large.
     counted = [r for r in resources if r.type is not None and not r.malformed and not stack_cost.is_free(r.source_type)]
@@ -4034,6 +4286,10 @@ def _redshift_logs(cluster: Resource, clusters: List[Resource], logging: List[Re
                for r in logging)
 
 
+# TCP listeners on these ports are read as TLS passed through to the targets.
+_TLS_PASSTHROUGH_PORTS = frozenset({443, 8443, 636, 993, 995, 465, 5671, 9094})
+
+
 def _warehouse_findings(resources: List[Resource], template_path: Path) -> List[Finding]:
     """Redshift (CF-RS-002..007), DocumentDB (CF-DOCDB-002..004) and Neptune (CF-NEP-002..005)
     beyond encryption. A value the scan cannot read is not judged."""
@@ -4075,6 +4331,12 @@ def _warehouse_findings(resources: List[Resource], template_path: Path) -> List[
             add(cluster, "CF-RS-006", "Redshift cluster does not use enhanced VPC routing", "Low", "Security",
                 "COPY and UNLOAD traffic can leave the VPC, out of reach of its security groups and flow "
                 "logs. Set EnhancedVpcRouting: true (Security Hub Redshift.7). In CDK: enhancedVpcRouting: true.")
+        if "ClusterParameterGroupName" not in cluster.unresolved \
+                and not props.get("ClusterParameterGroupName"):
+            add(cluster, "CF-RS-008", "Redshift cluster does not require SSL", "Medium", "Security",
+                "The cluster uses the default parameter group, where require_ssl is false, so clients "
+                "can connect in clear text. Attach a parameter group that sets require_ssl to true "
+                "(Security Hub Redshift.2). In CDK: parameterGroup with require_ssl: 'true'.")
         # A cluster restored from a snapshot keeps the snapshot's names.
         if props.get("SnapshotIdentifier") is None:
             defaults = []
@@ -4594,6 +4856,176 @@ def _tgw_flow_log_findings(
                 "aws_flow_log with transit_gateway_id."
             ),
         ))
+    return out
+
+
+_IGW_TYPES = ("AWS::EC2::InternetGateway", "aws_internet_gateway")
+_VPC_CIDR_TYPES = ("AWS::EC2::VPCCidrBlock", "aws_vpc_ipv4_cidr_block_association")
+_PEERING_TYPES = ("AWS::EC2::VPCPeeringConnection", "aws_vpc_peering_connection")
+# A transit gateway or a Cloud WAN core network, or an attachment to one defined elsewhere.
+_NETWORK_HUB_TYPES = (
+    "AWS::EC2::TransitGateway", "AWS::EC2::TransitGatewayAttachment",
+    "AWS::EC2::TransitGatewayVpcAttachment", "AWS::NetworkManager::CoreNetwork",
+    "AWS::NetworkManager::VpcAttachment",
+    "aws_ec2_transit_gateway", "aws_ec2_transit_gateway_vpc_attachment",
+    "aws_networkmanager_core_network", "aws_networkmanager_vpc_attachment",
+)
+_MESH_PEERINGS = 3
+_ONE_AZ_RECOMMENDATION = (
+    "Every subnet of this tier is in one Availability Zone, so if that zone fails the tier "
+    "has nowhere left to run. Add a subnet of the tier in at least one more AZ, and spread "
+    "the resources that use the tier across them. In CDK: maxAzs of 2 or more on ec2.Vpc, "
+    "or two or more availabilityZones."
+)
+_FULL_CIDR_RECOMMENDATION = (
+    "The subnets take every address of the VPC CIDR, so there is no room for a subnet in a "
+    "new Availability Zone or a new tier without re-addressing. Leave unallocated space when "
+    "you plan the subnets, or add a secondary CIDR block (AWS::EC2::VPCCidrBlock, Terraform "
+    "aws_vpc_ipv4_cidr_block_association). In CDK: a smaller cidrMask on the subnet "
+    "configuration, or reservedAzs."
+)
+_MESH_RECOMMENDATION = (
+    "Each pair of VPCs that talk needs its own peering connection and routes, and peering "
+    "is not transitive, so a mesh grows with the square of the VPCs. Connect them through "
+    "a transit gateway (AWS::EC2::TransitGateway, Terraform aws_ec2_transit_gateway) or an "
+    "AWS Cloud WAN core network instead. In CDK: ec2.CfnTransitGateway with "
+    "ec2.CfnTransitGatewayAttachment for each VPC."
+)
+
+
+def _ipv4_network(value: Any) -> ipaddress.IPv4Network | None:
+    """A literal IPv4 CIDR, or None for anything else."""
+    if type(value) is not str:
+        return None
+    try:
+        return ipaddress.IPv4Network(value.strip(), strict=False)
+    except ValueError:
+        return None
+
+
+def _az_label(subnet: Resource) -> str:
+    """How the evidence names a subnet's AZ: the literal name, or CDK's GetAZs index."""
+    value = subnet.properties.get("AvailabilityZone", subnet.properties.get("AvailabilityZoneId"))
+    if type(value) is str:
+        return value
+    select = value.get("Fn::Select") if isinstance(value, dict) else None
+    if isinstance(select, list) and select and type(select[0]) in (int, str):
+        return f"Availability Zone index {select[0]}"
+    return "one Availability Zone"
+
+
+def _subnets_by_vpc(
+    subnets: List[Resource], vpcs: List[Resource],
+) -> dict[str, tuple[str, List[Resource]]]:
+    """Subnets grouped by the VPC they belong to: key -> (label, subnets). A subnet in a VPC of
+    this template keys on it; a CloudFormation subnet whose VpcId is a parameter or an import
+    keys on that value. A Terraform subnet whose VPC is not in the module is left out."""
+    out: dict[str, tuple[str, List[Resource]]] = {}
+    for subnet in subnets:
+        vpc = next((v for v in vpcs if _points_at(subnet, "VpcId", v)), None)
+        if vpc is not None:
+            key, label = vpc.name, vpc.name
+        elif subnet.source_type.startswith("AWS::") and "VpcId" in subnet.properties:
+            key = json.dumps(subnet.properties["VpcId"], sort_keys=True, default=str)
+            label = f"VPC {key}"
+        else:
+            continue
+        out.setdefault(key, (label, []))[1].append(subnet)
+    return out
+
+
+def _public_subnet_names(resources: List[Resource], subnets: List[Resource]) -> set[str]:
+    """Subnets that map public IPs, or whose route table has a route to an internet gateway
+    of this template."""
+    igws = [r for r in resources if r.source_type in _IGW_TYPES and not r.malformed]
+    routes = [r for r in resources if r.type == "route" and not r.malformed]
+    tables = [r for r in resources if r.type == "route_table" and not r.malformed]
+    links = [r for r in resources if r.type == "route_table_association" and not r.malformed]
+    to_igw = [t for t in tables if any(
+        _points_at(t, "Routes", igw) or any(
+            _points_at(route, "GatewayId", igw) and _points_at(route, "RouteTableId", t)
+            for route in routes)
+        for igw in igws)]
+    public = {s.name for s in subnets if _is_true(s.properties.get("MapPublicIpOnLaunch"))}
+    for link in links:
+        if any(_points_at(link, "RouteTableId", t) for t in to_igw):
+            public |= {s.name for s in subnets if _points_at(link, "SubnetId", s)}
+    return public
+
+
+def _network_topology_findings(
+    resources: List[Resource], template_path: Path,
+    at: Callable[[Resource | None], tuple[str, int | None, str]],
+) -> List[Finding]:
+    """Network topology (REL 2).
+
+    CF-VPC-004: a tier (public or private) of a VPC whose subnets are all in one AZ. A subnet
+    is public when it maps public IPs or its route table routes to an internet gateway in this
+    template; the rest are private. A VPC with a subnet whose AZ, or whether it maps public
+    IPs, cannot be read is not judged.
+    CF-VPC-005: the literal subnet CIDRs of a VPC take all of its literal IPv4 CIDR blocks.
+    CF-VPC-006: three or more VPC peering connections and no transit gateway or Cloud WAN
+    core network, here or in a child stack or module.
+    """
+    out: List[Finding] = []
+
+    def add(res: Resource, check_id: str, severity: Severity, evidence: str,
+            recommendation: str) -> None:
+        file, line, _ = at(res)
+        out.append(Finding(
+            id=check_id, title=CF_TITLES[check_id], severity=severity, category="Reliability",
+            file=file, line=line, evidence=evidence, recommendation=recommendation,
+        ))
+
+    vpcs = [r for r in resources if r.type == "vpc" and not r.malformed]
+    subnets = [r for r in resources if r.type == "subnet" and not r.malformed]
+    grouped = _subnets_by_vpc(subnets, vpcs)
+    public = _public_subnet_names(resources, subnets)
+    for label, members in grouped.values():
+        if any(_az_key(s) is None or (
+                s.name not in public and ("MapPublicIpOnLaunch" in s.unresolved
+                                          or _unread(s.properties.get("MapPublicIpOnLaunch"))))
+               for s in members):
+            continue
+        for tier in ("public", "private"):
+            in_tier = [s for s in members if (s.name in public) == (tier == "public")]
+            if not in_tier or len({_az_key(s) for s in in_tier}) != 1:
+                continue
+            names = ", ".join(s.name for s in in_tier)
+            add(in_tier[0], "CF-VPC-004", "Medium",
+                f"{label}: {tier} subnets {names} are all in {_az_label(in_tier[0])}",
+                _ONE_AZ_RECOMMENDATION)
+
+    blocks_for = [r for r in resources if r.source_type in _VPC_CIDR_TYPES and not r.malformed]
+    ipv4_blocks = [r for r in blocks_for if "CidrBlock" in r.properties
+                   or "CidrBlock" in r.unresolved or "Ipv4IpamPoolId" in r.properties]
+    unlinked = any(not any(_points_at(b, "VpcId", v) for v in vpcs) for b in ipv4_blocks)
+    for vpc in vpcs if not unlinked else []:
+        blocks = [vpc] + [b for b in ipv4_blocks if _points_at(b, "VpcId", vpc)]
+        read = [_ipv4_network(b.properties.get("CidrBlock")) for b in blocks]
+        networks = [n for n in read if n is not None]
+        if len(networks) != len(read):
+            continue  # a block from a parameter, a variable or IPAM
+        mine = grouped.get(vpc.name, ("", []))[1]
+        used = [n for n in (_ipv4_network(s.properties.get("CidrBlock")) for s in mine) if n]
+        full = bool(used) and all(
+            sum(n.num_addresses for n in ipaddress.collapse_addresses(
+                [u for u in used if u.subnet_of(network)])) >= network.num_addresses
+            for network in networks)
+        if full:
+            shown = ", ".join(str(n) for n in networks)
+            add(vpc, "CF-VPC-005", "Low",
+                f"{vpc.name} ({vpc.source_type}): subnets use all of {shown}",
+                _FULL_CIDR_RECOMMENDATION)
+
+    peerings = [r for r in resources if r.source_type in _PEERING_TYPES]
+    if (len(peerings) >= _MESH_PEERINGS
+            and not any(r.source_type in _NETWORK_HUB_TYPES for r in resources)
+            and not _may_be_out_of_sight(resources, _NETWORK_HUB_TYPES)):
+        add(peerings[0], "CF-VPC-006", "Low",
+            f"{len(peerings)} VPC peering connections and no transit gateway or Cloud WAN "
+            f"core network ({', '.join(p.name for p in peerings)})",
+            _MESH_RECOMMENDATION)
     return out
 
 
@@ -6448,6 +6880,82 @@ def _iam_findings(res: Resource, template_path: Path) -> List[Finding]:
             recommendation=f"Flagged: {shown}{where}. {recommendation}{_IAM_CDK_HINT}",
         ))
     return out
+
+
+_CONSOLE_PASSWORD_RECOMMENDATION = (
+    "This IAM user has a console password, so a person signs in with a long-lived IAM user "
+    "instead of a central identity. Give people access through IAM Identity Center or a "
+    "federated identity provider (SAML 2.0 or OIDC) and roles, so joiners and leavers are "
+    "handled in one place and sessions use temporary credentials. Exclude this check for a "
+    "break-glass user. In CDK: drop password from iam.User; use sso.CfnPermissionSet and "
+    "sso.CfnAssignment, or iam.SamlProvider with a role."
+)
+_ACCESS_KEY_RECOMMENDATION = (
+    "AWS::IAM::AccessKey (Terraform aws_iam_access_key) creates a long-lived access key, and "
+    "its secret ends up in stack outputs or Terraform state. Use roles with temporary "
+    "credentials instead: an IAM role for AWS compute, IAM Roles Anywhere for workloads "
+    "outside AWS, and OIDC federation for CI. If a key cannot be avoided, keep it in Secrets "
+    "Manager and rotate it. In CDK: remove iam.AccessKey and grant to a role."
+)
+_USER_POLICY_RECOMMENDATION = (
+    "Permissions attached to the user itself are managed one person at a time (Security Hub "
+    "IAM.2). Attach the policy to an IAM group for the job function and add the user to it "
+    "(AWS::IAM::Group with Groups on the user or AWS::IAM::UserToGroupAddition; Terraform "
+    "aws_iam_group_membership or aws_iam_user_group_membership). In CDK: group.addUser(user) "
+    "and grant to the group."
+)
+# Always a policy on one user, whatever their properties say.
+_USER_POLICY_TYPES = (
+    "AWS::IAM::UserPolicy", "aws_iam_user_policy", "aws_iam_user_policy_attachment",
+)
+
+
+def _listed(res: Resource, key: str) -> bool:
+    """True when key holds a value other than an empty list. Unknown is not judged."""
+    if res.malformed or key in res.unresolved:
+        return False
+    value = res.properties.get(key)
+    return value is not None and value != [] and value != {}
+
+
+def _attaches_to_user(res: Resource) -> bool:
+    """CF-IAM-011: the resource puts a policy on an IAM user, not on a group or role."""
+    if res.source_type in _USER_POLICY_TYPES:
+        return True
+    if res.source_type == "aws_iam_user_policy_attachments_exclusive":
+        return _listed(res, "ManagedPolicyArns")
+    if res.source_type == "AWS::IAM::User":
+        return _listed(res, "Policies") or _listed(res, "ManagedPolicyArns")
+    if res.source_type in (
+            "AWS::IAM::Policy", "AWS::IAM::ManagedPolicy", "aws_iam_policy_attachment"):
+        return _listed(res, "Users")
+    return False
+
+
+def _identity_findings(resources: List[Resource], template_path: Path) -> List[Finding]:
+    """People and machines with long-lived IAM credentials (SEC 2): a console password on an
+    IAM user (CF-IAM-009), an access key (CF-IAM-010), and policies attached to a user rather
+    than a group (CF-IAM-011). A value the scan cannot read is not judged."""
+    out: List[Finding] = []
+
+    def add(res: Resource, check_id: str, severity: Severity, recommendation: str) -> None:
+        out.append(Finding(
+            id=check_id, title=CF_TITLES[check_id], severity=severity, category="Security",
+            file=res.file or str(template_path), line=res.line,
+            evidence=f"{res.name} ({res.source_type})", recommendation=recommendation,
+        ))
+
+    for res in resources:
+        if (res.source_type == "aws_iam_user_login_profile"
+                or (res.source_type == "AWS::IAM::User" and _listed(res, "LoginProfile"))):
+            add(res, "CF-IAM-009", "Medium", _CONSOLE_PASSWORD_RECOMMENDATION)
+        if res.type == "iam_access_key" and "Status" not in res.unresolved:
+            status = res.properties.get("Status")
+            if not (type(status) is str and status.lower() == "inactive"):
+                add(res, "CF-IAM-010", "Medium", _ACCESS_KEY_RECOMMENDATION)
+        if _attaches_to_user(res):
+            add(res, "CF-IAM-011", "Low", _USER_POLICY_RECOMMENDATION)
+    return out
 def _k8s_minor(version: Any) -> int | None:
     """Minor version of an EKS `Version` ("1.27" -> 27), or None when unknown.
 
@@ -6613,6 +7121,32 @@ def _one_saving_per_instance(resource_findings: List[Finding]) -> None:
                 estimates._without_saving(f.estimate_basis or "")
                 + " The saving is counted on CF-GEN-001 for this instance (the fixes do not add up)."
             ).strip()
+
+
+_PATCH_DOCUMENTS = frozenset({"AWS-RunPatchBaseline", "AWS-PatchInstanceWithRollback"})
+_PATCH_RECOMMENDATION = (
+    "Patch the instances with Systems Manager Patch Manager: add an AWS::SSM::PatchBaseline, "
+    "or an AWS::SSM::Association (or maintenance window task) that runs AWS-RunPatchBaseline."
+)
+
+
+def _patching_defined(resources: List[Resource]) -> bool:
+    """A patch baseline, or an association or window task that runs a patch document.
+
+    A document name the scan cannot read counts as patching: no finding on a guess.
+    """
+    for r in resources:
+        if r.type == "ssm_patch_baseline":
+            return True
+        key = {"ssm_association": "Name", "ssm_maintenance_window_task": "TaskArn"}.get(r.type or "")
+        if key is None:
+            continue
+        value = r.properties.get(key)
+        if key in r.unresolved or (value is not None and not isinstance(value, str)):
+            return True
+        if isinstance(value, str) and value.rsplit("/", 1)[-1] in _PATCH_DOCUMENTS:
+            return True
+    return False
 
 
 def run_resource_checks(
@@ -7405,6 +7939,24 @@ def _run_resource_checks(
             recommendation="Add AWS::EC2::FlowLog for network troubleshooting and security analysis.",
         ))
 
+    # --- Patching (template-level: EC2 compute but no patch baseline or patch run) ---
+    if count("instance", "autoscaling_group", "launch_template") and not _patching_defined(resources):
+        file, line, label = _anchor("instance", "autoscaling_group", "launch_template")
+        findings.append(Finding(
+            id="CF-PATCH-001",
+            title=CF_TITLES["CF-PATCH-001"],
+            severity="Medium",
+            category="Operational Excellence",
+            file=file,
+            line=line,
+            evidence=(
+                "Template has EC2 instances, Auto Scaling groups or launch templates and no "
+                "SSM patch baseline, AWS-RunPatchBaseline association or maintenance window "
+                "task" + label
+            ),
+            recommendation=_PATCH_RECOMMENDATION,
+        ))
+
     # --- Caching (template-level: API/Lambda but no CloudFront/ElastiCache) ---
     if (has_apigw or has_lambda) and not has_cloudfront and not has_elasticache:
         findings.append(Finding(
@@ -7453,6 +8005,9 @@ def _run_resource_checks(
     # --- DynamoDB, ElastiCache and EFS resilience and access ---
     findings.extend(_data_store_findings(resources, template_path))
 
+    # --- IAM users: console passwords, access keys, policies attached directly ---
+    findings.extend(_identity_findings(resources, template_path))
+
     # --- GuardDuty, Security Hub, AWS Config, Macie and Budgets a repo defines ---
     findings.extend(_account_baseline_findings(resources, template_path))
 
@@ -7495,9 +8050,15 @@ def _run_resource_checks(
     # --- Lambda timeouts against their triggers, and VPC functions in one AZ ---
     findings.extend(_lambda_wiring_findings(resources, template_path))
 
+    # --- Lambda functions that call each other directly, with no queue between (REL 4) ---
+    findings.extend(_lambda_chain_findings(resources, template_path))
+
     # --- Network: one NAT gateway for several AZs, transit gateways without flow logs ---
     findings.extend(_nat_single_az_findings(resources, template_path, _at))
     findings.extend(_tgw_flow_log_findings(resources, template_path, _at))
+
+    # --- Network topology: tiers in one AZ, full VPC CIDRs, peering meshes (REL 2) ---
+    findings.extend(_network_topology_findings(resources, template_path, _at))
 
     # --- Launch template Spot (template-level: LTs without Spot when no ASG) ---
     if launch_templates_without_spot > 0 and asg_count == 0:

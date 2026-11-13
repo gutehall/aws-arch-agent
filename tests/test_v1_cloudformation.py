@@ -79,8 +79,8 @@ def test_v1_cloudformation_repo_runs_template_checks(tmp_path: Path) -> None:
     assert warnings == []
     ids = {f.id for f in findings}
     assert "CF-S3-001" in ids
-    assert all(f.id.startswith("CF-") for f in findings), ids
-    assert {f.file for f in findings} == {"templates/data.yaml"}
+    assert all(f.id.startswith(("CF-", "REPO-")) for f in findings), ids
+    assert {f.file for f in findings if f.file} == {"templates/data.yaml"}
     assert "CF-S3-001" in report
 
 
@@ -119,7 +119,7 @@ def test_mixed_repo_runs_template_checks(tmp_path: Path) -> None:
     _r, ctx, findings, _w = analyze_v1(tmp_path, use_llm=False)
     assert ctx.source == "mixed"
     assert any(f.id == "CF-S3-001" for f in findings)
-    assert all(f.id.startswith("CF-") for f in findings)
+    assert all(f.id.startswith(("CF-", "REPO-")) for f in findings)
 
 
 def test_cdk_repo_still_runs_regex_pass(tmp_path: Path) -> None:

@@ -18,7 +18,7 @@ from aws_arch_agent.rules.security import (
     LambdaFunctionUrlAuth, EcsTaskRunAsRoot, RedshiftEncryptionMissing, DocumentDbEncryptionMissing,
     NeptuneEncryptionMissing, CloudWatchLogsKmsEncryption, BackupVaultEncryption,
     RdsPubliclyAccessible, MacieNotEnabled, Ec2Imdsv2NotRequired, IamAdministratorAccess,
-    LambdaDeprecatedRuntime,
+    LambdaDeprecatedRuntime, IamUserConsolePassword, IamAccessKeyCreated, IamUserDirectPolicies,
 )
 from aws_arch_agent.rules.reliability import (
     RdsMultiAzMissing, BackupRetentionMissing, LambdaDlqMissing,
@@ -29,7 +29,7 @@ from aws_arch_agent.rules.reliability import (
     CodePipelineApproval, AcmCertificateValidation,
     BlueGreenDeploymentMissing, SqsVisibilityTimeout, DynamoDbGlobalTables, S3ReplicationMissing,
     LambdaReservedConcurrency, ApiGatewayRequestValidator, EventBridgeRetryPolicy,
-    RdsDeletionProtection, S3VersioningMissing,
+    RdsDeletionProtection, S3VersioningMissing, VpcSingleAz, LambdaDirectInvoke,
 )
 from aws_arch_agent.rules.cost import (
     LogRetentionNeverExpire, MissingAutoscalingHint, DynamoDbAutoscalingMissing,
@@ -51,7 +51,7 @@ from aws_arch_agent.rules.operational_excellence import (
     GlueJobMetrics, TransitGatewayFlowLogs, CodePipelineNotifications, AppRunnerObservability,
     GlueJobBookmarks, CodeBuildLogging,
     CloudWatchDashboardMissing, ResourceTaggingStrategy, SsmParameterAdvancedTier,
-    S3ReplicationMetrics,
+    S3ReplicationMetrics, Ec2PatchBaselineMissing, AlarmEscalationMissing,
 )
 from aws_arch_agent.rules.performance_efficiency import (
     GravitonNotUsed, CachingHint, DynamoDbProvisionedCapacity,
@@ -62,6 +62,7 @@ from aws_arch_agent.rules.performance_efficiency import (
     LambdaSnapStart, AuroraIoOptimized, EbsIo2BlockExpress,
     CloudWatchContributorInsights, RdsProxyMissing,
 )
+from aws_arch_agent.rules.repo_practices import REPO_RULES
 from aws_arch_agent.rules.sustainability import (
     SpotNotConsidered, RightSizingHint,
     ScheduledScalingMissing, AsyncProcessingHint, ManagedServicesPreference,
@@ -69,7 +70,8 @@ from aws_arch_agent.rules.sustainability import (
 )
 
 ALL_RULES = [
-    # Security (68 rules)
+    # Security (90 rules: these 71, and REPO-004 to REPO-011 and REPO-031 to REPO-041
+    # in REPO_RULES below)
     IamWildcardAction(),
     IamWildcardResource(),
     OpenSshToWorld(),
@@ -138,7 +140,11 @@ ALL_RULES = [
     Ec2Imdsv2NotRequired(),
     IamAdministratorAccess(),
     LambdaDeprecatedRuntime(),
-    # Reliability (31 rules)
+    IamUserConsolePassword(),
+    IamAccessKeyCreated(),
+    IamUserDirectPolicies(),
+    # Reliability (61 rules: these 33, and REPO-012 to REPO-017, REPO-023 to REPO-026 and
+    # REPO-042 to REPO-059 in REPO_RULES)
     RdsMultiAzMissing(),
     BackupRetentionMissing(),
     LambdaDlqMissing(),
@@ -170,6 +176,9 @@ ALL_RULES = [
     EventBridgeRetryPolicy(),
     RdsDeletionProtection(),
     S3VersioningMissing(),
+    VpcSingleAz(),
+    LambdaDirectInvoke(),
+    # Cost Optimization (47 rules: these 18, and REPO-069 to REPO-097 in REPO_RULES)
     LogRetentionNeverExpire(),
     MissingAutoscalingHint(),
     DynamoDbAutoscalingMissing(),
@@ -194,7 +203,9 @@ ALL_RULES = [
     ResourceNamingConvention(),
     CdkAspectsMissing(),
     CdkContextMissing(),
-    # Operational Excellence (24 rules)
+    # Operational Excellence (38 rules)
+    # These 26, and REPO-001 to REPO-003, REPO-018 to REPO-022 and REPO-027 to REPO-030 in
+    # REPO_RULES.
     CloudTrailMissing(),
     VpcFlowLogsMissing(),
     XRayTracingMissing(),
@@ -219,7 +230,11 @@ ALL_RULES = [
     ResourceTaggingStrategy(),
     SsmParameterAdvancedTier(),
     S3ReplicationMetrics(),
-    # Performance Efficiency (19 rules)
+    Ec2PatchBaselineMissing(),
+    AlarmEscalationMissing(),
+    *REPO_RULES,  # repo-level: tests, pipeline, guardrails, incidents, app security, testing,
+    # observability, deployment risk, telemetry analysis
+    # Performance Efficiency (28 rules: these 19, and REPO-060 to REPO-068 in REPO_RULES)
     GravitonNotUsed(),
     CachingHint(),
     DynamoDbProvisionedCapacity(),
@@ -239,7 +254,7 @@ ALL_RULES = [
     EbsIo2BlockExpress(),
     CloudWatchContributorInsights(),
     RdsProxyMissing(),
-    # Sustainability (7 rules)
+    # Sustainability (16 rules: these 7, and REPO-098 to REPO-106 in REPO_RULES)
     SpotNotConsidered(),
     RightSizingHint(),
     ScheduledScalingMissing(),

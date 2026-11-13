@@ -137,7 +137,9 @@
     "positive_ts": "new lambda.Function(this, 'Fn', { runtime: lambda.Runtime.NODEJS_18_X, handler: 'h', code: lambda.Code.fromInline('x') });"
   },
   "OPS-011": {
+    "negative_py": "alarm = cloudwatch.Alarm(self, 'A', metric=m, threshold=1, evaluation_periods=1)\nalarm.add_alarm_action(cw_actions.SnsAction(topic))",
     "negative_ts": "// clean compliant stack",
+    "positive_py": "cloudwatch.Alarm(self, 'A', metric=m, threshold=1, evaluation_periods=1)",
     "positive_ts": "new cloudwatch.Alarm(this, 'A', { metric: metric, threshold: 1, evaluationPeriods: 1 });"
   },
   "OPS-012": {
@@ -733,5 +735,677 @@
     "negative_ts": "runtime: lambda.Runtime.NODEJS_24_X,",
     "positive_py": "runtime=_lambda.Runtime.PYTHON_3_8",
     "positive_ts": "runtime: lambda.Runtime.NODEJS_16_X,"
+  },
+  "OPS-026": {
+    "negative_py": "ec2.Instance(self, 'Web', instance_type=t, machine_image=m, vpc=vpc)\nssm.CfnAssociation(self, 'Patch', name='AWS-RunPatchBaseline')",
+    "negative_ts": "new ec2.Instance(this, 'Web', { instanceType, machineImage, vpc });\nnew ssm.CfnPatchBaseline(this, 'Baseline', { name: 'default' });",
+    "positive_py": "ec2.Instance(self, 'Web', instance_type=t, machine_image=m, vpc=vpc)",
+    "positive_ts": "new autoscaling.AutoScalingGroup(this, 'Asg', { vpc, instanceType, machineImage });"
+  },
+  "OPS-027": {
+    "negative_py": "alarm = cloudwatch.Alarm(self, 'Errors', metric=m, threshold=1, evaluation_periods=1)\nalarm.add_alarm_action(cw_actions.SsmIncidentAction('critical'))",
+    "negative_ts": "const alarm = new cloudwatch.Alarm(this, 'Errors', { metric, threshold: 1, evaluationPeriods: 1 });\nnew ssmincidents.CfnResponsePlan(this, 'Plan', { name: 'critical', incidentTemplate, engagements });",
+    "positive_py": "alarm = cloudwatch.Alarm(self, 'Errors', metric=m, threshold=1, evaluation_periods=1)\nalarm.add_alarm_action(cw_actions.SnsAction(topic))",
+    "positive_ts": "const alarm = new cloudwatch.Alarm(this, 'Errors', { metric, threshold: 1, evaluationPeriods: 1 });\nalarm.addAlarmAction(new cw_actions.SnsAction(topic));"
+  },
+  "REPO-001": {
+    "positive_ts": "new s3.Bucket(this, 'Data');",
+    "positive_py": "s3.Bucket(self, 'Data')"
+  },
+  "REPO-002": {
+    "positive_ts": "new s3.Bucket(this, 'Data');",
+    "positive_py": "s3.Bucket(self, 'Data')"
+  },
+  "REPO-003": {
+    "positive_ts": "new s3.Bucket(this, 'Data');",
+    "positive_py": "s3.Bucket(self, 'Data')"
+  },
+  "REPO-004": {
+    "negative_ts": "new organizations.CfnPolicy(this, 'DenyLeave', { name: 'deny-leave', type: 'SERVICE_CONTROL_POLICY', content });",
+    "negative_py": "cloudtrail.Trail(self, 'OrgTrail', is_organization_trail=True)",
+    "positive_ts": "new s3.Bucket(this, 'Data');",
+    "positive_py": "s3.Bucket(self, 'Data')"
+  },
+  "REPO-005": {
+    "negative_ts": "new s3.Bucket(this, 'Data');",
+    "negative_py": "s3.Bucket(self, 'Data')",
+    "positive_ts": "new organizations.CfnAccount(this, 'Workload', { accountName: 'workload', email });",
+    "positive_py": "organizations.CfnAccount(self, 'Workload', account_name='workload', email=email)"
+  },
+  "SEC-069": {
+    "negative_py": "user = iam.User(self, 'Deploy', user_name='deploy')",
+    "negative_ts": "const user = new iam.User(this, 'Deploy', { userName: 'deploy' });",
+    "positive_py": "iam.User(self, 'Alice', password=SecretValue.unsafe_plain_text('x'))",
+    "positive_ts": "new iam.User(this, 'Alice', {\n  password: SecretValue.unsafePlainText('x'),\n});"
+  },
+  "SEC-070": {
+    "negative_py": "role = iam.Role(self, 'Ci', assumed_by=iam.WebIdentityPrincipal('token.actions.githubusercontent.com'))",
+    "negative_ts": "const role = new iam.Role(this, 'Ci', { assumedBy: new iam.ServicePrincipal('ec2.amazonaws.com') });",
+    "positive_py": "iam.AccessKey(self, 'Key', user=user)",
+    "positive_ts": "new iam.AccessKey(this, 'Key', { user });"
+  },
+  "SEC-071": {
+    "negative_py": "group = iam.Group(self, 'Readers')\ngroup.add_managed_policy(iam.ManagedPolicy.from_aws_managed_policy_name('ReadOnlyAccess'))\nuser = iam.User(self, 'Bob', groups=[group])\nrole = iam.Role(self, 'R', assumed_by=principal)\nrole.add_to_policy(statement)",
+    "negative_ts": "const group = new iam.Group(this, 'Readers');\ngroup.addManagedPolicy(readOnly);\nconst user = new iam.User(this, 'Bob', { groups: [group] });\nconst role = new iam.Role(this, 'R', { assumedBy });\nrole.addToPolicy(statement);",
+    "positive_py": "user = iam.User(self, 'Bob')\nuser.add_managed_policy(iam.ManagedPolicy.from_aws_managed_policy_name('ReadOnlyAccess'))",
+    "positive_ts": "const user = new iam.User(this, 'Bob', {\n  managedPolicies: [readOnly],\n});"
+  },
+  "REPO-006": {
+    "negative_ts": "new organizations.CfnAccount(this, 'Workload', { accountName: 'workload', email });\nnew config.ManagedRule(this, 'RootMfa', { identifier: config.ManagedRuleIdentifiers.ROOT_ACCOUNT_MFA_ENABLED });\nnew config.ManagedRule(this, 'RootKey', { identifier: config.ManagedRuleIdentifiers.IAM_ROOT_ACCESS_KEY_CHECK });",
+    "negative_py": "organizations.CfnAccount(self, 'Workload', account_name='workload', email=email)\nsecurityhub.CfnHub(self, 'Hub')",
+    "positive_ts": "new organizations.CfnAccount(this, 'Workload', { accountName: 'workload', email });",
+    "positive_py": "organizations.CfnAccount(self, 'Workload', account_name='workload', email=email)"
+  },
+  "REPO-007": {
+    "negative_ts": "new events.Rule(this, 'OnFinding', { eventPattern: { source: ['aws.guardduty'] }, targets: [new targets.SfnStateMachine(capture)] });\nconst snap = new tasks.CallAwsService(this, 'Snap', { service: 'ec2', action: 'createSnapshot', iamResources: ['*'] });",
+    "negative_py": "detective.CfnGraph(self, 'Graph')",
+    "positive_ts": "new events.Rule(this, 'OnFinding', { eventPattern: { source: ['aws.guardduty'] }, targets: [new targets.SnsTopic(topic)] });",
+    "positive_py": "s3.Bucket(self, 'Data')"
+  },
+  "REPO-008": {
+    "negative_ts": "new ec2.SecurityGroup(this, 'QuarantineSg', { vpc, allowAllOutbound: false });",
+    "negative_py": "iam_client.update_access_key(UserName=user, AccessKeyId=key, Status='Inactive')",
+    "positive_ts": "new ec2.SecurityGroup(this, 'WebSg', { vpc, vpcSubnets: { subnetType: ec2.SubnetType.PRIVATE_ISOLATED } });",
+    "positive_py": "s3.Bucket(self, 'Data')"
+  },
+  "REPO-009": {
+    "negative_ts": "new codebuild.PipelineProject(this, 'Build', { buildSpec: codebuild.BuildSpec.fromObject({ phases: { build: { commands: ['npm ci', 'npm audit --audit-level=high'] } } }) });",
+    "negative_py": "pipelines.ShellStep('Synth', commands=['pip install -r requirements.txt', 'pip-audit -r requirements.txt'])",
+    "positive_ts": "new s3.Bucket(this, 'Data');",
+    "positive_py": "pipelines.ShellStep('Synth', commands=['pip install -r requirements.txt', 'pip-audit || true'])"
+  },
+  "REPO-010": {
+    "negative_ts": "new ecr.Repository(this, 'Repo', { imageScanOnPush: true });",
+    "negative_py": "_lambda.Function(self, 'Fn', runtime=runtime, handler='index.handler', code=code)\ncr.AwsCustomResource(self, 'Inspector', on_create=cr.AwsSdkCall(service='Inspector2', action='enable', parameters={'resourceTypes': ['LAMBDA', 'LAMBDA_CODE']}))",
+    "positive_ts": "new lambda.Function(this, 'Fn', { runtime, handler: 'index.handler', code });",
+    "positive_py": "ecr.Repository(self, 'Repo')"
+  },
+  "REPO-011": {
+    "negative_ts": "new codeartifact.CfnRepository(this, 'Npm', { domainName: 'corp', repositoryName: 'npm-store' });",
+    "negative_py": "codeartifact.CfnRepository(self, 'Pypi', domain_name='corp', repository_name='pypi-store')",
+    "positive_ts": "new s3.Bucket(this, 'Data');",
+    "positive_py": "s3.Bucket(self, 'Data')"
+  },
+  "REPO-012": {
+    "negative_ts": "new lambda.Function(this, 'Fn', { runtime, handler: 'index.handler', code });\nnew cloudwatch.Alarm(this, 'Quota', { metric: new cloudwatch.Metric({ namespace: 'AWS/Usage', metricName: 'ResourceCount' }), threshold: 800, evaluationPeriods: 1 });",
+    "negative_py": "ec2.CfnEIP(self, 'Eip')\ncloudwatch.MathExpression(expression='(m1 / SERVICE_QUOTA(m1)) * 100')",
+    "positive_ts": "new lambda.Function(this, 'Fn', { runtime, handler: 'index.handler', code });",
+    "positive_py": "ec2.Vpc(self, 'Vpc', nat_gateways=1)"
+  },
+  "REPO-013": {
+    "negative_ts": "new lambda.Function(this, 'Fn', { reservedConcurrentExecutions: 100 });\nnew ec2.Vpc(this, 'Vpc', { natGateways: 2 });",
+    "negative_py": "_lambda.Function(self, 'Fn', reserved_concurrent_executions=450)",
+    "positive_ts": "new lambda.Function(this, 'Fn', { reservedConcurrentExecutions: 500 });",
+    "positive_py": "ec2.Vpc(self, 'Vpc', nat_gateways=3)"
+  },
+  "REL-032": {
+    "negative_ts": "new ec2.Vpc(this, 'Vpc', { maxAzs: 2, availabilityZones: ['eu-west-1a', 'eu-west-1b'] });",
+    "negative_py": "ec2.Vpc(self, 'Vpc', max_azs=3)",
+    "positive_ts": "new ec2.Vpc(this, 'Vpc', { availabilityZones: ['eu-west-1a'] });",
+    "positive_py": "ec2.Vpc(self, 'Vpc', max_azs=1)"
+  },
+  "REPO-014": {
+    "negative_ts": "new ec2.Vpc(this, 'A', { ipAddresses: ec2.IpAddresses.cidr('10.0.0.0/16') });\nnew ec2.Vpc(this, 'B', { ipAddresses: ec2.IpAddresses.cidr('10.1.0.0/16') });",
+    "negative_py": "ec2.Vpc(self, 'A', ip_addresses=ec2.IpAddresses.cidr('10.0.0.0/16'))",
+    "positive_ts": "new ec2.Vpc(this, 'A', { ipAddresses: ec2.IpAddresses.cidr('10.0.0.0/16') });\nnew ec2.Vpc(this, 'B', { ipAddresses: ec2.IpAddresses.cidr('10.0.128.0/17') });",
+    "positive_py": "ec2.CfnVPC(self, 'A', cidr_block='10.0.0.0/16')\nec2.Vpc(self, 'B', cidr='10.0.0.0/24')"
+  },
+  "REL-033": {
+    "negative_ts": "const worker = new lambda.Function(this, 'Worker', { onFailure: new destinations.SqsDestination(dlq) });\nconst api = new lambda.Function(this, 'Api', {});\nworker.grantInvoke(api);\nqueue.grantSendMessages(api);",
+    "negative_py": "worker = _lambda.Function(self, 'Worker')\nqueue.grant_send_messages(worker)\nworker.add_to_role_policy(iam.PolicyStatement(actions=['sqs:SendMessage'], resources=['*']))",
+    "positive_ts": "const worker = new lambda.Function(this, 'Worker', {});\nconst api = new NodejsFunction(this, 'Api', {});\nworker.grantInvoke(api);",
+    "positive_py": "worker = _lambda.Function(self, 'Worker')\napi = PythonFunction(self, 'Api')\napi.add_to_role_policy(iam.PolicyStatement(actions=['lambda:InvokeFunction'], resources=[worker.function_arn]))"
+  },
+  "REPO-015": {
+    "negative_ts": "import { makeIdempotent } from '@aws-lambda-powertools/idempotency';\nfn.addEventSource(new SqsEventSource(queue));",
+    "negative_py": "fn.add_event_source(SqsEventSource(queue))\nsqs.Queue(self, 'Q', fifo=True, content_based_deduplication=True)",
+    "positive_ts": "fn.addEventSource(new SqsEventSource(queue));",
+    "positive_py": "fn.add_event_source(KinesisEventSource(stream, starting_position=lambda_.StartingPosition.LATEST))"
+  },
+  "REPO-016": {
+    "negative_ts": "new fis.CfnExperimentTemplate(this, 'StopInstances', { description: 'stop one AZ', roleArn: role.roleArn, stopConditions: [{ source: 'aws:cloudwatch:alarm', value: alarm.alarmArn }], targets: {}, actions: {} });",
+    "negative_py": "pipelines.ShellStep('Chaos', commands=['aws fis start-experiment --experiment-template-id EXT123'])",
+    "positive_ts": "new ec2.Instance(this, 'Web', { instanceType, machineImage, vpc });",
+    "positive_py": "ec2.Instance(self, 'Web', instance_type=instance_type, machine_image=image, vpc=vpc)"
+  },
+  "REPO-017": {
+    "negative_ts": "new ShellStep('LoadTest', { commands: ['k6 run load/checkout.js'] });",
+    "negative_py": "pipelines.ShellStep('LoadTest', commands=['artillery run load/artillery.yml'])",
+    "positive_ts": "new ShellStep('Synth', { commands: ['npm ci', 'npx cdk synth'] });",
+    "positive_py": "pipelines.ShellStep('Synth', commands=['pip install -r requirements.txt', 'cdk synth'])"
+  },
+  "REPO-018": {
+    "negative_ts": "new lambda.Function(this, 'Fn', { runtime, handler: 'index.handler', code });\nnew cloudwatch.Alarm(this, 'Orders', { metric: new cloudwatch.Metric({ namespace: 'Shop', metricName: 'OrdersPlaced' }), threshold: 1, evaluationPeriods: 1 });",
+    "negative_py": "lambda_.Function(self, 'Fn', runtime=runtime, handler='index.handler', code=code)\nlogs.MetricFilter(self, 'Orders', log_group=group, metric_namespace='Shop', metric_name='OrdersPlaced', filter_pattern=pattern)",
+    "positive_ts": "new lambda.Function(this, 'Fn', { runtime, handler: 'index.handler', code });",
+    "positive_py": "lambda_.Function(self, 'Fn', runtime=runtime, handler='index.handler', code=code)"
+  },
+  "REPO-019": {
+    "negative_ts": "new apigateway.RestApi(this, 'Api');\nnew synthetics.Canary(this, 'Checkout', { schedule, test, runtime });",
+    "negative_py": "cloudfront.Distribution(self, 'Cdn', default_behavior=behavior)\ncloudwatch.Alarm(self, 'Slow', metric=cdn.metric_origin_latency(), threshold=1000, evaluation_periods=3)",
+    "positive_ts": "new apigateway.RestApi(this, 'Api');",
+    "positive_py": "cloudfront.Distribution(self, 'Cdn', default_behavior=behavior)"
+  },
+  "REPO-020": {
+    "negative_ts": "new dynamodb.Table(this, 'Orders', { partitionKey });\nnew cloudwatch.Alarm(this, 'Throttles', { metric: table.metricThrottledRequestsForOperations({ operations }), threshold: 1, evaluationPeriods: 1 });",
+    "negative_py": "sqs.Queue(self, 'Jobs')\nqueue.metric_approximate_age_of_oldest_message().create_alarm(self, 'Age', threshold=300, evaluation_periods=1)",
+    "positive_ts": "new dynamodb.Table(this, 'Orders', { partitionKey });",
+    "positive_py": "sqs.Queue(self, 'Jobs')"
+  },
+  "REPO-021": {
+    "negative_ts": "const pipeline = new pipelines.CodePipeline(this, 'Pipeline', { synth: new pipelines.ShellStep('Synth', { input, commands: ['npm ci', 'npm test', 'npx cdk synth'] }) });\npipeline.addStage(new AppStage(this, 'Prod'));",
+    "negative_py": "pipeline = pipelines.CodePipeline(self, 'Pipeline', synth=pipelines.ShellStep('Synth', input=source, commands=['pip install -r requirements.txt', 'pytest', 'cdk synth']))\npipeline.add_stage(AppStage(self, 'Prod'))",
+    "positive_ts": "const pipeline = new pipelines.CodePipeline(this, 'Pipeline', { synth: new pipelines.ShellStep('Synth', { input, commands: ['npm ci', 'npx cdk synth'] }) });\npipeline.addStage(new AppStage(this, 'Prod'));",
+    "positive_py": "pipeline = pipelines.CodePipeline(self, 'Pipeline', synth=pipelines.ShellStep('Synth', input=source, commands=['pip install -r requirements.txt', 'cdk synth']))\npipeline.add_stage(AppStage(self, 'Prod'))"
+  },
+  "REPO-022": {
+    "negative_ts": "new ecs.FargateService(this, 'Svc', { cluster, taskDefinition, circuitBreaker: { rollback: true } });",
+    "negative_py": "fn = lambda_.Function(self, 'Fn', runtime=runtime, handler='index.handler', code=code)\ncodedeploy.LambdaDeploymentGroup(self, 'Deploy', alias=alias, deployment_config=codedeploy.LambdaDeploymentConfig.CANARY_10_PERCENT_5_MINUTES)",
+    "positive_ts": "new ecs.FargateService(this, 'Svc', { cluster, taskDefinition });",
+    "positive_py": "lambda_.Function(self, 'Fn', runtime=runtime, handler='index.handler', code=code)"
+  },
+  "REPO-023": {
+    "negative_ts": "new codedeploy.LambdaDeploymentGroup(this, 'Deploy', { alias });\nnew autoscaling.AutoScalingGroup(this, 'Fleet', { vpc, launchTemplate });",
+    "negative_py": "ec2.LaunchTemplate(self, 'Lt', machine_image=image)\nssm.CfnAssociation(self, 'Agent', name='AWS-UpdateSSMAgent')",
+    "positive_ts": "new codedeploy.ServerDeploymentGroup(this, 'Fleet', { autoScalingGroups: [asg] });",
+    "positive_py": "ssm.CfnAssociation(self, 'Patch', name='AWS-RunShellScript', targets=[targets])"
+  },
+  "REPO-024": {
+    "negative_ts": "const pipeline = new pipelines.CodePipeline(this, 'Pipeline', { synth });\npipeline.addStage(new AppStage(this, 'Prod'), { post: [new pipelines.ShellStep('Smoke', { commands: ['curl -f https://example.com/health'] })] });",
+    "negative_py": "pipeline = pipelines.CodePipeline(self, 'Pipeline', synth=synth)\npipeline.add_stage(AppStage(self, 'Prod'), post=[pipelines.ShellStep('Smoke', commands=['npm run e2e'])])",
+    "positive_ts": "const pipeline = new pipelines.CodePipeline(this, 'Pipeline', { synth });\npipeline.addStage(new AppStage(this, 'Prod'));",
+    "positive_py": "pipeline = pipelines.CodePipeline(self, 'Pipeline', synth=synth)\npipeline.add_stage(AppStage(self, 'Prod'))"
+  },
+  "REPO-025": {
+    "negative_ts": "new s3.Bucket(this, 'Data');\nconst pipeline = new pipelines.CodePipeline(this, 'Pipeline', { synth });\npipeline.addStage(new AppStage(this, 'Prod'));",
+    "negative_py": "s3.Bucket(self, 'Data')\npipeline = pipelines.CodePipeline(self, 'Pipeline', synth=synth)",
+    "positive_ts": "new s3.Bucket(this, 'Data');",
+    "positive_py": "s3.Bucket(self, 'Data')"
+  },
+  "REPO-026": {
+    "negative_ts": "const pipeline = new pipelines.CodePipeline(this, 'Pipeline', { synth });\npipeline.addStage(new AppStage(this, 'Staging'), { post: [new pipelines.ShellStep('Chaos', { commands: ['aws fis start-experiment --experiment-template-id EXT1'] })] });",
+    "negative_py": "pipeline = pipelines.CodePipeline(self, 'Pipeline', synth=synth)\npipeline.add_stage(AppStage(self, 'Staging'), post=[pipelines.ShellStep('Chaos', commands=['chaos run experiment.json'])])",
+    "positive_ts": "const pipeline = new pipelines.CodePipeline(this, 'Pipeline', { synth });\npipeline.addStage(new AppStage(this, 'Prod'));",
+    "positive_py": "pipeline = pipelines.CodePipeline(self, 'Pipeline', synth=synth)\npipeline.add_stage(AppStage(self, 'Prod'))"
+  },
+  "REPO-027": {
+    "negative_ts": "new lambda.Function(this, 'Fn', { runtime, handler: 'index.handler', code });\nnew cloudwatch.Alarm(this, 'Orders', { metric: new cloudwatch.Metric({ namespace: 'Shop', metricName: 'OrdersPlaced' }), threshold: 1, evaluationPeriods: 1 });",
+    "negative_py": "lambda_.Function(self, 'Fn', runtime=runtime, handler='index.handler', code=code)\nqueue.metric_approximate_age_of_oldest_message().create_alarm(self, 'Age', threshold=300, evaluation_periods=1)",
+    "positive_ts": "new lambda.Function(this, 'Fn', { runtime, handler: 'index.handler', code });\nnew cloudwatch.Alarm(this, 'Cpu', { metric: new cloudwatch.Metric({ namespace: 'AWS/EC2', metricName: 'CPUUtilization' }), threshold: 80, evaluationPeriods: 3 });",
+    "positive_py": "lambda_.Function(self, 'Fn', runtime=runtime, handler='index.handler', code=code)"
+  },
+  "REPO-028": {
+    "negative_ts": "new lambda.Function(this, 'Fn', { runtime, handler: 'index.handler', code });\nnew logs.MetricFilter(this, 'Errors', { logGroup, metricNamespace: 'Shop', metricName: 'Errors', filterPattern });",
+    "negative_py": "lambda_.Function(self, 'Fn', runtime=runtime, handler='index.handler', code=code)\ncloudwatch.CfnInsightRule(self, 'TopCallers', rule_name='top-callers', rule_state='ENABLED', rule_body=body)",
+    "positive_ts": "new lambda.Function(this, 'Fn', { runtime, handler: 'index.handler', code });",
+    "positive_py": "lambda_.Function(self, 'Fn', runtime=runtime, handler='index.handler', code=code)"
+  },
+  "REPO-029": {
+    "negative_ts": "new lambda.Function(this, 'Fn', { runtime, handler: 'index.handler', code });\nnew xray.CfnGroup(this, 'Checkout', { groupName: 'checkout', filterExpression: 'service(\"checkout\")' });",
+    "negative_py": "lambda_.Function(self, 'Fn', runtime=runtime, handler='index.handler', code=code)\nxray.CfnSamplingRule(self, 'Checkout', sampling_rule=rule)",
+    "positive_ts": "new lambda.Function(this, 'Fn', { runtime, handler: 'index.handler', code });\nnew lambda.Function(this, 'Traced', { runtime, handler, code, tracing: lambda.Tracing.ACTIVE });",
+    "positive_py": "lambda_.Function(self, 'Fn', runtime=runtime, handler='index.handler', code=code)"
+  },
+  "REPO-030": {
+    "negative_ts": "new cloudwatch.Dashboard(this, 'Ops', { widgets: [[new cloudwatch.GraphWidget({ left: [new cloudwatch.Metric({ namespace: 'Shop', metricName: 'OrdersPlaced' }), service.metricCpuUtilization()] })]] });",
+    "negative_py": "cloudwatch.Dashboard(self, 'Ops', widgets=[[cloudwatch.GraphWidget(left=[queue.metric_approximate_age_of_oldest_message(), service.metric_cpu_utilization()])]])",
+    "positive_ts": "new cloudwatch.Dashboard(this, 'Ops', { widgets: [[new cloudwatch.GraphWidget({ left: [service.metricCpuUtilization(), service.metricMemoryUtilization()] })]] });",
+    "positive_py": "cloudwatch.Dashboard(self, 'Ops', widgets=[[cloudwatch.GraphWidget(left=[service.metric_cpu_utilization()])]])"
+  },
+  "REPO-031": {
+    "negative_ts": "new iam.Role(this, 'Worker', { assumedBy, permissionsBoundary: boundary });",
+    "negative_py": "iam.Role(self, 'Worker', assumed_by=principal)\niam.PermissionsBoundary.of(self).apply(boundary)",
+    "positive_ts": "new iam.Role(this, 'Worker', { assumedBy });",
+    "positive_py": "iam.Role(self, 'Worker', assumed_by=principal)"
+  },
+  "REPO-032": {
+    "negative_ts": "new iam.Role(this, 'BreakGlass', { assumedBy: new iam.AccountRootPrincipal() });",
+    "negative_py": "iam.Role(self, 'EmergencyAccess', assumed_by=iam.AccountRootPrincipal())",
+    "positive_ts": "new iam.Role(this, 'Worker', { assumedBy });",
+    "positive_py": "iam.Role(self, 'Worker', assumed_by=principal)"
+  },
+  "REPO-033": {
+    "negative_ts": "new guardduty.CfnDetector(this, 'Detector', { enable: true });\nnew securityhub.CfnHub(this, 'Hub');",
+    "negative_py": "guardduty.CfnDetector(self, 'Detector', enable=True)\nsecurityhub.CfnHub(self, 'Hub')",
+    "positive_ts": "new guardduty.CfnDetector(this, 'Detector', { enable: true });",
+    "positive_py": "guardduty.CfnDetector(self, 'Detector', enable=True)"
+  },
+  "REPO-034": {
+    "negative_ts": "const vpc = new ec2.Vpc(this, 'Vpc', { maxAzs: 2 });\nnew networkfirewall.CfnFirewall(this, 'Fw', { firewallName, firewallPolicyArn, subnetMappings, vpcId });",
+    "negative_py": "vpc = ec2.Vpc(self, 'Vpc', nat_gateways=0)",
+    "positive_ts": "const vpc = new ec2.Vpc(this, 'Vpc', { maxAzs: 2 });",
+    "positive_py": "vpc = ec2.Vpc(self, 'Vpc', max_azs=2)"
+  },
+  "REPO-035": {
+    "negative_ts": "new elbv2.ApplicationLoadBalancer(this, 'Lb', { vpc, internetFacing: true });\nnew shield.CfnProtection(this, 'Shield', { name, resourceArn });",
+    "negative_py": "elbv2.ApplicationLoadBalancer(self, 'Lb', vpc=vpc, internet_facing=True)\nshield.CfnProtection(self, 'Shield', name=name, resource_arn=arn)",
+    "positive_ts": "new elbv2.ApplicationLoadBalancer(this, 'Lb', { vpc, internetFacing: true });",
+    "positive_py": "elbv2.ApplicationLoadBalancer(self, 'Lb', vpc=vpc, internet_facing=True)"
+  },
+  "REPO-036": {
+    "negative_ts": "new lambda.Function(this, 'Fn', { runtime, handler, code, vpc, vpcSubnets: { subnetType: ec2.SubnetType.PRIVATE_WITH_EGRESS } });",
+    "negative_py": "lambda_.Function(self, 'Fn', runtime=runtime, handler='h', code=code, vpc=vpc, vpc_subnets=ec2.SubnetSelection(subnet_type=ec2.SubnetType.PRIVATE_WITH_EGRESS))",
+    "positive_ts": "new lambda.Function(this, 'Fn', { runtime, handler, code, vpc, vpcSubnets: { subnetType: ec2.SubnetType.PUBLIC } });",
+    "positive_py": "lambda_.Function(self, 'Fn', runtime=runtime, handler='h', code=code, vpc=vpc, vpc_subnets=ec2.SubnetSelection(subnet_type=ec2.SubnetType.PUBLIC))"
+  },
+  "REPO-037": {
+    "negative_ts": "new lambda.Function(this, 'Fn', { runtime, handler: 'index.handler', code, codeSigningConfig: signing });",
+    "negative_py": "lambda_.Function(self, 'Fn', runtime=runtime, handler='index.handler', code=code, code_signing_config=signing)",
+    "positive_ts": "new lambda.Function(this, 'Fn', { runtime, handler: 'index.handler', code });",
+    "positive_py": "lambda_.Function(self, 'Fn', runtime=runtime, handler='index.handler', code=code)"
+  },
+  "REPO-038": {
+    "negative_ts": "taskDef.addContainer('App', { image: ecs.ContainerImage.fromRegistry('nginx:1.27.2') });",
+    "negative_py": "task.add_container('App', image=ecs.ContainerImage.from_registry('nginx:1.27.2'))",
+    "positive_ts": "taskDef.addContainer('App', { image: ecs.ContainerImage.fromRegistry('nginx:latest') });",
+    "positive_py": "task.add_container('App', image=ecs.ContainerImage.from_registry('nginx'))"
+  },
+  "REPO-039": {
+    "negative_ts": "const data = new s3.Bucket(this, 'Data');\nTags.of(data).add('DataClassification', 'internal');",
+    "negative_py": "data = s3.Bucket(self, 'Data')\nTags.of(data).add('DataClassification', 'internal')",
+    "positive_ts": "const data = new s3.Bucket(this, 'Data');",
+    "positive_py": "data = s3.Bucket(self, 'Data')"
+  },
+  "REPO-040": {
+    "negative_ts": "const data = new s3.Bucket(this, 'Data', { encryption: s3.BucketEncryption.KMS, encryptionKey: key });\nTags.of(data).add('DataClassification', 'confidential');",
+    "negative_py": "data = s3.Bucket(self, 'Data', encryption=s3.BucketEncryption.KMS, encryption_key=key)\nTags.of(data).add('DataClassification', 'confidential')",
+    "positive_ts": "const data = new s3.Bucket(this, 'Data');\nTags.of(data).add('DataClassification', 'confidential');",
+    "positive_py": "data = s3.Bucket(self, 'Data')\nTags.of(data).add('DataClassification', 'restricted')"
+  },
+  "REPO-041": {
+    "negative_ts": "const data = new s3.Bucket(this, 'Data');\nAspects.of(app).add(new AwsSolutionsChecks());",
+    "negative_py": "data = s3.Bucket(self, 'Data')\nconfig.ManagedRule(self, 'Sse', identifier=config.ManagedRuleIdentifiers.S3_BUCKET_SERVER_SIDE_ENCRYPTION_ENABLED)",
+    "positive_ts": "const data = new s3.Bucket(this, 'Data');",
+    "positive_py": "data = s3.Bucket(self, 'Data')"
+  },
+  "REPO-042": {
+    "negative_ts": "const fn = new lambda.Function(this, 'Fn', props);\nconst table = new dynamodb.Table(this, 'State', props);",
+    "negative_py": "fn = _lambda.Function(self, 'Fn', **props)\nfs = efs.FileSystem(self, 'State', vpc=vpc)",
+    "positive_ts": "const host = new ec2.Instance(this, 'Host', props);\nconst data = new ec2.Volume(this, 'Data', props);\ndata.grantAttachVolume(host.role, [host]);",
+    "positive_py": "svc = ecs.FargateService(self, 'Svc', task_definition=task)\ntask.add_volume(name='data', host=ecs.Host(source_path='/data'))"
+  },
+  "REPO-043": {
+    "negative_ts": "const fn = new lambda.Function(this, 'Fn', { ...props, reservedConcurrentExecutions: 50 });",
+    "negative_py": "fn = _lambda.Function(self, 'Fn', reserved_concurrent_executions=50, **props)",
+    "positive_ts": "const fn = new lambda.Function(this, 'Fn', props);",
+    "positive_py": "fn = _lambda.Function(self, 'Fn', **props)"
+  },
+  "REPO-044": {
+    "negative_ts": "const fn = new lambda.Function(this, 'Fn', props);\nconst queue = new sqs.Queue(this, 'Work');\nfn.addEventSource(new SqsEventSource(queue));",
+    "negative_py": "fn = _lambda.Function(self, 'Fn', on_failure=destinations.SqsDestination(dlq), **props)\ntable = dynamodb.Table(self, 'Orders', **table_props)",
+    "positive_ts": "const fn = new lambda.Function(this, 'Fn', props);\nconst table = new dynamodb.Table(this, 'Orders', props);",
+    "positive_py": "fn = _lambda.Function(self, 'Fn', **props)\ntable = dynamodb.Table(self, 'Orders', **table_props)"
+  },
+  "REPO-045": {
+    "negative_ts": "new lambda.Function(this, 'Fn', { runtime, handler: 'index.handler', code });\nnew cloudwatch.Alarm(this, 'Errors', { metric: fn.metricErrors(), threshold: 1, evaluationPeriods: 1 });\nnew cloudwatch.Alarm(this, 'Orders', { metric: new cloudwatch.Metric({ namespace: 'Shop', metricName: 'OrdersPlaced' }), threshold: 1, evaluationPeriods: 1 });",
+    "negative_py": "lambda_.Function(self, 'Fn', runtime=runtime, handler='index.handler', code=code)\nqueue.metric_approximate_age_of_oldest_message().create_alarm(self, 'Age', threshold=300, evaluation_periods=1)",
+    "positive_ts": "new lambda.Function(this, 'Fn', { runtime, handler: 'index.handler', code });\nnew cloudwatch.Alarm(this, 'Cpu', { metric: new cloudwatch.Metric({ namespace: 'AWS/EC2', metricName: 'CPUUtilization' }), threshold: 80, evaluationPeriods: 3 });",
+    "positive_py": "lambda_.Function(self, 'Fn', runtime=runtime, handler='index.handler', code=code)\ncloudwatch.Alarm(self, 'Cpu', metric=cloudwatch.Metric(namespace='AWS/EC2', metric_name='CPUUtilization'), threshold=80, evaluation_periods=3)"
+  },
+  "REPO-046": {
+    "negative_ts": "const fn = new lambda.Function(this, 'Fn', props);\nnew logs.MetricFilter(this, 'Errors', { logGroup, metricNamespace: 'App', metricName: 'Errors', filterPattern: logs.FilterPattern.anyTerm('ERROR', 'Exception') });",
+    "negative_py": "fn = _lambda.Function(self, 'Fn', **props)\nlogs.MetricFilter(self, 'Errors', log_group=group, metric_namespace='App', metric_name='Errors', filter_pattern=logs.FilterPattern.literal('?ERROR ?FATAL'))",
+    "positive_ts": "const fn = new lambda.Function(this, 'Fn', props);\nnew logs.MetricFilter(this, 'Orders', { logGroup, metricNamespace: 'App', metricName: 'Orders', filterPattern: logs.FilterPattern.literal('OrderPlaced') });",
+    "positive_py": "fn = _lambda.Function(self, 'Fn', **props)"
+  },
+  "REPO-047": {
+    "negative_ts": "const svc = new ecs.FargateService(this, 'Svc', props);\nsvc.autoScaleTaskCount({ maxCapacity: 4 }).scaleOnCpuUtilization('Cpu', { targetUtilizationPercent: 60 });",
+    "negative_py": "fn = _lambda.Function(self, 'Fn', **props)\nalarm.add_alarm_action(cw_actions.LambdaAction(responder))",
+    "positive_ts": "const fn = new lambda.Function(this, 'Fn', props);\nalarm.addAlarmAction(new actions.SnsAction(topic));",
+    "positive_py": "fn = _lambda.Function(self, 'Fn', **props)"
+  },
+  "REPO-048": {
+    "negative_ts": "const fn = new lambda.Function(this, 'Fn', { ...props, tracing: lambda.Tracing.ACTIVE });",
+    "negative_py": "fn = _lambda.Function(self, 'Fn', tracing=_lambda.Tracing.ACTIVE, **props)",
+    "positive_ts": "const fn = new lambda.Function(this, 'Fn', props);",
+    "positive_py": "fn = _lambda.Function(self, 'Fn', **props)"
+  },
+  "REPO-049": {
+    "negative_ts": "const svc = new ecs.FargateService(this, 'Svc', props);\nsvc.autoScaleTaskCount({ maxCapacity: 4 }).scaleOnRequestCount('Requests', { requestsPerTarget: 100, targetGroup });",
+    "negative_py": "table = dynamodb.Table(self, 'Orders', partition_key=key, billing_mode=dynamodb.BillingMode.PAY_PER_REQUEST)",
+    "positive_ts": "new autoscaling.AutoScalingGroup(this, 'Asg', { vpc, instanceType, machineImage, minCapacity: 2, maxCapacity: 2 });",
+    "positive_py": "ecs.FargateService(self, 'Svc', cluster=cluster, task_definition=task)"
+  },
+  "REPO-050": {
+    "negative_ts": "const svc = new ecs.FargateService(this, 'Svc', props);\nconst scaling = svc.autoScaleTaskCount({ maxCapacity: 4 });\nscaling.scaleOnCpuUtilization('Cpu', { targetUtilizationPercent: 60 });\nscaling.scaleOnMetric('Backlog', { metric: queue.metricApproximateNumberOfMessagesVisible(), scalingSteps });",
+    "negative_py": "svc = ecs.FargateService(self, 'Svc', **props)",
+    "positive_ts": "const svc = new ecs.FargateService(this, 'Svc', props);\nsvc.autoScaleTaskCount({ maxCapacity: 4 }).scaleOnCpuUtilization('Cpu', { targetUtilizationPercent: 60 });",
+    "positive_py": "svc = ecs.FargateService(self, 'Svc', **props)\nscaling = svc.auto_scale_task_count(max_capacity=4)\nscaling.scale_on_cpu_utilization('Cpu', target_utilization_percent=60)\nscaling.scale_on_memory_utilization('Memory', target_utilization_percent=70)"
+  },
+  "REPO-051": {
+    "negative_ts": "new backup.BackupPlan(this, 'Plan', {});\nnew backup.CfnRestoreTestingPlan(this, 'RestoreTest', { restoreTestingPlanName: 'weekly', scheduleExpression: 'cron(0 3 ? * SUN *)', recoveryPointSelection });",
+    "negative_py": "backup.BackupPlan(self, 'Plan')\nbackup.CfnRestoreTestingPlan(self, 'RestoreTest', restore_testing_plan_name='weekly', schedule_expression='cron(0 3 ? * SUN *)', recovery_point_selection=selection)",
+    "positive_ts": "new backup.BackupPlan(this, 'Plan', {});",
+    "positive_py": "backup.BackupPlan(self, 'Plan')"
+  },
+  "REPO-052": {
+    "negative_ts": "new s3.Bucket(this, 'Data');\nTags.of(this).add('RTO', '4h');",
+    "negative_py": "s3.Bucket(self, 'Data')\nTags.of(self).add('RecoveryPointObjective', '15m')",
+    "positive_ts": "new s3.Bucket(this, 'Data');",
+    "positive_py": "s3.Bucket(self, 'Data')"
+  },
+  "REPO-053": {
+    "negative_ts": "new s3.Bucket(this, 'Data', { replicationRules: [{ destination, priority: 1 }] });\nnew route53.ARecord(this, 'Primary', { zone, target, failover: 'PRIMARY' });",
+    "negative_py": "s3.Bucket(self, 'Data', replication_rules=[rule])\nroute53.CfnHealthCheck(self, 'Health', health_check_config=config)",
+    "positive_ts": "new s3.Bucket(this, 'Data', { replicationRules: [{ destination, priority: 1 }] });",
+    "positive_py": "s3.Bucket(self, 'Data', replication_rules=[rule])"
+  },
+  "REPO-054": {
+    "negative_ts": "new rds.CfnGlobalCluster(this, 'Global', { globalClusterIdentifier: 'g' });\nnew fis.CfnExperimentTemplate(this, 'RegionFailover', { description: 'fail over' });",
+    "negative_py": "rds.CfnGlobalCluster(self, 'Global', global_cluster_identifier='g')\nfis.CfnExperimentTemplate(self, 'RegionFailover', description='fail over')",
+    "positive_ts": "new rds.CfnGlobalCluster(this, 'Global', { globalClusterIdentifier: 'g' });",
+    "positive_py": "rds.CfnGlobalCluster(self, 'Global', global_cluster_identifier='g')"
+  },
+  "REPO-055": {
+    "negative_ts": "new rds.CfnGlobalCluster(this, 'Global', { globalClusterIdentifier: 'g' });\nnew AppStack(app, 'Primary', { env: { region: 'us-east-1' } });\nnew AppStack(app, 'Recovery', { env: { region: 'us-west-2' } });",
+    "negative_py": "rds.CfnGlobalCluster(self, 'Global', global_cluster_identifier='g')\nAppStack(app, 'Primary', env=cdk.Environment(region='us-east-1'))\nAppStack(app, 'Recovery', env=cdk.Environment(region='us-west-2'))",
+    "positive_ts": "new rds.CfnGlobalCluster(this, 'Global', { globalClusterIdentifier: 'g' });\nnew AppStack(app, 'Primary', { env: { region: 'us-east-1' } });",
+    "positive_py": "rds.CfnGlobalCluster(self, 'Global', global_cluster_identifier='g')\nAppStack(app, 'Primary', env=cdk.Environment(region='us-east-1'))"
+  },
+  "REPO-056": {
+    "negative_ts": "new ec2.Instance(this, 'Box', { vpc, instanceType, machineImage });\nnew cloudwatch.Alarm(this, 'Status', { metric, threshold: 1, evaluationPeriods: 2 }).addAlarmAction(new actions.Ec2Action(actions.Ec2InstanceAction.RECOVER));",
+    "negative_py": "ec2.Instance(self, 'Box', vpc=vpc, instance_type=t, machine_image=ami)\nautoscaling.AutoScalingGroup(self, 'Fleet', vpc=vpc, instance_type=t, machine_image=ami)",
+    "positive_ts": "new ec2.Instance(this, 'Box', { vpc, instanceType, machineImage });",
+    "positive_py": "ec2.Instance(self, 'Box', vpc=vpc, instance_type=t, machine_image=ami)"
+  },
+  "REPO-057": {
+    "negative_ts": "const asg = new autoscaling.AutoScalingGroup(this, 'Fleet', { vpc, instanceType, machineImage, minCapacity: 2, maxCapacity: 6 });\nconst scaling = service.autoScaleTaskCount({ minCapacity: 2, maxCapacity: 10 });",
+    "negative_py": "autoscaling.AutoScalingGroup(self, 'Fleet', vpc=vpc, instance_type=t, machine_image=ami, min_capacity=3, max_capacity=9)",
+    "positive_ts": "const asg = new autoscaling.AutoScalingGroup(this, 'Fleet', { vpc, instanceType, machineImage, maxCapacity: 4 });",
+    "positive_py": "autoscaling.AutoScalingGroup(self, 'Fleet', vpc=vpc, instance_type=t, machine_image=ami, min_capacity=1, max_capacity=4)"
+  },
+  "REPO-058": {
+    "negative_ts": "const api = new apigateway.RestApi(this, 'Api');\nnew cloudwatch.Alarm(this, 'Errors', { metric: api.metricServerError(), threshold: 1, evaluationPeriods: 1 });",
+    "negative_py": "api = apigw.RestApi(self, 'Api')\nappsignals.CfnServiceLevelObjective(self, 'Slo', name='checkout-availability', sli=sli)",
+    "positive_ts": "const api = new apigateway.RestApi(this, 'Api');\nnew synthetics.Canary(this, 'Probe', { schedule, test, runtime });",
+    "positive_py": "api = apigw.RestApi(self, 'Api')"
+  },
+  "REPO-059": {
+    "negative_ts": "new lambda.Function(this, 'Fn', { runtime, handler, code });\nconst alarm = new cloudwatch.Alarm(this, 'Errors', { metric, threshold: 1, evaluationPeriods: 1 });\nalarm.addAlarmAction(new actions.SnsAction(topic));",
+    "negative_py": "_lambda.Function(self, 'Fn', runtime=r, handler='h', code=c)\nchatbot.SlackChannelConfiguration(self, 'Chat', slack_channel_configuration_name='ops', slack_workspace_id='T1', slack_channel_id='C1')",
+    "positive_ts": "new lambda.Function(this, 'Fn', { runtime, handler, code });\nnew cloudwatch.Alarm(this, 'Errors', { metric, threshold: 1, evaluationPeriods: 1 });",
+    "positive_py": "_lambda.Function(self, 'Fn', runtime=r, handler='h', code=c)"
+  },
+  "REPO-060": {
+    "negative_ts": "const service = new ecs.FargateService(this, 'Api', { cluster, taskDefinition });\nnew cloudwatch.Alarm(this, 'Cpu', { metric: service.metricCpuUtilization(), threshold: 80, evaluationPeriods: 3 });",
+    "negative_py": "fn = _lambda.Function(self, 'Fn', runtime=r, handler='h', code=c)\ncloudwatch.Alarm(self, 'Slow', metric=fn.metric_duration(), threshold=1000, evaluation_periods=3)",
+    "positive_ts": "new ecs.FargateService(this, 'Api', { cluster, taskDefinition });\nnew ecs.Cluster(this, 'Cluster', { vpc, containerInsights: false });",
+    "positive_py": "_lambda.Function(self, 'Fn', runtime=r, handler='h', code=c)"
+  },
+  "REPO-061": {
+    "negative_ts": "const service = new ecs.FargateService(this, 'Api', { cluster, taskDefinition });\nconst tasks = service.autoScaleTaskCount({ minCapacity: 2, maxCapacity: 10 });\ntasks.scaleOnCpuUtilization('Cpu', { targetUtilizationPercent: 60 });",
+    "negative_py": "asg = autoscaling.AutoScalingGroup(self, 'Web', vpc=vpc, min_capacity=2, max_capacity=6)\nasg.scale_on_request_count('Rps', target_requests_per_minute=1000)",
+    "positive_ts": "new ecs.FargateService(this, 'Api', { cluster, taskDefinition, desiredCount: 3 });",
+    "positive_py": "autoscaling.AutoScalingGroup(self, 'Web', vpc=vpc, min_capacity=2, max_capacity=6)"
+  },
+  "REPO-062": {
+    "negative_ts": "new ec2.Instance(this, 'Trainer', { vpc, machineImage, instanceType: new ec2.InstanceType('g5.xlarge') });\nnew cloudwatch.Alarm(this, 'Gpu', { metric: new cloudwatch.Metric({ namespace: 'CWAgent', metricName: 'nvidia_smi_utilization_gpu' }), threshold: 20, evaluationPeriods: 6 });",
+    "negative_py": "ec2.Instance(self, 'Web', vpc=vpc, machine_image=ami, instance_type=ec2.InstanceType('m7g.large'))",
+    "positive_ts": "new ec2.Instance(this, 'Trainer', { vpc, machineImage, instanceType: new ec2.InstanceType('p4d.24xlarge') });",
+    "positive_py": "ec2.Instance(self, 'Trainer', vpc=vpc, machine_image=ami, instance_type=ec2.InstanceType.of(ec2.InstanceClass.G5, ec2.InstanceSize.XLARGE))"
+  },
+  "REPO-063": {
+    "negative_ts": "const host = new ec2.Instance(this, 'Db', { vpc, instanceType, machineImage });\nnew ec2.Volume(this, 'Data', { availabilityZone: 'eu-west-1a', size });\nnew rds.DatabaseInstance(this, 'Rds', { engine, vpc });",
+    "negative_py": "ec2.Instance(self, 'Web', vpc=vpc, instance_type=t, machine_image=ami)",
+    "positive_ts": "const host = new ec2.Instance(this, 'Db', { vpc, instanceType, machineImage });\nnew ec2.Volume(this, 'Data', { availabilityZone: 'eu-west-1a', size });",
+    "positive_py": "host = ec2.Instance(self, 'Db', vpc=vpc, instance_type=t, machine_image=ami)\nhost.user_data.add_commands('dnf install -y mysql-server')"
+  },
+  "REPO-064": {
+    "negative_ts": "const api = new apigateway.RestApi(this, 'Api');\nnew cloudwatch.Alarm(this, 'Slow', { metric: api.metricLatency(), threshold: 500, evaluationPeriods: 3 });",
+    "negative_py": "api = apigw.RestApi(self, 'Api')\ncloudwatch.Alarm(self, 'Slow', metric=api.metric_latency(), threshold=500, evaluation_periods=3)",
+    "positive_ts": "const api = new apigateway.RestApi(this, 'Api');\nnew cloudwatch.Alarm(this, 'Errors', { metric: api.metricServerError(), threshold: 1, evaluationPeriods: 1 });",
+    "positive_py": "api = apigw.RestApi(self, 'Api')"
+  },
+  "REPO-065": {
+    "negative_ts": "const api = new apigateway.RestApi(this, 'Api');\nconst vpc = new ec2.Vpc(this, 'Vpc');\nvpc.addFlowLog('Flow');",
+    "negative_py": "api = apigw.RestApi(self, 'Api')\ncloudwatch.Alarm(self, 'Slow', metric=api.metric_latency(), threshold=500, evaluation_periods=3)",
+    "positive_ts": "const api = new apigateway.RestApi(this, 'Api');\nnew cloudwatch.Alarm(this, 'Slow', { metric: api.metricLatency(), threshold: props.latencyMs, evaluationPeriods: 3 });",
+    "positive_py": "api = apigw.RestApi(self, 'Api')"
+  },
+  "REPO-066": {
+    "negative_ts": "new ec2.VpnConnection(this, 'Vpn', { vpc, ip: '203.0.113.10' });\nnew ec2.VpnConnection(this, 'Vpn2', { vpc, ip: '203.0.113.11' });",
+    "negative_py": "ec2.Vpc(self, 'Vpc', vpn_connections={'office': ec2.VpnConnectionOptions(ip='203.0.113.10'), 'backup': ec2.VpnConnectionOptions(ip='203.0.113.11')})",
+    "positive_ts": "new ec2.VpnConnection(this, 'Vpn', { vpc, ip: '203.0.113.10' });",
+    "positive_py": "ec2.Vpc(self, 'Vpc', vpn_connections={'office': ec2.VpnConnectionOptions(ip='203.0.113.10')})"
+  },
+  "REPO-067": {
+    "negative_ts": "new ec2.Instance(this, 'Web', { vpc, instanceType, machineImage, vpcSubnets: { subnetType: ec2.SubnetType.PUBLIC } });\nnew elbv2.ApplicationLoadBalancer(this, 'Lb', { vpc, internetFacing: true });",
+    "negative_py": "ec2.Instance(self, 'Web', vpc=vpc, instance_type=t, machine_image=ami)",
+    "positive_ts": "new ec2.Instance(this, 'Web', { vpc, instanceType, machineImage, vpcSubnets: { subnetType: ec2.SubnetType.PUBLIC } });",
+    "positive_py": "ec2.Instance(self, 'Web', vpc=vpc, instance_type=t, machine_image=ami, associate_public_ip_address=True)"
+  },
+  "REPO-068": {
+    "negative_ts": "new cloudfront.Distribution(this, 'Cdn', { defaultBehavior, httpVersion: cloudfront.HttpVersion.HTTP2_AND_3, minimumProtocolVersion: cloudfront.SecurityPolicyProtocol.TLS_V1_2_2021 });",
+    "negative_py": "cloudfront.Distribution(self, 'Cdn', default_behavior=b, minimum_protocol_version=cloudfront.SecurityPolicyProtocol.TLS_V1_2_2021)",
+    "positive_ts": "new cloudfront.Distribution(this, 'Cdn', { defaultBehavior, httpVersion: cloudfront.HttpVersion.HTTP1_1 });",
+    "positive_py": "cloudfront.Distribution(self, 'Cdn', default_behavior=b, minimum_protocol_version=cloudfront.SecurityPolicyProtocol.TLS_V1_2016)"
+  },
+  "REPO-069": {
+    "negative_ts": "new s3.Bucket(this, 'Data');\nnew cur.CfnReportDefinition(this, 'Cur', { reportName: 'cur', timeUnit: 'HOURLY' });",
+    "negative_py": "s3.Bucket(self, 'Data')\naws_bcmdataexports.CfnExport(self, 'Export', export=props)",
+    "positive_ts": "new s3.Bucket(this, 'Data');",
+    "positive_py": "s3.Bucket(self, 'Data')"
+  },
+  "REPO-070": {
+    "negative_ts": "new s3.Bucket(this, 'Data');\nTags.of(app).add('CostCenter', 'cc-1234');",
+    "negative_py": "s3.Bucket(self, 'Data')\nce.CfnCostCategory(self, 'Teams', name='teams', rule_version=v, rules=r)",
+    "positive_ts": "new s3.Bucket(this, 'Data');\nTags.of(app).add('Owner', 'team-a');",
+    "positive_py": "s3.Bucket(self, 'Data')"
+  },
+  "REPO-071": {
+    "negative_ts": "const fn = new lambda.Function(this, 'Fn', { runtime, handler, code });\nnew cloudwatch.Metric({ namespace: 'Shop', metricName: 'CostPerOrder' });",
+    "negative_py": "fn = _lambda.Function(self, 'Fn', runtime=r)\nmetrics.add_metric(name='CostPerTenant', unit=MetricUnit.Count, value=cost)",
+    "positive_ts": "const fn = new lambda.Function(this, 'Fn', { runtime, handler, code });\n// publish CostPerRequest later",
+    "positive_py": "fn = _lambda.Function(self, 'Fn', runtime=r)"
+  },
+  "REPO-072": {
+    "negative_ts": "const fn = new lambda.Function(this, 'Fn', { runtime, handler, code });\nnew cloudwatch.MathExpression({ expression: 'cost / calls', usingMetrics: { cost: new cloudwatch.Metric({ namespace: 'AWS/Billing', metricName: 'EstimatedCharges' }), calls: fn.metricInvocations() } });",
+    "negative_py": "fn = _lambda.Function(self, 'Fn', runtime=r)\ncloudwatch.MathExpression(expression='cost / calls', using_metrics={'cost': cloudwatch.Metric(namespace='AWS/Billing', metric_name='EstimatedCharges'), 'calls': fn.metric_invocations()})",
+    "positive_ts": "const fn = new lambda.Function(this, 'Fn', { runtime, handler, code });\nnew cloudwatch.Alarm(this, 'Bill', { metric: new cloudwatch.Metric({ namespace: 'AWS/Billing', metricName: 'EstimatedCharges' }), threshold: 100, evaluationPeriods: 1 });",
+    "positive_py": "fn = _lambda.Function(self, 'Fn', runtime=r)"
+  },
+  "REPO-073": {
+    "negative_ts": "new budgets.CfnBudget(this, 'Monthly', { budget: { budgetType: 'COST', timeUnit: 'MONTHLY' }, notificationsWithSubscribers: [{ notification: { notificationType: 'ACTUAL', comparisonOperator: 'GREATER_THAN', threshold: 100 }, subscribers: [] }] , resourceTags: [{ key: 'Owner', value: 'team-a' }] });",
+    "negative_py": "budgets.CfnBudget(self, 'Monthly', budget=budgets.CfnBudget.BudgetDataProperty(budget_type='COST', time_unit='MONTHLY'), notifications_with_subscribers=[budgets.CfnBudget.NotificationWithSubscribersProperty(notification=budgets.CfnBudget.NotificationProperty(notification_type='ACTUAL', comparison_operator='GREATER_THAN', threshold=100), subscribers=[])], resource_tags=[budgets.CfnBudget.ResourceTagProperty(key='Owner', value='team-a')])",
+    "positive_ts": "new budgets.CfnBudget(this, 'Monthly', { budget: { budgetType: 'COST', timeUnit: 'MONTHLY' }, notificationsWithSubscribers: [{ notification: { notificationType: 'ACTUAL', comparisonOperator: 'GREATER_THAN', threshold: 100 }, subscribers: [] }] });",
+    "positive_py": "budgets.CfnBudget(self, 'Monthly', budget=budgets.CfnBudget.BudgetDataProperty(budget_type='COST', time_unit='MONTHLY'), notifications_with_subscribers=[budgets.CfnBudget.NotificationWithSubscribersProperty(notification=budgets.CfnBudget.NotificationProperty(notification_type='ACTUAL', comparison_operator='GREATER_THAN', threshold=100), subscribers=[])])"
+  },
+  "REPO-074": {
+    "negative_ts": "new budgets.CfnBudget(this, 'Monthly', { budget: { budgetType: 'COST', timeUnit: 'MONTHLY' }, notificationsWithSubscribers: [{ notification: { notificationType: 'FORECASTED', comparisonOperator: 'GREATER_THAN', threshold: 100 }, subscribers: [] }] });",
+    "negative_py": "budgets.CfnBudget(self, 'Monthly', budget=budgets.CfnBudget.BudgetDataProperty(budget_type='COST', time_unit='MONTHLY'), notifications_with_subscribers=[budgets.CfnBudget.NotificationWithSubscribersProperty(notification=budgets.CfnBudget.NotificationProperty(notification_type='ACTUAL', comparison_operator='GREATER_THAN', threshold=80), subscribers=[])])",
+    "positive_ts": "new budgets.CfnBudget(this, 'Monthly', { budget: { budgetType: 'COST', timeUnit: 'MONTHLY' }, notificationsWithSubscribers: [{ notification: { notificationType: 'ACTUAL', comparisonOperator: 'GREATER_THAN', threshold: 100 }, subscribers: [] }] });",
+    "positive_py": "budgets.CfnBudget(self, 'Monthly', budget=budgets.CfnBudget.BudgetDataProperty(budget_type='COST', time_unit='MONTHLY'), notifications_with_subscribers=[budgets.CfnBudget.NotificationWithSubscribersProperty(notification=budgets.CfnBudget.NotificationProperty(notification_type='ACTUAL', comparison_operator='GREATER_THAN', threshold=100), subscribers=[])])"
+  },
+  "REPO-075": {
+    "negative_ts": "new ec2.Instance(this, 'Box', { instanceType: new ec2.InstanceType('m7g.large'), machineImage, vpc });",
+    "negative_py": "_lambda.Function(self, 'Fn', runtime=_lambda.Runtime.PYTHON_3_12, handler='app.handler', code=code)",
+    "positive_ts": "new ec2.Instance(this, 'Box', { instanceType: new ec2.InstanceType('m1.small'), machineImage, vpc });",
+    "positive_py": "_lambda.Function(self, 'Fn', runtime=_lambda.Runtime.PYTHON_3_7, handler='app.handler', code=code)"
+  },
+  "REPO-076": {
+    "negative_ts": "const fn = new lambda.Function(this, 'Fn', { runtime, handler, code });\nnew cloudwatch.Metric({ namespace: 'Shop', metricName: 'CostPerOrder' });",
+    "negative_py": "fn = _lambda.Function(self, 'Fn', runtime=r)\nbudgets.CfnBudget(self, 'CostPerTenant', budget=budgets.CfnBudget.BudgetDataProperty(budget_name='cost-per-tenant', budget_type='COST', time_unit='MONTHLY'))",
+    "positive_ts": "const fn = new lambda.Function(this, 'Fn', { runtime, handler, code });",
+    "positive_py": "fn = _lambda.Function(self, 'Fn', runtime=r)"
+  },
+  "REPO-077": {
+    "negative_ts": "new budgets.CfnBudget(this, 'Monthly', { budget: { budgetType: 'COST', timeUnit: 'MONTHLY' }, notificationsWithSubscribers: [{ notification: { notificationType: 'ACTUAL', comparisonOperator: 'GREATER_THAN', threshold: 100 }, subscribers: [] }] });",
+    "negative_py": "budgets.CfnBudget(self, 'Monthly', budget=budgets.CfnBudget.BudgetDataProperty(budget_type='COST', time_unit='MONTHLY'), notifications_with_subscribers=[budgets.CfnBudget.NotificationWithSubscribersProperty(notification=budgets.CfnBudget.NotificationProperty(notification_type='ACTUAL', comparison_operator='GREATER_THAN', threshold=100), subscribers=[])])",
+    "positive_ts": "new s3.Bucket(this, 'Data');",
+    "positive_py": "s3.Bucket(self, 'Data')"
+  },
+  "REPO-078": {
+    "negative_ts": "new budgets.CfnBudget(this, 'Monthly', { budget: { budgetType: 'COST', timeUnit: 'MONTHLY' }, notificationsWithSubscribers: [{ notification: { notificationType: 'ACTUAL', comparisonOperator: 'GREATER_THAN', threshold: 100 }, subscribers: [] }] });",
+    "negative_py": "budgets.CfnBudget(self, 'Monthly', budget=budgets.CfnBudget.BudgetDataProperty(budget_type='COST', time_unit='MONTHLY'), notifications_with_subscribers=[budgets.CfnBudget.NotificationWithSubscribersProperty(notification=budgets.CfnBudget.NotificationProperty(notification_type='ACTUAL', comparison_operator='GREATER_THAN', threshold=100), subscribers=[])])",
+    "positive_ts": "new s3.Bucket(this, 'Data');",
+    "positive_py": "s3.Bucket(self, 'Data')"
+  },
+  "REPO-079": {
+    "negative_ts": "new budgets.CfnBudget(this, 'Monthly', { budget: { budgetType: 'COST', timeUnit: 'MONTHLY' }, notificationsWithSubscribers: [{ notification: { notificationType: 'ACTUAL', comparisonOperator: 'GREATER_THAN', threshold: 100 }, subscribers: [] }] });",
+    "negative_py": "budgets.CfnBudget(self, 'Monthly', budget=budgets.CfnBudget.BudgetDataProperty(budget_type='COST', time_unit='MONTHLY'), notifications_with_subscribers=[budgets.CfnBudget.NotificationWithSubscribersProperty(notification=budgets.CfnBudget.NotificationProperty(notification_type='ACTUAL', comparison_operator='GREATER_THAN', threshold=100), subscribers=[])])",
+    "positive_ts": "new s3.Bucket(this, 'Data');",
+    "positive_py": "s3.Bucket(self, 'Data')"
+  },
+  "REPO-080": {
+    "negative_ts": "new organizations.CfnPolicy(this, 'Scp', { name: 'cost', type: 'SERVICE_CONTROL_POLICY', content });",
+    "negative_py": "iam.PolicyStatement(effect=iam.Effect.DENY, actions=['ec2:RunInstances'], resources=['*'], conditions={'StringNotLike': {'ec2:InstanceType': ['t3.*']}})",
+    "positive_ts": "new s3.Bucket(this, 'Data');",
+    "positive_py": "s3.Bucket(self, 'Data')"
+  },
+  "REPO-081": {
+    "negative_ts": "new s3.Bucket(this, 'Data');\nPermissionsBoundary.of(this).apply(boundary);",
+    "negative_py": "s3.Bucket(self, 'Data')\nbudgets.CfnBudgetsAction(self, 'Stop', action_type='APPLY_IAM_POLICY', budget_name='monthly')",
+    "positive_ts": "new s3.Bucket(this, 'Data');",
+    "positive_py": "s3.Bucket(self, 'Data')"
+  },
+  "REPO-082": {
+    "negative_ts": "new budgets.CfnBudget(this, 'Monthly', { budget: { budgetType: 'COST', timeUnit: 'MONTHLY', budgetLimit: { amount: 100, unit: 'USD' } } });",
+    "negative_py": "budgets.CfnBudget(self, 'Monthly', budget=budgets.CfnBudget.BudgetDataProperty(budget_type='COST', time_unit='MONTHLY', planned_budget_limits=limits))",
+    "positive_ts": "new budgets.CfnBudget(this, 'Monthly', { budget: { budgetType: 'COST', timeUnit: 'MONTHLY' } });",
+    "positive_py": "budgets.CfnBudget(self, 'Monthly', budget=budgets.CfnBudget.BudgetDataProperty(budget_type='COST', time_unit='MONTHLY'))"
+  },
+  "REPO-083": {
+    "negative_ts": "new s3.Bucket(this, 'Data');\nnew AppStack(app, 'ProdStack', { env: { account: '111111111111', region } });\nnew AppStack(app, 'DevStack', { env: { account: '222222222222', region } });",
+    "negative_py": "s3.Bucket(self, 'Data')\nAppStack(app, 'ProdStack', env=cdk.Environment(account='111111111111'))\nAppStack(app, 'DevStack', env=cdk.Environment(account='222222222222'))",
+    "positive_ts": "new s3.Bucket(this, 'Data');\nnew AppStack(app, 'ProdStack', { env: { account: props.account, region } });\nnew AppStack(app, 'DevStack', { env: { account: props.account, region } });",
+    "positive_py": "s3.Bucket(self, 'Data')\nAppStack(app, 'ProdStack')\nAppStack(app, 'DevStack')"
+  },
+  "REPO-084": {
+    "negative_ts": "const finance = new iam.Group(this, 'Finance');\nfinance.addManagedPolicy(iam.ManagedPolicy.fromAwsManagedPolicyName('job-function/Billing'));",
+    "negative_py": "user = iam.User(self, 'Ops')\nuser.add_to_policy(iam.PolicyStatement(actions=['s3:GetObject'], resources=['*']))",
+    "positive_ts": "const user = new iam.User(this, 'Finance');\nuser.addManagedPolicy(iam.ManagedPolicy.fromAwsManagedPolicyName('job-function/Billing'));",
+    "positive_py": "user = iam.User(self, 'Finance')\nuser.add_to_policy(iam.PolicyStatement(actions=['ce:GetCostAndUsage'], resources=['*']))"
+  },
+  "REPO-085": {
+    "negative_ts": "new AppStack(app, 'SandboxStack');\nTags.of(app).add('ExpiryDate', '2026-12-31');\nTags.of(app).add('Environment', 'sandbox');",
+    "negative_py": "AppStack(app, 'SandboxStack')\nTags.of(app).add('DeleteAfter', '2026-12-31')\nTags.of(app).add('env', 'sandbox')",
+    "positive_ts": "new AppStack(app, 'SandboxStack');\nTags.of(app).add('Environment', 'sandbox');",
+    "positive_py": "AppStack(app, 'PreviewStack')"
+  },
+  "REPO-086": {
+    "negative_ts": "new s3.Bucket(this, 'Data');\nTags.of(app).add('CreatedBy', 'cdk');\nTags.of(app).add('Owner', 'platform');",
+    "negative_py": "s3.Bucket(self, 'Data')\nTags.of(app).add('Repository', 'org/app')\nTags.of(app).add('Team', 'platform')",
+    "positive_ts": "new s3.Bucket(this, 'Data');\nTags.of(app).add('Owner', 'platform');",
+    "positive_py": "s3.Bucket(self, 'Data')"
+  },
+  "REPO-087": {
+    "negative_ts": "new AppStack(app, 'SandboxStack');\nnew events.Rule(this, 'Cleanup', { schedule: events.Schedule.rate(cdk.Duration.days(1)) });",
+    "negative_py": "AppStack(app, 'PreviewStack')\nevents.Rule(self, 'Teardown', schedule=events.Schedule.cron(hour='3'))",
+    "positive_ts": "new AppStack(app, 'SandboxStack');",
+    "positive_py": "AppStack(app, 'PreviewStack')"
+  },
+  "REPO-088": {
+    "negative_ts": "new s3.Bucket(this, 'Data');\nnew pipelines.ShellStep('Cost', { commands: ['infracost breakdown --path .'] });",
+    "negative_py": "s3.Bucket(self, 'Data')\npipelines.ShellStep('Cost', commands=['infracost diff --path .'])",
+    "positive_ts": "new s3.Bucket(this, 'Data');",
+    "positive_py": "s3.Bucket(self, 'Data')"
+  },
+  "REPO-089": {
+    "negative_ts": "const vpc = ec2.Vpc.fromLookup(this, 'Shared', { vpcName: 'shared' });\nnew ecs.Cluster(this, 'Cluster', { vpc });",
+    "negative_py": "vpc = ec2.Vpc(self, 'Vpc')\nTags.of(self).add('Tenancy', 'dedicated')",
+    "positive_ts": "const vpc = new ec2.Vpc(this, 'Vpc');\nnew ecs.Cluster(this, 'Cluster', { vpc });",
+    "positive_py": "vpc = ec2.Vpc(self, 'Vpc')"
+  },
+  "REPO-090": {
+    "negative_ts": "new autoscaling.AutoScalingGroup(this, 'Web', { vpc, spotPrice: '0.05' });",
+    "negative_py": "eks.Nodegroup(self, 'Workers', cluster=cluster, capacity_type=eks.CapacityType.SPOT)",
+    "positive_ts": "new autoscaling.AutoScalingGroup(this, 'Web', { vpc, minCapacity: 2, maxCapacity: 6 });",
+    "positive_py": "eks.Nodegroup(self, 'Workers', cluster=cluster)"
+  },
+  "REPO-091": {
+    "negative_ts": "new AppStack(app, 'App', { env: { region: process.env.CDK_DEFAULT_REGION } });",
+    "negative_py": "AppStack(app, 'App', env=cdk.Environment(region='sa-east-1'))  # latency for users in Brazil",
+    "positive_ts": "new AppStack(app, 'App', { env: { region: 'sa-east-1' } });",
+    "positive_py": "AppStack(app, 'App', env=cdk.Environment(region='ap-northeast-1'))"
+  },
+  "REPO-092": {
+    "negative_ts": "const ami = ec2.MachineImage.lookup({ name: 'fw-*', owners: ['aws-marketplace'] });\nTags.of(this).add('ContractEnd', '2027-06-30');",
+    "negative_py": "ami = ec2.MachineImage.lookup(name='al2023-*', owners=['amazon'])",
+    "positive_ts": "const ami = ec2.MachineImage.lookup({ name: 'fw-*', owners: ['aws-marketplace'] });",
+    "positive_py": "ami = ec2.MachineImage.lookup(name='fw-*', owners=['aws-marketplace'])"
+  },
+  "REPO-093": {
+    "negative_ts": "new organizations.CfnAccount(this, 'Prod', { accountName: 'prod', email: 'a@example.com' });\nnew budgets.CfnBudget(this, 'Sp', { budget: { budgetType: 'SAVINGS_PLANS_UTILIZATION', timeUnit: 'MONTHLY' } });",
+    "negative_py": "organizations.CfnAccount(self, 'Prod', account_name='prod', email='a@example.com')\nbudgets.CfnBudget(self, 'Ri', budget=budgets.CfnBudget.BudgetDataProperty(budget_type='RI_COVERAGE', time_unit='MONTHLY'))",
+    "positive_ts": "new organizations.CfnAccount(this, 'Prod', { accountName: 'prod', email: 'a@example.com' });",
+    "positive_py": "organizations.CfnAccount(self, 'Prod', account_name='prod', email='a@example.com')"
+  },
+  "REPO-094": {
+    "negative_ts": "new rds.DatabaseInstance(this, 'Db', { engine, multiAz: false });",
+    "negative_py": "rds.DatabaseInstance(self, 'Db', engine=e, multi_az=True)  # data transfer: 1 TB per month",
+    "positive_ts": "new rds.DatabaseInstance(this, 'Db', { engine, multiAz: true });",
+    "positive_py": "rds.DatabaseInstance(self, 'Db', engine=e, multi_az=True)"
+  },
+  "REPO-095": {
+    "negative_ts": "const vpc = new ec2.Vpc(this, 'V', { natGateways: 0 });\nnew s3.Bucket(this, 'Data');\nnew lambda.Function(this, 'Fn', { runtime, handler, code, vpc });",
+    "negative_py": "vpc = ec2.Vpc(self, 'V')\ns3.Bucket(self, 'Data')\n_lambda.Function(self, 'Fn', runtime=r, handler='h', code=c, vpc=vpc)\nvpc.add_gateway_endpoint('S3', service=ec2.GatewayVpcEndpointAwsService.S3)",
+    "positive_ts": "const vpc = new ec2.Vpc(this, 'V', { natGateways: 1 });\nnew s3.Bucket(this, 'Data');\nnew lambda.Function(this, 'Fn', { runtime, handler, code, vpc });",
+    "positive_py": "vpc = ec2.Vpc(self, 'V')\ns3.Bucket(self, 'Data')\n_lambda.Function(self, 'Fn', runtime=r, handler='h', code=c, vpc=vpc)"
+  },
+  "REPO-096": {
+    "negative_ts": "new lambda.Function(this, 'Fn', { runtime, handler, code });\nconst t = fn.addAutoScaling();\nt.scaleOnSchedule('Peak', { schedule: autoscaling.Schedule.cron({ hour: '8' }), minCapacity: 4 });",
+    "negative_py": "_lambda.Function(self, 'Fn', runtime=r, handler='h', code=c)\nscalable.scale_on_schedule('Peak', schedule=appscaling.Schedule.cron(hour='8'), min_capacity=4)",
+    "positive_ts": "new lambda.Function(this, 'Fn', { runtime, handler, code });",
+    "positive_py": "_lambda.Function(self, 'Fn', runtime=r, handler='h', code=c)"
+  },
+  "REPO-097": {
+    "negative_ts": "new apigateway.RestApi(this, 'Api', { deployOptions: { throttlingRateLimit: 100 } });",
+    "negative_py": "apigateway.RestApi(self, 'Api', deploy_options=apigateway.StageOptions(throttling_rate_limit=100))",
+    "positive_ts": "new apigateway.RestApi(this, 'Api');",
+    "positive_py": "apigateway.RestApi(self, 'Api')"
+  },
+  "REPO-098": {
+    "negative_ts": "const answer = 42;",
+    "negative_py": "answer = 42",
+    "positive_ts": "new lambda.Function(this, 'Fn', { runtime, handler, code });",
+    "positive_py": "_lambda.Function(self, 'Fn', runtime=r, handler='h', code=c)"
+  },
+  "REPO-101": {
+    "negative_ts": "const answer = 42;",
+    "negative_py": "answer = 42",
+    "positive_ts": "new lambda.Function(this, 'Fn', { runtime, handler, code });",
+    "positive_py": "_lambda.Function(self, 'Fn', runtime=r, handler='h', code=c)"
+  },
+  "REPO-099": {
+    "negative_ts": "const vol = new ec2.Volume(this, 'Vol', { availabilityZone: 'a', size: Size.gibibytes(10) });\nvol.grantAttachVolume(role);",
+    "negative_py": "vol = ec2.Volume(self, 'Vol', availability_zone='a', size=Size.gibibytes(10))\nvol.grant_attach_volume(role)",
+    "positive_ts": "const vol = new ec2.Volume(this, 'Vol', { availabilityZone: 'a', size: Size.gibibytes(10) });",
+    "positive_py": "vol = ec2.Volume(self, 'Vol', availability_zone='a', size=Size.gibibytes(10))"
+  },
+  "REPO-100": {
+    "negative_ts": "new cloudfront.Distribution(this, 'Cdn', { priceClass: cloudfront.PriceClass.PRICE_CLASS_100, defaultBehavior });\nnew Stack(app, 'S', { env: { region: 'eu-west-1' } });",
+    "negative_py": "cloudfront.Distribution(self, 'Cdn', price_class=cloudfront.PriceClass.PRICE_CLASS_100, default_behavior=b)\nStack(app, 'S', env=Environment(region='eu-west-1'))",
+    "positive_ts": "new cloudfront.Distribution(this, 'Cdn', { priceClass: cloudfront.PriceClass.PRICE_CLASS_100, defaultBehavior });\nnew Stack(app, 'S', { env: { region: 'ap-southeast-2' } });",
+    "positive_py": "cloudfront.Distribution(self, 'Cdn', price_class=cloudfront.PriceClass.PRICE_CLASS_100, default_behavior=b)\nStack(app, 'S', env=Environment(region='ap-southeast-2'))"
+  },
+  "REPO-102": {
+    "negative_ts": "new apigateway.RestApi(this, 'Api', { deployOptions: { throttlingRateLimit: 100 } });",
+    "negative_py": "apigateway.RestApi(self, 'Api', deploy_options=apigateway.StageOptions(throttling_rate_limit=100))",
+    "positive_ts": "new apigateway.RestApi(this, 'Api');",
+    "positive_py": "apigateway.RestApi(self, 'Api')"
+  },
+  "REPO-103": {
+    "negative_ts": "const topic = new sns.Topic(this, 'T');\ntopic.addSubscription(sub);",
+    "negative_py": "topic = sns.Topic(self, 'T')\ntopic.add_subscription(sub)",
+    "positive_ts": "new ecs.FargateService(this, 'Svc', { cluster, taskDefinition, desiredCount: 0 });",
+    "positive_py": "ecs.FargateService(self, 'Svc', cluster=c, task_definition=t, desired_count=0)"
+  },
+  "REPO-104": {
+    "negative_ts": "new lambda.Function(this, 'Fn', { runtime, handler, code, memorySize: 1024 });",
+    "negative_py": "_lambda.Function(self, 'Fn', runtime=r, handler='h', code=c, memory_size=1024)",
+    "positive_ts": "new lambda.Function(this, 'Fn', { runtime, handler, code, memorySize: 10240 });",
+    "positive_py": "_lambda.Function(self, 'Fn', runtime=r, handler='h', code=c, memory_size=10240)"
+  },
+  "REPO-105": {
+    "negative_ts": "const answer = 42;",
+    "negative_py": "answer = 42",
+    "positive_ts": "new iot.CfnThing(this, 'Sensor');",
+    "positive_py": "iot.CfnThing(self, 'Sensor')"
+  },
+  "REPO-106": {
+    "negative_ts": "const host = new ec2.Instance(this, 'Db', { vpc, instanceType, machineImage });\nnew ec2.Volume(this, 'Data', { availabilityZone: 'eu-west-1a', size });\nnew rds.DatabaseInstance(this, 'Rds', { engine, vpc });",
+    "negative_py": "ec2.Instance(self, 'Web', vpc=vpc, instance_type=t, machine_image=ami)",
+    "positive_ts": "const host = new ec2.Instance(this, 'Db', { vpc, instanceType, machineImage });\nnew ec2.Volume(this, 'Data', { availabilityZone: 'eu-west-1a', size });",
+    "positive_py": "host = ec2.Instance(self, 'Db', vpc=vpc, instance_type=t, machine_image=ami)\nhost.user_data.add_commands('dnf install -y mysql-server')"
   }
 }

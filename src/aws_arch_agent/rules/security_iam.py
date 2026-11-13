@@ -1,9 +1,11 @@
 from __future__ import annotations
+import re
 from pathlib import Path
-from typing import List
-from aws_arch_agent.models import Finding
+from typing import List, cast
+from aws_arch_agent.models import Finding, Severity
 from aws_arch_agent.rules.base import Rule, cdk_bool_prop, code_glob
 from aws_arch_agent.rules.scope import findings_for_unmatched, findings_when_same_file
+from aws_arch_agent.tools.files import read_text_safe
 from aws_arch_agent.tools.rg import rg
 
 # First action value is "*" or a service wildcard such as "s3:*".
@@ -504,3 +506,157 @@ class MacieNotEnabled(Rule):
             )]
         return out
 
+
+
+# CDK constructs of IAM users. `aws_iam.User(` (Python) matches as well.
+_IAM_USER = r"iam\.(?:Cfn)?User\("
+_USER_CALL = re.compile(r"iam\.(Cfn)?User\(")
+# `const user = new iam.User(` / `self.user = aws_iam.User(`: the name methods are called on.
+_USER_VARIABLE = re.compile(
+    r"\b([A-Za-z_]\w*)\s*(?::\s*[\w.<>]+\s*)?=\s*(?:new\s+)?[\w.]*iam\.(?:Cfn)?User\("
+)
+_USER_PASSWORD = re.compile(r"\bpassword\s*[:=]")
+_CFN_LOGIN_PROFILE = re.compile(r"\b(?:loginProfile|login_profile)\s*[:=]")
+_USER_MANAGED_POLICIES = re.compile(r"\b(?:managedPolicies|managed_policies)\s*[:=]")
+_CFN_USER_POLICIES = re.compile(
+    r"\b(?:policies|managedPolicyArns|managed_policy_arns)\s*[:=]"
+)
+_USER_POLICY_METHODS = (
+    r"addManagedPolicy|add_managed_policy|addToPolicy|add_to_policy|addToPrincipalPolicy"
+    r"|add_to_principal_policy|attachInlinePolicy|attach_inline_policy"
+)
+_POLICY_CALL = re.compile(r"iam\.(?:Policy|ManagedPolicy|CfnPolicy|CfnManagedPolicy)\(")
+_POLICY_USERS = re.compile(r"\busers\s*[:=]")
+_ATTACH_TO_USER = re.compile(r"\.(?:attachToUser|attach_to_user)\(")
+
+
+def _call_args(text: str, open_paren: int) -> str:
+    """The text between the parenthesis at open_paren and its match (or the end of text)."""
+    depth = 0
+    for i in range(open_paren, len(text)):
+        if text[i] == "(":
+            depth += 1
+        elif text[i] == ")":
+            depth -= 1
+            if depth == 0:
+                return text[open_paren + 1:i]
+    return text[open_paren + 1:]
+
+
+def _line_at(text: str, offset: int) -> tuple[int, str]:
+    """1-based line number and stripped text of the line holding offset."""
+    start = text.rfind("\n", 0, offset) + 1
+    end = text.find("\n", offset)
+    return text.count("\n", 0, offset) + 1, text[start:end if end != -1 else None].strip()
+
+
+def _files_with(repo_path: Path, pattern: str, language: str) -> list[tuple[str, str]]:
+    """(path, text) of each code file with a hit, in the order rg returns them."""
+    seen: list[str] = []
+    for f, _ln, _txt in rg(repo_path, pattern, glob=code_glob(language)):
+        if f not in seen:
+            seen.append(f)
+    return [(f, read_text_safe(repo_path / f)) for f in seen]
+
+
+class _IamUserRule(Rule):
+    """A CDK rule that reads the arguments of iam.User and iam.CfnUser calls."""
+
+    category = "Security"
+
+    def _finding(self, file: str, text: str, offset: int) -> Finding:
+        line, evidence = _line_at(text, offset)
+        return Finding(
+            id=self.id,
+            title=self.title,
+            severity=cast(Severity, self.severity),
+            category=self.category,
+            file=file,
+            line=line,
+            evidence=evidence,
+            recommendation=self.recommendation,
+        )
+
+
+class IamUserConsolePassword(_IamUserRule):
+    id = "SEC-069"
+    themes = ("identity",)
+    title = "IAM user has a console password"
+    severity = "Medium"
+    recommendation = (
+        "Give people access through IAM Identity Center or a federated identity provider "
+        "(SAML 2.0 or OIDC) and roles, not IAM users with console passwords, so joiners and "
+        "leavers are handled in one place and sessions use temporary credentials. In CDK: "
+        "sso.CfnPermissionSet and sso.CfnAssignment, or iam.SamlProvider with a role."
+    )
+
+    def run(self, repo_path: Path, language: str = "typescript") -> List[Finding]:
+        out: List[Finding] = []
+        for f, text in _files_with(repo_path, _IAM_USER, language):
+            for call in _USER_CALL.finditer(text):
+                args = _call_args(text, call.end() - 1)
+                pattern = _CFN_LOGIN_PROFILE if call.group(1) else _USER_PASSWORD
+                if pattern.search(args):
+                    out.append(self._finding(f, text, call.start()))
+        return out
+
+
+class IamAccessKeyCreated(_IamUserRule):
+    id = "SEC-070"
+    themes = ("identity",)
+    title = "IAM access key is created in the code"
+    severity = "Medium"
+    recommendation = (
+        "An access key is a long-lived credential, and CDK puts its secret in the stack. Use "
+        "roles with temporary credentials instead: an IAM role for AWS compute, IAM Roles "
+        "Anywhere for workloads outside AWS, and OIDC federation for CI. If a key cannot be "
+        "avoided, keep it in Secrets Manager and rotate it."
+    )
+
+    def run(self, repo_path: Path, language: str = "typescript") -> List[Finding]:
+        return [
+            Finding(
+                id=self.id,
+                title=self.title,
+                severity="Medium",
+                category=self.category,
+                file=f,
+                line=ln,
+                evidence=txt,
+                recommendation=self.recommendation,
+            )
+            for f, ln, txt in rg(repo_path, r"iam\.(?:Cfn)?AccessKey\(", glob=code_glob(language))
+        ]
+
+
+class IamUserDirectPolicies(_IamUserRule):
+    id = "SEC-071"
+    themes = ("identity",)
+    title = "IAM user has policies attached directly"
+    severity = "Low"
+    recommendation = (
+        "Attach policies to an IAM group for the job function and add the user to it, so "
+        "permissions are not managed one person at a time (Security Hub IAM.2). In CDK: "
+        "group.addManagedPolicy(...) and group.addUser(user), or groups: [group] on the user."
+    )
+
+    def run(self, repo_path: Path, language: str = "typescript") -> List[Finding]:
+        out: List[Finding] = []
+        for f, text in _files_with(repo_path, _IAM_USER, language):
+            for call in _USER_CALL.finditer(text):
+                args = _call_args(text, call.end() - 1)
+                pattern = _CFN_USER_POLICIES if call.group(1) else _USER_MANAGED_POLICIES
+                if pattern.search(args):
+                    out.append(self._finding(f, text, call.start()))
+            names = sorted({m.group(1) for m in _USER_VARIABLE.finditer(text)})
+            if names:
+                calls = re.compile(
+                    rf"\b(?:{'|'.join(map(re.escape, names))})\.(?:{_USER_POLICY_METHODS})\("
+                )
+                out.extend(self._finding(f, text, m.start()) for m in calls.finditer(text))
+                for call in _POLICY_CALL.finditer(text):
+                    if _POLICY_USERS.search(_call_args(text, call.end() - 1)):
+                        out.append(self._finding(f, text, call.start()))
+                matches = _ATTACH_TO_USER.finditer(text)
+                out.extend(self._finding(f, text, m.start()) for m in matches)
+        return out

@@ -18,6 +18,8 @@ def test_org_rules_off_by_default(tmp_path: Path) -> None:
 
 def test_org_rules_run_when_enabled(tmp_path: Path) -> None:
     _app(tmp_path)
+    # REPO-012 (quota alarms) fires only when the IaC uses a quota-heavy service.
+    (tmp_path / "stack.ts").write_text("new lambda.Function(this, 'Fn', {});\n", encoding="utf-8")
     _report, _ctx, findings, _warnings = analyze_v1(tmp_path, use_llm=False, rules_org=True)
     ids = {finding.id for finding in findings}
     assert ORG_RULE_IDS <= ids

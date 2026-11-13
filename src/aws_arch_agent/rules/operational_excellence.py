@@ -328,8 +328,8 @@ class SnsAlarmNotifications(Rule):
     )
 
     def run(self, repo_path: Path, language: str = "typescript") -> List[Finding]:
-        alarms = rg(repo_path, r'new\s+cloudwatch\.Alarm\(', glob=code_glob(language))
-        sns_action = rg(repo_path, r'addAlarmAction|SnsAction', glob=code_glob(language))
+        alarms = rg(repo_path, r'(?:new\s+)?cloudwatch\.Alarm\(', glob=code_glob(language))
+        sns_action = rg(repo_path, r'addAlarmAction|add_alarm_action|SnsAction', glob=code_glob(language))
         out: List[Finding] = []
         if alarms and not sns_action:
             f, ln, txt = alarms[0]
@@ -744,3 +744,79 @@ class S3ReplicationMetrics(Rule):
                 recommendation=self.recommendation,
             )]
         return out
+
+
+class Ec2PatchBaselineMissing(Rule):
+    id = "OPS-026"
+    title = "EC2 instances have no patch baseline"
+    category = "Operational Excellence"
+    severity = "Medium"
+    themes = ("security-baseline",)
+    recommendation = (
+        "Patch the instances with Systems Manager Patch Manager: add an ssm.CfnPatchBaseline, "
+        "or an ssm.CfnAssociation (or maintenance window task) that runs AWS-RunPatchBaseline."
+    )
+
+    _COMPUTE = (
+        r"(?:new\s+)?(?:ec2\.(?:Instance|LaunchTemplate|CfnInstance|CfnLaunchTemplate)"
+        r"|autoscaling\.(?:AutoScalingGroup|CfnAutoScalingGroup))\("
+    )
+    _PATCHING = (
+        r"CfnPatchBaseline|CfnMaintenanceWindowTask|AWS-RunPatchBaseline"
+        r"|AWS-PatchInstanceWithRollback"
+    )
+
+    def run(self, repo_path: Path, language: str = "typescript") -> List[Finding]:
+        compute = rg(repo_path, self._COMPUTE, glob=code_glob(language))
+        if not compute or rg(repo_path, self._PATCHING, glob=code_glob(language)):
+            return []
+        f, ln, txt = compute[0]
+        return [Finding(
+            id=self.id,
+            title=self.title,
+            severity="Medium",
+            category=self.category,
+            file=f,
+            line=ln,
+            evidence=txt,
+            recommendation=self.recommendation,
+        )]
+
+
+class AlarmEscalationMissing(Rule):
+    id = "OPS-027"
+    title = "Alarms have no escalation path"
+    category = "Operational Excellence"
+    severity = "Low"
+    themes = ("observability",)
+    recommendation = (
+        "Escalate when nobody responds to the first notification: add an Incident Manager "
+        "response plan (ssmincidents.CfnResponsePlan) whose engagements include an escalation "
+        "plan (ssmcontacts.CfnContact of type ESCALATION, or a plan of two or more stages), and "
+        "point the alarm at it with alarm.addAlarmAction(new SsmIncidentAction(plan))."
+    )
+
+    _ALARMS = (
+        r"(?:new\s+)?cloudwatch\.(?:Alarm|CompositeAlarm|CfnAlarm|CfnCompositeAlarm)\("
+        r"|\.create_?[aA]larm\("
+    )
+    _ESCALATION = (
+        r"ssmincidents\.CfnResponsePlan|ssmcontacts\.CfnContact|ssmcontacts\.CfnPlan"
+        r"|SsmIncidentAction|ssm-incidents:[^'\"]*response-plan/"
+    )
+
+    def run(self, repo_path: Path, language: str = "typescript") -> List[Finding]:
+        alarms = rg(repo_path, self._ALARMS, glob=code_glob(language))
+        if not alarms or rg(repo_path, self._ESCALATION, glob=code_glob(language)):
+            return []
+        f, ln, txt = alarms[0]
+        return [Finding(
+            id=self.id,
+            title=self.title,
+            severity="Low",
+            category=self.category,
+            file=f,
+            line=ln,
+            evidence=txt,
+            recommendation=self.recommendation,
+        )]

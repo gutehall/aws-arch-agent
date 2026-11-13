@@ -5,5 +5,61 @@
     "file": null,
     "line": null,
     "evidence": null
+  },
+  {
+    "id": "REPO-001",
+    "severity": "Medium",
+    "file": null,
+    "line": null,
+    "evidence": "Searched the repo for tests (test/, tests/, __tests__/, spec/, *.test.ts, *.spec.js, test_*.py, *_test.go, *.tftest.hcl, taskcat, cfn-guard tests); found none"
+  },
+  {
+    "id": "REPO-002",
+    "severity": "Medium",
+    "file": null,
+    "line": null,
+    "evidence": "Searched the repo for a CI config (.github/workflows, .gitlab-ci.yml, buildspec.yml, Jenkinsfile, azure-pipelines.yml, bitbucket-pipelines.yml, .circleci, .buildkite) or a CodePipeline in the IaC; found none"
+  },
+  {
+    "id": "REPO-003",
+    "severity": "Low",
+    "file": null,
+    "line": null,
+    "evidence": "Environments named in IaC paths, tfvars and parameter files, CDK stack ids and cdk.json context: none; two or more expected"
+  },
+  {
+    "id": "REPO-009",
+    "severity": "Medium",
+    "file": null,
+    "line": null,
+    "evidence": "Searched the repo for a build to run a dependency scan (a CI config, or a CodeBuild buildspec or pipeline in the IaC); found none"
+  },
+  {
+    "id": "REPO-011",
+    "severity": "Low",
+    "file": null,
+    "line": null,
+    "evidence": "Has a package manifest (package.json); searched for AWS CodeArtifact in the IaC, aws codeartifact login in a build, and a private registry in .npmrc, .yarnrc, pip.conf, a requirements index-url, a poetry or uv source, Maven or Gradle repositories, or GOPROXY; found none"
+  },
+  {
+    "id": "REPO-016",
+    "severity": "Low",
+    "file": null,
+    "line": null,
+    "evidence": "Searched the IaC for an AWS FIS experiment template (AWS::FIS::ExperimentTemplate, aws_fis_experiment_template, fis.CfnExperimentTemplate) and the build configs for aws fis start-experiment or a chaos tool (Litmus, Chaos Mesh, Gremlin, Chaos Toolkit); found none"
+  },
+  {
+    "id": "REPO-017",
+    "severity": "Low",
+    "file": null,
+    "line": null,
+    "evidence": "Searched the repo for a build to run a load test (a CI config, or a CodeBuild buildspec or pipeline in the IaC); found none"
+  },
+  {
+    "id": "REPO-025",
+    "severity": "Medium",
+    "file": null,
+    "line": null,
+    "evidence": "Holds IaC (CDK: 2 files); searched the repo for a build config that deploys, and the IaC for a pipeline; found none"
   }
 ]

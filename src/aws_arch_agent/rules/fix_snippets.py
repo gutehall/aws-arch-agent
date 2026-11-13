@@ -163,6 +163,16 @@ ${name}ErrorsAlarm:
   Properties:
     AlarmActions:
       - !Ref AlarmTopic""",
+    "CF-ALARM-003": """# Point the alarm's AlarmActions at !Ref IncidentResponsePlan (Ref is the plan ARN).
+IncidentResponsePlan:
+  Type: AWS::SSMIncidents::ResponsePlan
+  Properties:
+    Name: critical-alarms
+    IncidentTemplate:
+      Title: Critical alarm
+      Impact: 2
+    Engagements:
+      - !Sub arn:$${AWS::Partition}:ssm-contacts:$${AWS::Region}:$${AWS::AccountId}:contact/escalation""",
     "CF-DASH-001": """StackDashboard:
   Type: AWS::CloudWatch::Dashboard
   Properties:
@@ -387,6 +397,16 @@ ${name}ErrorsAlarm:
     LogDestinationType: cloud-watch-logs
     LogGroupName: /vpc/flow-logs
     DeliverLogsPermissionArn: !GetAtt FlowLogRole.Arn""",
+    "CF-PATCH-001": """PatchAssociation:
+  Type: AWS::SSM::Association
+  Properties:
+    Name: AWS-RunPatchBaseline
+    ScheduleExpression: cron(0 3 ? * SUN *)
+    Parameters:
+      Operation: [Install]
+    Targets:
+      - Key: tag:Patch Group
+        Values: [default]""",
     "CF-SUST-003": """$name:
   Type: AWS::EC2::LaunchTemplate
   Properties:
@@ -515,6 +535,20 @@ resource "aws_cloudwatch_metric_alarm" "${tf_name}_errors" {
 }""",
     "CF-ALARM-002": """resource "aws_cloudwatch_metric_alarm" "$tf_name" {
   alarm_actions = [aws_sns_topic.alarms.arn]
+}""",
+    "CF-ALARM-003": """# Point the alarm's alarm_actions at aws_ssmincidents_response_plan.critical.arn.
+resource "aws_ssmcontacts_contact" "escalation" {
+  alias = "escalation"
+  type  = "ESCALATION"
+}
+
+resource "aws_ssmincidents_response_plan" "critical" {
+  name        = "critical-alarms"
+  engagements = [aws_ssmcontacts_contact.escalation.arn]
+  incident_template {
+    title  = "Critical alarm"
+    impact = 2
+  }
 }""",
     "CF-DASH-001": """resource "aws_cloudwatch_dashboard" "stack" {
   dashboard_name = "stack"
@@ -751,6 +785,17 @@ resource "aws_vpc_endpoint" "dynamodb" {
   log_destination = aws_cloudwatch_log_group.flow_logs.arn
   iam_role_arn    = aws_iam_role.flow_logs.arn
 }""",
+    "CF-PATCH-001": """resource "aws_ssm_association" "patch" {
+  name                = "AWS-RunPatchBaseline"
+  schedule_expression = "cron(0 3 ? * SUN *)"
+  parameters = {
+    Operation = "Install"
+  }
+  targets {
+    key    = "tag:Patch Group"
+    values = ["default"]
+  }
+}""",
     "CF-SUST-003": """resource "aws_launch_template" "$tf_name" {
   instance_market_options {
     market_type = "spot"
@@ -823,6 +868,66 @@ _TERRAFORM["CF-IAM-008:aws_iam_role"] = _TF_IAM_ROLE.replace(
     "  # keep the other arguments as they are; drop AdministratorAccess from managed_policy_arns\n",
     1,
 )
+
+# IAM users for people, access keys, and user policies (CF-IAM-009 to CF-IAM-011).
+_CLOUDFORMATION["CF-IAM-009"] = """# Remove LoginProfile from $name; give people access through IAM Identity Center.
+${name}PermissionSet:
+  Type: AWS::SSO::PermissionSet
+  Properties:
+    InstanceArn: arn:aws:sso:::instance/ssoins-1234567890abcdef
+    Name: ReadOnly
+    ManagedPolicies:
+      - arn:aws:iam::aws:policy/ReadOnlyAccess"""
+_TERRAFORM["CF-IAM-009"] = """# Remove $tf_type.$tf_name; give people access through IAM Identity Center.
+data "aws_ssoadmin_instances" "this" {}
+
+resource "aws_ssoadmin_permission_set" "read_only" {
+  name         = "ReadOnly"
+  instance_arn = tolist(data.aws_ssoadmin_instances.this.arns)[0]
+}"""
+_CLOUDFORMATION["CF-IAM-010"] = """# Delete $name; let the workload assume a role with temporary credentials.
+${name}Role:
+  Type: AWS::IAM::Role
+  Properties:
+    AssumeRolePolicyDocument:
+      Version: "2012-10-17"
+      Statement:
+        - Effect: Allow
+          Principal:
+            Service: ec2.amazonaws.com
+          Action: sts:AssumeRole"""
+_TERRAFORM["CF-IAM-010"] = """# Delete $tf_type.$tf_name; let the workload assume a role with temporary credentials.
+resource "aws_iam_role" "workload" {
+  name = "workload"
+  assume_role_policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [{
+      Effect    = "Allow"
+      Principal = { Service = "ec2.amazonaws.com" }
+      Action    = "sts:AssumeRole"
+    }]
+  })
+}"""
+_CLOUDFORMATION["CF-IAM-011"] = """# Attach the policy to a group, not to the user ($name); add Groups: [!Ref ${name}Group].
+${name}Group:
+  Type: AWS::IAM::Group
+  Properties:
+    ManagedPolicyArns:
+      - arn:aws:iam::aws:policy/ReadOnlyAccess"""
+_TERRAFORM["CF-IAM-011"] = """# Attach the policy to a group, not to the user ($tf_type.$tf_name).
+resource "aws_iam_group" "readers" {
+  name = "readers"
+}
+
+resource "aws_iam_group_policy_attachment" "readers" {
+  group      = aws_iam_group.readers.name
+  policy_arn = "arn:aws:iam::aws:policy/ReadOnlyAccess"
+}
+
+resource "aws_iam_user_group_membership" "member" {
+  user   = "user-name"
+  groups = [aws_iam_group.readers.name]
+}"""
 _TF_IAM_ATTACHMENT = _TF_IAM_DOCUMENT + """
 resource "aws_iam_policy" "$tf_name" {
   policy = data.aws_iam_policy_document.$tf_name.json
@@ -2061,6 +2166,11 @@ _CLOUDFORMATION["CF-RS-007"] = """$name:
   Properties:
     MasterUsername: warehouse_admin  # cannot change later
     DBName: analytics"""
+_CLOUDFORMATION["CF-RS-008"] = """$name:
+  Type: AWS::Redshift::Cluster
+  Properties:
+    # An AWS::Redshift::ClusterParameterGroup whose Parameters set require_ssl to 'true'
+    ClusterParameterGroupName: !Ref RequireSslParameterGroup"""
 _CLOUDFORMATION["CF-DOCDB-002"] = """$name:
   Type: AWS::DocDB::DBCluster
   Properties:
@@ -2718,6 +2828,18 @@ _TERRAFORM["CF-RS-007"] = """resource "aws_redshift_cluster" "$tf_name" {
   master_username = "warehouse_admin" # cannot change later
   database_name   = "analytics"
 }"""
+_TERRAFORM["CF-RS-008"] = """resource "aws_redshift_cluster" "$tf_name" {
+  cluster_parameter_group_name = aws_redshift_parameter_group.require_ssl.name
+}
+
+resource "aws_redshift_parameter_group" "require_ssl" {
+  name   = "require-ssl"
+  family = "redshift-1.0"
+  parameter {
+    name  = "require_ssl"
+    value = "true"
+  }
+}"""
 _TERRAFORM["CF-DOCDB-002"] = """resource "aws_docdb_cluster" "$tf_name" {
   backup_retention_period = 7
 }"""
@@ -3272,6 +3394,13 @@ _CLOUDFORMATION["CF-ALB-003"] = """$name:
   Type: AWS::ElasticLoadBalancingV2::Listener
   Properties:
     SslPolicy: ELBSecurityPolicy-TLS13-1-2-2021-06"""
+_CLOUDFORMATION["CF-NLB-001"] = """$name:
+  Type: AWS::ElasticLoadBalancingV2::Listener
+  Properties:
+    Protocol: TLS
+    Certificates:
+      - CertificateArn: !Ref Certificate
+    SslPolicy: ELBSecurityPolicy-TLS13-1-2-2021-06"""
 _CLOUDFORMATION["CF-ALB-004"] = """$name:
   Type: AWS::ElasticLoadBalancingV2::LoadBalancer
   Properties:
@@ -3336,6 +3465,11 @@ _TERRAFORM["CF-ALB-002"] = """resource "aws_lb_listener" "$tf_name" {
 }"""
 _TERRAFORM["CF-ALB-003"] = """resource "aws_lb_listener" "$tf_name" {
   ssl_policy = "ELBSecurityPolicy-TLS13-1-2-2021-06"
+}"""
+_TERRAFORM["CF-NLB-001"] = """resource "aws_lb_listener" "$tf_name" {
+  protocol        = "TLS"
+  certificate_arn = aws_acm_certificate.this.arn
+  ssl_policy      = "ELBSecurityPolicy-TLS13-1-2-2021-06"
 }"""
 _TERRAFORM["CF-ALB-004"] = """resource "aws_lb" "$tf_name" {
   drop_invalid_header_fields = true

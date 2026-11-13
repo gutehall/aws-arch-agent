@@ -59,6 +59,12 @@ TF_TYPE_TO_CANONICAL: dict[str, str] = {
     "aws_cloudtrail": "cloudtrail",
     "aws_kms_key": "kms_key",
     "aws_ssm_parameter": "ssm_parameter",
+    "aws_ssm_patch_baseline": "ssm_patch_baseline",
+    "aws_ssm_association": "ssm_association",
+    "aws_ssm_maintenance_window_task": "ssm_maintenance_window_task",
+    "aws_ssmincidents_response_plan": "ssm_incidents_response_plan",
+    "aws_ssmcontacts_contact": "ssm_contacts_contact",
+    "aws_ssmcontacts_plan": "ssm_contacts_plan",
     "aws_lambda_function": "lambda_function",
     "aws_dynamodb_table": "dynamodb_table",
     "aws_cloudwatch_log_group": "cloudwatch_log_group",
@@ -183,6 +189,9 @@ TF_TYPE_TO_CANONICAL: dict[str, str] = {
     "aws_lambda_provisioned_concurrency_config": "lambda_alias",
     "aws_iam_user": "iam_user",
     "aws_iam_group": "iam_group",
+    # A console password and an access key for an IAM user (CF-IAM-009, CF-IAM-010).
+    "aws_iam_user_login_profile": "iam_user_login_profile",
+    "aws_iam_access_key": "iam_access_key",
 }
 
 # S3 settings split into their own resources (AWS provider v4+) -> bucket property.
@@ -897,6 +906,15 @@ def _subnet(body: dict) -> dict:
     _set(props, "MapPublicIpOnLaunch", _v(body, "map_public_ip_on_launch"))
     _set(props, "AvailabilityZone", _v(body, "availability_zone"))
     _set(props, "AvailabilityZoneId", _v(body, "availability_zone_id"))
+    _set(props, "CidrBlock", _v(body, "cidr_block"))  # CF-VPC-005
+    return props
+
+
+def _vpc_cidr(body: dict) -> dict:
+    """aws_vpc and aws_vpc_ipv4_cidr_block_association: the IPv4 CIDR CF-VPC-005 reads."""
+    props: dict = {}
+    _set(props, "CidrBlock", _v(body, "cidr_block"))
+    _set(props, "Ipv4IpamPoolId", _ref(body, "ipv4_ipam_pool_id"))
     return props
 
 
@@ -1044,6 +1062,7 @@ def _redshift_cluster(body: dict) -> dict:
     _set(props, "AutomatedSnapshotRetentionPeriod", _v(body, "automated_snapshot_retention_period"))
     _set(props, "AllowVersionUpgrade", _v(body, "allow_version_upgrade"))
     _set(props, "EnhancedVpcRouting", _v(body, "enhanced_vpc_routing"))
+    _set(props, "ClusterParameterGroupName", _ref(body, "cluster_parameter_group_name"))
     _set(props, "MasterUsername", _v(body, "master_username"))
     _set(props, "DBName", _v(body, "database_name", "dev"))  # Redshift's default database
     # Older providers log from this block; aws_redshift_logging is read by _warehouse_findings.
@@ -1273,6 +1292,7 @@ def _lb_listener(body: dict) -> dict:
     props: dict = {}
     _set(props, "Protocol", _v(body, "protocol"))
     _set(props, "SslPolicy", _v(body, "ssl_policy"))
+    _set(props, "Port", _v(body, "port"))
     if "default_action" in _dynamic_names(body):
         props["DefaultActions"] = UNRESOLVED
         return props
@@ -1726,6 +1746,7 @@ def _metric_alarm(body: dict) -> dict:
     props: dict = {}
     _set(props, "AlarmName", _ref(body, "alarm_name"))
     _set(props, "AlarmActions", _ref(body, "alarm_actions"))
+    _set(props, "ActionsEnabled", _v(body, "actions_enabled"))
     _set(props, "Namespace", _ref(body, "namespace"))
     _set(props, "Dimensions", _alarm_dimensions(body))
     if "metric_query" in _dynamic_names(body):
@@ -1739,6 +1760,7 @@ def _composite_alarm(body: dict) -> dict:
     props: dict = {}
     _set(props, "AlarmName", _ref(body, "alarm_name"))
     _set(props, "AlarmActions", _ref(body, "alarm_actions"))
+    _set(props, "ActionsEnabled", _v(body, "actions_enabled"))
     _set(props, "AlarmRule", _ref(body, "alarm_rule"))
     return props
 
@@ -1766,6 +1788,44 @@ def _ssm_parameter(body: dict) -> dict:
     # A resource's ARN is not a secret, and an unknown value should not hide the other arguments.
     arn = isinstance(raw, _Expr) and raw.strip("${} ").endswith(".arn")
     _set(props, "Value", "arn:from-a-reference" if arn else _known(_v(body, key)))
+    return props
+
+
+def _ssm_association(body: dict) -> dict:
+    """aws_ssm_association: name is the SSM document it runs."""
+    props: dict = {}
+    _set(props, "Name", _v(body, "name"))
+    return props
+
+
+def _ssm_maintenance_window_task(body: dict) -> dict:
+    """aws_ssm_maintenance_window_task: task_arn is the document or ARN it runs."""
+    props: dict = {}
+    _set(props, "TaskArn", _v(body, "task_arn"))
+    return props
+
+
+def _ssmincidents_response_plan(body: dict) -> dict:
+    """aws_ssmincidents_response_plan: engagements are the contacts it pages."""
+    props: dict = {}
+    _set(props, "Engagements", _ref(body, "engagements"))
+    return props
+
+
+def _ssmcontacts_contact(body: dict) -> dict:
+    """aws_ssmcontacts_contact: PERSONAL, ESCALATION or ONCALL_SCHEDULE."""
+    props: dict = {}
+    _set(props, "Type", _v(body, "type"))
+    return props
+
+
+def _ssmcontacts_plan(body: dict) -> dict:
+    """aws_ssmcontacts_plan: one Stages entry per stage block, or unresolved when dynamic."""
+    props: dict = {}
+    if "stage" in _dynamic_names(body):
+        props["Stages"] = UNRESOLVED
+    elif "stage" in body:
+        props["Stages"] = [{} for _ in _blocks(body, "stage")]
     return props
 
 
@@ -1936,12 +1996,21 @@ def _lambda_permission(body: dict) -> dict:
 
 
 def _policy_attachment(body: dict) -> dict:
-    """aws_iam_*_policy_attachment: the attached ARN as a one-item ManagedPolicyArns."""
+    """aws_iam_*_policy_attachment: the attached ARN as a one-item ManagedPolicyArns, and
+    the users aws_iam_policy_attachment attaches it to."""
     arns = body.get("policy_arns")  # aws_iam_*_policy_attachments_exclusive
     if arns is None and body.get("policy_arn") is not None:
         arns = [body.get("policy_arn")]
     props: dict = {}
     _set(props, "ManagedPolicyArns", arns)
+    _set(props, "Users", _v(body, "users"))  # aws_iam_policy_attachment (CF-IAM-011)
+    return props
+
+
+def _iam_access_key(body: dict) -> dict:
+    """aws_iam_access_key: status is Active unless set to Inactive."""
+    props: dict = {}
+    _set(props, "Status", _v(body, "status"))
     return props
 
 
@@ -1975,6 +2044,19 @@ def _lambda(body: dict) -> dict:
     if vpc:
         props["VpcConfig"] = {"SubnetIds": _ref(vpc, "subnet_ids")}
     return props
+
+
+def _event_invoke_config(body: dict) -> dict:
+    """aws_lambda_function_event_invoke_config: the destinations CF-LAM-009 reads."""
+    config = _first_block(body, "destination_config")
+    if "destination_config" in _dynamic_names(body):
+        return {"DestinationConfig": UNRESOLVED}
+    out: dict = {}
+    for block, key in (("on_failure", "OnFailure"), ("on_success", "OnSuccess")):
+        destination = _ref(_first_block(config, block), "destination")
+        if destination is not None:
+            out[key] = {"Destination": destination}
+    return {"DestinationConfig": out} if out else {}
 
 
 def _lambda_url(body: dict) -> dict:
@@ -2715,6 +2797,8 @@ _ADAPTERS: dict[str, Callable[[dict], dict]] = {
     "aws_rds_cluster_parameter_group": _db_parameter_group,
     "aws_instance": _instance,
     "aws_subnet": _subnet,
+    "aws_vpc": _vpc_cidr,
+    "aws_vpc_ipv4_cidr_block_association": _vpc_cidr,
     "aws_launch_template": _launch_template,
     "aws_security_group": _security_group,
     "aws_lb": _lb,
@@ -2727,6 +2811,11 @@ _ADAPTERS: dict[str, Callable[[dict], dict]] = {
     "aws_cloudtrail": _cloudtrail,
     "aws_kms_key": _kms_key,
     "aws_ssm_parameter": _ssm_parameter,
+    "aws_ssm_association": _ssm_association,
+    "aws_ssm_maintenance_window_task": _ssm_maintenance_window_task,
+    "aws_ssmincidents_response_plan": _ssmincidents_response_plan,
+    "aws_ssmcontacts_contact": _ssmcontacts_contact,
+    "aws_ssmcontacts_plan": _ssmcontacts_plan,
     "aws_lambda_function": _lambda,
     "aws_dynamodb_table": _dynamodb,
     "aws_appautoscaling_target": _scalable_target,
@@ -2823,11 +2912,13 @@ _ADAPTERS: dict[str, Callable[[dict], dict]] = {
     "aws_secretsmanager_secret_rotation": _secret_rotation,
     "aws_cognito_user_pool": _cognito_user_pool,
     "aws_lambda_permission": _lambda_permission,
+    "aws_lambda_function_event_invoke_config": _event_invoke_config,
     "aws_lambda_function_url": _lambda_url,
     "aws_iam_role_policy_attachment": _policy_attachment,
     "aws_iam_user_policy_attachment": _policy_attachment,
     "aws_iam_group_policy_attachment": _policy_attachment,
     "aws_iam_policy_attachment": _policy_attachment,
+    "aws_iam_access_key": _iam_access_key,
     "aws_iam_role_policy_attachments_exclusive": _policy_attachment,
     "aws_iam_user_policy_attachments_exclusive": _policy_attachment,
     "aws_iam_group_policy_attachments_exclusive": _policy_attachment,

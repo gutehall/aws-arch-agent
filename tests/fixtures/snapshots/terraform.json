@@ -117,5 +117,285 @@
     "file": "network.tf",
     "line": 1,
     "evidence": "Template has 1 VPC(s) and 0 VPCEndpoint(s) (aws_vpc.network)"
+  },
+  {
+    "id": "REPO-001",
+    "severity": "Medium",
+    "file": null,
+    "line": null,
+    "evidence": "Searched the repo for tests (test/, tests/, __tests__/, spec/, *.test.ts, *.spec.js, test_*.py, *_test.go, *.tftest.hcl, taskcat, cfn-guard tests); found none"
+  },
+  {
+    "id": "REPO-002",
+    "severity": "Medium",
+    "file": null,
+    "line": null,
+    "evidence": "Searched the repo for a CI config (.github/workflows, .gitlab-ci.yml, buildspec.yml, Jenkinsfile, azure-pipelines.yml, bitbucket-pipelines.yml, .circleci, .buildkite) or a CodePipeline in the IaC; found none"
+  },
+  {
+    "id": "REPO-003",
+    "severity": "Low",
+    "file": null,
+    "line": null,
+    "evidence": "Environments named in IaC paths, tfvars and parameter files, CDK stack ids and cdk.json context: none; two or more expected"
+  },
+  {
+    "id": "REPO-009",
+    "severity": "Medium",
+    "file": null,
+    "line": null,
+    "evidence": "Searched the repo for a build to run a dependency scan (a CI config, or a CodeBuild buildspec or pipeline in the IaC); found none"
+  },
+  {
+    "id": "REPO-010",
+    "severity": "Medium",
+    "file": null,
+    "line": null,
+    "evidence": "Deploys Lambda functions (main.tf); searched for Amazon Inspector Lambda scanning and a dependency scan that fails the build; found none"
+  },
+  {
+    "id": "REPO-016",
+    "severity": "Low",
+    "file": null,
+    "line": null,
+    "evidence": "Searched the IaC for an AWS FIS experiment template (AWS::FIS::ExperimentTemplate, aws_fis_experiment_template, fis.CfnExperimentTemplate) and the build configs for aws fis start-experiment or a chaos tool (Litmus, Chaos Mesh, Gremlin, Chaos Toolkit); found none"
+  },
+  {
+    "id": "REPO-017",
+    "severity": "Low",
+    "file": null,
+    "line": null,
+    "evidence": "Searched the repo for a build to run a load test (a CI config, or a CodeBuild buildspec or pipeline in the IaC); found none"
+  },
+  {
+    "id": "REPO-018",
+    "severity": "Low",
+    "file": null,
+    "line": null,
+    "evidence": "Runs Lambda (main.tf); searched the IaC for a CloudWatch alarm, metric or metric filter in a namespace outside AWS/, and the function code for embedded metric format, the CloudWatch put metric data API, or Powertools Metrics; found none"
+  },
+  {
+    "id": "REPO-020",
+    "severity": "Low",
+    "file": null,
+    "line": null,
+    "evidence": "Calls RDS (main.tf), SQS (main.tf); searched the function code for AWS SDK tracing (X-Ray, Powertools Tracer, OpenTelemetry), the IaC for the ADOT Lambda layer or CloudWatch Application Signals, and an alarm on a datastore or queue metric; found none"
+  },
+  {
+    "id": "REPO-022",
+    "severity": "Medium",
+    "file": null,
+    "line": null,
+    "evidence": "Runs Lambda (main.tf); searched the IaC and builds for an ECS deployment circuit breaker or deployment alarms with rollback, CodeDeploy automatic rollback, a SAM deployment preference, CloudFormation rollback triggers, a CodePipeline stage that rolls back on failure, an Auto Scaling instance refresh or rolling update that rolls back, and Argo Rollouts or Flagger; found none"
+  },
+  {
+    "id": "REPO-025",
+    "severity": "Medium",
+    "file": null,
+    "line": null,
+    "evidence": "Holds IaC (Terraform: 3 files); searched the repo for a build config that deploys, and the IaC for a pipeline; found none"
+  },
+  {
+    "id": "REPO-027",
+    "severity": "Medium",
+    "file": null,
+    "line": null,
+    "evidence": "Runs Lambda (main.tf); searched the IaC for an alarm on a metric outside AWS/, an edge latency or 5xx metric, a datastore or queue metric, or with anomaly detection; found no CloudWatch alarm"
+  },
+  {
+    "id": "REPO-028",
+    "severity": "Low",
+    "file": null,
+    "line": null,
+    "evidence": "Runs Lambda (main.tf); searched the IaC for a CloudWatch Logs metric filter, a Contributor Insights rule, a Logs Insights saved query, a log anomaly detector, and a subscription filter; found none"
+  },
+  {
+    "id": "REPO-029",
+    "severity": "Low",
+    "file": null,
+    "line": null,
+    "evidence": "Runs Lambda (main.tf); searched the IaC for an X-Ray group or sampling rule, CloudWatch Application Signals service level objectives or discovery, and an alarm on an Application Signals or X-Ray metric; found none"
+  },
+  {
+    "id": "REPO-037",
+    "severity": "Low",
+    "file": null,
+    "line": null,
+    "evidence": "Deploys Lambda functions (main.tf); searched the IaC for a Lambda code signing config and an AWS Signer Notation profile, and the builds for notation sign or cosign sign; found none for these"
+  },
+  {
+    "id": "REPO-039",
+    "severity": "Low",
+    "file": null,
+    "line": null,
+    "evidence": "Declares S3 bucket in main.tf with no classification tag (DataClassification, Classification, Confidentiality or Sensitivity) on the store or the app"
+  },
+  {
+    "id": "REPO-041",
+    "severity": "Low",
+    "file": null,
+    "line": null,
+    "evidence": "Declares S3 bucket (main.tf), RDS database (main.tf); searched the IaC for EBS encryption by default, a deny on an encryption condition key, an AWS Config encryption rule and CDK Nag, and the builds for checkov, tfsec, trivy config, cfn-guard and KICS; found none"
+  },
+  {
+    "id": "REPO-043",
+    "severity": "Low",
+    "file": "main.tf",
+    "line": null,
+    "evidence": "Runs Lambda (main.tf); searched the IaC for Lambda reserved concurrency, an API Gateway throttle or usage plan, a WAF rate-based rule and AppConfig feature flags, and the function code for a feature flag SDK; found none"
+  },
+  {
+    "id": "REPO-044",
+    "severity": "Low",
+    "file": "main.tf",
+    "line": null,
+    "evidence": "Compute depends on RDS (main.tf), SQS (main.tf); searched the IaC for an SQS buffer, an on-failure destination, a Step Functions catch, origin or DNS failover and a fixed or mock response, and the function code for a circuit breaker; found none"
+  },
+  {
+    "id": "REPO-046",
+    "severity": "Low",
+    "file": "main.tf",
+    "line": null,
+    "evidence": "Runs Lambda (main.tf); searched the IaC for a CloudWatch Logs metric filter on errors, a log anomaly detector, a Logs Insights saved query and a subscription filter; found none"
+  },
+  {
+    "id": "REPO-047",
+    "severity": "Low",
+    "file": "main.tf",
+    "line": null,
+    "evidence": "Runs Lambda (main.tf); searched the IaC for an Auto Scaling or Application Auto Scaling policy, an alarm action that runs automation or a Lambda function, and an EventBridge rule on alarm state changes; found none"
+  },
+  {
+    "id": "REPO-051",
+    "severity": "Low",
+    "file": null,
+    "line": null,
+    "evidence": "Backs up data with RDS or Aurora backups (main.tf); searched the IaC for an AWS Backup restore testing plan, a schedule that calls a restore API, and the builds for a restore command; found none"
+  },
+  {
+    "id": "REPO-052",
+    "severity": "Low",
+    "file": null,
+    "line": null,
+    "evidence": "Runs S3 bucket (main.tf), RDS database (main.tf), Lambda (main.tf); searched the IaC for a Resilience Hub resiliency policy and for a recovery time or recovery point objective tag or context key; found none"
+  },
+  {
+    "id": "REPO-059",
+    "severity": "Low",
+    "file": "main.tf",
+    "line": null,
+    "evidence": "Runs Lambda (main.tf); searched the IaC for an alarm action that notifies an SNS topic, an Incident Manager response plan, an AWS Chatbot configuration, and an EventBridge rule on AWS Health events with a target; found none"
+  },
+  {
+    "id": "REPO-060",
+    "severity": "Low",
+    "file": "main.tf",
+    "line": null,
+    "evidence": "Runs Lambda in main.tf; searched the IaC for an alarm on a CPU, memory, duration or concurrency metric, ECS Container Insights, the EKS CloudWatch observability add-on, and the CloudWatch agent; found none"
+  },
+  {
+    "id": "REPO-070",
+    "severity": "Low",
+    "file": null,
+    "line": null,
+    "evidence": "Declares Lambda in main.tf, S3 bucket in main.tf, RDS database in main.tf; searched the IaC for a tag keyed CostCenter, BusinessUnit, Project, Product or CostCategory and for a cost category (AWS::CE::CostCategory, aws_ce_cost_category); found none"
+  },
+  {
+    "id": "REPO-071",
+    "severity": "Low",
+    "file": null,
+    "line": null,
+    "evidence": "Runs Lambda in main.tf; searched the IaC and code for a metric name, metric filter, metric math label or embedded metric named like CostPerRequest or UnitCost; found none"
+  },
+  {
+    "id": "REPO-072",
+    "severity": "Low",
+    "file": null,
+    "line": null,
+    "evidence": "Runs Lambda in main.tf; searched the IaC for metric math that combines a cost metric (EstimatedCharges or a unit cost) with a workload metric; found none"
+  },
+  {
+    "id": "REPO-076",
+    "severity": "Low",
+    "file": null,
+    "line": null,
+    "evidence": "Runs Lambda in main.tf; searched the IaC for a budget named per request, tenant, order, user or transaction and for a unit-cost metric; found none"
+  },
+  {
+    "id": "REPO-077",
+    "severity": "Low",
+    "file": null,
+    "line": null,
+    "evidence": "Declares Lambda in main.tf, S3 bucket in main.tf, RDS database in main.tf; no finance or engineering contact is named: searched the repo for a cost note (COST.md, FINOPS.md, docs/cost*.md, or a README or docs section headed Cost, FinOps or Cost ownership) that names an owner, contact, responsible or accountable person or team; found none"
+  },
+  {
+    "id": "REPO-078",
+    "severity": "Low",
+    "file": null,
+    "line": null,
+    "evidence": "Declares Lambda in main.tf, S3 bucket in main.tf, RDS database in main.tf; searched pull and merge request templates for a cost checklist item; found none; searched the repo for a cost note (COST.md, FINOPS.md, docs/cost*.md, or a README or docs section headed Cost, FinOps or Cost ownership) that names an owner, contact, responsible or accountable person or team; found none"
+  },
+  {
+    "id": "REPO-079",
+    "severity": "Low",
+    "file": null,
+    "line": null,
+    "evidence": "Declares Lambda in main.tf, S3 bucket in main.tf, RDS database in main.tf; the team has no shared cost guidance: searched the repo for a cost note (COST.md, FINOPS.md, docs/cost*.md, or a README or docs section headed Cost, FinOps or Cost ownership) that names an owner, contact, responsible or accountable person or team; found none"
+  },
+  {
+    "id": "REPO-081",
+    "severity": "Low",
+    "file": null,
+    "line": null,
+    "evidence": "Declares Lambda in main.tf, S3 bucket in main.tf, RDS database in main.tf; searched the IaC for a service control policy or a policy that Denies ec2:RunInstances or sagemaker:Create* or sets a condition on ec2:InstanceType, sagemaker:InstanceTypes, rds:DatabaseClass or aws:RequestedRegion, a permissions boundary (PermissionsBoundary, permissions_boundary, CDK PermissionsBoundary.of) and an AWS Budgets action (AWS::Budgets::BudgetsAction, aws_budgets_budget_action, CfnBudgetsAction); found none"
+  },
+  {
+    "id": "REPO-086",
+    "severity": "Low",
+    "file": null,
+    "line": null,
+    "evidence": "Declares Lambda in main.tf, S3 bucket in main.tf, RDS database in main.tf; no created-by or owner tag in the IaC. A created-by tag is keyed CreatedBy, ManagedBy, Creator, Source, Repository, Repo or IaC, an owner tag Owner, CostOwner or Team"
+  },
+  {
+    "id": "REPO-088",
+    "severity": "Low",
+    "file": null,
+    "line": null,
+    "evidence": "Declares Lambda in main.tf, S3 bucket in main.tf, RDS database in main.tf; searched CI for infracost breakdown, diff or comment, the repo for an Infracost or cost-estimate config, and notes named or headed cost estimate, cost model, estimated cost or pricing that give an amount or a Pricing Calculator link; found none"
+  },
+  {
+    "id": "REPO-089",
+    "severity": "Low",
+    "file": null,
+    "line": null,
+    "evidence": "Creates its own VPC in network.tf; searched the IaC for a looked-up or imported VPC, subnet, cluster or bucket (fromLookup, from*Attributes, Terraform data sources or remote state, ImportValue, an SSM VPC id parameter), an AWS RAM share, and a Tenancy tag or single-tenant comment; found none"
+  },
+  {
+    "id": "REPO-096",
+    "severity": "Low",
+    "file": "main.tf",
+    "line": null,
+    "evidence": "Runs Lambda (main.tf); searched production IaC for a scheduled scaling action, a demand metric (queue depth, request count, invocations, concurrency) used to scale or alarm, and notes named or headed demand, traffic, usage pattern, load profile or capacity plan that give a rate, volume or calendar pattern; found none"
+  },
+  {
+    "id": "REPO-098",
+    "severity": "Low",
+    "file": null,
+    "line": null,
+    "evidence": "Runs Lambda (main.tf), S3 bucket (main.tf), RDS database (main.tf); searched notes named or headed SLA, SLO, service level, availability target or reliability target for a sustainability tradeoff (carbon, energy, idle capacity, utilization, right-sizing, scale to zero, off-hours); found none"
+  },
+  {
+    "id": "REPO-101",
+    "severity": "Low",
+    "file": null,
+    "line": null,
+    "evidence": "Runs Lambda (main.tf), S3 bucket (main.tf), RDS database (main.tf); searched notes named or headed developer environment, workstation, CI runners, build agents or team resources for how they are sized and shut down (right-sizing, auto-stop, idle, schedule, hibernation, on-demand, Spot); found none"
+  },
+  {
+    "id": "REPO-103",
+    "severity": "Low",
+    "file": null,
+    "line": null,
+    "evidence": "Declares Lambda function worker with nothing triggering or referring to it (main.tf:41); nothing in the IaC gives it work, so it only adds to what the workload runs and maintains"
   }
 ]

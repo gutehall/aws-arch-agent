@@ -13,7 +13,7 @@ ROOT = Path(__file__).parents[1]
 DOC = (ROOT / "docs" / "COVERAGE.md").read_text(encoding="utf-8")
 RULES_DIR = ROOT / "src" / "aws_arch_agent" / "rules"
 
-STATUSES = ("covered", "partial", "account", "cdk-only", "advice")
+STATUSES = ("covered", "partial", "account", "cdk-only", "advice", "repo")
 _RULE_ROW = re.compile(
     r"^\| ([A-Z]+-\d{3}) \| (.*?) \| (.*?) \| `([a-z0-9-]+)(?:: ([a-z0-9-]+))?` \| (.*?) \|$", re.M
 )
