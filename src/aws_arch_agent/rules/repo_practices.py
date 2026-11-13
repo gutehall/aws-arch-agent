@@ -12728,6 +12728,97 @@ class DataAccessPatternMismatch(_RepoRule):
         )]
 
 
+# Selecting services by cost (COST 5): written cost requirements (REPO-179), the cost of each
+# component (REPO-180) and licensing (REPO-181).
+_BUDGET_IN_IAC = re.compile(
+    _cf_type(r"Budgets::Budget") + r"|resource\s+\"aws_budgets_budget\""
+    r"|\bbudgets\.CfnBudget\("
+)
+_PEAK_WORD = re.compile(r"(?i)\b(?:peak|spikes?|bursts?|seasonal|busiest)\b")
+_STEADY_WORD = re.compile(r"(?i)\b(?:steady|baseline|average|normal|typical|off-peak)\b")
+
+
+class CostRequirementsMissing(_NoteRule):
+    id = "REPO-179"
+    title = "No budget or cost note states the cost requirements for peak and steady usage"
+    category = "Cost"
+    themes = ("finops",)
+    note_name = _COST_NAME
+    note_heading = _COST_HEADING
+    recommendation = (
+        "Write the cost requirements down: define an AWS Budget for the workload in the IaC, "
+        "or keep a cost note that states the monthly limit and what it is at steady usage and "
+        "at peak, and review the choice of services against it."
+    )
+    searched = (
+        "the IaC for an AWS Budget, and the notes named or headed for cost, spend or a budget "
+        "that mention both peak and steady usage"
+    )
+
+    def present(self, repo_path: Path) -> str | None:
+        found = _in_iac_text(repo_path, _BUDGET_IN_IAC)
+        if found:
+            return found
+        for rel, text in note_texts(repo_path):
+            parts = rel.lower().split("/")
+            names = [*parts[:-1], parts[-1].rsplit(".", 1)[0]]
+            titled = any(_COST_NAME.search(n) for n in names) or any(
+                _COST_HEADING.fullmatch(h.group(2).strip()) for h in _HEADING.finditer(text)
+            )
+            if titled and _PEAK_WORD.search(text) and _STEADY_WORD.search(text):
+                return rel
+        return None
+
+
+class ComponentCostNotAnalysed(CostModelMissing):
+    """The same search as REPO-088, answering COST05-BP02 and COST05-BP03 for the question on
+    selecting services."""
+
+    id = "REPO-180"
+    title = "No cost estimate covers each component the workload declares"
+    recommendation = (
+        "Cost every component before you pick it: run Infracost in CI (infracost breakdown, "
+        "which lists each resource) or write a per-component estimate in the repo with an "
+        "amount for each service, and compare the options you did not take."
+    )
+
+
+_MARKETPLACE_IN_IAC = re.compile(r"aws-marketplace|\bmarketplace\b|\bproduct[-_ ]?codes?\b")
+_DEDICATED_HOST = re.compile(
+    _cf_type(r"EC2::Host") + r"|resource\s+\"aws_ec2_host\"|\bec2\.CfnHost\("
+    r"|\btenancy\s*=\s*\"host\"|\bTenancy[\"']?\s*:\s*[\"']?host\b|\bTenancy\.HOST\b"
+)
+_LICENSE_NAME = re.compile(r"licen[sc]e|licensing|byol|bring[-_ ]?your[-_ ]?own")
+_LICENSE_HEADING = re.compile(r"(?i).*\b(?:licen[sc]es?|licensing|byol|bring your own)\b.*")
+
+
+class LicenseTermsUnrecorded(_RepoRule):
+    id = "REPO-181"
+    title = "A Marketplace image runs on a dedicated host with no licensing note"
+    category = "Cost"
+    severity = "Low"
+    themes = ("finops",)
+    recommendation = (
+        "Choose software for its licence cost: write a licensing note that says what the "
+        "Marketplace product costs per instance and per host, whether you bring your own "
+        "licence and what a licence-included or open source option would cost instead."
+    )
+
+    def run(self, repo_path: Path, language: str = "typescript") -> List[Finding]:
+        market = _in_iac_text(repo_path, _MARKETPLACE_IN_IAC)
+        host = _in_iac_text(repo_path, _DEDICATED_HOST)
+        if not market or not host:
+            return []
+        if _note_having(repo_path, _LICENSE_NAME, _LICENSE_HEADING):
+            return []
+        return [self._finding(
+            f"{market} names a Marketplace image and {host} runs a dedicated host; searched "
+            "the notes for a file or heading on licences, licensing or bring your own "
+            "licence; found none",
+            file=host,
+        )]
+
+
 REPO_RULES: List[Rule] = [
     RepoTestsMissing(), RepoPipelineMissing(), SingleEnvironment(),
     OrgGuardrailsMissing(), AccountBaselineMissing(), RootUserUnchecked(),
@@ -12815,4 +12906,5 @@ REPO_RULES: List[Rule] = [
     EscalationMissing(), OperatorChannelMissing(), OperationsCultureMissing(),
     RunbooksMissing(), OperationalPlaybooksMissing(), SupportPlanMissing(), ReadinessReviewMissing(),
     PostIncidentLessonsMissing(), FeedbackLoopMissing(), ImprovementLoopMissing(),
+    CostRequirementsMissing(), ComponentCostNotAnalysed(), LicenseTermsUnrecorded(),
 ]

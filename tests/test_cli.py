@@ -752,6 +752,9 @@ def test_cli_html_with_no_findings_writes_a_page(tmp_path: Path) -> None:
     (tmp_path / "docs" / "retrospectives.md").write_text("Weekly.\n", encoding="utf-8")
     (tmp_path / "docs" / "continuous-improvement.md").write_text("One fix a sprint.\n",
                                                                   encoding="utf-8")
+    # A note for COST 5: the cost requirements at steady usage and at peak.
+    (tmp_path / "docs" / "cost-requirements.md").write_text(
+        "Steady usage is $400 a month; peak is $900.\n", encoding="utf-8")
     (tmp_path / "CODEOWNERS").write_text("* @org/platform\n", encoding="utf-8")
     for rel in (".github/workflows/ci.yml", "tests/main.tftest.hcl", "dev.tfvars", "prod.tfvars"):
         (tmp_path / rel).parent.mkdir(parents=True, exist_ok=True)
@@ -772,7 +775,7 @@ def test_cli_html_with_no_findings_writes_a_page(tmp_path: Path) -> None:
     assert result.exit_code == 0, result.output
     page = out_file.read_text(encoding="utf-8")
     assert page.startswith("<!DOCTYPE html>")
-    assert "All (0)" in page
+    assert "All (0)" in page, sorted(set(__import__("re").findall(r"[A-Z]+-\d{3}", page)))
     assert '<p class="empty">No findings.</p>' in page
 
 

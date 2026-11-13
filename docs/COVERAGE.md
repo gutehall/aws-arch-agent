@@ -15,7 +15,7 @@ Which CDK rules have a template check, and which AWS Foundational Security Best 
 
 ## CDK rules
 
-357 rules: 132 covered, 7 partial, 10 account, 5 cdk-only, 25 advice, 178 repo.
+360 rules: 132 covered, 7 partial, 10 account, 5 cdk-only, 25 advice, 181 repo.
 
 | Rule | Title | Template check | Status | Note |
 | -- | -- | -- | -- | -- |
@@ -376,6 +376,9 @@ Which CDK rules have a template check, and which AWS Foundational Security Best 
 | REPO-176 | No post-incident template or review records the lessons learned |  | `repo` | Fires when the repo holds IaC and no note named or headed for a post-incident review, post-mortem or root cause analysis has a lessons learned or action items section. |
 | REPO-177 | No issue template, pipeline notification or note records what a change did |  | `repo` | Fires when the repo holds IaC and has no issue template, no pipeline notification rule in the IaC and no note named or headed for feedback, retrospectives or change outcomes. |
 | REPO-178 | No improvement note names how the team improves, shares knowledge and finds time |  | `repo` | Fires when the repo holds IaC and no note named or headed for continuous improvement, retrospectives, knowledge management or a learning loop exists. |
+| REPO-179 | No budget or cost note states the cost requirements for peak and steady usage |  | `repo` | Fires when the repo holds IaC and neither the IaC (an AWS Budget) nor a note named or headed for cost, spend or a budget mentions both peak and steady usage. |
+| REPO-180 | No cost estimate covers each component the workload declares |  | `repo` | Fires on the same gap as REPO-088, for COST05-BP02 and COST05-BP03: the workload declares resources and the repo holds no Infracost run or config and no cost estimate note with an amount. |
+| REPO-181 | A Marketplace image runs on a dedicated host with no licensing note |  | `repo` | Fires when the IaC names a Marketplace image and declares a dedicated host and no note named or headed for licences, licensing or bring your own licence exists. |
 
 ## FSBP controls
 
