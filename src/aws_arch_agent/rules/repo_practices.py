@@ -127,6 +127,13 @@ Idempotent workers (REL 4) runs by default:
   or a MessageDeduplicationId, or a conditional write (attribute_not_exists in a file with
   a ConditionExpression). It is repo-wide: one control anywhere passes every worker, and
   function code outside the repo is not seen.
+- REPO-107 named dependencies: a client call (Python requests, httpx, urlopen; TypeScript
+  and JavaScript fetch, axios, got) whose first argument is a literal http(s) URL, in code
+  outside tests. Local, link-local and AWS endpoint hosts do not fire, and a URL built from a
+  variable, an environment variable or a parameter is not seen.
+- REPO-108 constant work: a file with one of those calls and no timeout, AbortSignal or
+  AbortController fires when the IaC declares no SQS queue, Kinesis stream, Lambda event
+  source or schedule. One queue or schedule anywhere passes every call.
 
 Reliability testing (REL 12) runs by default and reads the IaC and the builds REPO-009 reads
 (CI configs, inline buildspecs, CodeBuild projects and pipelines in the IaC, and the
@@ -2212,6 +2219,117 @@ class IdempotencyMissing(_RepoRule):
             "deduplication or a MessageDeduplicationId, and a conditional write "
             "(attribute_not_exists in a ConditionExpression); found none",
             file=next(iter(sources.values())),
+        )]
+
+
+# Dependencies and constant work (REL 4): hardcoded client URLs (REPO-107) and synchronous
+# calls with no timeout and no queue (REPO-108).
+_HTTP_CODE_SUFFIXES = frozenset({".py", ".ts", ".js", ".mjs", ".cjs"})
+# A client call whose first argument is a literal http(s) URL; group 1 is the host.
+_LITERAL_URL_CALL = re.compile(
+    r"(?:\b(?:requests|httpx)\.(?:get|post|put|patch|delete|head|request)"
+    r"|\burlopen|\bfetch|\baxios(?:\.(?:get|post|put|patch|delete|request))?"
+    r"|\bgot(?:\.(?:get|post|put|patch|delete))?)"
+    r"\(\s*[fF]?[`\"']https?://([^/`\"'\s:{$]+)"
+)
+# Hosts that are local or are AWS endpoints: not a third-party dependency to name.
+_LOCAL_HOST = re.compile(
+    r"^(?:localhost|127\.0\.0\.1|0\.0\.0\.0|169\.254\.169\.254|\[::1\])$"
+    r"|\.amazonaws\.com(?:\.cn)?$|\.local$|\.internal$",
+    re.IGNORECASE,
+)
+# A synchronous HTTP client call in function code.
+_SYNC_HTTP_CALL = re.compile(
+    r"\b(?:requests|httpx)\.(?:get|post|put|patch|delete|head|request)\("
+    r"|\burlopen\(|\bfetch\(|\baxios(?:\.(?:get|post|put|patch|delete|request))?\("
+    r"|\bgot(?:\.(?:get|post|put|patch|delete))?\("
+)
+_HTTP_TIMEOUT = re.compile(
+    r"\btimeout\b|\bAbortSignal\b|\bAbortController\b|\bsignal\s*:", re.IGNORECASE
+)
+# A queue, a stream or a schedule the IaC declares, so a call can be decoupled or repeated.
+_QUEUE_OR_SCHEDULE = re.compile(
+    r"AWS::SQS::Queue\b|resource\s+\"aws_sqs_queue\"|\bsqs\.Queue\(|\bCfnQueue\("
+    r"|AWS::Kinesis::Stream\b|resource\s+\"aws_kinesis_stream\""
+    r"|AWS::Scheduler::Schedule\b|resource\s+\"aws_scheduler_schedule\""
+    r"|\bevents\.Schedule\.|\bschedule_expression\b|\bScheduleExpression\b"
+    r"|\bscheduler\.CfnSchedule\(|\bSchedule\.(?:rate|cron|expression)\("
+)
+
+
+def http_client_files(repo_path: Path) -> Iterator[tuple[str, str]]:
+    """(repo-relative path, text) of each Python, TypeScript or JavaScript file outside tests."""
+    for path in walk(repo_path):
+        parts = _rel_parts(path, repo_path)
+        if path.suffix.lower() not in _HTTP_CODE_SUFFIXES or _in_test_dir(parts):
+            continue
+        if _TEST_NAME.search(path.name.lower()):
+            continue
+        yield "/".join(parts), read_text_safe(path)
+
+
+class DependencyUrlHardcoded(_RepoRule):
+    id = "REPO-107"
+    title = "Function code calls a hardcoded external URL"
+    category = "Reliability"
+    severity = "Low"
+    themes = ("resilience",)
+    recommendation = (
+        "Name each service the workload calls. Put the endpoint in a stack parameter, an SSM "
+        "parameter or an environment variable the IaC sets, or define the dependency as a "
+        "resource, so the workload's dependencies are visible and can change without a code "
+        "edit. Then decide per dependency how its failure is handled."
+    )
+
+    def run(self, repo_path: Path, language: str = "typescript") -> List[Finding]:
+        hits: list[tuple[str, str]] = []
+        for rel, text in http_client_files(repo_path):
+            for match in _LITERAL_URL_CALL.finditer(text):
+                host = match.group(1)
+                if not _LOCAL_HOST.search(host):
+                    hits.append((host, rel))
+                    break
+        if not hits:
+            return []
+        listed = ", ".join(f"{host} ({rel})" for host, rel in hits[:5])
+        return [self._finding(
+            f"Function code calls a literal URL: {listed}"
+            + (f" and {len(hits) - 5} more" if len(hits) > 5 else "")
+            + "; the host is in neither a parameter, an environment variable nor a resource",
+            file=hits[0][1],
+        )]
+
+
+class SyncCallNoTimeoutOrQueue(_RepoRule):
+    id = "REPO-108"
+    title = "Synchronous calls have no timeout, and no queue or schedule sits behind them"
+    category = "Reliability"
+    severity = "Medium"
+    themes = ("resilience",)
+    recommendation = (
+        "A synchronous client of a dependency that can fail or stall holds its caller. Set a "
+        "timeout on every HTTP call (requests timeout=, an AbortSignal or the client timeout "
+        "option), and put the work behind a queue or a scheduled consumer when the dependency "
+        "is hard, so the load on it stays constant and a slow call does not back up callers."
+    )
+
+    def run(self, repo_path: Path, language: str = "typescript") -> List[Finding]:
+        untimed = [
+            rel for rel, text in http_client_files(repo_path)
+            if _SYNC_HTTP_CALL.search(text) and not _HTTP_TIMEOUT.search(text)
+        ]
+        if not untimed:
+            return []
+        if event_sources(repo_path) or any(
+            _QUEUE_OR_SCHEDULE.search(text) for _, text in iac_texts(repo_path)
+        ):
+            return []
+        listed = ", ".join(untimed[:5])
+        return [self._finding(
+            f"Synchronous HTTP calls with no timeout in: {listed}"
+            + (f" and {len(untimed) - 5} more" if len(untimed) > 5 else "")
+            + "; the IaC declares no queue, stream, event source or schedule",
+            file=untimed[0],
         )]
 
 
@@ -9992,7 +10110,8 @@ REPO_RULES: List[Rule] = [
     ForensicCaptureMissing(), ContainmentMissing(),
     DependencyScanMissing(), ArtifactScanMissing(), CentralPackageRepoMissing(),
     QuotaAlarmMissing(), FailoverHeadroomMissing(), VpcCidrOverlap(),
-    IdempotencyMissing(), FaultInjectionMissing(), LoadTestMissing(),
+    IdempotencyMissing(), DependencyUrlHardcoded(), SyncCallNoTimeoutOrQueue(),
+    FaultInjectionMissing(), LoadTestMissing(),
     KpiMetricMissing(), EdgeTelemetryMissing(), DependencyTelemetryMissing(),
     DeployTestGateMissing(), AutomatedRollbackMissing(),
     InPlaceChange(), FunctionalTestMissing(), AutomatedDeployMissing(), ResiliencyTestMissing(),

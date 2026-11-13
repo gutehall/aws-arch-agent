@@ -862,6 +862,18 @@
     "positive_ts": "fn.addEventSource(new SqsEventSource(queue));",
     "positive_py": "fn.add_event_source(KinesisEventSource(stream, starting_position=lambda_.StartingPosition.LATEST))"
   },
+  "REPO-107": {
+    "negative_ts": "const res = await fetch(process.env.PAYMENTS_URL!, { signal: AbortSignal.timeout(3000) });",
+    "negative_py": "import os\nrequests.get(os.environ['PAYMENTS_URL'], timeout=3)",
+    "positive_ts": "const res = await fetch('https://api.payments-vendor.com/v1/charge', { signal: AbortSignal.timeout(3000) });",
+    "positive_py": "requests.get('https://api.payments-vendor.com/v1/charge', timeout=3)"
+  },
+  "REPO-108": {
+    "negative_ts": "const res = await fetch(process.env.PAYMENTS_URL!, { signal: AbortSignal.timeout(3000) });",
+    "negative_py": "requests.get(url, timeout=3)",
+    "positive_ts": "const res = await fetch(process.env.PAYMENTS_URL!);",
+    "positive_py": "resp = requests.post(url, json=payload)"
+  },
   "REPO-016": {
     "negative_ts": "new fis.CfnExperimentTemplate(this, 'StopInstances', { description: 'stop one AZ', roleArn: role.roleArn, stopConditions: [{ source: 'aws:cloudwatch:alarm', value: alarm.alarmArn }], targets: {}, actions: {} });",
     "negative_py": "pipelines.ShellStep('Chaos', commands=['aws fis start-experiment --experiment-template-id EXT123'])",
