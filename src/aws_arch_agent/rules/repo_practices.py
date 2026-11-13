@@ -7046,6 +7046,7 @@ class _NoteRule(_IncidentRule):
 class CustomerNeedsMissing(_NoteRule):
     id = "REPO-161"
     title = "No note names the external and internal customers the workload serves"
+    themes = ("observability",)
     note_name = re.compile(
         r"customers?|stakeholders?|personas?|user[-_ ]?needs|business[-_ ]?(?:goals|priorities)"
     )
@@ -7077,6 +7078,7 @@ _GOVERNANCE_IN_IAC = re.compile(
 class GovernanceControlsMissing(_NoteRule):
     id = "REPO-162"
     title = "No conformance pack, Security Hub standard, SCP or compliance note names the controls"
+    themes = ("security-baseline",)
     category = "Operational Excellence"
     note_name = re.compile(
         r"compliance|governance|regulat(?:ion|ory)|soc[-_ ]?2|pci|hipaa|gdpr|iso[-_ ]?27001"
@@ -7131,6 +7133,7 @@ class ThreatLandscapeMissing(_NoteRule):
 class TradeoffsUnrecorded(_NoteRule):
     id = "REPO-164"
     title = "No architecture decision record weighs a tradeoff"
+    themes = ("observability",)
     note_name = re.compile(
         r"adrs?|decision[-_ ]?records?|architecture[-_ ]?decisions?|decisions?|tradeoffs?"
     )
@@ -7165,6 +7168,7 @@ _PROCEDURE_HEADING = re.compile(
 class ProcedureOwnerMissing(_NoteRule):
     id = "REPO-165"
     title = "No runbook, playbook or procedure names an owner"
+    themes = ("observability",)
     note_name = _PROCEDURE_NAME
     note_heading = _PROCEDURE_HEADING
     recommendation = (
@@ -7214,6 +7218,7 @@ _OWNERSHIP_HEADING = re.compile(
 class OwnershipMechanismMissing(_NoteRule):
     id = "REPO-167"
     title = "No CODEOWNERS file, escalation plan or ownership note says who owns what"
+    themes = ("observability",)
     note_name = _OWNERSHIP_NAME
     note_heading = _OWNERSHIP_HEADING
     recommendation = (
@@ -7289,6 +7294,7 @@ _ESCALATION_HEADING = re.compile(r"(?i).*\b(?:escalat(?:e|es|ion|ions)|escalatio
 class EscalationMissing(_NoteRule):
     id = "REPO-169"
     title = "No escalation plan or note says who to turn to when the first responder cannot fix it"
+    themes = ("observability",)
     note_name = _ESCALATION_NAME
     note_heading = _ESCALATION_HEADING
     iac = _ESCALATION_IN_IAC
@@ -7321,6 +7327,7 @@ _CHANNEL_HEADING = re.compile(
 class OperatorChannelMissing(_NoteRule):
     id = "REPO-170"
     title = "No chat channel, subscription, on-call schedule or note tells operators what is wrong"
+    themes = ("observability",)
     note_name = _CHANNEL_NAME
     note_heading = _CHANNEL_HEADING
     iac = _CHANNEL_IN_IAC
@@ -7349,6 +7356,7 @@ _CULTURE_HEADING = re.compile(
 class OperationsCultureMissing(_NoteRule):
     id = "REPO-171"
     title = "No ownership note says how the team is sponsored, empowered, trained and staffed"
+    themes = ("observability",)
     note_name = _CULTURE_NAME
     note_heading = _CULTURE_HEADING
     recommendation = (
@@ -7374,6 +7382,7 @@ _AUTOMATION_DOCUMENT = re.compile(r"[\"']?(?i:document_?type)[\"']?\s*[:=]\s*[\"
 class RunbooksMissing(_NoteRule):
     id = "REPO-172"
     title = "No runbook is in the repo for deploying and operating the workload"
+    themes = ("observability",)
     note_name = re.compile(r"run[-_ ]?books?|operations?[-_ ]?guide|operating[-_ ]?procedures?")
     note_heading = re.compile(
         r"(?i).*\b(?:run-?books?|operations? guide|operating procedures?)\b.*"
@@ -7412,6 +7421,7 @@ class OperationalPlaybooksMissing(FailurePlaybookMissing):
 class SupportPlanMissing(_NoteRule):
     id = "REPO-174"
     title = "No note names the support plan for production"
+    themes = ("observability",)
     note_name = re.compile(
         r"support[-_ ]?plans?|aws[-_ ]?support|(?:business|enterprise)[-_ ]?support|support[-_ ]?cases?"
     )
@@ -7431,6 +7441,7 @@ class SupportPlanMissing(_NoteRule):
 class ReadinessReviewMissing(_NoteRule):
     id = "REPO-175"
     title = "No operational readiness checklist that covers the team's capability is in the repo"
+    themes = ("observability",)
     note_name = re.compile(
         r"readiness|orr(?:$|[-_ .])|launch[-_ ]?checklist|go[-_ ]?live|production[-_ ]?checklist"
     )
@@ -7457,6 +7468,7 @@ class ReadinessReviewMissing(_NoteRule):
 class PostIncidentLessonsMissing(_NoteRule):
     id = "REPO-176"
     title = "No post-incident template or review records the lessons learned"
+    themes = ("observability",)
     note_name = _POST_INCIDENT_NAME
     note_heading = _POST_INCIDENT_HEADING
     note_needs = re.compile(r"(?i)\blessons?(?:[- ]learned)?\b|\bwhat we learned\b|\baction items?\b")
@@ -7486,6 +7498,7 @@ _OUTCOME_WORD = re.compile(r"(?i)\b(?:outcome|what happened|what (?:it )?changed
 class FeedbackLoopMissing(_NoteRule):
     id = "REPO-177"
     title = "No issue template that asks for the outcome, pipeline notification or note records what a change did"
+    themes = ("observability",)
     note_name = _FEEDBACK_NAME
     note_heading = _FEEDBACK_HEADING
     iac = _FEEDBACK_IN_IAC
@@ -7511,6 +7524,7 @@ class FeedbackLoopMissing(_NoteRule):
 class ImprovementLoopMissing(_NoteRule):
     id = "REPO-178"
     title = "No improvement note names how the team improves, shares knowledge and finds time"
+    themes = ("observability",)
     note_name = re.compile(
         r"improvements?|retro(?:spective)?s?(?:$|[-_ .])|kaizen|knowledge|learning[-_ ]?loop"
     )
@@ -7664,6 +7678,7 @@ class PerformanceLoadTestMissing(LoadTestMissing):
 class PerformanceReviewMissing(_NoteRule):
     id = "REPO-187"
     title = "No performance review note names how the team improves and reviews performance"
+    themes = ("observability",)
     category = "Performance Efficiency"
     note_name = re.compile(
         r"perf(?:ormance)?[-_ ]?(?:review|reviews|report|improvement|kpis?|metrics|process)"
@@ -13163,6 +13178,7 @@ class ComponentCostNotAnalysed(CostModelMissing):
 
     id = "REPO-180"
     title = "No cost estimate is in the repo for the components the workload declares"
+    themes = ("finops",)
     recommendation = (
         "Cost every component before you pick it: run Infracost in CI (infracost breakdown, "
         "which lists each resource) or write a per-component estimate in the repo with an "

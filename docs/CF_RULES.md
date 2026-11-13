@@ -1351,7 +1351,7 @@ Every rule has one or more themes, which cut across pillars: `finops`, `security
 | REPO-159 | observability |
 | REPO-160 | finops |
 | REPO-161 | observability |
-| REPO-162 | observability |
+| REPO-162 | security-baseline |
 | REPO-163 | security-baseline |
 | REPO-164 | observability |
 | REPO-165 | observability |
