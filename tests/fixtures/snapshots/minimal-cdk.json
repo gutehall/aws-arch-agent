@@ -61,5 +61,19 @@
     "file": null,
     "line": null,
     "evidence": "Holds IaC (CDK: 2 files); searched the repo for a build config that deploys, and the IaC for a pipeline; found none"
+  },
+  {
+    "id": "REPO-113",
+    "severity": "Low",
+    "file": null,
+    "line": null,
+    "evidence": "Searched the scanned folder and the folders above it for a .git entry, and the IaC for a CodeCommit repository, a CodeConnections or CodeStar connection and a pipeline source from a hosted repository; found none"
+  },
+  {
+    "id": "REPO-115",
+    "severity": "Medium",
+    "file": null,
+    "line": null,
+    "evidence": "Found no CI config or pipeline for a linter, type checker, static analyzer or coverage threshold; found none"
   }
 ]

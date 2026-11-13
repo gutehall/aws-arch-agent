@@ -147,6 +147,19 @@ alarm (or, for REPO-109 and REPO-112, an Incident Manager response plan):
   alarm state changes with a target, or an SSM Automation target or response-plan action
   passes. A scaling policy alone does not.
 
+Change flow (OPS 5) runs by default:
+
+- REPO-113 version control: a .git entry (a directory, or a file in a worktree or submodule)
+  in the scanned folder or any folder above it, or a CodeCommit repository, CodeConnections
+  or CodeStar connection or hosted pipeline source in the IaC, passes.
+- REPO-114 configuration: when the IaC runs compute, SSM parameters, Secrets Manager, AppConfig,
+  a parameter lookup, or a tfvars, cdk.context or config-directory file per environment passes.
+- REPO-115 quality gate: a linter, type checker, static analyzer or coverage threshold in a
+  build config or in a package.json script a build runs passes. A repo with no CI fires.
+- REPO-116 small, reversible changes: when the IaC runs compute, a rollback control (as
+  REPO-022), blue/green, a canary or linear traffic shift, a CodeDeploy deployment group or
+  Lambda alias weights passes.
+
 Reliability testing (REL 12) runs by default and reads the IaC and the builds REPO-009 reads
 (CI configs, inline buildspecs, CodeBuild projects and pipelines in the IaC, and the
 package.json scripts they run):
@@ -5081,6 +5094,177 @@ class EventResponseNotAutomated(_RepoRule):
             "automation, an EventBridge rule on alarm state changes, and an SSM Automation "
             "target or response-plan action; found none",
             file=(alarms or plans)[0],
+        )]
+
+
+# Change flow (OPS 5): version control (REPO-113), a configuration store (REPO-114), a code
+# quality gate in CI (REPO-115) and small, reversible changes (REPO-116).
+_HOSTED_REPO = re.compile(
+    _cf_type(r"CodeCommit::Repository") + r"|resource\s+\"aws_codecommit_repository\""
+    r"|\bcodecommit\.(?:Cfn)?Repository\(|\bcodestarconnections\b|\bCodeStarConnections\b"
+    r"|\baws_codestarconnections_connection\b|\bcodeconnections\b|\bAWS::CodeConnections::"
+    r"|\bCodePipelineSource\.(?:gitHub|connection|codeCommit|git_hub|code_commit)\("
+    r"|\bConnectionSourceAction\b|\bCodeCommitSourceAction\b"
+)
+_CONFIG_STORE = re.compile(
+    _cf_type(r"SSM::Parameter|SecretsManager::Secret|AppConfig::\w+")
+    + r"|resource\s+\"aws_(?:ssm_parameter|secretsmanager_secret|appconfig_\w+)\""
+    r"|\bssm\.(?:Cfn)?StringParameter\(|\bStringParameter\.(?:value\w*|from\w+)\("
+    r"|\bsecretsmanager\.(?:Cfn)?Secret\(|\bSecret\.from\w+\("
+    r"|\{\{resolve:(?:ssm|ssm-secure|secretsmanager):|\bvalueForStringParameter\("
+    r"|\bdata\s+\"aws_(?:ssm_parameter|secretsmanager_secret\w*)\""
+    r"|\bssm:GetParameter|\bsecretsmanager:GetSecretValue"
+)
+_ENV_CONFIG_FILE = re.compile(
+    r"(?:^|/)(?:config|conf|settings|environments?|envs)/[^/]+\.(?:json|ya?ml|toml|ts|js)$"
+    r"|\.tfvars(?:\.json)?$|(?:^|/)(?:cdk\.context|context)[^/]*\.json$"
+    r"|(?:^|/)[^/]*(?:param|parameters|config)[-_.](?:dev|test|stage|staging|prod|production)"
+    r"[^/]*\.(?:json|ya?ml)$",
+    re.IGNORECASE,
+)
+_QUALITY_GATE = re.compile(
+    r"(?<!\w)(?:eslint|ruff|flake8|pylint|pycodestyle|black\s+--check|prettier\s+--check|biome"
+    r"|mypy|pyright|tsc\b[^\n]*--noEmit|golangci-lint|rubocop|checkstyle|spotbugs|sonar\w*"
+    r"|codeql|cfn-lint|tflint|cdk-nag|terraform\s+validate|cargo\s+clippy"
+    r"|--cov-fail-under|--fail-under|--coverage-threshold|coverageThreshold"
+    r"|npm\s+run\s+(?:lint|typecheck|type-check|check)|make\s+(?:lint|check))\b",
+    re.IGNORECASE,
+)
+_SMALL_STEP_DEPLOY = re.compile(
+    r"blue[-_ /]?green|BlueGreen|\bcanary\b|Canary\d+Percent|Linear\d+Percent"
+    r"|\btraffic_?shifting\b|AdditionalVersionWeights|\brouting_?config\b|RoutingConfig"
+    r"|AWS::CodeDeploy::DeploymentGroup|resource\s+\"aws_codedeploy_deployment_group\"",
+    re.IGNORECASE,
+)
+
+
+def _is_git_checkout(repo_path: Path) -> bool:
+    """A .git entry (a directory, or a file in a worktree or submodule) in the scanned
+    folder or any folder above it."""
+    try:
+        start = repo_path.resolve()
+    except OSError:
+        start = repo_path
+    return any((folder / ".git").exists() for folder in (start, *start.parents))
+
+
+class VersionControlMissing(_RepoRule):
+    id = "REPO-113"
+    title = "The workload is not in version control"
+    severity = "Low"
+    themes = ("resilience",)
+    recommendation = (
+        "Keep the infrastructure and application code in version control (a git repository, "
+        "or AWS CodeCommit or a CodeConnections-linked repository) so every change is "
+        "recorded, reviewed and can be reverted."
+    )
+
+    def run(self, repo_path: Path, language: str = "typescript") -> List[Finding]:
+        if _is_git_checkout(repo_path):
+            return []
+        for _rel, text in iac_texts(repo_path):
+            if _HOSTED_REPO.search(text):
+                return []
+        return [self._finding(
+            "Searched the scanned folder and the folders above it for a .git entry, and the "
+            "IaC for a CodeCommit repository, a CodeConnections or CodeStar connection and a "
+            "pipeline source from a hosted repository; found none"
+        )]
+
+
+class ConfigurationStoreMissing(_RepoRule):
+    id = "REPO-114"
+    title = "Configuration is not kept in a configuration store or per-environment files"
+    severity = "Low"
+    themes = ("resilience",)
+    recommendation = (
+        "Keep configuration out of the code: store it in SSM Parameter Store, Secrets "
+        "Manager or AppConfig, or in a file per environment (tfvars, cdk.context or a config "
+        "directory), so a change to configuration is a reviewed, versioned change that does "
+        "not need a code edit."
+    )
+
+    def run(self, repo_path: Path, language: str = "typescript") -> List[Finding]:
+        compute = _in_iac(repo_path, _COMPUTE)
+        if not compute:
+            return []
+        for _rel, text in iac_texts(repo_path):
+            if _CONFIG_STORE.search(text):
+                return []
+        for path in walk(repo_path):
+            if _ENV_CONFIG_FILE.search("/".join(_rel_parts(path, repo_path))):
+                return []
+        return [self._finding(
+            f"Runs {_named(compute)}; searched the IaC for SSM parameters, Secrets Manager "
+            "secrets, AppConfig and parameter lookups, and the repo for a tfvars, cdk.context "
+            "or config directory file per environment; found none",
+            file=next(iter(compute.values())),
+        )]
+
+
+def quality_gates(repo_path: Path) -> dict[str, str]:
+    """Lint, type-check, static analysis and coverage-threshold commands in the build
+    configs and the package.json scripts they run: command -> first place."""
+    builds = build_texts(repo_path)
+    found: dict[str, str] = {}
+    for rel, text in builds:
+        for match in _QUALITY_GATE.finditer(text):
+            found.setdefault(match.group(0).split()[0].lower(), rel)
+    for script, command in _scripts_run([text for _rel, text in builds],
+                                        _package_scripts(repo_path)):
+        for match in _QUALITY_GATE.finditer(command):
+            found.setdefault(match.group(0).split()[0].lower(), f"package.json script {script}")
+    return found
+
+
+class QualityGateMissing(_RepoRule):
+    id = "REPO-115"
+    title = "No CI step lints, type-checks or sets a coverage gate"
+    severity = "Medium"
+    themes = ("resilience",)
+    recommendation = (
+        "Make code quality a gate: run a linter or type checker (ESLint, ruff, mypy, tsc "
+        "--noEmit, golangci-lint), a static analyzer (CodeQL, SonarQube, cfn-lint, tflint, "
+        "cdk-nag) or a coverage threshold in the CI workflow or pipeline, and fail the build "
+        "on findings."
+    )
+
+    def run(self, repo_path: Path, language: str = "typescript") -> List[Finding]:
+        builds = [rel for rel, _text in build_texts(repo_path)]
+        if quality_gates(repo_path):
+            return []
+        seen = (f"searched the build configs ({_listed(builds)}) and the package.json "
+                "scripts they run" if builds else "found no CI config or pipeline")
+        return [self._finding(
+            f"{seen[0].upper()}{seen[1:]} for a linter, type checker, static analyzer or "
+            "coverage threshold; found none",
+            file=builds[0] if builds else None,
+        )]
+
+
+class SmallReversibleChangesMissing(_RepoRule):
+    id = "REPO-116"
+    title = "Deployments have no rollback, blue/green or canary step"
+    severity = "Low"
+    themes = ("resilience",)
+    recommendation = (
+        "Ship small changes that can be undone: deploy through CodeDeploy with a canary or "
+        "linear traffic shift (SAM DeploymentPreference, Lambda alias weights), blue/green, "
+        "an ECS deployment circuit breaker, or a pipeline stage that rolls back on failure."
+    )
+
+    def run(self, repo_path: Path, language: str = "typescript") -> List[Finding]:
+        compute = _in_iac(repo_path, _COMPUTE)
+        if not compute or rollback_controls(repo_path):
+            return []
+        places = list(iac_texts(repo_path)) + build_texts(repo_path)
+        if any(_SMALL_STEP_DEPLOY.search(text) for _rel, text in places):
+            return []
+        return [self._finding(
+            f"Runs {_named(compute)}; searched the IaC and builds for a rollback control, "
+            "blue/green, a canary or linear traffic shift, a CodeDeploy deployment group and "
+            "Lambda alias weights; found none",
+            file=next(iter(compute.values())),
         )]
 
 
@@ -10288,7 +10472,8 @@ REPO_RULES: List[Rule] = [
     QuotaAlarmMissing(), FailoverHeadroomMissing(), VpcCidrOverlap(),
     IdempotencyMissing(), DependencyUrlHardcoded(), SyncCallNoTimeoutOrQueue(),
     EventSeverityMissing(), CustomerCommunicationMissing(), EventStatusDashboardMissing(),
-    EventResponseNotAutomated(),
+    EventResponseNotAutomated(), VersionControlMissing(), ConfigurationStoreMissing(),
+    QualityGateMissing(), SmallReversibleChangesMissing(),
     FaultInjectionMissing(), LoadTestMissing(),
     KpiMetricMissing(), EdgeTelemetryMissing(), DependencyTelemetryMissing(),
     DeployTestGateMissing(), AutomatedRollbackMissing(),

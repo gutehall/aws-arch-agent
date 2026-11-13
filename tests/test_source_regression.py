@@ -104,9 +104,9 @@ def test_workflow_yaml_does_not_switch_a_cdk_repo(tmp_path: Path) -> None:
     assert source == "cdk"
     snapshot = json.loads((SNAPSHOTS / "minimal-cdk.json").read_text(encoding="utf-8"))
     # The workflow is a CI pipeline, so REPO-002 goes away. REPO-009 and REPO-017 still fire
-    # (neither build scans dependencies or runs a load test), but their evidence now names
-    # the builds they searched.
-    named = ("REPO-009", "REPO-017")
+    # (neither build scans dependencies or runs a load test), and REPO-115 still fires (no
+    # linter or coverage gate), but their evidence now names the builds they searched.
+    named = ("REPO-009", "REPO-017", "REPO-115")
     # The workflow deploys with no test before it, so REPO-021 fires on it. It deploys the
     # stack, so REPO-025 goes away, and with no smoke or resiliency test after the deploy
     # REPO-024 and REPO-026 fire on it.

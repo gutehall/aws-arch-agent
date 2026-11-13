@@ -4,7 +4,7 @@ This document provides a comprehensive list of all rules checked by AWS Arch Age
 
 ## Overview
 
-AWS Arch Agent checks **291 static analysis rules** and **283 template checks** across all 6 AWS Well-Architected Framework pillars. 139 of the 291 CDK rules (48%) have a template check, so they also run for CloudFormation, Terraform and synthesised CDK. [COVERAGE.md](COVERAGE.md) gives the reason for each of the others.
+AWS Arch Agent checks **295 static analysis rules** and **283 template checks** across all 6 AWS Well-Architected Framework pillars. 139 of the 295 CDK rules (47%) have a template check, so they also run for CloudFormation, Terraform and synthesised CDK. [COVERAGE.md](COVERAGE.md) gives the reason for each of the others.
 
 ## Static Analysis Rules (V1 & V2 Modes)
 
@@ -223,7 +223,7 @@ These rules run on your CDK TypeScript/Python code and execute in both V1 and V2
 - REPO-058: No availability target on the user-facing edge
 - REPO-059: No one is notified when availability drops
 
-### Operational Excellence (42 rules)
+### Operational Excellence (46 rules)
 
 **Logging:**
 - OPS-001: CloudTrail not enabled
@@ -287,6 +287,12 @@ These rules run on your CDK TypeScript/Python code and execute in both V1 and V2
 - REPO-110: No customer communication channel is separate from the operator alarms
 - REPO-111: No dashboard shows the state of the alarms
 - REPO-112: Events start no automated response beyond a notification
+
+**Change flow (repo-level, OPS 5):**
+- REPO-113: The workload is not in version control
+- REPO-114: Configuration is not kept in a configuration store or per-environment files
+- REPO-115: No CI step lints, type-checks or sets a coverage gate
+- REPO-116: Deployments have no rollback, blue/green or canary step
 
 ### Performance Efficiency (28 rules)
 
@@ -1220,6 +1226,10 @@ Every rule has one or more themes, which cut across pillars: `finops`, `security
 | REPO-110 | observability |
 | REPO-111 | observability |
 | REPO-112 | observability |
+| REPO-113 | resilience |
+| REPO-114 | resilience |
+| REPO-115 | resilience |
+| REPO-116 | resilience |
 | SEC-001 | identity |
 | SEC-002 | identity |
 | SEC-003 | network-exposure |

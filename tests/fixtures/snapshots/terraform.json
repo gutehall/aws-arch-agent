@@ -397,5 +397,33 @@
     "file": null,
     "line": null,
     "evidence": "Declares Lambda function worker with nothing triggering or referring to it (main.tf:41); nothing in the IaC gives it work, so it only adds to what the workload runs and maintains"
+  },
+  {
+    "id": "REPO-113",
+    "severity": "Low",
+    "file": null,
+    "line": null,
+    "evidence": "Searched the scanned folder and the folders above it for a .git entry, and the IaC for a CodeCommit repository, a CodeConnections or CodeStar connection and a pipeline source from a hosted repository; found none"
+  },
+  {
+    "id": "REPO-114",
+    "severity": "Low",
+    "file": "main.tf",
+    "line": null,
+    "evidence": "Runs Lambda (main.tf); searched the IaC for SSM parameters, Secrets Manager secrets, AppConfig and parameter lookups, and the repo for a tfvars, cdk.context or config directory file per environment; found none"
+  },
+  {
+    "id": "REPO-115",
+    "severity": "Medium",
+    "file": null,
+    "line": null,
+    "evidence": "Found no CI config or pipeline for a linter, type checker, static analyzer or coverage threshold; found none"
+  },
+  {
+    "id": "REPO-116",
+    "severity": "Low",
+    "file": "main.tf",
+    "line": null,
+    "evidence": "Runs Lambda (main.tf); searched the IaC and builds for a rollback control, blue/green, a canary or linear traffic shift, a CodeDeploy deployment group and Lambda alias weights; found none"
   }
 ]

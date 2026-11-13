@@ -15,7 +15,7 @@ Which CDK rules have a template check, and which AWS Foundational Security Best 
 
 ## CDK rules
 
-291 rules: 132 covered, 7 partial, 10 account, 5 cdk-only, 25 advice, 112 repo.
+295 rules: 132 covered, 7 partial, 10 account, 5 cdk-only, 25 advice, 116 repo.
 
 | Rule | Title | Template check | Status | Note |
 | -- | -- | -- | -- | -- |
@@ -310,6 +310,10 @@ Which CDK rules have a template check, and which AWS Foundational Security Best 
 | REPO-110 | No customer communication channel is separate from the operator alarms |  | `repo` | Fires when the IaC has alarms and no SNS, SES or Pinpoint resource in a file that names customers, subscribers or a status page. |
 | REPO-111 | No dashboard shows the state of the alarms |  | `repo` | Fires when the IaC has alarms and no dashboard with an alarm status or alarm widget. |
 | REPO-112 | Events start no automated response beyond a notification |  | `repo` | Fires when the IaC has alarms or response plans and no alarm action that runs automation, EventBridge rule on alarm state changes, or SSM Automation target. A scaling policy alone does not count. |
+| REPO-113 | The workload is not in version control |  | `repo` | Fires when no `.git` entry exists in the scanned folder or above it and the IaC names no CodeCommit repository, CodeConnections or CodeStar connection or hosted pipeline source. |
+| REPO-114 | Configuration is not kept in a configuration store or per-environment files |  | `repo` | Fires when the IaC runs compute and has no SSM parameter, Secrets Manager secret, AppConfig resource or parameter lookup, and the repo has no tfvars, cdk.context or config-directory file per environment. |
+| REPO-115 | No CI step lints, type-checks or sets a coverage gate |  | `repo` | Fires when no build config, and no package.json script a build runs, calls a linter, type checker, static analyzer or coverage threshold. A repo with no CI also fires. |
+| REPO-116 | Deployments have no rollback, blue/green or canary step |  | `repo` | Fires when the IaC runs compute and has no rollback control (as REPO-022), blue/green, canary or linear traffic shift, CodeDeploy deployment group or Lambda alias weights. |
 
 ## FSBP controls
 

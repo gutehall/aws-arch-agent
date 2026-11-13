@@ -898,6 +898,30 @@
     "positive_ts": "new cloudwatch.Alarm(this, 'Errors', { metric, threshold: 1, evaluationPeriods: 1 });",
     "positive_py": "cloudwatch.Alarm(self, 'Errors', metric=metric, threshold=1, evaluation_periods=1)"
   },
+  "REPO-113": {
+    "negative_ts": "new codecommit.Repository(this, 'Repo', { repositoryName: 'workload' });",
+    "negative_py": "codecommit.Repository(self, 'Repo', repository_name='workload')",
+    "positive_ts": "new s3.Bucket(this, 'Bucket');",
+    "positive_py": "s3.Bucket(self, 'Bucket')"
+  },
+  "REPO-114": {
+    "negative_ts": "const fn = new lambda.Function(this, 'Fn', { runtime: lambda.Runtime.NODEJS_20_X, handler: 'index.handler', code: lambda.Code.fromAsset('src') });\nconst table = ssm.StringParameter.valueForStringParameter(this, '/app/table');",
+    "negative_py": "fn = _lambda.Function(self, 'Fn', runtime=_lambda.Runtime.PYTHON_3_12, handler='index.handler', code=_lambda.Code.from_asset('src'))\ntable = ssm.StringParameter.value_for_string_parameter(self, '/app/table')",
+    "positive_ts": "const fn = new lambda.Function(this, 'Fn', { runtime: lambda.Runtime.NODEJS_20_X, handler: 'index.handler', code: lambda.Code.fromAsset('src') });",
+    "positive_py": "fn = _lambda.Function(self, 'Fn', runtime=_lambda.Runtime.PYTHON_3_12, handler='index.handler', code=_lambda.Code.from_asset('src'))"
+  },
+  "REPO-115": {
+    "negative_ts": "new pipelines.ShellStep('Lint', { commands: ['npx eslint .', 'npm run build'] });",
+    "negative_py": "pipelines.ShellStep('Lint', commands=['ruff check .', 'mypy src'])",
+    "positive_ts": "new pipelines.ShellStep('Build', { commands: ['npm ci', 'npm run build'] });",
+    "positive_py": "pipelines.ShellStep('Build', commands=['pip install -r requirements.txt', 'python build.py'])"
+  },
+  "REPO-116": {
+    "negative_ts": "const fn = new lambda.Function(this, 'Fn', { runtime: lambda.Runtime.NODEJS_20_X, handler: 'index.handler', code: lambda.Code.fromAsset('src') });\nnew codedeploy.LambdaDeploymentGroup(this, 'DG', { alias, deploymentConfig: codedeploy.LambdaDeploymentConfig.CANARY_10PERCENT_5MINUTES });",
+    "negative_py": "fn = _lambda.Function(self, 'Fn', runtime=_lambda.Runtime.PYTHON_3_12, handler='index.handler', code=_lambda.Code.from_asset('src'))\ncodedeploy.LambdaDeploymentGroup(self, 'DG', alias=alias, deployment_config=codedeploy.LambdaDeploymentConfig.CANARY_10_PERCENT_5_MINUTES)",
+    "positive_ts": "const fn = new lambda.Function(this, 'Fn', { runtime: lambda.Runtime.NODEJS_20_X, handler: 'index.handler', code: lambda.Code.fromAsset('src') });",
+    "positive_py": "fn = _lambda.Function(self, 'Fn', runtime=_lambda.Runtime.PYTHON_3_12, handler='index.handler', code=_lambda.Code.from_asset('src'))"
+  },
   "REPO-016": {
     "negative_ts": "new fis.CfnExperimentTemplate(this, 'StopInstances', { description: 'stop one AZ', roleArn: role.roleArn, stopConditions: [{ source: 'aws:cloudwatch:alarm', value: alarm.alarmArn }], targets: {}, actions: {} });",
     "negative_py": "pipelines.ShellStep('Chaos', commands=['aws fis start-experiment --experiment-template-id EXT123'])",
