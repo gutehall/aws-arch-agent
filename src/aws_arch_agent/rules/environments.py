@@ -50,6 +50,7 @@ RULE_POLICY: dict[str, dict[Environment, Severity | None]] = {
     "CF-OS-007": {"dev": None, "staging": None},  # three data nodes across zones
     "CF-EC-003": {"dev": None, "staging": None},  # automatic failover and Multi-AZ
     "CF-ASG-002": {"dev": None, "staging": None},  # Auto Scaling group in one AZ
+    "CF-VPC-004": {"dev": None, "staging": None},  # subnet tier in one AZ
     "CF-DDB-004": {"dev": None},           # deletion protection
     "CF-SAGE-005": {"dev": None, "staging": None},  # endpoint variant on one instance
     # Never-expiring logs: CF-ENV-005 asks for 30 days or less there instead of 30-365.

@@ -126,7 +126,8 @@ def rules_run(
     """The rule ids a report can show findings for.
 
     active is the catalog less what the config turned off. cdk keeps the CDK source rules,
-    templates the CF-* checks (CloudFormation, Terraform, or synth output). A theme filter
+    templates the CF-* checks (CloudFormation, Terraform, or synth output). The repo-level
+    REPO-* checks read the tree, so they run for either source. A theme filter
     keeps the rules in those themes. A severity threshold above Low hides findings of any
     rule, so then no rule counts.
     """
@@ -137,7 +138,10 @@ def rules_run(
     wanted = set(theme_filter or ())
     out = []
     for rid in active:
-        if not (templates if rid.startswith("CF-") else cdk):
+        if rid.startswith("REPO-"):
+            if not (cdk or templates):
+                continue
+        elif not (templates if rid.startswith("CF-") else cdk):
             continue
         if wanted and not wanted & set(themes_of(rid)):
             continue

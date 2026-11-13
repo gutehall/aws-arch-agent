@@ -3,177 +3,407 @@
     {
       "id": "BP-001",
       "file": null,
-      "line": null
+      "evidence_hash": null
     },
     {
       "id": "BP-003",
       "file": null,
-      "line": null
+      "evidence_hash": null
     },
     {
       "id": "COST-001",
       "file": "src/aws_arch_agent/rules/cf_template.py",
-      "line": 503
+      "evidence_hash": null
+    },
+    {
+      "id": "COST-001",
+      "file": "src/aws_arch_agent/rules/cf_template.py",
+      "evidence_hash": "c8e86af77589ba23",
+      "logical_id": "\"CF-CW-001\": \"Log group has no retention period (infinite retention)\","
+    },
+    {
+      "id": "COST-001",
+      "file": "src/aws_arch_agent/rules/cf_template.py",
+      "evidence_hash": "dbc72f9439ae7445",
+      "logical_id": "# RetentionDays.INFINITE synthesises to a log group with no RetentionInDays."
+    },
+    {
+      "id": "COST-001",
+      "file": "src/aws_arch_agent/rules/cf_template.py",
+      "evidence_hash": "e6583ec41ab337f2",
+      "logical_id": "title=\"Log group has no retention period (infinite retention)\","
     },
     {
       "id": "COST-001",
       "file": "src/aws_arch_agent/rules/cost.py",
-      "line": 11
+      "evidence_hash": null
     },
     {
       "id": "COST-001",
       "file": "src/aws_arch_agent/rules/cost.py",
-      "line": 16
+      "evidence_hash": "bc47eeabddf17ff9",
+      "logical_id": "pattern = r'RetentionDays\\.INFINITE|retention\\s*:\\s*logs\\.RetentionDays\\.INFINITE' if language == \"typescript\" else r'INFINITE|retention.*infinite'"
+    },
+    {
+      "id": "COST-001",
+      "file": "src/aws_arch_agent/rules/cost.py",
+      "evidence_hash": "eb3ef62dac420324",
+      "logical_id": "title = \"Log retention may be infinite (cost risk)\""
     },
     {
       "id": "COST-001",
       "file": "tests/test_rules.py",
-      "line": 127
+      "evidence_hash": null
+    },
+    {
+      "id": "COST-004",
+      "file": "src/aws_arch_agent/rules/cf_template.py",
+      "evidence_hash": "3ab837e227b087c8",
+      "logical_id": "\"reservedConcurrentExecutions.\")"
     },
     {
       "id": "COST-004",
       "file": "src/aws_arch_agent/rules/cost.py",
-      "line": 94
+      "evidence_hash": null
+    },
+    {
+      "id": "COST-004",
+      "file": "src/aws_arch_agent/rules/cost.py",
+      "evidence_hash": "76cb2e8924b63eb0",
+      "logical_id": "provisioned = rg(repo_path, r'provisionedConcurrentExecutions|reservedConcurrentExecutions', glob=code_glob(language))"
     },
     {
       "id": "COST-004",
       "file": "src/aws_arch_agent/rules/operational_excellence.py",
-      "line": 614
+      "evidence_hash": null
     },
     {
       "id": "COST-005",
       "file": null,
-      "line": null
+      "evidence_hash": null
     },
     {
       "id": "COST-007",
       "file": null,
-      "line": null
+      "evidence_hash": null
+    },
+    {
+      "id": "COST-008",
+      "file": "src/aws_arch_agent/pricing/__init__.py",
+      "evidence_hash": "c95f3034dc0716fd",
+      "logical_id": "ebs:gp2, ebs:gp3, ebs:io2                   USD per GB-month"
+    },
+    {
+      "id": "COST-008",
+      "file": "src/aws_arch_agent/pricing/build.py",
+      "evidence_hash": "1545ee38dc4c2364",
+      "logical_id": "return f\"ebs:{api}\" if api in (\"gp2\", \"gp3\", \"io2\") else None"
     },
     {
       "id": "COST-008",
       "file": "src/aws_arch_agent/rules/cost.py",
-      "line": 187
-    },
-    {
-      "id": "COST-008",
-      "file": "src/aws_arch_agent/rules/cost.py",
-      "line": 192
+      "evidence_hash": null
     },
     {
       "id": "COST-010",
       "file": "tests/fixtures/rules/rds_no_multiaz.ts",
-      "line": 1
+      "evidence_hash": null
     },
     {
       "id": "COST-010",
       "file": "tests/test_rules.py",
-      "line": 88
+      "evidence_hash": null
     },
     {
       "id": "COST-013",
       "file": null,
-      "line": null
+      "evidence_hash": null
     },
     {
       "id": "COST-014",
       "file": null,
-      "line": null
+      "evidence_hash": null
     },
     {
       "id": "COST-016",
       "file": null,
-      "line": null
+      "evidence_hash": null
     },
     {
       "id": "COST-018",
       "file": null,
-      "line": null
+      "evidence_hash": null
     },
     {
       "id": "OPS-001",
       "file": null,
-      "line": null
+      "evidence_hash": null
     },
     {
       "id": "OPS-009",
       "file": "tests/fixtures/rules/rds_no_multiaz.ts",
-      "line": 1
+      "evidence_hash": null
     },
     {
       "id": "OPS-010",
       "file": null,
-      "line": null
+      "evidence_hash": null
     },
     {
       "id": "OPS-014",
       "file": null,
-      "line": null
+      "evidence_hash": null
     },
     {
       "id": "OPS-021",
       "file": null,
-      "line": null
+      "evidence_hash": null
     },
     {
       "id": "PERF-002",
       "file": null,
-      "line": null
+      "evidence_hash": null
     },
     {
       "id": "PERF-014",
       "file": null,
-      "line": null
+      "evidence_hash": null
     },
     {
       "id": "PERF-016",
       "file": null,
-      "line": null
+      "evidence_hash": null
     },
     {
       "id": "PERF-019",
       "file": null,
-      "line": null
+      "evidence_hash": null
     },
     {
       "id": "REL-001",
       "file": "tests/fixtures/rules/rds_no_multiaz.ts",
-      "line": 1
+      "evidence_hash": null
     },
     {
       "id": "REL-001",
       "file": "tests/test_rules.py",
-      "line": 88
+      "evidence_hash": null
     },
     {
       "id": "REL-002",
       "file": "tests/fixtures/rules/rds_no_multiaz.ts",
-      "line": 1
+      "evidence_hash": null
     },
     {
       "id": "REL-011",
       "file": "tests/fixtures/rules/rds_no_multiaz.ts",
-      "line": 1
+      "evidence_hash": null
     },
     {
       "id": "REL-013",
       "file": null,
-      "line": null
+      "evidence_hash": null
     },
     {
       "id": "REL-026",
       "file": null,
-      "line": null
+      "evidence_hash": null
     },
     {
       "id": "REL-030",
       "file": "tests/fixtures/rules/rds_no_multiaz.ts",
-      "line": 1
+      "evidence_hash": null
     },
     {
       "id": "REL-031",
       "file": "tests/fixtures/rules/s3_no_encryption.ts",
-      "line": 1
+      "evidence_hash": null
+    },
+    {
+      "id": "REL-032",
+      "file": "src/aws_arch_agent/rules/reliability.py",
+      "evidence_hash": "8fa4826e4e138315",
+      "logical_id": "# ec2.Vpc( / new Vpc( in TypeScript and Python."
+    },
+    {
+      "id": "REPO-003",
+      "file": null,
+      "evidence_hash": "5b9b20ea55f8c1a5",
+      "logical_id": "Environments named in IaC paths, tfvars and parameter files, CDK stack ids and cdk.json context: none; two or more expected"
+    },
+    {
+      "id": "REPO-013",
+      "file": null,
+      "evidence_hash": "ec77d75d8ffd399d",
+      "logical_id": "Elastic IPs (EIP resources and CDK NAT gateways) number 6 (src/aws_arch_agent/rules/nonprod.py 1, src/aws_arch_agent/rules/reliability.py 2, src/aws_arch_agent/rules/repo_practices.py 1, src/aws_arch_agent/rules/resource_model.py 1, src/aws_arch_agent/rules/tag_policy.py 1); the default quota is 5 per Region; over half leaves no room for failover"
+    },
+    {
+      "id": "REPO-021",
+      "file": "src/aws_arch_agent/rules/repo_practices.py",
+      "evidence_hash": "353adaed373a70d6",
+      "logical_id": "Deploys from src/aws_arch_agent/rules/repo_practices.py (line 159) with no test that can fail before the deploy; searched each build config and the package.json scripts it runs for a test (npm, yarn or pnpm test, jest, vitest, pytest, tox, go test, terraform test, taskcat, cfn-guard, mvn, gradle, dotnet, cargo or make test, a CodePipeline test action) ahead of it; found none"
+    },
+    {
+      "id": "REPO-023",
+      "file": "src/aws_arch_agent/rules/repo_practices.py",
+      "evidence_hash": "a9fe6143a4575b81",
+      "logical_id": "Changes running instances in place instead of replacing them: ansible-playbook in src/aws_arch_agent/rules/repo_practices.py (line 2988)"
+    },
+    {
+      "id": "REPO-024",
+      "file": "src/aws_arch_agent/rules/repo_practices.py",
+      "evidence_hash": "a0ec16101854e70e",
+      "logical_id": "Deploys from src/aws_arch_agent/rules/repo_practices.py (line 159) with no functional test that can fail after the deploy; searched each build config and the package.json scripts it runs for a test (the test commands REPO-021 knows, curl with a fail flag against a URL, Newman, Playwright, Cypress, integ, e2e or smoke package scripts, the CDK integ runner, a CodePipeline test action, a CDK pipelines post step) after a deploy, and before the last deploy when it deploys more than once; found none"
+    },
+    {
+      "id": "REPO-027",
+      "file": null,
+      "evidence_hash": "6c7a11ced0440bb0",
+      "logical_id": "Runs Lambda (src/aws_arch_agent/rules/fix_snippets.py), ECS service (src/aws_arch_agent/rules/fix_snippets.py), EKS cluster (src/aws_arch_agent/rules/fix_snippets.py), EC2 (src/aws_arch_agent/rules/fix_snippets.py), App Runner (src/aws_arch_agent/rules/fix_snippets.py); searched the IaC for an alarm on a metric outside AWS/, an edge latency or 5xx metric, a datastore or queue metric, or with anomaly detection; the alarms in src/aws_arch_agent/rules/fix_snippets.py watch no workload metric"
+    },
+    {
+      "id": "REPO-028",
+      "file": null,
+      "evidence_hash": "f0c089d89ce93be9",
+      "logical_id": "Runs Lambda (src/aws_arch_agent/rules/fix_snippets.py), ECS service (src/aws_arch_agent/rules/fix_snippets.py), EKS cluster (src/aws_arch_agent/rules/fix_snippets.py), EC2 (src/aws_arch_agent/rules/fix_snippets.py), App Runner (src/aws_arch_agent/rules/fix_snippets.py); searched the IaC for a CloudWatch Logs metric filter, a Contributor Insights rule, a Logs Insights saved query, a log anomaly detector, and a subscription filter; found none"
+    },
+    {
+      "id": "REPO-029",
+      "file": null,
+      "evidence_hash": "efe7353e6a12ab46",
+      "logical_id": "Runs Lambda (src/aws_arch_agent/rules/fix_snippets.py), ECS service (src/aws_arch_agent/rules/fix_snippets.py), EKS cluster (src/aws_arch_agent/rules/fix_snippets.py), EC2 (src/aws_arch_agent/rules/fix_snippets.py), App Runner (src/aws_arch_agent/rules/fix_snippets.py); searched the IaC for an X-Ray group or sampling rule, CloudWatch Application Signals service level objectives or discovery, and an alarm on an Application Signals or X-Ray metric; found none"
+    },
+    {
+      "id": "REPO-034",
+      "file": null,
+      "evidence_hash": "f0bc74fa94ea52e7",
+      "logical_id": "Sends traffic out through NAT gateway (src/aws_arch_agent/rules/fix_snippets.py); searched the IaC for AWS Network Firewall, a Route 53 Resolver DNS Firewall association, and a Gateway Load Balancer endpoint; found none"
+    },
+    {
+      "id": "REPO-035",
+      "file": null,
+      "evidence_hash": "47403310c8fc52c4",
+      "logical_id": "Exposes API Gateway (src/aws_arch_agent/rules/fix_snippets.py), load balancer (src/aws_arch_agent/rules/fix_snippets.py), CloudFront (src/aws_arch_agent/rules/fix_snippets.py), NAT gateway (src/aws_arch_agent/rules/fix_snippets.py); searched the IaC for a WAF AWS managed rule group, Shield Advanced protection, a Firewall Manager policy, and AWS managed threat signatures or domain lists in Network Firewall or DNS Firewall; found none"
+    },
+    {
+      "id": "REPO-037",
+      "file": null,
+      "evidence_hash": "16275947af6545bf",
+      "logical_id": "Deploys Lambda functions (src/aws_arch_agent/rules/fix_snippets.py); searched the IaC for a Lambda code signing config and an AWS Signer Notation profile, and the builds for notation sign or cosign sign; found none for these"
+    },
+    {
+      "id": "REPO-039",
+      "file": null,
+      "evidence_hash": "9eabaa52deb99cab",
+      "logical_id": "Declares S3 bucket in src/aws_arch_agent/rules/fix_snippets.py, S3 bucket in src/aws_arch_agent/rules/security_storage.py with no classification tag (DataClassification, Classification, Confidentiality or Sensitivity) on the store or the app"
+    },
+    {
+      "id": "REPO-045",
+      "file": "src/aws_arch_agent/rules/fix_snippets.py",
+      "evidence_hash": "52314ac0d039911d",
+      "logical_id": "Declares CloudWatch alarms without a metric or a threshold: $tf_name at src/aws_arch_agent/rules/fix_snippets.py:536 (no metric or threshold)"
+    },
+    {
+      "id": "REPO-046",
+      "file": "src/aws_arch_agent/rules/fix_snippets.py",
+      "evidence_hash": "d184ceff7de5975f",
+      "logical_id": "Runs Lambda (src/aws_arch_agent/rules/fix_snippets.py), ECS service (src/aws_arch_agent/rules/fix_snippets.py), EKS cluster (src/aws_arch_agent/rules/fix_snippets.py), EC2 (src/aws_arch_agent/rules/fix_snippets.py), App Runner (src/aws_arch_agent/rules/fix_snippets.py); searched the IaC for a CloudWatch Logs metric filter on errors, a log anomaly detector, a Logs Insights saved query and a subscription filter; found none"
+    },
+    {
+      "id": "REPO-049",
+      "file": "src/aws_arch_agent/rules/fix_snippets.py",
+      "evidence_hash": "7a4a05066e06b595",
+      "logical_id": "Fleets that cannot grow on demand: ECS service $tf_name at src/aws_arch_agent/rules/fix_snippets.py:716 (no Application Auto Scaling target on its tasks), ECS service $tf_name at src/aws_arch_agent/rules/fix_snippets.py:3908 (no Application Auto Scaling target on its tasks), ECS service $tf_name at src/aws_arch_agent/rules/fix_snippets.py:3943 (no Application Auto Scaling target on its tasks)"
+    },
+    {
+      "id": "REPO-050",
+      "file": "src/aws_arch_agent/rules/fix_snippets.py",
+      "evidence_hash": "6b6a47d15800e443",
+      "logical_id": "Every scaling policy reacts to CPU or memory (${tf_name}_cpu at src/aws_arch_agent/rules/fix_snippets.py:4225); none scales on queue depth, request count, latency, error rate or a forecast"
+    },
+    {
+      "id": "REPO-052",
+      "file": null,
+      "evidence_hash": "945367f361f3ad52",
+      "logical_id": "Runs S3 bucket (src/aws_arch_agent/rules/fix_snippets.py), DynamoDB table (src/aws_arch_agent/rules/fix_snippets.py), RDS database (src/aws_arch_agent/rules/fix_snippets.py), ElastiCache (src/aws_arch_agent/rules/fix_snippets.py), OpenSearch domain (src/aws_arch_agent/rules/fix_snippets.py), EFS file system (src/aws_arch_agent/rules/fix_snippets.py), Redshift cluster (src/aws_arch_agent/rules/fix_snippets.py), DocumentDB cluster (src/aws_arch_agent/rules/fix_snippets.py), Neptune cluster (src/aws_arch_agent/rules/fix_snippets.py), Kinesis stream (src/aws_arch_agent/rules/fix_snippets.py), Lambda (src/aws_arch_agent/rules/fix_snippets.py), ECS service (src/aws_arch_agent/rules/fix_snippets.py), EKS cluster (src/aws_arch_agent/rules/fix_snippets.py), EC2 (src/aws_arch_agent/rules/fix_snippets.py), App Runner (src/aws_arch_agent/rules/fix_snippets.py); searched the IaC for a Resilience Hub resiliency policy and for a recovery time or recovery point objective tag or context key; found none"
+    },
+    {
+      "id": "REPO-055",
+      "file": "src/aws_arch_agent/rules/fix_snippets.py",
+      "evidence_hash": "f5f1b177fc25910b",
+      "logical_id": "Copies data to another Region with S3 replication (src/aws_arch_agent/rules/fix_snippets.py), AWS Backup copy action (src/aws_arch_agent/rules/fix_snippets.py); searched the IaC for StackSets, a readiness check, a Config aggregator and one stack or module deployed to two Regions, and the builds for drift detection; found none"
+    },
+    {
+      "id": "REPO-056",
+      "file": null,
+      "evidence_hash": "92245be7df619bad",
+      "logical_id": "Turns off automatic recovery for an EC2 instance at src/aws_arch_agent/rules/repo_practices.py (line 430)"
+    },
+    {
+      "id": "REPO-058",
+      "file": "src/aws_arch_agent/rules/fix_snippets.py",
+      "evidence_hash": "fa4afeeeab92c45b",
+      "logical_id": "Serves users through API Gateway (src/aws_arch_agent/rules/fix_snippets.py), load balancer (src/aws_arch_agent/rules/fix_snippets.py), CloudFront (src/aws_arch_agent/rules/fix_snippets.py); searched the IaC for an alarm on an edge 5xx, error or latency metric and an Application Signals service level objective; found none"
+    },
+    {
+      "id": "REPO-061",
+      "file": "src/aws_arch_agent/rules/fix_snippets.py",
+      "evidence_hash": "7247b1b01ac12516",
+      "logical_id": "Production compute that does not scale dynamically: ECS service $tf_name at src/aws_arch_agent/rules/fix_snippets.py:716 (no scaling policy on its task count), ECS service $tf_name at src/aws_arch_agent/rules/fix_snippets.py:3908 (no scaling policy on its task count), ECS service $tf_name at src/aws_arch_agent/rules/fix_snippets.py:3943 (no scaling policy on its task count)"
+    },
+    {
+      "id": "REPO-064",
+      "file": null,
+      "evidence_hash": "f473e8d1587dfa80",
+      "logical_id": "Serves users through API Gateway in src/aws_arch_agent/rules/fix_snippets.py, load balancer in src/aws_arch_agent/rules/fix_snippets.py, CloudFront in src/aws_arch_agent/rules/fix_snippets.py; searched the IaC for an alarm on TargetResponseTime, Latency, IntegrationLatency or OriginLatency; found none"
+    },
+    {
+      "id": "REPO-071",
+      "file": null,
+      "evidence_hash": "406fcccef050fe56",
+      "logical_id": "Runs Lambda in src/aws_arch_agent/rules/fix_snippets.py, ECS service in src/aws_arch_agent/rules/fix_snippets.py, EKS cluster in src/aws_arch_agent/rules/fix_snippets.py, EC2 in src/aws_arch_agent/rules/fix_snippets.py and 1 more; searched the IaC and code for a metric name, metric filter, metric math label or embedded metric named like CostPerRequest or UnitCost; found none"
+    },
+    {
+      "id": "REPO-072",
+      "file": null,
+      "evidence_hash": "720d63993bfd8f92",
+      "logical_id": "Runs Lambda in src/aws_arch_agent/rules/fix_snippets.py, ECS service in src/aws_arch_agent/rules/fix_snippets.py, EKS cluster in src/aws_arch_agent/rules/fix_snippets.py, EC2 in src/aws_arch_agent/rules/fix_snippets.py and 1 more; searched the IaC for metric math that combines a cost metric (EstimatedCharges or a unit cost) with a workload metric; found none"
+    },
+    {
+      "id": "REPO-076",
+      "file": null,
+      "evidence_hash": "3c6bdddfe4ffb650",
+      "logical_id": "Runs Lambda in src/aws_arch_agent/rules/fix_snippets.py, ECS service in src/aws_arch_agent/rules/fix_snippets.py, EKS cluster in src/aws_arch_agent/rules/fix_snippets.py, EC2 in src/aws_arch_agent/rules/fix_snippets.py and 1 more; searched the IaC for a budget named per request, tenant, order, user or transaction and for a unit-cost metric; found none"
+    },
+    {
+      "id": "REPO-077",
+      "file": null,
+      "evidence_hash": "27ac88213c0cd156",
+      "logical_id": "Declares Lambda in src/aws_arch_agent/rules/fix_snippets.py, ECS service in src/aws_arch_agent/rules/fix_snippets.py, EKS cluster in src/aws_arch_agent/rules/fix_snippets.py and 15 more; no finance or engineering contact is named: searched the repo for a cost note (COST.md, FINOPS.md, docs/cost*.md, or a README or docs section headed Cost, FinOps or Cost ownership) that names an owner, contact, responsible or accountable person or team; found none"
+    },
+    {
+      "id": "REPO-078",
+      "file": null,
+      "evidence_hash": "0deabd98ad0af22c",
+      "logical_id": "Declares Lambda in src/aws_arch_agent/rules/fix_snippets.py, ECS service in src/aws_arch_agent/rules/fix_snippets.py, EKS cluster in src/aws_arch_agent/rules/fix_snippets.py and 15 more; searched pull and merge request templates for a cost checklist item; found none; searched the repo for a cost note (COST.md, FINOPS.md, docs/cost*.md, or a README or docs section headed Cost, FinOps or Cost ownership) that names an owner, contact, responsible or accountable person or team; found none"
+    },
+    {
+      "id": "REPO-079",
+      "file": null,
+      "evidence_hash": "b2a917fbba252920",
+      "logical_id": "Declares Lambda in src/aws_arch_agent/rules/fix_snippets.py, ECS service in src/aws_arch_agent/rules/fix_snippets.py, EKS cluster in src/aws_arch_agent/rules/fix_snippets.py and 15 more; the team has no shared cost guidance: searched the repo for a cost note (COST.md, FINOPS.md, docs/cost*.md, or a README or docs section headed Cost, FinOps or Cost ownership) that names an owner, contact, responsible or accountable person or team; found none"
+    },
+    {
+      "id": "REPO-088",
+      "file": null,
+      "evidence_hash": "56c56d97967115fb",
+      "logical_id": "Declares Lambda in src/aws_arch_agent/rules/fix_snippets.py, ECS service in src/aws_arch_agent/rules/fix_snippets.py, EKS cluster in src/aws_arch_agent/rules/fix_snippets.py and 15 more; searched CI for infracost breakdown, diff or comment, the repo for an Infracost or cost-estimate config, and notes named or headed cost estimate, cost model, estimated cost or pricing that give an amount or a Pricing Calculator link; found none"
+    },
+    {
+      "id": "REPO-089",
+      "file": null,
+      "evidence_hash": "99254ac141c3fddf",
+      "logical_id": "Creates its own ECS cluster in src/aws_arch_agent/rules/fix_snippets.py, EKS cluster in src/aws_arch_agent/rules/fix_snippets.py, VPC in src/aws_arch_agent/rules/reliability.py; searched the IaC for a looked-up or imported VPC, subnet, cluster or bucket (fromLookup, from*Attributes, Terraform data sources or remote state, ImportValue, an SSM VPC id parameter), an AWS RAM share, and a Tenancy tag or single-tenant comment; found none"
     },
     {
       "id": "SEC-001",
@@ -190,12 +420,12 @@
     {
       "id": "SEC-001",
       "file": "src/aws_arch_agent/rules/security_iam.py",
-      "line": 15
+      "evidence_hash": null
     },
     {
       "id": "SEC-001",
       "file": "tests/fixtures/rules/iam_wildcard.ts",
-      "line": 1
+      "evidence_hash": null
     },
     {
       "id": "SEC-002",
@@ -206,17 +436,35 @@
     {
       "id": "SEC-002",
       "file": "tests/fixtures/rules/iam_wildcard.ts",
-      "line": 1
+      "evidence_hash": null
     },
     {
       "id": "SEC-002",
       "file": "tests/test_cf_template.py",
-      "line": 295
+      "evidence_hash": null
     },
     {
       "id": "SEC-003",
       "file": "src/aws_arch_agent/rules/cf_template.py",
-      "line": 479
+      "evidence_hash": null
+    },
+    {
+      "id": "SEC-003",
+      "file": "src/aws_arch_agent/rules/cf_template.py",
+      "evidence_hash": "189930af7a8dcddf",
+      "logical_id": "\"Allow port 22 and 3389 only from known CIDRs, or deny them, in the network ACL \""
+    },
+    {
+      "id": "SEC-003",
+      "file": "src/aws_arch_agent/rules/fix_snippets.py",
+      "evidence_hash": "40ddfe5cd90af1a7",
+      "logical_id": "from_port      = 22"
+    },
+    {
+      "id": "SEC-003",
+      "file": "src/aws_arch_agent/rules/fix_snippets.py",
+      "evidence_hash": "45e71837f509d2f3",
+      "logical_id": "from_port   = 22 # the flagged port"
     },
     {
       "id": "SEC-003",
@@ -233,60 +481,49 @@
     {
       "id": "SEC-003",
       "file": "src/aws_arch_agent/rules/fix_snippets.py",
-      "evidence_hash": "45e71837f509d2f3",
-      "logical_id": "from_port   = 22 # the flagged port"
-    },
-    {
-      "id": "SEC-003",
-      "file": "src/aws_arch_agent/rules/fix_snippets.py",
-      "evidence_hash": "40ddfe5cd90af1a7",
-      "logical_id": "from_port      = 22"
-    },
-    {
-      "id": "SEC-003",
-      "file": "src/aws_arch_agent/rules/fix_snippets.py",
       "evidence_hash": "b934aa70e81ca5ae",
       "logical_id": "from_port  = 22"
     },
     {
       "id": "SEC-003",
       "file": "src/aws_arch_agent/rules/security_network.py",
-      "line": 15
+      "evidence_hash": null
     },
     {
       "id": "SEC-003",
       "file": "tests/fixtures/rules/open_ssh.ts",
-      "line": 5
+      "evidence_hash": null
     },
     {
       "id": "SEC-003",
       "file": "tests/test_cf_template.py",
-      "line": 195
-    },
-    {
-      "id": "SEC-003",
-      "file": "tests/test_cf_template.py",
-      "line": 203
+      "evidence_hash": null
     },
     {
       "id": "SEC-003",
       "file": "tests/test_rules_security.py",
-      "line": 41
+      "evidence_hash": null
     },
     {
       "id": "SEC-004",
       "file": "tests/test_rules_security.py",
-      "line": 53
+      "evidence_hash": null
+    },
+    {
+      "id": "SEC-005",
+      "file": "src/aws_arch_agent/rules/repo_practices.py",
+      "evidence_hash": "a62299936d94e773",
+      "logical_id": "# A CDK construct: new s3.Bucket(this, ...), s3.Bucket(self, ...)."
     },
     {
       "id": "SEC-005",
       "file": "tests/fixtures/rules/s3_no_encryption.ts",
-      "line": 1
+      "evidence_hash": null
     },
     {
       "id": "SEC-006",
       "file": "tests/fixtures/rules/s3_no_encryption.ts",
-      "line": 1
+      "evidence_hash": null
     },
     {
       "id": "SEC-007",
@@ -303,37 +540,61 @@
     {
       "id": "SEC-007",
       "file": "src/aws_arch_agent/rules/security_iam.py",
-      "line": 67
+      "evidence_hash": null
+    },
+    {
+      "id": "SEC-012",
+      "file": "src/aws_arch_agent/rules/cf_template.py",
+      "evidence_hash": "5c63f2d091d63ee6",
+      "logical_id": "_DEFAULT_ELB_POLICY = \"ELBSecurityPolicy-2016-08\""
+    },
+    {
+      "id": "SEC-012",
+      "file": "src/aws_arch_agent/rules/cf_template.py",
+      "evidence_hash": "6bad22b71159f787",
+      "logical_id": "(\"No SslPolicy is set, so the listener uses ELBSecurityPolicy-2016-08, which allows \""
+    },
+    {
+      "id": "SEC-012",
+      "file": "src/aws_arch_agent/rules/cf_template.py",
+      "evidence_hash": "c9475ae120f8bc7e",
+      "logical_id": "# ELBv2 security policies that allow TLS 1.0 or 1.1. ELBSecurityPolicy-2016-08 is also"
     },
     {
       "id": "SEC-021",
       "file": "tests/fixtures/rules/rds_no_multiaz.ts",
-      "line": 1
+      "evidence_hash": null
     },
     {
       "id": "SEC-026",
       "file": null,
-      "line": null
+      "evidence_hash": null
     },
     {
       "id": "SEC-027",
       "file": null,
-      "line": null
+      "evidence_hash": null
     },
     {
       "id": "SEC-054",
       "file": "tests/fixtures/rules/open_ssh.ts",
-      "line": 2
+      "evidence_hash": null
     },
     {
       "id": "SEC-064",
       "file": "tests/fixtures/rules/rds_no_multiaz.ts",
-      "line": 1
+      "evidence_hash": null
     },
     {
       "id": "SEC-065",
       "file": null,
-      "line": null
+      "evidence_hash": null
+    },
+    {
+      "id": "SUST-007",
+      "file": "src/aws_arch_agent/rules/generations.py",
+      "evidence_hash": "a3c80ab82628c587",
+      "logical_id": "m4.large -> m7i.large, db.m4.large -> db.m6i.large, m4.large.search -> m5.large.search."
     }
   ]
 }

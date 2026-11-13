@@ -90,6 +90,18 @@ PAIRS: list[tuple[str, str, dict, str]] = [
     ("CF-ALARM-001", "OPS-010", {"Type": "AWS::SQS::Queue", "Properties": {}}, _FN),
     ("CF-ALARM-002", "OPS-011", {"Type": "AWS::CloudWatch::Alarm", "Properties": {}},
      "new cloudwatch.Alarm(this, 'A', {});"),
+    ("CF-ALARM-003", "OPS-027", {
+         "Topic": {"Type": "AWS::SNS::Topic", "Properties": {}},
+         "Alarm": {"Type": "AWS::CloudWatch::Alarm", "Properties": {"AlarmActions": [{"Ref": "Topic"}]}}},
+     "new cloudwatch.Alarm(this, 'A', {}).addAlarmAction(new SnsAction(topic));"),
+    ("CF-IAM-009", "SEC-069", {"Type": "AWS::IAM::User", "Properties": {
+        "LoginProfile": {"Password": "x"}}},
+     "new iam.User(this, 'U', { password: SecretValue.unsafePlainText('x') });"),
+    ("CF-IAM-010", "SEC-070", {"Type": "AWS::IAM::AccessKey", "Properties": {"UserName": "u"}},
+     "new iam.AccessKey(this, 'K', { user });"),
+    ("CF-IAM-011", "SEC-071", {"Type": "AWS::IAM::User", "Properties": {
+        "ManagedPolicyArns": ["arn:aws:iam::aws:policy/ReadOnlyAccess"]}},
+     "new iam.User(this, 'U', { managedPolicies: [readOnly] });"),
     ("CF-DASH-001", "OPS-021", {f"Queue{i}": {"Type": "AWS::SQS::Queue", "Properties": {}} for i in range(21)}, _FN),
     ("CF-SQS-001", "SEC-013", {"Type": "AWS::SQS::Queue", "Properties": {}},
      "new sqs.Queue(this, 'Q');"),
@@ -137,6 +149,22 @@ PAIRS: list[tuple[str, str, dict, str]] = [
         "SecurityGroupEgress": [{"IpProtocol": "-1", "CidrIp": "0.0.0.0/0"}],
     }}, "new ec2.SecurityGroup(this, 'Sg', { vpc, allowAllOutbound: true });"),
     ("CF-NAT-001", "REL-012", _ONE_NAT_TWO_AZS, "new ec2.Vpc(this, 'Vpc', { natGateways: 1 });"),
+    ("CF-LAM-009", "REL-033", {
+        "CallerRole": {"Type": "AWS::IAM::Role", "Properties": {"AssumeRolePolicyDocument": {}}},
+        "Caller": _lambda(Role={"Fn::GetAtt": ["CallerRole", "Arn"]}),
+        "Worker": _lambda(),
+        "Invoke": {"Type": "AWS::IAM::Policy", "Properties": {
+            "PolicyName": "invoke", "Roles": [{"Ref": "CallerRole"}],
+            "PolicyDocument": {"Statement": [{"Effect": "Allow", "Action": "lambda:InvokeFunction",
+                                              "Resource": {"Fn::GetAtt": ["Worker", "Arn"]}}]}}},
+    }, "const worker = new lambda.Function(this, 'Worker', {});\n"
+       "const caller = new lambda.Function(this, 'Caller', {});\nworker.grantInvoke(caller);"),
+    ("CF-VPC-004", "REL-032", {
+        "Vpc": {"Type": "AWS::EC2::VPC", "Properties": {"CidrBlock": "10.0.0.0/16"}},
+        "Subnet": {"Type": "AWS::EC2::Subnet", "Properties": {
+            "VpcId": {"Ref": "Vpc"}, "CidrBlock": "10.0.0.0/24",
+            "AvailabilityZone": {"Fn::Select": [0, {"Fn::GetAZs": ""}]}}},
+    }, "new ec2.Vpc(this, 'Vpc', { maxAzs: 1 });"),
     ("CF-TGW-002", "OPS-016", {"Type": "AWS::EC2::TransitGateway", "Properties": {}},
      "new ec2.CfnTransitGateway(this, 'Tgw', {});"),
     ("CF-ALB-002", "SEC-011", {"Type": "AWS::ElasticLoadBalancingV2::Listener", "Properties": {
