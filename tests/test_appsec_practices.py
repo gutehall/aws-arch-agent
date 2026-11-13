@@ -185,3 +185,25 @@ def test_notes_in_tests_do_not_count(tmp_path: Path) -> None:
     assert SecurityTrainingMissing().run(tmp_path)
     assert PenetrationTestMissing().run(tmp_path)
     assert SecurityOwnershipMissing().run(tmp_path)
+
+
+@pytest.mark.parametrize("text", ["", "# review everything\n", "# @org/platform owns this\n"],
+                         ids=["empty", "comment", "commented-owner"])
+def test_empty_codeowners_does_not_enforce_review(tmp_path: Path, text: str) -> None:
+    _write(tmp_path / "CODEOWNERS", text)
+    _write(tmp_path / "main.tf", _TF["main.tf"])
+    assert CodeReviewNotEnforced().run(tmp_path)
+
+
+@pytest.mark.parametrize(
+    "text",
+    ["# security owners go here\n* @org/platform\n", "/security-tests/ @org/dev\n",
+     "*.tf @org/platform  # security reviewed\n"],
+    ids=["comment", "path", "trailing-comment"],
+)
+def test_codeowners_that_only_mentions_security_does_not_name_an_owner(
+    tmp_path: Path, text: str
+) -> None:
+    _write(tmp_path / "CODEOWNERS", text)
+    _write(tmp_path / "main.tf", _TF["main.tf"])
+    assert SecurityOwnershipMissing().run(tmp_path)

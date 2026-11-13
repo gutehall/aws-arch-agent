@@ -192,6 +192,16 @@ def test_staged_or_reversible_deploy_passes(tmp_path: Path, extra: dict) -> None
     assert not _found(_scan(tmp_path, {"main.tf": _TF_FN, **extra}), "REPO-116")
 
 
+def test_synthetics_canary_is_not_a_canary_deploy(tmp_path: Path) -> None:
+    files = {"main.tf": _TF_FN, "lib/canary.ts": "new synthetics.Canary(this, 'Probe', { test });\n"}
+    assert _found(_scan(tmp_path, files), "REPO-116")
+
+
+def test_config_directory_without_an_environment_does_not_pass(tmp_path: Path) -> None:
+    files = {"main.tf": _TF_FN, "config/index.ts": "export const x = 1;\n"}
+    assert _found(_scan(tmp_path, files), "REPO-114")
+
+
 def test_no_compute_does_not_fire_small_changes(tmp_path: Path) -> None:
     assert not _found(_scan(tmp_path, {"main.tf": 'resource "aws_s3_bucket" "b" {}\n'}),
                       "REPO-116")

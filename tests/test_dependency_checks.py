@@ -96,7 +96,7 @@ def test_url_in_tests_does_not_count(tmp_path: Path) -> None:
 def test_sync_call_without_timeout_or_queue_fails(tmp_path: Path, name: str, code: str) -> None:
     (hit,) = _found(_scan(tmp_path, {name: code, "main.tf": "# nothing here\n"}), "REPO-108")
     assert hit.question == "REL 4"
-    assert hit.severity == "Medium" and hit.category == "Reliability"
+    assert hit.severity == "Low" and hit.category == "Reliability"
     assert name in hit.evidence and "no queue" in hit.evidence
 
 

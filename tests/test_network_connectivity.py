@@ -68,6 +68,12 @@ def test_load_balancer_or_accelerator_passes(tmp_path: Path, extra: dict) -> Non
     assert not _found(_scan(tmp_path, {"main.tf": _TF_INSTANCE, **extra}), "REPO-131")
 
 
+def test_elastic_ip_on_an_instance_fails(tmp_path: Path) -> None:
+    files = {"main.tf": 'resource "aws_instance" "w" {\n  ami = "a"\n}\n'
+                        'resource "aws_eip" "e" {\n  instance = aws_instance.w.id\n}\n'}
+    assert _found(_scan(tmp_path, files), "REPO-131")
+
+
 def test_instance_without_a_public_ip_does_not_fire(tmp_path: Path) -> None:
     files = {"main.tf": 'resource "aws_instance" "w" {\n  ami = "ami-1"\n}\n'}
     assert not _found(_scan(tmp_path, files), "REPO-131")
@@ -91,7 +97,7 @@ def test_eip_on_a_nat_gateway_does_not_fire(tmp_path: Path) -> None:
 def test_single_link_fails(tmp_path: Path, files: dict) -> None:
     (hit,) = _found(_scan(tmp_path, files), "REPO-132")
     assert hit.question == "REL 2"
-    assert hit.evidence.startswith("Declares one link") and hit.evidence.endswith("found none")
+    assert hit.evidence.startswith("Declares one ") and hit.evidence.endswith("found none")
 
 
 @pytest.mark.parametrize(
@@ -101,13 +107,22 @@ def test_single_link_fails(tmp_path: Path, files: dict) -> None:
         {"vpn.tf": _TF_VPN.format(n="a"), "vpn2.tf": _TF_VPN.format(n="b")},
         {"vpn.tf": _TF_VPN.format(n="a"),
          "dx.tf": 'resource "aws_dx_connection" "c" {\n  name = "c"\n}\n'},
-        {"dx.tf": 'resource "aws_dx_private_virtual_interface" "a" {}\n'
-                  'resource "aws_dx_private_virtual_interface" "b" {}\n'},
+        {"dx.tf": 'resource "aws_dx_connection" "a" {}\nresource "aws_dx_connection" "b" {}\n'},
+        {"dx.tf": 'resource "aws_dx_lag" "l" {}\nresource "aws_dx_connection" "a" {}\n'},
     ],
-    ids=["two-vpn-one-file", "two-vpn-two-files", "vpn-and-direct-connect", "two-vifs"],
+    ids=["two-vpn-one-file", "two-vpn-two-files", "vpn-and-direct-connect", "two-connections",
+         "lag"],
 )
 def test_redundant_links_pass(tmp_path: Path, files: dict) -> None:
     assert not _found(_scan(tmp_path, files), "REPO-132")
+
+
+def test_connection_and_virtual_interface_is_not_a_second_path(tmp_path: Path) -> None:
+    # REPO-132 shares REPO-066's detection: a connection plus a virtual interface is still
+    # one Direct Connect path.
+    files = {"dx.tf": 'resource "aws_dx_connection" "a" {}\n'
+                      'resource "aws_dx_private_virtual_interface" "v" {}\n'}
+    assert _found(_scan(tmp_path, files), "REPO-132")
 
 
 def test_no_on_premises_link_passes(tmp_path: Path) -> None:

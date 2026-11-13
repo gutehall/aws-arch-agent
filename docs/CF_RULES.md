@@ -202,7 +202,7 @@ These rules run on your CDK TypeScript/Python code and execute in both V1 and V2
 - REPO-015: Queue and stream workers have no idempotency key or dedupe store
 
 **Dependencies and constant work (repo-level, REL 4):**
-- REPO-107: Function code calls a hardcoded external URL
+- REPO-107: Code calls a hardcoded external URL
 - REPO-108: Synchronous calls have no timeout, and no queue or schedule sits behind them
 
 **Reliability testing (repo-level, REL 12):**

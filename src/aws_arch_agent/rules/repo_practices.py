@@ -2361,7 +2361,7 @@ def http_client_files(repo_path: Path) -> Iterator[tuple[str, str]]:
 
 class DependencyUrlHardcoded(_RepoRule):
     id = "REPO-107"
-    title = "Function code calls a hardcoded external URL"
+    title = "Code calls a hardcoded external URL"
     category = "Reliability"
     severity = "Low"
     themes = ("resilience",)
@@ -2384,7 +2384,7 @@ class DependencyUrlHardcoded(_RepoRule):
             return []
         listed = ", ".join(f"{host} ({rel})" for host, rel in hits[:5])
         return [self._finding(
-            f"Function code calls a literal URL: {listed}"
+            f"Code calls a literal URL: {listed}"
             + (f" and {len(hits) - 5} more" if len(hits) > 5 else "")
             + "; the host is in neither a parameter, an environment variable nor a resource",
             file=hits[0][1],
@@ -2395,7 +2395,7 @@ class SyncCallNoTimeoutOrQueue(_RepoRule):
     id = "REPO-108"
     title = "Synchronous calls have no timeout, and no queue or schedule sits behind them"
     category = "Reliability"
-    severity = "Medium"
+    severity = "Low"
     themes = ("resilience",)
     recommendation = (
         "A synchronous client of a dependency that can fail or stall holds its caller. Set a "
@@ -5180,7 +5180,11 @@ _CONFIG_STORE = re.compile(
     r"|\bssm:GetParameter|\bsecretsmanager:GetSecretValue"
 )
 _ENV_CONFIG_FILE = re.compile(
-    r"(?:^|/)(?:config|conf|settings|environments?|envs)/[^/]+\.(?:json|ya?ml|toml|ts|js)$"
+    r"(?:^|/)(?:config|conf|settings|environments?|envs)/(?:[^/]*[-_.])?"
+    r"(?:dev|development|test|qa|uat|stage|staging|prod|production)(?:[-_.][^/]*)?"
+    r"\.(?:json|ya?ml|toml|ts|js)$"
+    r"|(?:^|/)(?:config|conf|settings|environments?|envs)/(?:dev|development|test|qa|uat|stage"
+    r"|staging|prod|production)/[^/]+$"
     r"|\.tfvars(?:\.json)?$|(?:^|/)(?:cdk\.context|context)[^/]*\.json$"
     r"|(?:^|/)[^/]*(?:param|parameters|config)[-_.](?:dev|test|stage|staging|prod|production)"
     r"[^/]*\.(?:json|ya?ml)$",
@@ -5195,8 +5199,9 @@ _QUALITY_GATE = re.compile(
     re.IGNORECASE,
 )
 _SMALL_STEP_DEPLOY = re.compile(
-    r"blue[-_ /]?green|BlueGreen|\bcanary\b|Canary\d+Percent|Linear\d+Percent"
-    r"|\btraffic_?shifting\b|AdditionalVersionWeights|\brouting_?config\b|RoutingConfig"
+    r"blue[-_ /]?green|BlueGreen|canary[-_ ]?(?:deploy\w*|release|traffic)|Canary\d+Percent"
+    r"|Linear\d+Percent|\btraffic_?shifting\b|AdditionalVersionWeights|\badditional_?versions\b"
+    r"|\brouting_?config\b|RoutingConfig"
     r"|AWS::CodeDeploy::DeploymentGroup|resource\s+\"aws_codedeploy_deployment_group\"",
     re.IGNORECASE,
 )
@@ -5364,21 +5369,31 @@ _SECURITY_OWNER_HEADING = re.compile(
     r"(?i).*\b(?:security[- ](?:owners?|champions?|ownership|contacts?)"
     r"|who owns security)\b.*"
 )
-_SECURITY_CODEOWNER = re.compile(r"(?im)^[^#\n]*\S+\s+.*\bsecurity\b")
+_OWNER_TOKEN = re.compile(r"(?:^|\s)(@[\w./-]+|[\w.+-]+@[\w-]+\.[\w.]+)(?=\s|$)")
 
 
-def _codeowners(repo_path: Path) -> Iterator[tuple[str, str]]:
+def _codeowners(repo_path: Path) -> Iterator[tuple[str, List[List[str]]]]:
+    """(path, owners per rule line) of each CODEOWNERS file; comments and lines with no owner
+    are left out, so an empty or comment-only file yields no lines."""
     for path in walk(repo_path):
         parts = _rel_parts(path, repo_path)
-        if "/".join(parts) in _CODEOWNERS_PATHS:
-            yield "/".join(parts), read_text_safe(path)
+        if "/".join(parts) not in _CODEOWNERS_PATHS:
+            continue
+        lines: List[List[str]] = []
+        for line in read_text_safe(path).splitlines():
+            line = line.split("#", 1)[0]
+            owners = [m.group(1) for m in _OWNER_TOKEN.finditer(line)]
+            if owners:
+                lines.append(owners)
+        yield "/".join(parts), lines
 
 
 def review_enforced(repo_path: Path) -> str | None:
     """A CODEOWNERS file, or branch protection, a ruleset or an approval rule in the IaC or
     the repo settings: the first place."""
-    for rel, _text in _codeowners(repo_path):
-        return rel
+    for rel, lines in _codeowners(repo_path):
+        if lines:
+            return rel
     for rel, text in iac_texts(repo_path):
         if _REVIEW_ENFORCED.search(text):
             return rel
@@ -5402,8 +5417,8 @@ def security_owner_note(repo_path: Path) -> str | None:
             _SECURITY_OWNER_HEADING.fullmatch(h.group(2).strip()) for h in _HEADING.finditer(text)
         ):
             return rel
-    for rel, text in _codeowners(repo_path):
-        if _SECURITY_CODEOWNER.search(text):
+    for rel, lines in _codeowners(repo_path):
+        if any("security" in owner.lower() for owners in lines for owner in owners):
             return rel
     return None
 
@@ -5820,48 +5835,15 @@ class IncidentLearningMissing(_IncidentRule):
         return _noted(repo_path, _SECURITY_LEARNING_NAME, _SECURITY_LEARNING_HEADING)
 
 
-# Network connectivity (REL 2): a public endpoint behind a load balancer or accelerator
-# (REPO-131) and more than one link to an on-premises network (REPO-132).
-_EC2_INSTANCE = re.compile(
-    r"AWS::EC2::Instance\b|resource\s+\"aws_instance\"|\bec2\.(?:Cfn)?Instance\("
-)
-_PUBLIC_INSTANCE_IP = re.compile(
-    r"[\"']?[aA]ssociate_?[pP]ublic_?[iI]p_?[aA]ddress[\"']?\s*[:=]\s*[\"']?(?:true|True)\b"
-    r"|AWS::EC2::EIPAssociation\b|resource\s+\"aws_eip_association\""
-    r"|\bec2\.CfnEIPAssociation\("
-)
-_LOAD_BALANCER_OR_ACCELERATOR = re.compile(
-    r"AWS::ElasticLoadBalancing(?:V2)?::LoadBalancer\b|resource\s+\"aws_(?:lb|alb|elb)\""
-    r"|\b(?:Application|Network)LoadBalancer\(|\belbv2\.CfnLoadBalancer\("
-    r"|\b(?:Application|Network)LoadBalanced\w+\("
-    r"|AWS::GlobalAccelerator::Accelerator\b|resource\s+\"aws_globalaccelerator_accelerator\""
+# Network connectivity (REL 2): a public endpoint behind a load balancer (REPO-131) and more
+# than one link to an on-premises network (REPO-132). They share their detection with
+# REPO-064 and REPO-066, which answer the same conditions under PERF 4.
+
+
+_GLOBAL_ACCELERATOR = re.compile(
+    r"AWS::GlobalAccelerator::Accelerator\b|resource\s+\"aws_globalaccelerator_accelerator\""
     r"|\bglobalaccelerator\.(?:Cfn)?Accelerator\("
 )
-_ONPREM_LINK = re.compile(
-    r"AWS::EC2::VPNConnection\b|resource\s+\"aws_vpn_connection\""
-    r"|\bec2\.(?:Cfn)?VpnConnection\(|\bnew\s+VpnConnection\("
-    r"|resource\s+\"aws_dx_(?:private|transit|public|hosted_private|hosted_transit|hosted_public)"
-    r"_virtual_interface\""
-    r"|resource\s+\"aws_dx_connection\"|\bdirectconnect\.Cfn\w*VirtualInterface\("
-)
-
-
-def public_ip_instances(repo_path: Path) -> list[str]:
-    """Files that declare an EC2 instance with a public IP address."""
-    return [
-        rel for rel, text in iac_texts(repo_path)
-        if _EC2_INSTANCE.search(text) and _PUBLIC_INSTANCE_IP.search(text)
-    ]
-
-
-def onprem_links(repo_path: Path) -> dict[str, int]:
-    """Links to an on-premises network the IaC declares: file -> how many."""
-    found: dict[str, int] = {}
-    for rel, text in iac_texts(repo_path):
-        count = len(_ONPREM_LINK.findall(text))
-        if count:
-            found[rel] = count
-    return found
 
 
 class PublicEndpointNotHighlyAvailable(_RepoRule):
@@ -5877,14 +5859,17 @@ class PublicEndpointNotHighlyAvailable(_RepoRule):
     )
 
     def run(self, repo_path: Path, language: str = "typescript") -> List[Finding]:
-        exposed = public_ip_instances(repo_path)
-        if not exposed or _in_iac_text(repo_path, _LOAD_BALANCER_OR_ACCELERATOR):
+        exposed = public_instances(repo_path)
+        if not exposed or _in_iac(repo_path, _LOAD_BALANCERS) or _in_iac_text(
+            repo_path, _GLOBAL_ACCELERATOR
+        ):
             return []
+        names = [f"{name} in {rel}" for name, rel in exposed]
         return [self._finding(
-            f"Declares an EC2 instance with a public IP address ({_listed(exposed)}); searched "
-            "the IaC for an Application or Network Load Balancer, a Classic Load Balancer and "
-            "a Global Accelerator; found none",
-            file=exposed[0],
+            f"Declares an EC2 instance with a public IP or an Elastic IP ({_listed(names)}); "
+            "searched the IaC for an Application, Network or Classic Load Balancer and a Global "
+            "Accelerator; found none",
+            file=exposed[0][1],
         )]
 
 
@@ -5901,14 +5886,14 @@ class SingleOnPremLink(_RepoRule):
     )
 
     def run(self, repo_path: Path, language: str = "typescript") -> List[Finding]:
-        links = onprem_links(repo_path)
-        if not links or sum(links.values()) > 1:
+        single = single_hybrid_link(repo_path)
+        if not single:
             return []
-        (rel,) = links
+        what, rel = single
         return [self._finding(
-            f"Declares one link to an on-premises network ({rel}); searched the IaC for a "
-            "second Site-to-Site VPN connection, Direct Connect connection or virtual "
-            "interface; found none",
+            f"Declares one {what} in {rel}; searched the IaC for a second link: another "
+            "Direct Connect connection or virtual interface, a LAG, or a Site-to-Site VPN "
+            "connection on another customer gateway; found none",
             file=rel,
         )]
 
@@ -7898,6 +7883,25 @@ def hybrid_links(repo_path: Path) -> dict[str, tuple[int, str]]:
     return counts
 
 
+def single_hybrid_link(repo_path: Path) -> tuple[str, str] | None:
+    """(what, file) when the production IaC declares exactly one link to an on-premises
+    network and no second path: one Direct Connect connection or virtual interface with no
+    LAG and no VPN, or one VPN connection on one customer gateway with no Direct Connect."""
+    links = hybrid_links(repo_path)
+
+    def n(kind: str) -> int:
+        return links.get(kind, (0, ""))[0]
+
+    dx, vif = n("Direct Connect connection"), n("Direct Connect virtual interface")
+    vpn, lag = n("VPN connection"), n("Direct Connect LAG")
+    if (dx or vif) and dx <= 1 and vif <= 1 and not lag and not vpn:
+        kind = "Direct Connect connection" if dx else "Direct Connect virtual interface"
+        return kind, links[kind][1]
+    if vpn == 1 and not (dx or vif or lag) and n("customer gateway") <= 1:
+        return "VPN connection", links["VPN connection"][1]
+    return None
+
+
 class SingleHybridLink(_RepoRule):
     id = "REPO-066"
     title = "Dedicated connectivity or VPN has no redundant link"
@@ -7911,29 +7915,22 @@ class SingleHybridLink(_RepoRule):
     )
 
     def run(self, repo_path: Path, language: str = "typescript") -> List[Finding]:
-        links = hybrid_links(repo_path)
-
-        def n(kind: str) -> int:
-            return links.get(kind, (0, ""))[0]
-
-        dx, vif = n("Direct Connect connection"), n("Direct Connect virtual interface")
-        vpn, lag = n("VPN connection"), n("Direct Connect LAG")
-        if (dx or vif) and dx <= 1 and vif <= 1 and not lag and not vpn:
-            kind = "Direct Connect connection" if dx else "Direct Connect virtual interface"
+        single = single_hybrid_link(repo_path)
+        if not single:
+            return []
+        kind, rel = single
+        if kind == "VPN connection":
             return [self._finding(
-                f"Declares one {kind} in {links[kind][1]}; searched the IaC for a second "
-                "Direct Connect connection or virtual interface, a LAG, and a Site-to-Site "
-                "VPN backup; found none",
-                file=links[kind][1],
+                f"Declares one VPN connection in {rel}; searched the IaC for a second VPN "
+                "connection on another customer gateway and for Direct Connect; found none",
+                file=rel,
             )]
-        if vpn == 1 and not (dx or vif or lag) and n("customer gateway") <= 1:
-            return [self._finding(
-                f"Declares one VPN connection in {links['VPN connection'][1]}; searched the "
-                "IaC for a second VPN connection on another customer gateway and for Direct "
-                "Connect; found none",
-                file=links["VPN connection"][1],
-            )]
-        return []
+        return [self._finding(
+            f"Declares one {kind} in {rel}; searched the IaC for a second Direct Connect "
+            "connection or virtual interface, a LAG, and a Site-to-Site VPN backup; found "
+            "none",
+            file=rel,
+        )]
 
 
 _LOAD_BALANCERS = _kinds(

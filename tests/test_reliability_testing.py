@@ -126,11 +126,12 @@ def test_both_controls_answer_rel12(tmp_path: Path, source: str) -> None:
     ctx, findings = _scan(tmp_path, with_fis, _workflow("artillery run load/artillery.yml"))
     assert not _found(findings, "REPO-016") and not _found(findings, "REPO-017")
     answer = {a.question.id: a for a in well_architected.answers(findings, ctx.rules_run)}
-    assert not [f for f in findings if f.question == "REL 12"]
-    # Both practices are checked and pass; REL 12 stays not met only for the practices no
-    # rule checks (playbooks, post-incident analysis, game days).
-    assert not answer["REL 12"].findings
-    assert answer["REL 12"].not_checked == ("REL12-BP01", "REL12-BP02", "REL12-BP05")
+    # Both practices are checked and pass. The repo has no playbook, post-incident or game-day
+    # note, so those three rules (REPO-122 to REPO-124) are the only REL 12 findings left.
+    assert sorted(f.id for f in findings if f.question == "REL 12") == [
+        "REPO-122", "REPO-123", "REPO-124",
+    ]
+    assert answer["REL 12"].not_checked == ()
 
 
 @pytest.mark.parametrize(
