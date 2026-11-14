@@ -14,6 +14,20 @@
     "evidence": "aws_db_instance.database (aws_db_instance)"
   },
   {
+    "id": "CF-CW-001",
+    "severity": "Low",
+    "file": "modules/logs/main.tf",
+    "line": 2,
+    "evidence": "aws_cloudwatch_log_group.app (aws_cloudwatch_log_group)"
+  },
+  {
+    "id": "CF-CW-002",
+    "severity": "Low",
+    "file": "modules/logs/main.tf",
+    "line": 2,
+    "evidence": "aws_cloudwatch_log_group.app (aws_cloudwatch_log_group)"
+  },
+  {
     "id": "CF-DEL-001",
     "severity": "Medium",
     "file": "main.tf",
@@ -26,6 +40,13 @@
     "file": "main.tf",
     "line": 24,
     "evidence": "aws_db_instance.database (aws_db_instance)"
+  },
+  {
+    "id": "CF-DEL-001",
+    "severity": "Medium",
+    "file": "modules/logs/main.tf",
+    "line": 2,
+    "evidence": "aws_cloudwatch_log_group.app (aws_cloudwatch_log_group)"
   },
   {
     "id": "CF-FL-001",

@@ -494,6 +494,7 @@ RULE_BEST_PRACTICES: dict[str, tuple[str, ...]] = {
     "CF-ECS-009": ("OPS05-BP05",),
     "CF-ECS-010": ("OPS04-BP02",),
     "CF-ECS-011": ("PERF02-BP02",),
+    "CF-ECS-012": ("OPS06-BP04",),
     "CF-EFS-001": ("SEC08-BP02",),
     "CF-EFS-002": ("REL09-BP03",),
     "CF-EFS-003": ("SUS04-BP03",),

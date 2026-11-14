@@ -20,7 +20,11 @@ OFFERS = (
     "AmazonS3GlacierDeepArchive", "AmazonCloudWatch", "AmazonVPC",
 )
 OFFER_URL = "https://pricing.us-east-1.amazonaws.com/offers/v1.0/aws/{offer}/current/{region}/index.csv"
-DEFAULT_REGIONS = ("us-east-1", "us-west-2", "eu-west-1", "eu-central-1", "eu-north-1")
+DEFAULT_REGIONS = (
+    "us-east-1", "us-east-2", "us-west-2", "ca-central-1",
+    "eu-west-1", "eu-west-2", "eu-central-1", "eu-north-1",
+    "ap-southeast-1", "ap-southeast-2", "ap-northeast-1",
+)
 SCHEMA = 1
 
 # Usage types carry a region prefix (EUN1-, USW2-, EU- for eu-west-1; none in us-east-1).

@@ -7,7 +7,9 @@ import pytest
 import requests
 
 from aws_arch_agent.tools.llm import (
+    CONFIG_VARS,
     DEFAULT_OLLAMA_NUM_CTX,
+    NOT_CONFIGURED,
     NO_LLM,
     LLMClient,
     LLMResult,
@@ -15,7 +17,37 @@ from aws_arch_agent.tools.llm import (
 )
 
 
-def test_ollama_fallback_on_failure() -> None:
+def test_no_server_configured_makes_no_call(monkeypatch: pytest.MonkeyPatch) -> None:
+    for name in CONFIG_VARS:
+        monkeypatch.delenv(name, raising=False)
+    with patch("aws_arch_agent.tools.llm.requests.post") as post:
+        result = LLMClient().polish("the prompt", "system")
+    post.assert_not_called()
+    assert (result.status, result.text, result.reason) == ("skipped", "the prompt", NOT_CONFIGURED)
+
+
+@pytest.mark.parametrize("name, value", [
+    ("OLLAMA_HOST", "http://models.internal:11434"),
+    ("LLM_BASE_URL", "http://models.internal:8000/v1"),
+])
+def test_a_configured_server_is_called(monkeypatch: pytest.MonkeyPatch, name: str, value: str) -> None:
+    for var in CONFIG_VARS:
+        monkeypatch.delenv(var, raising=False)
+    monkeypatch.setenv(name, value)
+    monkeypatch.setenv("LLM_MODEL", "qwen")
+    reply = MagicMock()
+    reply.json.return_value = {"message": {"content": "ok"}, "choices": [{"message": {"content": "ok"}}]}
+    client = LLMClient()
+    if name == "LLM_BASE_URL":
+        client.provider = "selfhosted"
+    with patch("aws_arch_agent.tools.llm.requests.post", return_value=reply) as post:
+        result = client.polish("p", "s")
+    post.assert_called_once()
+    assert result.status == "ok"
+
+
+def test_ollama_fallback_on_failure(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv("OLLAMA_HOST", "http://localhost:11434")
     client = LLMClient()
     client.provider = "ollama"
     with patch("aws_arch_agent.tools.llm.requests.post", side_effect=ConnectionError("down")):

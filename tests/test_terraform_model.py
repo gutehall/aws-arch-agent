@@ -442,13 +442,17 @@ resource "aws_s3_bucket_versioning" "data" {
     assert "VersioningConfiguration" not in bucket.unresolved
 
 
-def test_plan_skips_data_sources_and_indexed_instances(tmp_path: Path) -> None:
+def test_plan_keeps_data_sources_and_indexed_instances(tmp_path: Path) -> None:
     plan = _plan(tmp_path, [
         _res("aws_s3_bucket.one", {"bucket": "a"}),
-        _res("aws_s3_bucket.many", {"bucket": "b"}, index=0),
-        {**_res("aws_s3_bucket.d", {"bucket": "c"}), "mode": "data"},
+        _res("aws_s3_bucket.many[0]", {"bucket": "b"}, index=0),
+        {**_res("data.aws_s3_bucket.d", {"bucket": "c"}), "mode": "data"},
     ])
-    assert load_plan_values(plan) == {"aws_s3_bucket.one": {"bucket": "a"}}
+    assert load_plan_values(plan) == {
+        "aws_s3_bucket.one": {"bucket": "a"},
+        "aws_s3_bucket.many[0]": {"bucket": "b"},
+        "data.aws_s3_bucket.d": {"bucket": "c"},
+    }
 
 
 def test_state_document_is_read_too(tmp_path: Path) -> None:

@@ -3,6 +3,7 @@ import csv
 import importlib.util
 import io
 import json
+import re
 import socket
 from pathlib import Path
 
@@ -204,6 +205,18 @@ def test_shipped_snapshot_loads_without_network(monkeypatch: pytest.MonkeyPatch)
                 "dynamodb:wcu-hour", "dynamodb:storage-gb", "s3:standard", "s3:glacier-ir",
                 "s3:deep-archive", "logs:ingest-gb", "logs:storage-gb"):
         assert pricing.price(key, "eu-north-1") is not None, key
+
+
+def test_docs_list_the_packaged_regions() -> None:
+    text = (Path(__file__).resolve().parents[1] / "docs" / "REFERENCE.md").read_text(encoding="utf-8")
+    line = next(ln for ln in text.splitlines() if ln.startswith("The snapshot covers"))
+    assert re.findall(r"`([a-z]{2}-[a-z]+-\d)`", line.split(".")[0]) == list(DEFAULT_REGIONS)
+
+
+def test_a_newly_added_region_is_priced_from_the_snapshot() -> None:
+    for region in ("ap-southeast-1", "ca-central-1", "us-east-2"):
+        assert pricing.price("ec2:m5.large", region) is not None, region
+        assert pricing.price("ebs:gp3", region) is not None, region
 
 
 def test_unknown_type_or_region_gives_no_estimate() -> None:

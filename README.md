@@ -2,9 +2,9 @@
 
 Local-first AWS architecture review for infrastructure code. It scans **CDK** (TypeScript and Python), **CloudFormation**, and **Terraform**, and reports security, reliability, operational excellence, performance, cost, and sustainability issues mapped to the AWS Well-Architected Framework.
 
-No AWS credentials. No cloud calls. LLM output is optional and self-hosted only. The default calls Ollama on localhost; `--no-llm` skips it. If the model does not answer, the findings stay as the rules wrote them.
+No AWS credentials. No cloud calls, unless you opt in with `--live-account` (read-only account checks). LLM output is optional and self-hosted only. With `OLLAMA_HOST` or `LLM_BASE_URL` set, it calls that server; with neither set it makes no call. `--no-llm` skips it either way. If the model does not answer, the findings stay as the rules wrote them.
 
-> 372 static rules and 285 template checks are implemented and tested. 139 of the 372 CDK rules (37%) have a template check. Those checks run on CloudFormation, Terraform, and synthesised CDK. [docs/COVERAGE.md](docs/COVERAGE.md) gives the reason for each of the others. Expect some false positives and negatives, and API changes.
+> 372 static rules and 286 template checks are implemented and tested. 139 of the 372 CDK rules (37%) have a template check. Those checks run on CloudFormation, Terraform, and synthesised CDK. [docs/COVERAGE.md](docs/COVERAGE.md) gives the reason for each of the others. Expect some false positives and negatives, and API changes.
 
 ## Install
 
@@ -29,6 +29,8 @@ py -m venv .venv
 pip install "git+https://github.com/gutehall/aws-arch-agent@v0.2.1"
 aws-arch-agent --version   # 0.2.1
 ```
+
+Releases after v0.2.1 are also published to PyPI, as the same version the tag carries: `pip install aws-arch-agent`, `pip install "aws-arch-agent[v2]"`, `pip install "aws-arch-agent[rag]"`. The git install above stays for anyone who pins a tag.
 
 CI tests on Linux (Python 3.11 and 3.12) and Windows, and runs the GitHub Action on Linux, macOS, and Windows. V2 synth also needs Node.js for `npx cdk synth`.
 

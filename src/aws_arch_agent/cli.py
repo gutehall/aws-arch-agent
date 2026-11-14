@@ -29,6 +29,7 @@ from aws_arch_agent.config import (
     load_config,
 )
 from aws_arch_agent.models import Finding, IacSource, RepoContext
+from aws_arch_agent.rules import account
 from aws_arch_agent.rules.themes import THEMES
 from aws_arch_agent.report.json_report import render_json
 from aws_arch_agent.report.html import render_html
@@ -161,7 +162,14 @@ def analyze(
     tf_plan: str | None = typer.Option(
         None,
         "--tf-plan",
-        help="`terraform show -json` output; fills var/local values in Terraform scans (V1 only)",
+        help="`terraform show -json` output; fills var/local values, count and for_each instances in Terraform scans",
+    ),
+    live_account: bool = typer.Option(
+        False,
+        "--live-account",
+        help="Read the AWS account (read-only describe/list calls) for Security Hub, GuardDuty, "
+        "Config, CloudTrail, Budgets, a cost and usage report, Access Analyzer and Inspector. "
+        "Off by default: a scan makes no AWS call. Needs boto3 and credentials",
     ),
     max_files: int = typer.Option(
         400, "--max-files", help="Max files to scan. Rules search only these files."
@@ -208,8 +216,6 @@ def analyze(
         repo_path = repo_path.parent
 
     mode_value = _require_choice(mode, _MODES, "--mode")
-    if tf_plan is not None and mode_value != "v1":
-        _fail("--tf-plan is V1 only")
     tf_plan_path = Path(tf_plan).expanduser().resolve() if tf_plan is not None else None
     iac_value = _require_choice(iac, IAC_CHOICES, "--iac")
     if _passed(ctx, "format"):
@@ -257,9 +263,8 @@ def analyze(
             )
 
     if mode_value == "v2":
-        # V2 synth is the CDK path. Only raw CloudFormation passed with --templates is scanned.
-        if iac_value == "terraform":
-            _fail("--iac terraform is V1 only: V2 has no Terraform path. Use --mode v1.")
+        # V2 synth is the CDK path. Raw CloudFormation passed with --templates and Terraform
+        # (--iac terraform) are the other two.
         if iac_value == "cloudformation" and not cfg.templates:
             _fail(
                 "--iac cloudformation in V2 needs --templates: V2 synth is the CDK path. "
@@ -280,7 +285,7 @@ def analyze(
     if mode_value == "v2" and iac_value == "auto" and source != "cdk" and not cfg.templates:
         console.print(
             f"Detected {source}, but V2 scans CDK only and will not read these files. "
-            "Use --mode v1 to scan them, or --templates for CloudFormation.",
+            "Use --mode v1 to scan them, --templates for CloudFormation, or --iac terraform.",
             style="yellow",
             markup=False,
         )
@@ -291,6 +296,7 @@ def analyze(
     ))
 
     use_llm = not cfg.no_llm
+    account_facts = account.read_live(cfg.region) if live_account else None
     rules_include = cfg.rules_include
     rules_exclude = cfg.rules_exclude
     severity_threshold = cfg.severity_threshold
@@ -312,6 +318,7 @@ def analyze(
             rag_embedding_model=cfg.rag_embedding_model,
             llm_mode=cast(LLMMode, cfg.llm_mode),
             iac=iac_value,
+            tf_plan=tf_plan_path,
             price_region=cfg.region,
             tag_policy=cfg.tag_policy,
             environment_map=cfg.environments,
@@ -319,6 +326,7 @@ def analyze(
             dashboards_min_resources=cfg.dashboards_min_resources,
             theme_filter=cfg.themes,
             group_by=cfg.group_by,
+            account_facts=account_facts,
         )
     else:
         report_md, ctx_report, findings, warnings = analyze_v1(
@@ -338,6 +346,7 @@ def analyze(
             dashboards_min_resources=cfg.dashboards_min_resources,
             theme_filter=cfg.themes,
             group_by=cfg.group_by,
+            account_facts=account_facts,
         )
 
     # What happened, not what was configured. soft_wrap keeps the line whole for anyone grepping it.
