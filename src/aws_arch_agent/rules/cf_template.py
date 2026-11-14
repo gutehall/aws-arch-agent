@@ -200,6 +200,7 @@ CF_PARTLY_COVERS_STATIC: dict[str, tuple[tuple[str, ...], str]] = {
                     "balancers, API caches and DAX"),
     "CF-PERF-003": (("PERF-008",), "RDS only; PERF-008 matches any large instanceType"),
     "CF-PERF-004": (("PERF-008",), "EC2 only; PERF-008 matches any large instanceType"),
+    "CF-PERF-005": (("PERF-001",), "EC2 only; PERF-001 also flags Lambda and ECS"),
     "CF-PERF-006": (("PERF-001",), "ECS task definitions only; PERF-001 also flags Lambda and EC2"),
     "CF-SUST-001": (("SUST-001",), "Auto Scaling groups only; SUST-001 also flags EC2 "
                     "instances and ECS services"),
@@ -432,6 +433,7 @@ CHECK_PROPERTIES: dict[str, frozenset[str]] = {
         "CF-EIP-001": {"InstanceId", "NetworkInterfaceId", "PublicIpv4Pool"},
         "CF-TAG-001": set(),  # tag_policy reads Tags and skips unreadable ones itself
         "CF-GEN-001": set(),  # reads only literal types; an unknown one is absent, not judged
+        "CF-PERF-005": set(),  # same: reads only literal types
         "CF-S3-006": {"LifecycleConfiguration"},
         "CF-S3-007": {"LifecycleConfiguration", "IntelligentTieringConfigurations"},
         "CF-DDB-003": {"BillingMode"},
@@ -618,7 +620,7 @@ CF_THEMES: dict[str, tuple[str, ...]] = {
     "CF-MSK-001": (_DP,), "CF-NEP-001": (_DP,), "CF-OS-001": (_DP,), "CF-OS-002": (_DP,),
     "CF-PAR-001": (_DP, _ID), "CF-PAR-002": (_DP, _ID),
     "CF-PERF-001": (_F, _SUS), "CF-PERF-002": (_RES,), "CF-PERF-003": (_F,), "CF-PERF-004": (_F,),
-    "CF-PERF-006": (_F, _SUS),
+    "CF-PERF-005": (_F, _SUS), "CF-PERF-006": (_F, _SUS),
     "CF-RDS-001": (_DP,), "CF-RDS-002": (_RES, _DP), "CF-RDS-003": (_RES,), "CF-RDS-004": (_NET,),
     "CF-RDS-006": (_DP, _NET), "CF-RDS-007": (_OBS,), "CF-RDS-008": (_ID,), "CF-RDS-009": (_SB,),
     "CF-RDS-010": (_F,), "CF-RDS-011": (_OBS,), "CF-RDS-012": (_NET,), "CF-RDS-013": (_ID,),
@@ -854,6 +856,7 @@ CF_TITLES: dict[str, str] = {
     "CF-PERF-002": "Consider CloudFront or ElastiCache for caching",
     "CF-PERF-003": "RDS instance class is large — verify right-sizing",
     "CF-PERF-004": "EC2 instance type is large — verify right-sizing",
+    "CF-PERF-005": "EC2 instance type has a Graviton equivalent",
     "CF-PERF-006": "ECS task definition runs on X86_64 (not Graviton)",
     "CF-R53-001": "Public hosted zone does not log DNS queries",
     "CF-R53-002": "Public hosted zone has no DNSSEC in this template",
@@ -7142,18 +7145,32 @@ def _tls_enforced(document: Any) -> bool | None:
 
 
 def _one_saving_per_instance(resource_findings: List[Finding]) -> None:
-    """Moving to a current generation (CF-GEN-001) and one size smaller (CF-PERF-003/004)
-    are alternative fixes for one instance: their savings do not add up. Keep the
-    generation saving and say so on the right-sizing finding."""
-    if not any(f.id == "CF-GEN-001" and f.monthly_savings_usd for f in resource_findings):
+    """Moving to a current generation (CF-GEN-001), moving to Graviton (CF-PERF-005) and one
+    size smaller (CF-PERF-003/004) are alternative fixes for one instance: their savings do
+    not add up. CF-GEN-001 keeps its saving over right-sizing. Between Graviton and right-
+    sizing the larger saving stays. The finding that gives up its number says so."""
+    def drop(f: Finding, kept: str) -> None:
+        f.monthly_savings_usd = None
+        f.estimate_basis = (
+            estimates._without_saving(f.estimate_basis or "")
+            + f" The saving is counted on {kept} for this instance (the fixes do not add up)."
+        ).strip()
+
+    by_id = {f.id: f for f in resource_findings if f.monthly_savings_usd}
+    sizing = [f for f in resource_findings if f.id in ("CF-PERF-003", "CF-PERF-004") and f.monthly_savings_usd]
+    if "CF-GEN-001" in by_id:
+        for f in sizing:
+            drop(f, "CF-GEN-001")
         return
-    for f in resource_findings:
-        if f.id in ("CF-PERF-003", "CF-PERF-004") and f.monthly_savings_usd:
-            f.monthly_savings_usd = None
-            f.estimate_basis = (
-                estimates._without_saving(f.estimate_basis or "")
-                + " The saving is counted on CF-GEN-001 for this instance (the fixes do not add up)."
-            ).strip()
+    arm = by_id.get("CF-PERF-005")
+    if arm is None or not sizing:
+        return
+    best = max(sizing, key=lambda f: f.monthly_savings_usd or 0)
+    if (arm.monthly_savings_usd or 0) >= (best.monthly_savings_usd or 0):
+        for f in sizing:
+            drop(f, "CF-PERF-005")
+    else:
+        drop(arm, best.id)
 
 
 _PATCH_DOCUMENTS = frozenset({"AWS-RunPatchBaseline", "AWS-PatchInstanceWithRollback"})
@@ -7580,6 +7597,7 @@ def _run_resource_checks(
 
                 # --- Previous-generation instance families ---
                 findings.extend(generations.findings(res, template_path))
+                findings.extend(generations.graviton_findings(res, template_path))
 
                 # --- Stateful resources deleted with the stack ---
                 if ctype in _STATEFUL_TYPES:

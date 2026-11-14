@@ -3509,6 +3509,7 @@ RULE_TOPICS: dict[str, str] = {
     "CF-PERF-002": "caching",
     "CF-PERF-003": "rds_sizing",
     "CF-PERF-004": "rightsizing",
+    "CF-PERF-005": "graviton_ec2",
     "CF-PERF-006": "graviton_ecs",
     "CF-RDS-001": "rds_encryption",
     "CF-RDS-002": "rds_backup",

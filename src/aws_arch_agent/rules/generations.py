@@ -5,6 +5,9 @@ configuration, Auto Scaling group override, RDS instance, ElastiCache cluster or
 replication group, or OpenSearch domain. It suggests the current x86 family and the
 Graviton family from data/instance_generations.json, and prices the move when the
 snapshot covers both types (EC2 and RDS). Graviton needs an arm64 build of the workload.
+
+CF-PERF-005 flags a current x86 EC2 type that has a Graviton family of the same size,
+from data/graviton_families.json. It stays silent where CF-GEN-001 already speaks.
 """
 from __future__ import annotations
 
@@ -19,6 +22,8 @@ from aws_arch_agent.rules.resource_model import Resource
 
 DATA_PATH = Path(__file__).with_name("data") / "instance_generations.json"
 CHECK_ID = "CF-GEN-001"
+GRAVITON_CHECK_ID = "CF-PERF-005"
+GRAVITON_PATH = Path(__file__).with_name("data") / "graviton_families.json"
 # RDS engines with no Graviton instance classes: only the x86 successor is suggested.
 _NO_GRAVITON_ENGINES = ("oracle", "sqlserver", "db2", "custom-")
 
@@ -27,6 +32,29 @@ _NO_GRAVITON_ENGINES = ("oracle", "sqlserver", "db2", "custom-")
 def _mapping() -> dict[str, dict[str, list[str | None]]]:
     data = json.loads(DATA_PATH.read_text(encoding="utf-8"))
     return {k: v for k, v in data.items() if not k.startswith("_")}
+
+
+@lru_cache(maxsize=1)
+def _graviton() -> dict[str, Any]:
+    data: dict[str, Any] = json.loads(GRAVITON_PATH.read_text(encoding="utf-8"))
+    return data
+
+
+def graviton_alternative(instance_type: str) -> str | None:
+    """The Graviton type of the same size for a current x86 EC2 type, or None.
+
+    m7i.xlarge -> m7g.xlarge. None when the type is already Graviton, has no Graviton
+    family (Mac, GPU, Inferentia, Trainium, bare metal), the family has no such size, or
+    CF-GEN-001 already reports it as a previous generation.
+    """
+    if not isinstance(instance_type, str) or successors("ec2", instance_type) is not None:
+        return None
+    family, _, size = instance_type.partition(".")
+    data = _graviton()
+    target = data["families"].get(family)
+    if target is None or size not in data["sizes"].get(target, ()):
+        return None
+    return f"{target}.{size}"
 
 
 def successors(kind: str, instance_type: str) -> tuple[str | None, str | None] | None:
@@ -156,4 +184,30 @@ def findings(res: Resource, template_path: Path) -> List[Finding]:
         kind, current, pair = old[0]
         assert pair is not None
         estimates.apply(finding, _estimate(res, kind, current, *pair))
+    return [finding]
+
+
+def graviton_findings(res: Resource, template_path: Path) -> List[Finding]:
+    """One CF-PERF-005 finding per resource that runs a current x86 type with a Graviton twin."""
+    moves = [(t, alt) for kind, t in _types(res) if kind == "ec2" and (alt := graviton_alternative(t))]
+    if not moves:
+        return []
+    finding = Finding(
+        id=GRAVITON_CHECK_ID,
+        title="EC2 instance type has a Graviton equivalent",
+        severity="Low",
+        category="Performance Efficiency",
+        file=res.file or str(template_path),
+        line=res.line,
+        evidence=f"{res.name} ({res.source_type})",
+        recommendation=(
+            " ".join(f"{current} runs on x86: {alt} is the same size on Graviton." for current, alt in moves)
+            + " Graviton costs less per unit of performance, but needs an arm64 build of the workload "
+            "(AMI, container images, native dependencies, agents); check that before switching. "
+            "Windows has no Graviton option, and the AMI decides the operating system."
+        ),
+    )
+    if len(moves) == 1:
+        current, alt = moves[0]
+        estimates.apply(finding, _estimate(res, "ec2", current, alt, None))
     return [finding]

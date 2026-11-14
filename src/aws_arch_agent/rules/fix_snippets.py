@@ -1339,6 +1339,11 @@ _CLOUDFORMATION.update({
   Properties:
     # keep the other properties as they are
     InstanceType: m7i.large # the type the finding suggests""",
+    "CF-PERF-005": """$name:
+  Type: $type
+  Properties:
+    # keep the other properties as they are; the AMI must be built for arm64
+    InstanceType: m7g.large # the type the finding suggests""",
     "CF-GEN-001:AWS::RDS::DBInstance": """$name:
   Type: AWS::RDS::DBInstance
   Properties:
@@ -1354,6 +1359,10 @@ _TERRAFORM.update({
     "CF-GEN-001": """resource "$tf_type" "$tf_name" {
   # keep the other arguments as they are
   instance_type = "m7i.large" # the type the finding suggests
+}""",
+    "CF-PERF-005": """resource "$tf_type" "$tf_name" {
+  # keep the other arguments as they are; the AMI must be built for arm64
+  instance_type = "m7g.large" # the type the finding suggests
 }""",
     "CF-GEN-001:aws_db_instance": """resource "aws_db_instance" "$tf_name" {
   # keep the other arguments as they are
