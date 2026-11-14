@@ -1943,8 +1943,11 @@ def _ecs_task_definition(body: dict) -> dict:
     if value is not None:
         props["ContainerDefinitions"] = _container_definitions(value)
     platform = _first_block(body, "runtime_platform")
-    if "operating_system_family" in platform:
-        props["RuntimePlatform"] = {"OperatingSystemFamily": _v(platform, "operating_system_family")}
+    runtime: dict = {}
+    _set(runtime, "OperatingSystemFamily", _v(platform, "operating_system_family"))
+    _set(runtime, "CpuArchitecture", _v(platform, "cpu_architecture"))  # CF-PERF-006
+    if runtime:
+        props["RuntimePlatform"] = runtime
     _set(props, "NetworkMode", _v(body, "network_mode"))
     _set(props, "PidMode", _v(body, "pid_mode"))
     _set(props, "RequiresCompatibilities", _v(body, "requires_compatibilities"))
