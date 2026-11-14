@@ -82,21 +82,23 @@ def _msg(label: str, permission: str, exc: Exception) -> str:
 def _guardduty(client: ClientFactory) -> bool:
     gd = client("guardduty")
     ids = _read("GuardDuty", "guardduty:ListDetectors", lambda: gd.list_detectors().get("DetectorIds") or [])
-    return any(
-        _read("GuardDuty", "guardduty:GetDetector", lambda i=i: gd.get_detector(DetectorId=i)).get("Status")
-        == "ENABLED" for i in ids
-    )
+    def enabled(detector_id: str) -> bool:
+        got = _read("GuardDuty", "guardduty:GetDetector", lambda: gd.get_detector(DetectorId=detector_id))
+        return bool(got.get("Status") == "ENABLED")
+
+    return any(enabled(i) for i in ids)
 
 
 def _cloudtrail(client: ClientFactory) -> bool:
     ct = client("cloudtrail")
     trails = _read("CloudTrail", "cloudtrail:DescribeTrails",
                    lambda: ct.describe_trails().get("trailList") or [])
-    return any(
-        _read("CloudTrail", "cloudtrail:GetTrailStatus",
-              lambda t=t: ct.get_trail_status(Name=t.get("TrailARN") or t.get("Name"))).get("IsLogging")
-        for t in trails
-    )
+    def logging(trail: dict) -> bool:
+        name = trail.get("TrailARN") or trail.get("Name")
+        got = _read("CloudTrail", "cloudtrail:GetTrailStatus", lambda: ct.get_trail_status(Name=name))
+        return bool(got.get("IsLogging"))
+
+    return any(logging(t) for t in trails)
 
 
 def _config(client: ClientFactory) -> bool:
