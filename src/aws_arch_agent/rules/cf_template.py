@@ -487,7 +487,7 @@ CHECK_PROPERTIES: dict[str, frozenset[str]] = {
                               "CF-EC-007", "CF-EFS-002", "CF-EFS-003", "CF-EFS-004", "CF-EFS-005")},
         # Template-level: _container_findings skips what it cannot read.
         **{c: set() for c in ("CF-ECS-004", "CF-ECS-005", "CF-ECS-006", "CF-ECS-007", "CF-ECS-008",
-                              "CF-ECS-009", "CF-ECS-010", "CF-ECS-011", "CF-PERF-006", "CF-EKS-004")},
+                              "CF-ECS-009", "CF-ECS-010", "CF-ECS-011", "CF-ECS-012", "CF-PERF-006", "CF-EKS-004")},
         # Template-level: _autoscaling_findings skips what it cannot read.
         **{c: set() for c in ("CF-ASG-001", "CF-ASG-002", "CF-ASG-003", "CF-ASG-004", "CF-ASG-005",
                               "CF-ASG-006")},
@@ -597,7 +597,7 @@ CF_THEMES: dict[str, tuple[str, ...]] = {
     "CF-ECR-001": (_SB,), "CF-ECR-002": (_SB,), "CF-ECR-003": (_SB, _F),
     "CF-ECS-001": (_SB,), "CF-ECS-002": (_SB,), "CF-ECS-003": (_SB,), "CF-ECS-004": (_SB, _NET),
     "CF-ECS-005": (_NET,), "CF-ECS-006": (_SB,), "CF-ECS-007": (_DP, _ID), "CF-ECS-008": (_OBS,),
-    "CF-ECS-009": (_SB,), "CF-ECS-010": (_OBS,), "CF-ECS-011": (_F,), "CF-EKS-004": (_SB,),
+    "CF-ECS-009": (_SB,), "CF-ECS-010": (_OBS,), "CF-ECS-011": (_F,), "CF-ECS-012": (_RES,), "CF-EKS-004": (_SB,),
     "CF-EFS-001": (_DP,),
     "CF-EIP-001": (_F,), "CF-EKS-001": (_OBS,), "CF-EKS-002": (_NET,), "CF-EKS-003": (_DP,),
     "CF-ENV-001": (_F,), "CF-ENV-002": (_F,), "CF-ENV-003": (_F,), "CF-ENV-004": (_F,),
@@ -776,6 +776,7 @@ CF_TITLES: dict[str, str] = {
     "CF-ECS-009": "ECS Fargate service is pinned to an old platform version",
     "CF-ECS-010": "ECS cluster does not use Container Insights",
     "CF-ECS-011": "Fargate task CPU and memory are not a published pair",
+    "CF-ECS-012": "ECS service has no deployment circuit breaker with rollback",
     "CF-EFS-001": "EFS file system is not encrypted at rest",
     "CF-EFS-002": "EFS file system has automatic backups off",
     "CF-EFS-003": "EFS file system has no lifecycle policy",
@@ -6330,6 +6331,42 @@ def _ecs_x86_note(task: Resource) -> str:
     return ""
 
 
+def _ecs_no_rollback_note(service: Resource) -> str:
+    """Why an ECS service has no automatic rollback, or "" when it has one or cannot be judged.
+
+    Only the ECS deployment controller has a circuit breaker: CODE_DEPLOY and EXTERNAL
+    services, daemon services and values the scan cannot read are not judged.
+    """
+    if {"DeploymentConfiguration", "DeploymentController", "SchedulingStrategy"} & service.unresolved:
+        return ""
+    controller = service.properties.get("DeploymentController")
+    if controller is not None:
+        kind = controller.get("Type") if isinstance(controller, dict) else None
+        if type(kind) is not str or kind.upper() != "ECS":
+            return ""
+    strategy = service.properties.get("SchedulingStrategy")
+    if strategy is not None and (type(strategy) is not str or strategy.upper() != "REPLICA"):
+        return ""
+    config = service.properties.get("DeploymentConfiguration")
+    if config is None:
+        return "DeploymentConfiguration is not set, so the circuit breaker is off."
+    if not isinstance(config, dict) or _is_intrinsic(config):
+        return ""
+    breaker = config.get("DeploymentCircuitBreaker")
+    if breaker is None:
+        return "DeploymentCircuitBreaker is not set, so it is off."
+    if not isinstance(breaker, dict) or _is_intrinsic(breaker):
+        return ""
+    enable, rollback = breaker.get("Enable"), breaker.get("Rollback")
+    if enable is not True and enable is not False:
+        return ""
+    if enable is False:
+        return "DeploymentCircuitBreaker.Enable is false."
+    if rollback is None or rollback is False:
+        return "DeploymentCircuitBreaker has Rollback off, so a failed deployment is stopped but not reverted."
+    return ""
+
+
 def _container_findings(resources: List[Resource], template_path: Path) -> List[Finding]:
     """ECS tasks, services and clusters (CF-ECS-004..011) and the EKS version (CF-EKS-004).
     A value the scan cannot read is not judged."""
@@ -6417,6 +6454,15 @@ def _container_findings(resources: List[Resource], template_path: Path) -> List[
                 "Security",
                 f"PlatformVersion is {version}, below the latest Linux version. Set it to LATEST "
                 "(Security Hub ECS.10). In CDK: platformVersion: ecs.FargatePlatformVersion.LATEST.")
+
+        note = _ecs_no_rollback_note(service)
+        if note:
+            add(service, "CF-ECS-012", "ECS service has no deployment circuit breaker with rollback", "Low",
+                "Operational Excellence",
+                f"{note} A deployment whose tasks never become healthy keeps retrying and leaves the "
+                "service on the broken revision until someone notices. Enable the circuit breaker with "
+                "rollback so ECS stops the deployment and returns to the last steady state. "
+                "In CDK: circuitBreaker: { rollback: true }.")
 
     for cluster in (r for r in usable if r.type == "ecs_cluster"):
         if _insights_off(cluster):

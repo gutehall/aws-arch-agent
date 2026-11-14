@@ -2671,6 +2671,21 @@ def _ecs_service(body: dict) -> dict:
     ]
     if strategy:
         props["CapacityProviderStrategy"] = strategy
+    _set(props, "SchedulingStrategy", _v(body, "scheduling_strategy"))
+    controller = _first_block(body, "deployment_controller")
+    if "deployment_controller" in _dynamic_names(body):
+        props["DeploymentController"] = UNRESOLVED
+    elif controller:
+        props["DeploymentController"] = {"Type": _v(controller, "type", "ECS")}
+    breaker = _first_block(body, "deployment_circuit_breaker")
+    if "deployment_circuit_breaker" in _dynamic_names(body):
+        props["DeploymentConfiguration"] = UNRESOLVED
+    elif breaker:
+        values = {"Enable": _v(breaker, "enable"), "Rollback": _v(breaker, "rollback")}
+        props["DeploymentConfiguration"] = (
+            UNRESOLVED if UNRESOLVED in values.values()
+            else {"DeploymentCircuitBreaker": values}
+        )
     return props
 
 

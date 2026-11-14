@@ -3450,6 +3450,7 @@ RULE_TOPICS: dict[str, str] = {
     "CF-ECS-009": "ecs_platform_versions",
     "CF-ECS-010": "ecs_insights",
     "CF-ECS-011": "ecs_sizing",
+    "CF-ECS-012": "automated_rollback",
     "CF-EFS-001": "efs_encryption",
     "CF-EIP-001": "eip",
     "CF-EKS-001": "eks_logging",

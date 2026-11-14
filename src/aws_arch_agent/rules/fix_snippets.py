@@ -3850,6 +3850,14 @@ _CLOUDFORMATION.update({
     ClusterSettings:
       - Name: containerInsights
         Value: enabled""",
+    "CF-ECS-012": """$name:
+  Type: AWS::ECS::Service
+  Properties:
+    # keep the other properties as they are
+    DeploymentConfiguration:
+      DeploymentCircuitBreaker:
+        Enable: true
+        Rollback: true""",
     "CF-ECS-011": """$name:
   Type: AWS::ECS::TaskDefinition
   Properties:
@@ -3964,6 +3972,13 @@ _TERRAFORM.update({
   setting {
     name  = "containerInsights"
     value = "enabled"
+  }
+}""",
+    "CF-ECS-012": """resource "aws_ecs_service" "$tf_name" {
+  # keep the other arguments as they are
+  deployment_circuit_breaker {
+    enable   = true
+    rollback = true
   }
 }""",
     "CF-ECS-011": """resource "aws_ecs_task_definition" "$tf_name" {
