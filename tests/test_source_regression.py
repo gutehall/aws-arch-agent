@@ -157,7 +157,7 @@ def test_cloudformation_and_terraform_fixtures_report_the_same_controls(
 ) -> None:
     cf_ids = sorted(r["id"] for r in _scan(cf_repo)[1])
     # The Terraform fixture's child module has no CloudFormation counterpart.
-    tf_ids = sorted(r["id"] for r in _scan(tf_repo)[1] if not r["file"].startswith("modules/"))
+    tf_ids = sorted(r["id"] for r in _scan(tf_repo)[1] if not (r["file"] or "").startswith("modules/"))
     assert cf_ids == tf_ids
 
 
