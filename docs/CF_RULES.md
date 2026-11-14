@@ -4,11 +4,11 @@ This document provides a comprehensive list of all rules checked by AWS Arch Age
 
 ## Overview
 
-AWS Arch Agent checks **372 static analysis rules** and **285 template checks** across all 6 AWS Well-Architected Framework pillars. 139 of the 372 CDK rules (37%) have a template check, so they also run for CloudFormation, Terraform and synthesised CDK. [COVERAGE.md](COVERAGE.md) gives the reason for each of the others.
+AWS Arch Agent checks **372 static analysis rules** and **285 template checks** across the six AWS Well-Architected pillars, plus a few CDK best-practice checks. 139 of the 372 CDK rules (37%) have a template check. Those checks run on CloudFormation, Terraform, and synthesised CDK. [COVERAGE.md](COVERAGE.md) gives the reason for each of the others.
 
 ## Static Analysis Rules (V1 & V2 Modes)
 
-These rules run on your CDK TypeScript/Python code and execute in both V1 and V2 modes.
+CDK source rules read TypeScript and Python and run in V1 and V2. Repo-level rules (`REPO-*`) read the repository tree and run for CDK, CloudFormation, and Terraform.
 
 ### Security (113 rules)
 

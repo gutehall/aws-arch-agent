@@ -51,11 +51,11 @@ aws-arch-agent --repo . --iac terraform --tf-plan infra/plan.json --no-llm
 ## Modes
 
 - **V1** (default): static rules over CDK source, or `CF-*` checks over CloudFormation and Terraform. No synth, finishes in seconds.
-- **V2**: runs `cdk synth`, then a LangGraph pipeline with six pillar reviewers checks the CloudFormation output. Install with `pip install -e ".[v2]"`. `--llm-mode full` (default) makes one verdict call per pillar with findings. `--llm-mode compact` makes one. See [LLM review](#llm-review).
+- **V2**: runs `cdk synth`, then six LangGraph reviewers judge the static findings and the synthesised template. A release install needs the `v2` extra on the same tag as the base install. A checkout installed with `.[dev]` or `.[v2]` already has it. `--llm-mode full` (default) makes one verdict call per pillar with findings. `--llm-mode compact` makes one. See [LLM review](#llm-review).
 
 ## LLM providers
 
-LLM output is optional. `--no-llm` skips it.
+LLM output is optional and self-hosted only. The default calls Ollama on localhost. `--no-llm` skips it. If the model does not answer, the findings stay as the rules wrote them.
 
 | Variable | Purpose |
 |----------|---------|
@@ -92,9 +92,7 @@ A failed hypothesis call has its own status and console line. It keeps the verdi
 
 ## Config file (JSON or YAML)
 
-See [CONFIG.md](CONFIG.md) and [example-config.json](example-config.json).
-
-Keys: `format`, `fail_on`, `no_llm`, `llm_mode`, `out`, `severity_threshold`, `templates`, `no_synth`, `rules.include`, `rules.exclude`, `rag.path`.
+See [CONFIG.md](CONFIG.md) and [example-config.json](example-config.json). That page lists every key, including `rules.org`, `tags`, `environments`, `themes`, and `group_by`.
 
 ## GitHub Action
 
@@ -360,7 +358,8 @@ The script streams the offer files (the EC2 one is about 300 MB per region) and 
 Markdown reports open with a **Summary** built from the findings alone, so it is the same with `--no-llm` and the same on every run. It appears in Markdown, and as `summary` in JSON. The HTML report leaves it out:
 
 - **Top fixes**: the five most important fixes. A fix is one rule, covering every resource it reported. They are ranked by severity, then estimated monthly saving, then how many resources the fix covers, then rule id.
-- **By pillar**: one line per finding category with its count by severity and possible savings, for example "Cost Optimization: 7 findings (7 Low), about $120.00/month possible savings (estimate)". The lines add up to the findings below, counts and savings alike.
+- **By pillar**: one line per finding category with its count by severity and possible savings, for example "Cost Optimization: 7 findings (7 Low), about $120.00/month possible savings (estimate)". The lines add up to the findings below, counts and savings alike. CDK source cost rules use the category `Cost`; template checks use `Cost Optimization`.
+- **By theme**: one line per theme that has findings. A finding in two themes is counted in both, so these lines do not add up to the total.
 - **Quick wins**: fixes with suggested code and low effort.
 
 ## Well-Architected answers

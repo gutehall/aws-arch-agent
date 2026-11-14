@@ -19,7 +19,7 @@ Thanks for your interest in contributing. This document covers local setup, runn
 
 3. **External tools**
 
-   - [ripgrep](https://github.com/BurntSushi/ripgrep) (`brew install ripgrep` on macOS).
+   - [ripgrep](https://github.com/BurntSushi/ripgrep): `brew install ripgrep` (macOS), `sudo apt install ripgrep` (Debian/Ubuntu), or `winget install BurntSushi.ripgrep.MSVC` (Windows).
    - For V2 CDK synth: Node.js and a CDK project with dependencies installed.
 
 ## Running tests and linting
