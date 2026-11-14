@@ -1,2 +1,2 @@
-# Local child module: not read (no terraform init). Would report CF-CW-001 if it were.
+# Local child module, scanned as a module of its own: reports CF-CW-001.
 resource "aws_cloudwatch_log_group" "app" {}

@@ -148,7 +148,7 @@ def test_terraform_fixture_reports_controls_at_hcl_lines(tf_repo: Path) -> None:
     assert warnings == []
     checks = [r for r in rows if not r["id"].startswith("REPO-")]  # repo-level: no file
     assert all(r["line"] for r in checks)
-    assert not any(r["file"].startswith("modules/") for r in checks)  # child module not read
+    assert any(r["file"].startswith("modules/logs/") for r in checks)  # child module is read
     _check_snapshot("terraform", rows)
 
 
@@ -156,7 +156,8 @@ def test_cloudformation_and_terraform_fixtures_report_the_same_controls(
     cf_repo: Path, tf_repo: Path
 ) -> None:
     cf_ids = sorted(r["id"] for r in _scan(cf_repo)[1])
-    tf_ids = sorted(r["id"] for r in _scan(tf_repo)[1])
+    # The Terraform fixture's child module has no CloudFormation counterpart.
+    tf_ids = sorted(r["id"] for r in _scan(tf_repo)[1] if not r["file"].startswith("modules/"))
     assert cf_ids == tf_ids
 
 

@@ -21,6 +21,7 @@ from aws_arch_agent.rules.terraform_model import (
     TerraformError,
     find_modules,
     load_plan_values,
+    module_call_notes,
     resources_from_terraform,
     variables_from_terraform,
 )
@@ -383,8 +384,10 @@ def _scan_terraform(
     rules_exclude: list[str] | None,
     tf_plan: Path | None = None,
     notes: dict | None = None,
+    children: list[Path] | None = None,
 ) -> tuple[list[Finding], list[str]]:
-    """Run the CF-* checks on each Terraform root module. Findings point at the HCL file and line.
+    """Run the CF-* checks on each Terraform root module and local child module. Findings point
+    at the HCL file and line. Variable checks and the plan apply to root modules only.
 
     tf_plan (`terraform show -json` output) fills unresolved values in its root module.
     """
@@ -399,13 +402,23 @@ def _scan_terraform(
         plan_region = regions.terraform_plan_region(tf_plan) if plan_target is not None else None
         if plan_target is not None and plan_region:
             regions.remember(plan_target, plan_region, "Terraform plan")
-    for module in modules:
+    remote, looped = module_call_notes([*modules, *(children or [])])
+    for path, label in looped:
+        warnings.append(
+            f"{to_repo_relative(str(path), repo_path)}: {label} uses count or for_each; "
+            "scanned once, instances not expanded"
+        )
+    if remote and notes is not None:
+        notes["terraform_remote_modules_skipped"] = remote
+    for module in [*modules, *(children or [])]:
+        is_root = module in modules
         resources = resources_from_terraform(
             module, warnings, plan_values if module == plan_target else None
         )
         module_findings = run_resource_checks(resources, module, warnings)
-        module_findings += environments.apply(
-            terraform_variable_findings(variables_from_terraform(module)), module, resources)
+        if is_root:
+            module_findings += environments.apply(
+                terraform_variable_findings(variables_from_terraform(module)), module, resources)
         for finding in module_findings:
             if finding.file:
                 finding.file = to_repo_relative(finding.file, repo_path)
@@ -446,12 +459,11 @@ def _collect_findings(
             modules, children = find_modules(files)
             ctx.notes["terraform_modules"] = [to_repo_relative(str(m), repo_path) for m in modules]
             if children:
-                # Child modules are not read (no terraform init); say which were left out.
-                ctx.notes["terraform_child_modules_skipped"] = [
+                ctx.notes["terraform_child_modules"] = [
                     to_repo_relative(str(m), repo_path) for m in children
                 ]
             found, warned = _scan_terraform(
-                repo_path, modules, rules_include, rules_exclude, tf_plan, ctx.notes
+                repo_path, modules, rules_include, rules_exclude, tf_plan, ctx.notes, children
             )
             findings.extend(found)
             warnings.extend(warned)
