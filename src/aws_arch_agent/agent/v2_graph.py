@@ -11,6 +11,7 @@ from aws_arch_agent.models import Finding, Hypothesis, IacSource, RepoContext, V
 from aws_arch_agent.agent.hypotheses import find_hypotheses
 from aws_arch_agent.agent.verdicts import VerdictCache, apply_verdicts, judge_batch, make_batches
 from aws_arch_agent.agent.v1 import (
+    _collect_findings,
     _filter_rules,
     _languages_to_scan,
     active_titles,
@@ -76,6 +77,7 @@ class State(TypedDict, total=False):
     rag_embedding_provider: str
     rag_embedding_model: str
     iac: str
+    tf_plan: str
     price_region: str | None
     theme_filter: List[str] | None
     group_by: str
@@ -218,6 +220,22 @@ def node_collect(state: State) -> State:
         },
     )
 
+    if iac == "terraform":
+        # The Terraform path: the same HCL scan V1 runs, then the pillar reviewers. No cdk synth.
+        tf_ctx, tf_findings, tf_warnings = _collect_findings(
+            repo_path, max_files, state.get("rules_include"), state.get("rules_exclude"), None,
+            bool(state.get("rules_org")), "terraform",
+            Path(state["tf_plan"]) if state.get("tf_plan") else None,
+        )
+        tf_ctx.notes.update(ctx.notes)
+        return {
+            "ctx": tf_ctx,
+            "raw_findings": _shown(tf_findings, state),
+            "unfiltered_findings": tf_findings,
+            "rule_warnings": tf_warnings,
+            "rag": _build_rag(state),
+        }
+
     rules = _filter_rules(
         ALL_RULES,
         state.get("rules_include"),
@@ -250,6 +268,15 @@ def node_synth(state: State) -> State:
     templates_path = state.get("templates_path") or ""
     skip_synth = state.get("skip_synth") or False
     warnings = list(state.get("rule_warnings") or [])
+
+    if state.get("iac") == "terraform":
+        notes = ctx.notes if ctx else {}
+        summary = (
+            f"Terraform: {len(notes.get('terraform_modules', []))} root module(s) and "
+            f"{len(notes.get('terraform_child_modules', []))} local child module(s) read from HCL "
+            "(no synth)."
+        )
+        return {"synth_ok": True, "synth_stdout": "", "synth_stderr": "", "synth_summary": summary}
 
     if templates_path:
         tpath = Path(templates_path).expanduser().resolve()
@@ -512,7 +539,7 @@ def node_report(state: State) -> State:
     ctx.rules_run = well_architected.rules_run(
         active_titles(state.get("rules_include"), state.get("rules_exclude"),
                       bool(state.get("rules_org"))),
-        cdk=True,
+        cdk=state.get("iac") != "terraform",
         templates=bool(state.get("synth_ok")),
         theme_filter=wanted,
         severity_threshold=state.get("severity_threshold"),
@@ -526,7 +553,9 @@ def node_report(state: State) -> State:
         apply_verdicts(findings, state.get("verdicts") or {})
     base_report = render_markdown(ctx, findings, warnings=warnings, group_by=state.get("group_by") or "severity")
     synth_block = state.get("synth_summary", "")
-    if state.get("templates_path"):
+    if state.get("iac") == "terraform":
+        synth_status = "Terraform: read from HCL (no synth)"
+    elif state.get("templates_path"):
         synth_status = "Templates: provided (no synth)"
     elif state.get("skip_synth"):
         synth_status = "CDK synth: skipped"
@@ -604,6 +633,7 @@ def analyze_v2(
     llm_mode: LLMMode = "full",
     rules_org: bool = False,
     iac: str = "auto",
+    tf_plan: Path | None = None,
     price_region: str | None = None,
     tag_policy: TagPolicy | None = None,
     environment_map: dict[str, str] | None = None,
@@ -630,6 +660,7 @@ def analyze_v2(
         "rag_embedding_provider": rag_embedding_provider or "",
         "rag_embedding_model": rag_embedding_model or "",
         "iac": iac,
+        "tf_plan": str(tf_plan) if tf_plan is not None else "",
         "price_region": price_region,
         "theme_filter": theme_filter,
         "group_by": group_by,

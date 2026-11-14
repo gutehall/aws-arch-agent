@@ -544,14 +544,38 @@ def _cfn_repo(root: Path) -> None:
     )
 
 
-def test_v2_rejects_iac_terraform(tmp_path: Path) -> None:
-    (tmp_path / "main.tf").write_text('resource "aws_s3_bucket" "b" {}\n', encoding="utf-8")
-    for extra in ([], ["--templates", str(tmp_path)]):
-        result = runner.invoke(
-            app, ["--repo", str(tmp_path), "--mode", "v2", "--no-llm", "--iac", "terraform", *extra]
-        )
-        assert result.exit_code == 1, result.output
-        assert "V1 only" in result.output
+def test_v2_iac_terraform_reads_modules_and_plan_instances(tmp_path: Path) -> None:
+    (tmp_path / "main.tf").write_text(
+        'module "m" {\n  source = "./modules/m"\n}\n'
+        'variable "enc" {}\n'
+        'resource "aws_db_instance" "db" {\n  for_each          = toset(["a"])\n'
+        "  storage_encrypted = var.enc\n}\n",
+        encoding="utf-8",
+    )
+    (tmp_path / "modules" / "m").mkdir(parents=True)
+    (tmp_path / "modules" / "m" / "main.tf").write_text('resource "aws_s3_bucket" "b" {}\n', encoding="utf-8")
+    plan = tmp_path / "plan.json"
+    plan.write_text(json.dumps({"planned_values": {"root_module": {"resources": [
+        {"address": 'aws_db_instance.db["a"]', "mode": "managed", "index": "a",
+         "values": {"storage_encrypted": False}},
+    ]}}}), encoding="utf-8")
+    out = tmp_path / "report.json"
+    result = runner.invoke(app, [
+        "--repo", str(tmp_path), "--mode", "v2", "--no-llm", "--iac", "terraform",
+        "--tf-plan", str(plan), "--format", "json", "--out", str(out),
+    ])
+    assert result.exit_code == 0, result.output
+    data = json.loads(out.read_text(encoding="utf-8"))
+    found = {(f["id"], f["file"]) for f in data["findings"]}
+    assert ("CF-S3-001", "modules/m/main.tf") in found  # child module
+    assert any(f["id"] == "CF-RDS-001" and 'db["a"]' in f["evidence"] for f in data["findings"])  # instance
+    assert data["context"]["source"] == "terraform"
+
+
+def test_v2_iac_terraform_without_terraform_files_exits_1(tmp_path: Path) -> None:
+    (tmp_path / "README.md").write_text("x", encoding="utf-8")
+    result = runner.invoke(app, ["--repo", str(tmp_path), "--mode", "v2", "--no-llm", "--iac", "terraform"])
+    assert result.exit_code == 1, result.output
 
 
 def test_v2_rejects_iac_cloudformation_without_templates(tmp_path: Path) -> None:

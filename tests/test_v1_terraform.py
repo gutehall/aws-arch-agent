@@ -227,15 +227,6 @@ def test_cli_tf_plan(tmp_path: Path) -> None:
     assert any(f["id"] == "CF-RDS-001" for f in json.loads(out.read_text(encoding="utf-8"))["findings"])
 
 
-def test_cli_tf_plan_is_v1_only(tmp_path: Path) -> None:
-    _tf_repo(tmp_path)
-    result = runner.invoke(app, [
-        "--repo", str(tmp_path), "--no-llm", "--mode", "v2", "--tf-plan", "plan.json",
-    ])
-    assert result.exit_code == 1
-    assert "V1 only" in result.output
-
-
 def test_tf_plan_on_non_terraform_source_is_a_warning(tmp_path: Path) -> None:
     (tmp_path / "cdk.json").write_text('{"app": "npx ts-node bin/app.ts"}', encoding="utf-8")
     plan = _write_plan(tmp_path / "plan.json", DB_PLAN)
