@@ -69,8 +69,24 @@ runs:
 
     - name: Install ripgrep (Windows)
       if: runner.os == 'Windows'
-      shell: bash
-      run: command -v rg >/dev/null || choco install ripgrep -y --no-progress
+      shell: pwsh
+      run: |
+        if (Get-Command rg -ErrorAction SilentlyContinue) {
+          rg --version
+          exit 0
+        }
+        $version = "15.2.0"
+        $zip = Join-Path $env:RUNNER_TEMP "ripgrep.zip"
+        $dest = Join-Path $env:RUNNER_TEMP "ripgrep"
+        $url = "https://github.com/BurntSushi/ripgrep/releases/download/$version/ripgrep-$version-x86_64-pc-windows-msvc.zip"
+        curl.exe -fsSL -o $zip $url
+        if (Test-Path $dest) { Remove-Item -Recurse -Force $dest }
+        Expand-Archive $zip -DestinationPath $dest
+        $rg = Get-ChildItem -Path $dest -Filter rg.exe -Recurse | Select-Object -First 1
+        if (-not $rg) { throw "rg.exe not found in ripgrep $version zip" }
+        Add-Content -Path $env:GITHUB_PATH -Value $rg.DirectoryName
+        $env:PATH = "$($rg.DirectoryName);$env:PATH"
+        rg --version
 
     - name: Install aws-arch-agent
       shell: bash
