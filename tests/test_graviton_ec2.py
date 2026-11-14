@@ -76,6 +76,7 @@ def test_templates_and_groups_are_not_priced(tmp_path: Path) -> None:
 @pytest.mark.parametrize("current,expected", [
     ("m7i.xlarge", "m7g.xlarge"),
     ("t3.micro", "t4g.micro"),
+    ("m6id.xlarge", "m7gd.xlarge"),
     ("c6i.2xlarge", "c7g.2xlarge"),
     ("m7g.large", None),         # already Graviton
     ("t4g.micro", None),

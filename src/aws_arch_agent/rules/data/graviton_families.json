@@ -27,6 +27,12 @@
     "r6a": "r7g",
     "r7i": "r7g",
     "r7a": "r7g",
+    "m5d": "m7gd",
+    "m6id": "m7gd",
+    "c5d": "c7gd",
+    "c6id": "c7gd",
+    "r5d": "r7gd",
+    "r6id": "r7gd",
     "i4i": "i4g"
   },
   "sizes": {
@@ -34,6 +40,9 @@
     "m7g": ["medium", "large", "xlarge", "2xlarge", "4xlarge", "8xlarge", "12xlarge", "16xlarge"],
     "c7g": ["medium", "large", "xlarge", "2xlarge", "4xlarge", "8xlarge", "12xlarge", "16xlarge"],
     "r7g": ["medium", "large", "xlarge", "2xlarge", "4xlarge", "8xlarge", "12xlarge", "16xlarge"],
+    "m7gd": ["medium", "large", "xlarge", "2xlarge", "4xlarge", "8xlarge", "12xlarge", "16xlarge"],
+    "c7gd": ["medium", "large", "xlarge", "2xlarge", "4xlarge", "8xlarge", "12xlarge", "16xlarge"],
+    "r7gd": ["medium", "large", "xlarge", "2xlarge", "4xlarge", "8xlarge", "12xlarge", "16xlarge"],
     "i4g": ["large", "xlarge", "2xlarge", "4xlarge", "8xlarge", "16xlarge"]
   }
 }

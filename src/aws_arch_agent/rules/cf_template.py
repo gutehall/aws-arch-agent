@@ -6398,8 +6398,8 @@ def _container_findings(resources: List[Resource], template_path: Path) -> List[
                 "Performance Efficiency",
                 f"{arch_note} Graviton (ARM64) tasks cost less per vCPU on Fargate and run more work per "
                 "watt. Set RuntimePlatform.CpuArchitecture to ARM64 once the image and any native agent or "
-                "sidecar are built for arm64; this holds for Fargate and the EC2 launch type. The "
-                "container instance type is judged by the EC2 checks. "
+                "sidecar are built for arm64. On the EC2 launch type the container instances must be arm64 "
+                "too; their instance type is judged by the EC2 checks. "
                 "In CDK: runtimePlatform: { cpuArchitecture: ecs.CpuArchitecture.ARM64 }.")
 
     for service in (r for r in usable if r.type == "ecs_service"):
@@ -7144,9 +7144,13 @@ def _tls_enforced(document: Any) -> bool | None:
     return None if unknown else False
 
 
+# One size smaller, by right-sizing or by the non-production size limit.
+_SIZING_IDS = ("CF-PERF-003", "CF-PERF-004", "CF-ENV-003")
+
+
 def _one_saving_per_instance(resource_findings: List[Finding]) -> None:
     """Moving to a current generation (CF-GEN-001), moving to Graviton (CF-PERF-005) and one
-    size smaller (CF-PERF-003/004) are alternative fixes for one instance: their savings do
+    size smaller (CF-PERF-003/004, CF-ENV-003) are alternative fixes for one instance: their savings do
     not add up. CF-GEN-001 keeps its saving over right-sizing. Between Graviton and right-
     sizing the larger saving stays. The finding that gives up its number says so."""
     def drop(f: Finding, kept: str) -> None:
@@ -7157,7 +7161,7 @@ def _one_saving_per_instance(resource_findings: List[Finding]) -> None:
         ).strip()
 
     by_id = {f.id: f for f in resource_findings if f.monthly_savings_usd}
-    sizing = [f for f in resource_findings if f.id in ("CF-PERF-003", "CF-PERF-004") and f.monthly_savings_usd]
+    sizing = [f for f in resource_findings if f.id in _SIZING_IDS and f.monthly_savings_usd]
     if "CF-GEN-001" in by_id:
         for f in sizing:
             drop(f, "CF-GEN-001")
