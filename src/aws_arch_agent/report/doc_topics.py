@@ -908,6 +908,12 @@ TOPICS: dict[str, tuple[str, str, str, str]] = {
         "Well-Architected SUS05-BP02: Use instance types with the least impact",
         "/wellarchitected/latest/sustainability-pillar/sus_sus_hardware_a3.html",
     ),
+    "graviton_ecs": (
+        "ECS: task definition runtime platform (ARM64)",
+        "/AmazonECS/latest/developerguide/ecs-arm64.html",
+        "Well-Architected SUS05-BP02: Use instance types with the least impact",
+        "/wellarchitected/latest/sustainability-pillar/sus_sus_hardware_a3.html",
+    ),
     "graviton_rds": (
         "RDS: DB instance classes (Graviton)",
         "/AmazonRDS/latest/UserGuide/Concepts.DBInstanceClass.html",
@@ -3503,6 +3509,7 @@ RULE_TOPICS: dict[str, str] = {
     "CF-PERF-002": "caching",
     "CF-PERF-003": "rds_sizing",
     "CF-PERF-004": "rightsizing",
+    "CF-PERF-006": "graviton_ecs",
     "CF-RDS-001": "rds_encryption",
     "CF-RDS-002": "rds_backup",
     "CF-RDS-003": "rds_multi_az",

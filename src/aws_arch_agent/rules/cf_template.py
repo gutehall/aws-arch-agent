@@ -200,6 +200,7 @@ CF_PARTLY_COVERS_STATIC: dict[str, tuple[tuple[str, ...], str]] = {
                     "balancers, API caches and DAX"),
     "CF-PERF-003": (("PERF-008",), "RDS only; PERF-008 matches any large instanceType"),
     "CF-PERF-004": (("PERF-008",), "EC2 only; PERF-008 matches any large instanceType"),
+    "CF-PERF-006": (("PERF-001",), "ECS task definitions only; PERF-001 also flags Lambda and EC2"),
     "CF-SUST-001": (("SUST-001",), "Auto Scaling groups only; SUST-001 also flags EC2 "
                     "instances and ECS services"),
     "CF-SUST-002": (("SUST-001",), "Fargate only; SUST-001 also flags EC2 instances"),
@@ -484,7 +485,7 @@ CHECK_PROPERTIES: dict[str, frozenset[str]] = {
                               "CF-EC-007", "CF-EFS-002", "CF-EFS-003", "CF-EFS-004", "CF-EFS-005")},
         # Template-level: _container_findings skips what it cannot read.
         **{c: set() for c in ("CF-ECS-004", "CF-ECS-005", "CF-ECS-006", "CF-ECS-007", "CF-ECS-008",
-                              "CF-ECS-009", "CF-ECS-010", "CF-ECS-011", "CF-EKS-004")},
+                              "CF-ECS-009", "CF-ECS-010", "CF-ECS-011", "CF-PERF-006", "CF-EKS-004")},
         # Template-level: _autoscaling_findings skips what it cannot read.
         **{c: set() for c in ("CF-ASG-001", "CF-ASG-002", "CF-ASG-003", "CF-ASG-004", "CF-ASG-005",
                               "CF-ASG-006")},
@@ -617,6 +618,7 @@ CF_THEMES: dict[str, tuple[str, ...]] = {
     "CF-MSK-001": (_DP,), "CF-NEP-001": (_DP,), "CF-OS-001": (_DP,), "CF-OS-002": (_DP,),
     "CF-PAR-001": (_DP, _ID), "CF-PAR-002": (_DP, _ID),
     "CF-PERF-001": (_F, _SUS), "CF-PERF-002": (_RES,), "CF-PERF-003": (_F,), "CF-PERF-004": (_F,),
+    "CF-PERF-006": (_F, _SUS),
     "CF-RDS-001": (_DP,), "CF-RDS-002": (_RES, _DP), "CF-RDS-003": (_RES,), "CF-RDS-004": (_NET,),
     "CF-RDS-006": (_DP, _NET), "CF-RDS-007": (_OBS,), "CF-RDS-008": (_ID,), "CF-RDS-009": (_SB,),
     "CF-RDS-010": (_F,), "CF-RDS-011": (_OBS,), "CF-RDS-012": (_NET,), "CF-RDS-013": (_ID,),
@@ -852,6 +854,7 @@ CF_TITLES: dict[str, str] = {
     "CF-PERF-002": "Consider CloudFront or ElastiCache for caching",
     "CF-PERF-003": "RDS instance class is large — verify right-sizing",
     "CF-PERF-004": "EC2 instance type is large — verify right-sizing",
+    "CF-PERF-006": "ECS task definition runs on X86_64 (not Graviton)",
     "CF-R53-001": "Public hosted zone does not log DNS queries",
     "CF-R53-002": "Public hosted zone has no DNSSEC in this template",
     "CF-R53-003": "Failover or weighted DNS record has no health check",
@@ -6304,6 +6307,26 @@ def _autoscaling_findings(resources: List[Resource], template_path: Path) -> Lis
     return out
 
 
+def _ecs_x86_note(task: Resource) -> str:
+    """Why a task definition runs on X86_64, or "" when it is ARM64, Windows or not readable."""
+    if "RuntimePlatform" in task.unresolved:
+        return ""
+    platform = task.properties.get("RuntimePlatform")
+    if platform is None:
+        return "RuntimePlatform is not set, so the task defaults to X86_64."
+    if not isinstance(platform, dict) or _is_intrinsic(platform):
+        return ""
+    family = platform.get("OperatingSystemFamily")
+    if family is not None and (type(family) is not str or family.upper().startswith("WINDOWS")):
+        return ""  # Windows has no ARM64; a family the scan cannot read may be Windows
+    arch = platform.get("CpuArchitecture")
+    if arch is None:
+        return "CpuArchitecture is not set, so the task defaults to X86_64."
+    if type(arch) is str and arch.upper() == "X86_64":
+        return "CpuArchitecture is X86_64."
+    return ""
+
+
 def _container_findings(resources: List[Resource], template_path: Path) -> List[Finding]:
     """ECS tasks, services and clusters (CF-ECS-004..011) and the EKS version (CF-EKS-004).
     A value the scan cannot read is not judged."""
@@ -6365,6 +6388,16 @@ def _container_findings(resources: List[Resource], template_path: Path) -> List[
                     f"Cpu {cpu} with Memory {memory} is not a size Fargate offers. {note} Set a published "
                     "pair so that the size you pay for is the size you ask for. "
                     "In CDK: cpu and memoryLimitMiB on ecs.FargateTaskDefinition.")
+
+        arch_note = _ecs_x86_note(task)
+        if arch_note:
+            add(task, "CF-PERF-006", "ECS task definition runs on X86_64 (not Graviton)", "Low",
+                "Performance Efficiency",
+                f"{arch_note} Graviton (ARM64) tasks cost less per vCPU on Fargate and run more work per "
+                "watt. Set RuntimePlatform.CpuArchitecture to ARM64 once the image and any native agent or "
+                "sidecar are built for arm64; this holds for Fargate and the EC2 launch type. The "
+                "container instance type is judged by the EC2 checks. "
+                "In CDK: runtimePlatform: { cpuArchitecture: ecs.CpuArchitecture.ARM64 }.")
 
     for service in (r for r in usable if r.type == "ecs_service"):
         network = service.properties.get("NetworkConfiguration")

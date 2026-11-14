@@ -3847,6 +3847,12 @@ _CLOUDFORMATION.update({
     # keep the other properties as they are; use a pair Fargate offers
     Cpu: '256'
     Memory: '512'""",
+    "CF-PERF-006": """$name:
+  Type: AWS::ECS::TaskDefinition
+  Properties:
+    # keep the other properties as they are; the image must be built for arm64
+    RuntimePlatform:
+      CpuArchitecture: ARM64""",
     "CF-EKS-004": """$name:
   Type: AWS::EKS::Cluster
   Properties:
@@ -3955,6 +3961,12 @@ _TERRAFORM.update({
   # keep the other arguments as they are; use a pair Fargate offers
   cpu    = "256"
   memory = "512"
+}""",
+    "CF-PERF-006": """resource "aws_ecs_task_definition" "$tf_name" {
+  # keep the other arguments as they are; the image must be built for arm64
+  runtime_platform {
+    cpu_architecture = "ARM64"
+  }
 }""",
     "CF-EKS-004": """resource "aws_eks_cluster" "$tf_name" {
   # keep the other arguments as they are; upgrade one minor version at a time

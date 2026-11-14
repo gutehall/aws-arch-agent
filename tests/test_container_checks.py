@@ -1,4 +1,4 @@
-"""CF-ECS-004..011 and CF-EKS-004: more ECS and EKS settings in templates."""
+"""CF-ECS-004..011, CF-PERF-006 and CF-EKS-004: more ECS and EKS settings in templates."""
 import json
 from datetime import date
 from pathlib import Path
@@ -447,3 +447,59 @@ def test_eks_version_ends_on_its_last_day() -> None:
     end = date(2026, 12, 2)
     assert eks_versions.past_standard_support(34, end) == (False, end)
     assert eks_versions.past_standard_support(34, date(2026, 12, 3)) == (True, end)
+
+
+def test_ecs_arm64_cloudformation(tmp_path: Path) -> None:
+    found = _cf(tmp_path, {
+        "NoPlatform": _task(),
+        "X86": _task(RuntimePlatform={"CpuArchitecture": "X86_64"}),
+        "X86Lower": _task(RuntimePlatform={"CpuArchitecture": "x86_64"}),
+        "FamilyOnly": _task(RuntimePlatform={"OperatingSystemFamily": "LINUX"}),
+        "Arm": _task(RuntimePlatform={"CpuArchitecture": "ARM64"}),
+        "Windows": _task(RuntimePlatform={"OperatingSystemFamily": "WINDOWS_SERVER_2022_CORE",
+                                          "CpuArchitecture": "X86_64"}),
+        "WindowsNoArch": _task(RuntimePlatform={"OperatingSystemFamily": "WINDOWS_SERVER_2019_FULL"}),
+        "ArchParam": _task(RuntimePlatform={"CpuArchitecture": {"Ref": "Arch"}}),
+        "FamilyParam": _task(RuntimePlatform={"OperatingSystemFamily": {"Ref": "Os"}}),
+        "PlatformParam": _task(RuntimePlatform={"Ref": "Platform"}),
+    }, "CF-PERF-006")
+    assert _names(found) == {"NoPlatform", "X86", "X86Lower", "FamilyOnly"}
+    assert {f.severity for f in found} == {"Low"}
+    by_name = {f.evidence.split(" ")[0]: f.recommendation for f in found}
+    assert "defaults to X86_64" in by_name["NoPlatform"]
+    assert "CpuArchitecture is X86_64" in by_name["X86"]
+    assert "arm64" in by_name["X86"]
+
+
+def test_ecs_arm64_terraform(tmp_path: Path) -> None:
+    assert _tf(tmp_path, """
+resource "aws_ecs_task_definition" "default" {
+  family = "a"
+}
+resource "aws_ecs_task_definition" "x86" {
+  runtime_platform {
+    cpu_architecture = "X86_64"
+  }
+}
+resource "aws_ecs_task_definition" "family_only" {
+  runtime_platform {
+    operating_system_family = "LINUX"
+  }
+}
+resource "aws_ecs_task_definition" "arm" {
+  runtime_platform {
+    cpu_architecture = "ARM64"
+  }
+}
+resource "aws_ecs_task_definition" "windows" {
+  runtime_platform {
+    operating_system_family = "WINDOWS_SERVER_2022_CORE"
+    cpu_architecture        = "X86_64"
+  }
+}
+resource "aws_ecs_task_definition" "arch_var" {
+  runtime_platform {
+    cpu_architecture = var.arch
+  }
+}
+""", "CF-PERF-006") == {"default", "x86", "family_only"}
