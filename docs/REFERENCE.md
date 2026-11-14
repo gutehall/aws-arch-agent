@@ -10,11 +10,12 @@ The agent covers all six AWS Well-Architected pillars. Static and CloudFormation
 | `--out`, `-o` | `report.md` | Output report path |
 | `--mode` | `v1` | `v1` (rules + optional [LLM review](#llm-review)) or `v2` (multi-agent + synth) |
 | `--iac` | `auto` | IaC source: `auto`, `cdk`, `cloudformation`, or `terraform`. `auto` detects it: CDK wins when `cdk.json` or a CDK package is present; otherwise CloudFormation templates (`AWSTemplateFormatVersion` or an `AWS::` resource) and Terraform (`*.tf`, `*.tf.json`) are detected, and both together are `mixed`. An explicit source with no matching files exits 1 (`cdk` needs `cdk.json`, a CDK package, `bin/*.ts`, or `app.py`). With `--mode v2`, `terraform` exits 1 and `cloudformation` without `--templates` (flag or config `templates`) exits 1 |
-| `--tf-plan` | — | `terraform show -json` output (a plan or a state). V1 Terraform scans only. Known planned values replace arguments that depend on `var`, `local`, or another expression, by resource address. Unknown values stay unresolved. Indexed instances (`count`, `for_each`), data sources, and child modules are not read. With one root module, the plan applies to it wherever the plan file is. With several, it applies to the one that holds the plan file. A missing or unreadable plan, or a plan that matches no root module, is a report warning (exit 2) and the scan runs without it. `--mode v2` with `--tf-plan` exits 1 |
+| `--tf-plan` | — | `terraform show -json` output (a plan or a state). Terraform scans only (V1, and V2 with `--iac terraform`). Known planned values replace arguments that depend on `var`, `local`, or another expression, by resource address. Unknown values stay unresolved. Each planned instance of a `count` or `for_each` resource is its own resource, named as the plan names it (`aws_db_instance.db[0]`, `aws_s3_bucket.b["logs"]`), and a finding can land on any of them. Data source values come from the plan's prior state. Child modules are not read. A split S3 or ECR settings resource aimed at an expanded bucket or repository is not tied to its instances, so the controls it sets stay unreported there. With one root module, the plan applies to it wherever the plan file is. With several, it applies to the one that holds the plan file. A missing or unreadable plan, or a plan that matches no root module, is a report warning (exit 2) and the scan runs without it. `--tf-plan` on a repo that is not a Terraform scan is a report warning |
 | `--max-files` | `400` | Cap on files walked. Rules search only these files |
 | `--config` | (auto-detect) | Path to config file |
 | `--format`, `-f` | `markdown` | `markdown`, `json`, `sarif`, or `html`. `html` writes one self-contained page (inline CSS and script, no external assets, dark theme) to open in a browser. Each finding links to AWS documentation. With `--enforce-baseline` it labels each finding Accepted or New. `--out` still defaults to `report.md`, so pass a `.html` path. An unknown format fails the run and writes no report |
 | `--fail-on` | `none` | Exit 1 if any finding at or above: `high`, `medium`, `low`, `none` |
+| `--live-account` | off | Read the AWS account with read-only describe and list calls, for the org-gated controls an app repo cannot show: Security Hub and its standards (`SEC-026`, `REPO-136`, `REPO-162`), GuardDuty (`SEC-027`), CloudTrail (`OPS-001`), AWS Config (`OPS-014`), AWS Budgets (`COST-014`), a Cost and Usage Report (`REPO-069`), IAM Access Analyzer (`REPO-141`), Inspector (`REPO-145`), and GuardDuty or Security Hub (`REPO-163`). A rule whose service was read runs even without `rules.org`; if the service is on, its finding is dropped and the practice reads as met. A service that is off still reports. Without credentials or a permission, that service gets a report warning and its rule stays as `rules.org` decides. Needs `pip install 'aws-arch-agent[account]'` (boto3), the standard AWS credential chain, and `--region` or `AWS_REGION` for the Region to read. Without the flag a scan makes no AWS call. Listed under `context.notes.live_account` |
 | `--no-llm` | `false` | Make no LLM calls: no verdicts, no hypotheses. See [LLM review](#llm-review) |
 | `--llm-mode` | `full` | V2 only: `full` (one verdict call per pillar with findings) or `compact` (one verdict call). Either way, plus one hypothesis call |
 | `--templates` | — | Path to CloudFormation templates (dir or file); V2 only, skips cdk synth |
@@ -38,7 +39,7 @@ The agent covers all six AWS Well-Architected pillars. Static and CloudFormation
 | `terraform` | Root-module `*.tf` / `*.tf.json` with the `CF-*` checks. Findings point at the HCL file and line (approximate for `*.tf.json`). |
 | `auto` | CDK when its markers exist; otherwise CloudFormation, Terraform, or both (`mixed`). A repo with none of these falls back to `cdk`. |
 
-**Terraform** is read without `terraform init`, and only root modules are scanned. Local child modules (`source = "./..."`) are skipped and listed under `terraform_child_modules_skipped` in the JSON report's `context.notes`. Remote modules are not fetched. An argument set from `var.*` or `local.*` is unresolved, so no check reports on it. To resolve those values, pass a plan with `--tf-plan`:
+**Terraform** is read without `terraform init`. Local child modules (`source = "./..."`), at any depth, are scanned as modules of their own, and listed under `terraform_child_modules` in the JSON report's `context.notes`. Findings point at the module file and line. Variable checks and `--tf-plan` apply to root modules only. A module call with `count` or `for_each` is scanned once and gets a report warning. Remote modules are not fetched, and are listed under `terraform_remote_modules_skipped`. An argument set from `var.*` or `local.*` is unresolved, so no check reports on it. To resolve those values, pass a plan with `--tf-plan`:
 
 ```bash
 terraform -chdir=infra plan -out=tfplan
@@ -60,7 +61,7 @@ LLM output is optional and self-hosted only. The default calls Ollama on localho
 | Variable | Purpose |
 |----------|---------|
 | `LLM_PROVIDER` | `ollama` (default) or `selfhosted`. Any other value makes no call and reports `fallback` |
-| `OLLAMA_HOST`, `OLLAMA_MODEL` | Ollama server and model (e.g. `llama3:8b`) |
+| `OLLAMA_HOST`, `OLLAMA_MODEL` | Ollama server and model (e.g. `llama3:8b`). With none of `OLLAMA_HOST`, `OLLAMA_MODEL`, `LLM_BASE_URL`, `LLM_MODEL` or `LLM_PROVIDER` set, the scan makes no LLM call and the report says `LLM: skipped (no LLM configured: ...)` |
 | `OLLAMA_NUM_CTX` | Ollama context size in tokens. Default `24576`, which fits the largest verdict and hypothesis prompts. Ollama silently cuts a longer prompt, so a smaller value uses less memory and can lose part of the prompt. An OpenAI-compatible server sets its own context |
 | `LLM_BASE_URL`, `LLM_MODEL` | OpenAI-compatible server (vLLM, llama.cpp, LM Studio, LocalAI) and model. The URL ends before `/chat/completions`, e.g. `http://localhost:8000/v1` |
 
@@ -345,7 +346,7 @@ Each stack (one template, or one Terraform root module) is priced in one region,
 
 The report's Prices line names each region and what decided it, for example `eu-north-1 (CDK stack env; AWS price list of 2026-11-05)`. The cost table has a Region column. JSON `context.notes.prices.regions` lists them with their `source`. CDK source scanned without synth has no stacks to read, so it uses steps 1, 3 and 4.
 
-The snapshot covers `us-east-1`, `us-west-2`, `eu-west-1`, `eu-central-1` and `eu-north-1`. A stack in another region gets no estimates, and the run says so. To refresh the snapshot, or to add regions:
+The snapshot covers `us-east-1`, `us-east-2`, `us-west-2`, `ca-central-1`, `eu-west-1`, `eu-west-2`, `eu-central-1`, `eu-north-1`, `ap-southeast-1`, `ap-southeast-2` and `ap-northeast-1`. A stack in another region gets no estimates, and the run says so. To refresh the snapshot, or to add regions:
 
 ```bash
 python scripts/refresh_prices.py --regions us-east-1 eu-north-1 --cache-dir /tmp/offers

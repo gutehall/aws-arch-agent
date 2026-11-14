@@ -1,6 +1,6 @@
 """Parse root-module Terraform (*.tf, *.tf.json) into Resource records.
 
-No `terraform init`, no registry or child modules: only the files in a root
+No `terraform init`, no registry modules: only the files in a root module and its local child modules
 module directory. aws_* types map onto the canonical types the CF-* checks use,
 and their arguments are translated into the CloudFormation-shaped properties
 those checks read. A value that depends on `var.*` or `local.*` is unresolved:
@@ -2671,6 +2671,21 @@ def _ecs_service(body: dict) -> dict:
     ]
     if strategy:
         props["CapacityProviderStrategy"] = strategy
+    _set(props, "SchedulingStrategy", _v(body, "scheduling_strategy"))
+    controller = _first_block(body, "deployment_controller")
+    if "deployment_controller" in _dynamic_names(body):
+        props["DeploymentController"] = UNRESOLVED
+    elif controller:
+        props["DeploymentController"] = {"Type": _v(controller, "type", "ECS")}
+    breaker = _first_block(body, "deployment_circuit_breaker")
+    if "deployment_circuit_breaker" in _dynamic_names(body):
+        props["DeploymentConfiguration"] = UNRESOLVED
+    elif breaker:
+        values = {"Enable": _v(breaker, "enable"), "Rollback": _v(breaker, "rollback")}
+        props["DeploymentConfiguration"] = (
+            UNRESOLVED if UNRESOLVED in values.values()
+            else {"DeploymentCircuitBreaker": values}
+        )
     return props
 
 
@@ -3302,8 +3317,9 @@ def _merge_method_settings(blocks: list[_Block], resources: dict[str, Resource])
 def load_plan_values(path: Path) -> dict[str, dict]:
     """Root-module resource values from `terraform show -json`, keyed by address.
 
-    Reads a plan (`planned_values`) or a state (`values`). Data sources and indexed
-    instances (count / for_each) are left out: here one block is one Resource.
+    Reads a plan (`planned_values`, with data sources from `prior_state`) or a state
+    (`values`). An instance of a `count` or `for_each` resource has its own address
+    (`aws_s3_bucket.b[0]`, `aws_s3_bucket.b["logs"]`). Data sources are keyed `data.<type>.<name>`.
     Child modules are left out, as they are when parsing HCL.
     """
     try:
@@ -3317,14 +3333,21 @@ def load_plan_values(path: Path) -> dict[str, dict]:
     if not isinstance(root, dict):
         raise TerraformError(f"Terraform plan {path} has no planned_values.root_module")
     out: dict[str, dict] = {}
-    for item in root.get("resources") or []:
-        if not isinstance(item, dict) or item.get("mode", "managed") != "managed":
+    prior = doc.get("prior_state") if isinstance(doc, dict) else None
+    prior_values = prior.get("values") if isinstance(prior, dict) else None
+    prior_root = prior_values.get("root_module") if isinstance(prior_values, dict) else None
+    for module in (prior_root, root):  # planned values win over the prior state
+        if not isinstance(module, dict):
             continue
-        if "index" in item:
-            continue
-        address, values = item.get("address"), item.get("values")
-        if isinstance(address, str) and isinstance(values, dict):
-            out[address] = values
+        for item in module.get("resources") or []:
+            if not isinstance(item, dict):
+                continue
+            mode = item.get("mode", "managed")
+            if mode == "managed" and module is prior_root:
+                continue
+            address, values = item.get("address"), item.get("values")
+            if isinstance(address, str) and isinstance(values, dict) and mode in ("managed", "data"):
+                out[address] = values
     return out
 
 
@@ -3388,6 +3411,33 @@ def _plan_keep(block: _Block) -> frozenset[str]:
     return frozenset()
 
 
+def _expand_instances(
+    blocks: list[_Block], plan_values: dict[str, dict], instances: dict[str, list[str]]
+) -> list[_Block]:
+    """One block per planned instance of a `count` or `for_each` block.
+
+    An instance is named like the plan names it (`aws_s3_bucket.b["logs"]`) and is filled from
+    that address. A block the plan has no instance for stays one block. `instances` maps each
+    expanded block's address to its instance addresses.
+    """
+    out: list[_Block] = []
+    for block in blocks:
+        base = block.address
+        found = sorted(
+            a for a in plan_values if a.startswith(base + "[") and a.endswith("]")
+        )
+        if not found:
+            out.append(block)
+            continue
+        instances[base] = found
+        for address in found:
+            clone = _Block(block.type, block.name + address[len(base):], dict(block.body),
+                           block.file, block.line, block.data)
+            clone.references = block.references
+            out.append(clone)
+    return out
+
+
 def resources_from_terraform(
     module_dir: Path,
     warnings: list[str] | None = None,
@@ -3410,7 +3460,9 @@ def resources_from_terraform(
             warnings.append(str(exc))
             continue
         blocks.extend(file_blocks)
+    instances: dict[str, list[str]] = {}
     if plan_values:
+        blocks = _expand_instances(blocks, plan_values, instances)
         for block in blocks:
             planned = plan_values.get(block.address)
             if planned is not None:
@@ -3432,6 +3484,11 @@ def resources_from_terraform(
     _merge_ecr_lifecycle(blocks, resources)
     _merge_method_settings(blocks, resources)
     _resolve_iam(resources, blocks)
+    for resource in resources.values():
+        # A reference to `aws_eip.nat` reaches every instance the plan expanded it into.
+        extra = {name for ref in resource.references for name in instances.get(ref, ())}
+        if extra:
+            resource.references = resource.references | extra
     return [*resources.values(), *_module_call_records(module_dir)]
 
 
@@ -3470,3 +3527,26 @@ def find_modules(files: list[Path]) -> tuple[list[Path], list[Path]]:
 def find_root_modules(files: list[Path]) -> list[Path]:
     """Directories holding *.tf / *.tf.json, minus those used as local child modules."""
     return find_modules(files)[0]
+
+
+def module_call_notes(modules: list[Path]) -> tuple[list[str], list[tuple[Path, str]]]:
+    """(remote sources, looped calls) among the module calls in these directories.
+
+    A remote source is not fetched. A call with `count` or `for_each` is scanned once, and
+    its instances are not expanded.
+    """
+    remote: list[str] = []
+    looped: list[tuple[Path, str]] = []
+    for module_dir in modules:
+        for path in _module_files(module_dir):
+            try:
+                calls = _module_call_bodies(path)
+            except (TerraformError, OSError, UnicodeError):
+                continue  # reported when the module itself is scanned
+            for label, body in calls:
+                source = body.get("source")
+                if not (isinstance(source, str) and source.startswith(("./", "../"))):
+                    remote.append(str(source))
+                if "count" in body or "for_each" in body:
+                    looped.append((path, f"module.{label}"))
+    return sorted(set(remote)), looped

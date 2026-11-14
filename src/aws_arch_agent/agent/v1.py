@@ -21,11 +21,12 @@ from aws_arch_agent.rules.terraform_model import (
     TerraformError,
     find_modules,
     load_plan_values,
+    module_call_notes,
     resources_from_terraform,
     variables_from_terraform,
 )
 from aws_arch_agent.rules.runner import filter_by_severity, run_all_rules
-from aws_arch_agent.rules import cf_template, effort, environments, nonprod, regions, stack_cost, themes
+from aws_arch_agent.rules import account, cf_template, effort, environments, nonprod, regions, stack_cost, themes
 from aws_arch_agent.rules import well_architected
 from aws_arch_agent.rules.tag_policy import TagPolicy, policy_checked, use_tag_policy
 from aws_arch_agent.report.markdown import render_markdown
@@ -289,7 +290,8 @@ def _filter_rules(
         allowed = set(include_ids)
         out = [r for r in out if r.id in allowed]
     elif not org:
-        out = [r for r in out if r.id not in ORG_RULE_IDS]
+        live = account.live_checked()
+        out = [r for r in out if r.id not in ORG_RULE_IDS or r.id in live]
     if exclude_ids is not None:
         blocked = set(exclude_ids)
         out = [r for r in out if r.id not in blocked]
@@ -310,7 +312,8 @@ def active_titles(
         allowed = set(rules_include)
         titles = {k: v for k, v in titles.items() if k in allowed}
     elif not rules_org:
-        titles = {k: v for k, v in titles.items() if k not in ORG_RULE_IDS}
+        live = account.live_checked()
+        titles = {k: v for k, v in titles.items() if k not in ORG_RULE_IDS or k in live}
     if rules_exclude is not None:
         blocked = set(rules_exclude)
         titles = {k: v for k, v in titles.items() if k not in blocked}
@@ -383,8 +386,10 @@ def _scan_terraform(
     rules_exclude: list[str] | None,
     tf_plan: Path | None = None,
     notes: dict | None = None,
+    children: list[Path] | None = None,
 ) -> tuple[list[Finding], list[str]]:
-    """Run the CF-* checks on each Terraform root module. Findings point at the HCL file and line.
+    """Run the CF-* checks on each Terraform root module and local child module. Findings point
+    at the HCL file and line. Variable checks and the plan apply to root modules only.
 
     tf_plan (`terraform show -json` output) fills unresolved values in its root module.
     """
@@ -399,13 +404,23 @@ def _scan_terraform(
         plan_region = regions.terraform_plan_region(tf_plan) if plan_target is not None else None
         if plan_target is not None and plan_region:
             regions.remember(plan_target, plan_region, "Terraform plan")
-    for module in modules:
+    remote, looped = module_call_notes([*modules, *(children or [])])
+    for path, label in looped:
+        warnings.append(
+            f"{to_repo_relative(str(path), repo_path)}: {label} uses count or for_each; "
+            "scanned once, instances not expanded"
+        )
+    if remote and notes is not None:
+        notes["terraform_remote_modules_skipped"] = remote
+    for module in [*modules, *(children or [])]:
+        is_root = module in modules
         resources = resources_from_terraform(
             module, warnings, plan_values if module == plan_target else None
         )
         module_findings = run_resource_checks(resources, module, warnings)
-        module_findings += environments.apply(
-            terraform_variable_findings(variables_from_terraform(module)), module, resources)
+        if is_root:
+            module_findings += environments.apply(
+                terraform_variable_findings(variables_from_terraform(module)), module, resources)
         for finding in module_findings:
             if finding.file:
                 finding.file = to_repo_relative(finding.file, repo_path)
@@ -446,12 +461,11 @@ def _collect_findings(
             modules, children = find_modules(files)
             ctx.notes["terraform_modules"] = [to_repo_relative(str(m), repo_path) for m in modules]
             if children:
-                # Child modules are not read (no terraform init); say which were left out.
-                ctx.notes["terraform_child_modules_skipped"] = [
+                ctx.notes["terraform_child_modules"] = [
                     to_repo_relative(str(m), repo_path) for m in children
                 ]
             found, warned = _scan_terraform(
-                repo_path, modules, rules_include, rules_exclude, tf_plan, ctx.notes
+                repo_path, modules, rules_include, rules_exclude, tf_plan, ctx.notes, children
             )
             findings.extend(found)
             warnings.extend(warned)
@@ -466,6 +480,7 @@ def _collect_findings(
             findings, warnings = run_all_rules(repo_path, rules, _languages_to_scan(language))
     if tf_plan is not None and source not in TERRAFORM_SOURCES:
         warnings.append(f"--tf-plan applies only to a Terraform scan (source is {source}); ignored")
+    findings = account.apply(findings, ctx.notes)
     findings = filter_by_severity(findings, severity_threshold)
     effort.annotate(findings)
     themes.annotate(findings)
@@ -490,6 +505,7 @@ def analyze_v1(
     dashboards_min_resources: int | None = None,
     theme_filter: list[str] | None = None,
     group_by: str = "severity",
+    account_facts: account.AccountFacts | None = None,
 ) -> tuple[str, RepoContext, list[Finding], list[str]]:
     """Run V1 pipeline: scan repo, run rules, optionally judge findings with the LLM; return (report_md, ctx, findings, warnings)."""
     with (
@@ -499,11 +515,14 @@ def analyze_v1(
         environments.use_environments(environment_map, repo_path),
         nonprod.use_max_size(nonprod_max_size),
         cf_template.use_dashboard_min_resources(dashboards_min_resources),
+        account.use_facts(account_facts),
     ):
         ctx, findings, warnings = _collect_findings(
             repo_path, max_files, rules_include, rules_exclude, None, rules_org, iac,
             tf_plan,
         )
+        if account_facts is not None:
+            warnings = [*warnings, *account_facts.warnings]
         # Before the threshold and any theme filter: hiding a finding must not make its file
         # look as if no rule fired there.
         rule_findings = findings

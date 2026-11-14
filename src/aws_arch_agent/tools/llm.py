@@ -51,6 +51,15 @@ class LLMResult:
 
 NO_LLM = LLMResult("", "skipped", reason="--no-llm")
 NO_CALL = LLMResult("", "skipped", reason="no LLM call made")
+NOT_CONFIGURED = "no LLM configured: set OLLAMA_HOST or LLM_BASE_URL"
+# Any of these means the user chose a model server. With none set there is nothing to ask,
+# and the default localhost Ollama is not assumed to be running.
+CONFIG_VARS = ("OLLAMA_HOST", "OLLAMA_MODEL", "LLM_BASE_URL", "LLM_MODEL", "LLM_PROVIDER")
+
+
+def llm_configured() -> bool:
+    """True when the environment names a model server."""
+    return any(os.getenv(name, "").strip() for name in CONFIG_VARS)
 
 
 def aggregate_results(results: Iterable[LLMResult]) -> LLMResult:
@@ -76,7 +85,12 @@ class LLMClient:
         self.selfhosted_model = os.getenv("LLM_MODEL", "")
 
     def polish(self, markdown: str, system: str) -> LLMResult:
-        """Send content to LLM with system prompt; a failure returns the original as its text."""
+        """Send content to LLM with system prompt; a failure returns the original as its text.
+
+        With no server configured nothing is sent: the result is skipped, with the prompt as text.
+        """
+        if not llm_configured():
+            return LLMResult(markdown, "skipped", reason=NOT_CONFIGURED)
         if self.provider == "ollama":
             return self._ollama(markdown, system)
         if self.provider == "selfhosted":

@@ -66,9 +66,8 @@ def test_terraform_repo_reports_cf_findings_at_hcl_lines(tmp_path: Path) -> None
     # Template-level control points at the resource that triggered it.
     assert (by_id["CF-FL-001"].file, by_id["CF-FL-001"].line) == ("infra/network.tf", 1)
     assert by_id["CF-FL-001"].evidence == "Template has 1 VPC(s) and 0 FlowLog(s) (aws_vpc.main)"
-    # The local child module is not a root module, and the report says it was skipped.
-    assert not any("modules/child" in (f.file or "") for f in findings)
-    assert ctx.notes["terraform_child_modules_skipped"] == ["modules/child"]
+    # The local child module is scanned on its own, not as a root.
+    assert ctx.notes["terraform_child_modules"] == ["modules/child"]
     assert "CF-S3-001" in report
 
 
@@ -228,18 +227,76 @@ def test_cli_tf_plan(tmp_path: Path) -> None:
     assert any(f["id"] == "CF-RDS-001" for f in json.loads(out.read_text(encoding="utf-8"))["findings"])
 
 
-def test_cli_tf_plan_is_v1_only(tmp_path: Path) -> None:
-    _tf_repo(tmp_path)
-    result = runner.invoke(app, [
-        "--repo", str(tmp_path), "--no-llm", "--mode", "v2", "--tf-plan", "plan.json",
-    ])
-    assert result.exit_code == 1
-    assert "V1 only" in result.output
-
-
 def test_tf_plan_on_non_terraform_source_is_a_warning(tmp_path: Path) -> None:
     (tmp_path / "cdk.json").write_text('{"app": "npx ts-node bin/app.ts"}', encoding="utf-8")
     plan = _write_plan(tmp_path / "plan.json", DB_PLAN)
     _r, ctx, _f, warnings = analyze_v1(tmp_path, use_llm=False, tf_plan=plan)
     assert ctx.source == "cdk"
     assert any("--tf-plan applies only" in w for w in warnings)
+
+
+def test_child_modules_are_scanned_at_any_depth_and_remote_ones_are_named(tmp_path: Path) -> None:
+    (tmp_path / "main.tf").write_text(
+        'module "bucket" {\n  source = "./modules/bucket"\n}\n'
+        'module "reg" {\n  source = "terraform-aws-modules/vpc/aws"\n}\n'
+        'module "many" {\n  source   = "./modules/bucket"\n  for_each = toset(["a"])\n}\n',
+        encoding="utf-8",
+    )
+    outer = tmp_path / "modules" / "bucket"
+    inner = outer / "inner"
+    inner.mkdir(parents=True)
+    (outer / "main.tf").write_text(
+        'module "inner" {\n  source = "./inner"\n}\n'
+        'resource "aws_s3_bucket" "b" {\n  bucket = "outer"\n}\n',
+        encoding="utf-8",
+    )
+    (inner / "main.tf").write_text('resource "aws_s3_bucket" "deep" {\n  bucket = "inner"\n}\n', encoding="utf-8")
+    _r, ctx, findings, warnings = analyze_v1(tmp_path, use_llm=False)
+    assert ctx.notes["terraform_modules"] == ["."]
+    assert ctx.notes["terraform_child_modules"] == ["modules/bucket", "modules/bucket/inner"]
+    assert ctx.notes["terraform_remote_modules_skipped"] == ["terraform-aws-modules/vpc/aws"]
+    s3 = {(f.file, f.line) for f in findings if f.id == "CF-S3-001"}
+    assert ("modules/bucket/main.tf", 4) in s3
+    assert ("modules/bucket/inner/main.tf", 1) in s3
+    assert any("module.many uses count or for_each" in w for w in warnings)
+
+
+def test_tf_plan_expands_count_and_for_each_instances(tmp_path: Path) -> None:
+    (tmp_path / "main.tf").write_text(
+        'variable "enc" {}\n'
+        'resource "aws_db_instance" "counted" {\n  count             = 2\n  storage_encrypted = var.enc\n}\n'
+        'resource "aws_db_instance" "keyed" {\n  for_each          = toset(["a", "b"])\n'
+        '  storage_encrypted = var.enc\n}\n',
+        encoding="utf-8",
+    )
+    values = lambda enc: {"storage_encrypted": enc}  # noqa: E731
+    plan = _write_plan(tmp_path / "plan.json", [
+        {"address": "aws_db_instance.counted[0]", "mode": "managed", "index": 0, "values": values(True)},
+        {"address": "aws_db_instance.counted[1]", "mode": "managed", "index": 1, "values": values(False)},
+        {"address": 'aws_db_instance.keyed["a"]', "mode": "managed", "index": "a", "values": values(False)},
+        {"address": 'aws_db_instance.keyed["b"]', "mode": "managed", "index": "b", "values": values(True)},
+    ])
+    _r, _c, findings, _w = analyze_v1(tmp_path, use_llm=False, tf_plan=plan)
+    hits = {f.evidence.split(" ")[0] for f in findings if f.id == "CF-RDS-001"}
+    assert hits == {"aws_db_instance.counted[1]", 'aws_db_instance.keyed["a"]'}
+    _r, _c, findings, _w = analyze_v1(tmp_path, use_llm=False)
+    assert not any(f.id == "CF-RDS-001" for f in findings)
+
+
+def test_tf_plan_data_source_value_reaches_the_check(tmp_path: Path) -> None:
+    (tmp_path / "main.tf").write_text(
+        'data "aws_kms_key" "k" {\n  key_id = "alias/x"\n}\n'
+        'resource "aws_db_instance" "db" {\n  storage_encrypted = data.aws_kms_key.k.enabled\n}\n',
+        encoding="utf-8",
+    )
+    plan = tmp_path / "plan.json"
+    plan.write_text(json.dumps({
+        "planned_values": {"root_module": {"resources": [
+            {"address": "aws_db_instance.db", "mode": "managed", "values": {"storage_encrypted": False}},
+        ]}},
+        "prior_state": {"values": {"root_module": {"resources": [
+            {"address": "data.aws_kms_key.k", "mode": "data", "values": {"enabled": False}},
+        ]}}},
+    }), encoding="utf-8")
+    _r, _c, findings, _w = analyze_v1(tmp_path, use_llm=False, tf_plan=plan)
+    assert any(f.id == "CF-RDS-001" for f in findings)
