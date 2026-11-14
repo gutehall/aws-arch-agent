@@ -60,7 +60,7 @@ LLM output is optional and self-hosted only. The default calls Ollama on localho
 | Variable | Purpose |
 |----------|---------|
 | `LLM_PROVIDER` | `ollama` (default) or `selfhosted`. Any other value makes no call and reports `fallback` |
-| `OLLAMA_HOST`, `OLLAMA_MODEL` | Ollama server and model (e.g. `llama3:8b`) |
+| `OLLAMA_HOST`, `OLLAMA_MODEL` | Ollama server and model (e.g. `llama3:8b`). With none of `OLLAMA_HOST`, `OLLAMA_MODEL`, `LLM_BASE_URL`, `LLM_MODEL` or `LLM_PROVIDER` set, the scan makes no LLM call and the report says `LLM: skipped (no LLM configured: ...)` |
 | `OLLAMA_NUM_CTX` | Ollama context size in tokens. Default `24576`, which fits the largest verdict and hypothesis prompts. Ollama silently cuts a longer prompt, so a smaller value uses less memory and can lose part of the prompt. An OpenAI-compatible server sets its own context |
 | `LLM_BASE_URL`, `LLM_MODEL` | OpenAI-compatible server (vLLM, llama.cpp, LM Studio, LocalAI) and model. The URL ends before `/chat/completions`, e.g. `http://localhost:8000/v1` |
 

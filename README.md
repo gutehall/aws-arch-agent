@@ -2,7 +2,7 @@
 
 Local-first AWS architecture review for infrastructure code. It scans **CDK** (TypeScript and Python), **CloudFormation**, and **Terraform**, and reports security, reliability, operational excellence, performance, cost, and sustainability issues mapped to the AWS Well-Architected Framework.
 
-No AWS credentials. No cloud calls. LLM output is optional and self-hosted only. The default calls Ollama on localhost; `--no-llm` skips it. If the model does not answer, the findings stay as the rules wrote them.
+No AWS credentials. No cloud calls. LLM output is optional and self-hosted only. With `OLLAMA_HOST` or `LLM_BASE_URL` set, it calls that server; with neither set it makes no call. `--no-llm` skips it either way. If the model does not answer, the findings stay as the rules wrote them.
 
 > 372 static rules and 286 template checks are implemented and tested. 139 of the 372 CDK rules (37%) have a template check. Those checks run on CloudFormation, Terraform, and synthesised CDK. [docs/COVERAGE.md](docs/COVERAGE.md) gives the reason for each of the others. Expect some false positives and negatives, and API changes.
 
