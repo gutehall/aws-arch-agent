@@ -2,6 +2,13 @@
 
 New releases go at the top. See [CONTRIBUTING.md](CONTRIBUTING.md#releases) for when to cut one and how the version is bumped.
 
+## v0.2.1 - 2026-11-14
+
+### Changes
+
+- Flag a current x86 EC2 type that has a Graviton class of the same size (`m7i.xlarge` suggests `m7g.xlarge`) on instances, launch templates, launch configurations, and Auto Scaling overrides, with the price difference for a single instance (CF-PERF-005, #101)
+- Flag an ECS task definition that runs on `X86_64`, or sets no CPU architecture, and pass Terraform `runtime_platform.cpu_architecture` through to the check (CF-PERF-006, #101)
+
 ## v0.2.0 - 2026-11-13
 
 ### Features
