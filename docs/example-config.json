@@ -1,1 +1,22 @@
-{"format":"markdown","fail_on":"none","no_llm":false,"out":"report.md","severity_threshold":"Medium","rules":{"include":null,"exclude":["BP-001"],"org":false},"rag":{"path":"./docs/waf-snippets.md","use_embeddings":false,"embedding_provider":null,"embedding_model":null}}
+{
+  "format": "markdown",
+  "fail_on": "none",
+  "no_llm": false,
+  "out": "report.md",
+  "severity_threshold": "Medium",
+  "llm_mode": "full",
+  "region": "us-east-1",
+  "templates": null,
+  "no_synth": false,
+  "rules": {
+    "include": null,
+    "exclude": ["BP-001"],
+    "org": false
+  },
+  "rag": {
+    "path": "./docs/waf-snippets.md",
+    "use_embeddings": false,
+    "embedding_provider": "sentence-transformers",
+    "embedding_model": null
+  }
+}

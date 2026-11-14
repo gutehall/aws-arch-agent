@@ -21,7 +21,7 @@ RAG is optional. With no path, the prompts have no reference block.
 
 Collect builds one instance. Pillars and merge reuse it. They do not reload the file or re-embed the chunks.
 
-The default is keyword overlap. Set `rag.use_embeddings` and `rag.embedding_provider` to `sentence-transformers` for vectors (install with `pip install -e ".[rag]"`). It runs locally. Chunk vectors stay on the instance, and each retrieve embeds only the query.
+The default is keyword overlap. Set `rag.use_embeddings` and `rag.embedding_provider` to `sentence-transformers` for vectors. That needs the `rag` extra (`pip install -e ".[rag]"` from a checkout, or the `rag` extra on a release install). It runs locally. Chunk vectors stay on the instance, and each retrieve embeds only the query.
 
 A failed load or retrieve is a warning. The scan continues. The config examples point at [waf-snippets.md](waf-snippets.md).
 
@@ -29,7 +29,7 @@ A failed load or retrieve is a warning. The scan continues. The config examples 
 
 Template rules run after a successful synth, or on `--templates`. A skipped or failed synth keeps the static findings.
 
-When a template finding covers the same control, the static finding is dropped:
+When a template finding covers the same control, the static finding is dropped (`CF_COVERS_STATIC` in `rules/cf_template.py`). The full map is [COVERAGE.md](COVERAGE.md). Examples:
 
 | Template finding | Static finding dropped |
 |------------------|------------------------|

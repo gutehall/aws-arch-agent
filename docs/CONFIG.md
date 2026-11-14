@@ -5,7 +5,10 @@ The IaC source is a CLI flag, not a config key: `--iac auto|cdk|cloudformation|t
 Optional config file in the repo root. A same-named file in the current directory is not used. A missing `--config` path, or a config file that is not valid JSON or YAML, fails the run.
 
 - `.aws-arch-agent.json` / `aws-arch-agent.json`
-- `.aws-arch-agent.yaml` / `aws-arch-agent.yaml` (YAML also supported)
+- `.aws-arch-agent.yaml` / `aws-arch-agent.yaml`
+- `.aws-arch-agent.yml` / `aws-arch-agent.yml`
+
+The first file in that order wins.
 
 Copy [example-config.json](example-config.json) to get started.
 
@@ -97,7 +100,9 @@ rules:
 - **no_synth**: if `true`, do not run cdk synth (V2 only). Use with **templates** for raw CF, or alone for static analysis only.
 - **rules.include**: list of rule IDs to run (e.g. `["SEC-001", "SEC-002"]`); if set, only these run
 - **rules.exclude**: list of rule IDs to skip
-- **rules.org**: if `true`, also run account-level absence rules `SEC-026`, `SEC-027`, `OPS-001`, `OPS-014`, `COST-014`, `REPO-004`, `REPO-007`, `REPO-008`, `REPO-012`, `REPO-032`, `REPO-069`, and `REPO-080`. Default is `false` because an app stack does not own those controls. Listing an id in **rules.include** runs that rule even when this is false. **rules.exclude** still skips it.
+- **rules.org**: if `true`, also run the account-level rules `SEC-026`, `SEC-027`, `OPS-001`, `OPS-014`, `COST-014`, `REPO-004`, `REPO-007`, `REPO-008`, `REPO-012`, `REPO-032`, `REPO-069`, `REPO-080`, `REPO-133`, `REPO-134`, `REPO-136`, `REPO-137`, `REPO-141`, `REPO-145`, `REPO-162`, and `REPO-163`. Default is `false` because an app stack does not own those controls. Listing an id in **rules.include** runs that rule even when this is false. **rules.exclude** still skips it.
+- **themes**: only report rules in these themes. A list of names, or one comma-separated string. Same values as `--theme`: `finops`, `security-baseline`, `identity`, `data-protection`, `network-exposure`, `resilience`, `observability`, `sustainability`. Leave it out to report every theme.
+- **group_by**: `severity` (default) or `theme`. Groups Markdown findings. Same as `--group-by`. A finding in two themes is listed under both.
 - **rag.path**: path to a markdown doc for RAG context (V2 only). Pillar and merge prompts include retrieved snippets when set.
 - **rag.use_embeddings**: if `true`, use embedding-based retrieval (V2 only). Requires **rag.embedding_provider**.
 - **rag.embedding_provider**: `"sentence-transformers"` (local; install with `pip install -e ".[rag]"`). It is the only value accepted.
