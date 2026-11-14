@@ -29,6 +29,7 @@ from aws_arch_agent.config import (
     load_config,
 )
 from aws_arch_agent.models import Finding, IacSource, RepoContext
+from aws_arch_agent.rules import account
 from aws_arch_agent.rules.themes import THEMES
 from aws_arch_agent.report.json_report import render_json
 from aws_arch_agent.report.html import render_html
@@ -163,6 +164,13 @@ def analyze(
         "--tf-plan",
         help="`terraform show -json` output; fills var/local values, count and for_each instances in Terraform scans",
     ),
+    live_account: bool = typer.Option(
+        False,
+        "--live-account",
+        help="Read the AWS account (read-only describe/list calls) for Security Hub, GuardDuty, "
+        "Config, CloudTrail, Budgets, a cost and usage report, Access Analyzer and Inspector. "
+        "Off by default: a scan makes no AWS call. Needs boto3 and credentials",
+    ),
     max_files: int = typer.Option(
         400, "--max-files", help="Max files to scan. Rules search only these files."
     ),
@@ -288,6 +296,7 @@ def analyze(
     ))
 
     use_llm = not cfg.no_llm
+    account_facts = account.read_live(cfg.region) if live_account else None
     rules_include = cfg.rules_include
     rules_exclude = cfg.rules_exclude
     severity_threshold = cfg.severity_threshold
@@ -317,6 +326,7 @@ def analyze(
             dashboards_min_resources=cfg.dashboards_min_resources,
             theme_filter=cfg.themes,
             group_by=cfg.group_by,
+            account_facts=account_facts,
         )
     else:
         report_md, ctx_report, findings, warnings = analyze_v1(
@@ -336,6 +346,7 @@ def analyze(
             dashboards_min_resources=cfg.dashboards_min_resources,
             theme_filter=cfg.themes,
             group_by=cfg.group_by,
+            account_facts=account_facts,
         )
 
     # What happened, not what was configured. soft_wrap keeps the line whole for anyone grepping it.

@@ -15,6 +15,7 @@ The agent covers all six AWS Well-Architected pillars. Static and CloudFormation
 | `--config` | (auto-detect) | Path to config file |
 | `--format`, `-f` | `markdown` | `markdown`, `json`, `sarif`, or `html`. `html` writes one self-contained page (inline CSS and script, no external assets, dark theme) to open in a browser. Each finding links to AWS documentation. With `--enforce-baseline` it labels each finding Accepted or New. `--out` still defaults to `report.md`, so pass a `.html` path. An unknown format fails the run and writes no report |
 | `--fail-on` | `none` | Exit 1 if any finding at or above: `high`, `medium`, `low`, `none` |
+| `--live-account` | off | Read the AWS account with read-only describe and list calls, for the org-gated controls an app repo cannot show: Security Hub and its standards (`SEC-026`, `REPO-136`, `REPO-162`), GuardDuty (`SEC-027`), CloudTrail (`OPS-001`), AWS Config (`OPS-014`), AWS Budgets (`COST-014`), a Cost and Usage Report (`REPO-069`), IAM Access Analyzer (`REPO-141`), Inspector (`REPO-145`), and GuardDuty or Security Hub (`REPO-163`). A rule whose service was read runs even without `rules.org`; if the service is on, its finding is dropped and the practice reads as met. A service that is off still reports. Without credentials or a permission, that service gets a report warning and its rule stays as `rules.org` decides. Needs `pip install 'aws-arch-agent[account]'` (boto3), the standard AWS credential chain, and `--region` or `AWS_REGION` for the Region to read. Without the flag a scan makes no AWS call. Listed under `context.notes.live_account` |
 | `--no-llm` | `false` | Make no LLM calls: no verdicts, no hypotheses. See [LLM review](#llm-review) |
 | `--llm-mode` | `full` | V2 only: `full` (one verdict call per pillar with findings) or `compact` (one verdict call). Either way, plus one hypothesis call |
 | `--templates` | — | Path to CloudFormation templates (dir or file); V2 only, skips cdk synth |
@@ -345,7 +346,7 @@ Each stack (one template, or one Terraform root module) is priced in one region,
 
 The report's Prices line names each region and what decided it, for example `eu-north-1 (CDK stack env; AWS price list of 2026-11-05)`. The cost table has a Region column. JSON `context.notes.prices.regions` lists them with their `source`. CDK source scanned without synth has no stacks to read, so it uses steps 1, 3 and 4.
 
-The snapshot covers `us-east-1`, `us-west-2`, `eu-west-1`, `eu-central-1` and `eu-north-1`. A stack in another region gets no estimates, and the run says so. To refresh the snapshot, or to add regions:
+The snapshot covers `us-east-1`, `us-east-2`, `us-west-2`, `ca-central-1`, `eu-west-1`, `eu-west-2`, `eu-central-1`, `eu-north-1`, `ap-southeast-1`, `ap-southeast-2` and `ap-northeast-1`. A stack in another region gets no estimates, and the run says so. To refresh the snapshot, or to add regions:
 
 ```bash
 python scripts/refresh_prices.py --regions us-east-1 eu-north-1 --cache-dir /tmp/offers

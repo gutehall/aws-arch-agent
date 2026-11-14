@@ -26,7 +26,7 @@ from aws_arch_agent.rules.terraform_model import (
     variables_from_terraform,
 )
 from aws_arch_agent.rules.runner import filter_by_severity, run_all_rules
-from aws_arch_agent.rules import cf_template, effort, environments, nonprod, regions, stack_cost, themes
+from aws_arch_agent.rules import account, cf_template, effort, environments, nonprod, regions, stack_cost, themes
 from aws_arch_agent.rules import well_architected
 from aws_arch_agent.rules.tag_policy import TagPolicy, policy_checked, use_tag_policy
 from aws_arch_agent.report.markdown import render_markdown
@@ -290,7 +290,8 @@ def _filter_rules(
         allowed = set(include_ids)
         out = [r for r in out if r.id in allowed]
     elif not org:
-        out = [r for r in out if r.id not in ORG_RULE_IDS]
+        live = account.live_checked()
+        out = [r for r in out if r.id not in ORG_RULE_IDS or r.id in live]
     if exclude_ids is not None:
         blocked = set(exclude_ids)
         out = [r for r in out if r.id not in blocked]
@@ -311,7 +312,8 @@ def active_titles(
         allowed = set(rules_include)
         titles = {k: v for k, v in titles.items() if k in allowed}
     elif not rules_org:
-        titles = {k: v for k, v in titles.items() if k not in ORG_RULE_IDS}
+        live = account.live_checked()
+        titles = {k: v for k, v in titles.items() if k not in ORG_RULE_IDS or k in live}
     if rules_exclude is not None:
         blocked = set(rules_exclude)
         titles = {k: v for k, v in titles.items() if k not in blocked}
@@ -478,6 +480,7 @@ def _collect_findings(
             findings, warnings = run_all_rules(repo_path, rules, _languages_to_scan(language))
     if tf_plan is not None and source not in TERRAFORM_SOURCES:
         warnings.append(f"--tf-plan applies only to a Terraform scan (source is {source}); ignored")
+    findings = account.apply(findings, ctx.notes)
     findings = filter_by_severity(findings, severity_threshold)
     effort.annotate(findings)
     themes.annotate(findings)
@@ -502,6 +505,7 @@ def analyze_v1(
     dashboards_min_resources: int | None = None,
     theme_filter: list[str] | None = None,
     group_by: str = "severity",
+    account_facts: account.AccountFacts | None = None,
 ) -> tuple[str, RepoContext, list[Finding], list[str]]:
     """Run V1 pipeline: scan repo, run rules, optionally judge findings with the LLM; return (report_md, ctx, findings, warnings)."""
     with (
@@ -511,11 +515,14 @@ def analyze_v1(
         environments.use_environments(environment_map, repo_path),
         nonprod.use_max_size(nonprod_max_size),
         cf_template.use_dashboard_min_resources(dashboards_min_resources),
+        account.use_facts(account_facts),
     ):
         ctx, findings, warnings = _collect_findings(
             repo_path, max_files, rules_include, rules_exclude, None, rules_org, iac,
             tf_plan,
         )
+        if account_facts is not None:
+            warnings = [*warnings, *account_facts.warnings]
         # Before the threshold and any theme filter: hiding a finding must not make its file
         # look as if no rule fired there.
         rule_findings = findings

@@ -154,13 +154,13 @@ def test_terraform_plan_region(tmp_path: Path) -> None:
 
 
 def test_detected_region_without_prices_warns_and_skips_its_estimates(tmp_path: Path) -> None:
-    _cdk_out(tmp_path, {"Sydney": "aws://111122223333/ap-southeast-2"})
+    _cdk_out(tmp_path, {"Sydney": "aws://111122223333/sa-east-1"})
     out = tmp_path / "report.md"
     result = CliRunner().invoke(app, ["--repo", str(tmp_path), "--mode", "v2", "--no-llm",
                                       "--templates", str(tmp_path / "cdk.out"), "--out", str(out)])
     assert result.exit_code == 0, result.output
-    assert "No prices for region ap-southeast-2" in result.output
-    assert "ap-southeast-2 (CDK stack env; not in the price snapshot" in out.read_text(encoding="utf-8")
+    assert "No prices for region sa-east-1" in result.output
+    assert "sa-east-1 (CDK stack env; not in the price snapshot" in out.read_text(encoding="utf-8")
 
 
 def test_outside_a_scan_use_region_decides(tmp_path: Path) -> None:

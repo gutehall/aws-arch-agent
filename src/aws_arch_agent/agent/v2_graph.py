@@ -24,7 +24,7 @@ from aws_arch_agent.tools.llm import NO_LLM, LLMClient, LLMResult, aggregate_res
 from aws_arch_agent.rules.fix_snippets import attach_fixes
 from aws_arch_agent.rules.registry import ALL_RULES
 from aws_arch_agent.rules.runner import filter_by_severity, run_all_rules
-from aws_arch_agent.rules import cf_template, effort, environments, nonprod, regions, stack_cost, themes
+from aws_arch_agent.rules import account, cf_template, effort, environments, nonprod, regions, stack_cost, themes
 from aws_arch_agent.rules import well_architected
 from aws_arch_agent.rules.tag_policy import TagPolicy, use_tag_policy
 from aws_arch_agent.report.markdown import render_markdown
@@ -245,6 +245,7 @@ def node_collect(state: State) -> State:
     language = ctx.language
     with limit_to_files(repo_path, files):
         findings, warnings = run_all_rules(repo_path, rules, _languages_to_scan(language))
+    findings = account.apply(findings, ctx.notes)
     unfiltered = findings
     findings = _shown(findings, state)
 
@@ -641,6 +642,7 @@ def analyze_v2(
     dashboards_min_resources: int | None = None,
     theme_filter: List[str] | None = None,
     group_by: str = "severity",
+    account_facts: account.AccountFacts | None = None,
 ) -> tuple[str, RepoContext, List[Finding], List[str]]:
     """Run V2 graph; return (final_report_md, ctx, findings, warnings)."""
     graph = build_graph()
@@ -672,12 +674,15 @@ def analyze_v2(
         environments.use_environments(environment_map, repo_path),
         nonprod.use_max_size(nonprod_max_size),
         cf_template.use_dashboard_min_resources(dashboards_min_resources),
+        account.use_facts(account_facts),
     ):
         out = graph.invoke(initial)
     report = out.get("final_report") or "No report produced."
     ctx = out.get("ctx")
     findings = out.get("raw_findings") or []
     warnings = out.get("rule_warnings") or []
+    if account_facts is not None:
+        warnings = [*warnings, *account_facts.warnings]
     if ctx is None:
         ctx = RepoContext(repo_path=str(repo_path), language="unknown")
     ctx.llm = aggregate_results(out.get("llm_results") or []) if use_llm else NO_LLM
