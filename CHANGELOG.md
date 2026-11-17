@@ -2,6 +2,13 @@
 
 New releases go at the top. See [CONTRIBUTING.md](CONTRIBUTING.md#releases) for when to cut one and how the version is bumped.
 
+## v0.2.3 - 2026-11-17
+
+### Changes
+
+- Fix the release workflow's PyPI upload: the pinned `pypa/gh-action-pypi-publish` commit did not exist, so v0.2.2 was published to GitHub but not to PyPI. v0.2.3 has the same changes as v0.2.2 and is the first release uploaded to PyPI
+- Fix a flaky pytest-xdist collection error in the pricing snapshot test (#105)
+
 ## v0.2.2 - 2026-11-17
 
 ### Changes
