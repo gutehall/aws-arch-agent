@@ -6,7 +6,7 @@ New releases go at the top. See [CONTRIBUTING.md](CONTRIBUTING.md#releases) for 
 
 ### Changes
 
-- Fix the release workflow's PyPI upload: the pinned `pypa/gh-action-pypi-publish` commit did not exist, so v0.2.2 was published to GitHub but not to PyPI. v0.2.3 has the same changes as v0.2.2 and is the first release uploaded to PyPI
+- Fix the pinned `pypa/gh-action-pypi-publish` commit in the release workflow, which did not exist. The PyPI upload still needs a trusted publisher registered on PyPI, so no version is on PyPI yet
 - Fix a flaky pytest-xdist collection error in the pricing snapshot test (#105)
 
 ## v0.2.2 - 2026-11-17

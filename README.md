@@ -30,7 +30,7 @@ pip install "git+https://github.com/gutehall/aws-arch-agent@v0.2.3"
 aws-arch-agent --version   # 0.2.3
 ```
 
-Releases after v0.2.2 are also published to PyPI, as the same version the tag carries: `pip install aws-arch-agent`, `pip install "aws-arch-agent[v2]"`, `pip install "aws-arch-agent[rag]"`. The git install above stays for anyone who pins a tag.
+The package is not on PyPI yet; install from the tag as above.
 
 CI tests on Linux (Python 3.11 and 3.12) and Windows, and runs the GitHub Action on Linux, macOS, and Windows. V2 synth also needs Node.js for `npx cdk synth`.
 
