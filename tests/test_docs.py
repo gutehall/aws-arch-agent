@@ -86,3 +86,12 @@ def test_reference_pins_the_action_and_lists_every_cli_option() -> None:
         for opt in param.opts:
             if opt.startswith("--"):
                 assert any(f"`{opt}`" in row for row in rows), f"{opt} has no CLI table row"
+
+
+def test_gitignore_report_outputs_are_anchored_to_the_repo_root() -> None:
+    """An unanchored `report.html` also matches the packaged template, and hatch then leaves
+    it out of the wheel, so an installed copy fails on `--format html`."""
+    root = Path(__file__).resolve().parent.parent
+    lines = (root / ".gitignore").read_text(encoding="utf-8").splitlines()
+    unanchored = [ln for ln in lines if ln.startswith("report.")]
+    assert unanchored == []

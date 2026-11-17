@@ -10,15 +10,15 @@ No AWS credentials. No cloud calls, unless you opt in with `--live-account` (rea
 
 Requires Python 3.11+, git, and [ripgrep](https://github.com/BurntSushi/ripgrep#installation): `brew install ripgrep` (macOS), `sudo apt install ripgrep` (Debian/Ubuntu), or `winget install BurntSushi.ripgrep.MSVC` (Windows).
 
-Install a release (latest: [v0.2.3](https://github.com/gutehall/aws-arch-agent/releases/tag/v0.2.3)). Pin the tag. [CI](#ci) says what a newer tag can change.
+Install a release (latest: [v0.2.4](https://github.com/gutehall/aws-arch-agent/releases/tag/v0.2.4)). Pin the tag. [CI](#ci) says what a newer tag can change.
 
 macOS and Linux:
 
 ```bash
 python3 -m venv .venv
 source .venv/bin/activate
-pip install "git+https://github.com/gutehall/aws-arch-agent@v0.2.3"
-aws-arch-agent --version   # 0.2.3
+pip install "git+https://github.com/gutehall/aws-arch-agent@v0.2.4"
+aws-arch-agent --version   # 0.2.4
 ```
 
 Windows (PowerShell):
@@ -26,8 +26,8 @@ Windows (PowerShell):
 ```powershell
 py -m venv .venv
 .venv\Scripts\Activate.ps1
-pip install "git+https://github.com/gutehall/aws-arch-agent@v0.2.3"
-aws-arch-agent --version   # 0.2.3
+pip install "git+https://github.com/gutehall/aws-arch-agent@v0.2.4"
+aws-arch-agent --version   # 0.2.4
 ```
 
 The package is not on PyPI yet; install from the tag as above.
@@ -83,7 +83,7 @@ aws-arch-agent --repo . --no-llm --fail-on high --enforce-baseline
 Or use the composite GitHub Action, pinned to a release:
 
 ```yaml
-- uses: gutehall/aws-arch-agent/.github/actions/aws-arch-agent@v0.2.3
+- uses: gutehall/aws-arch-agent/.github/actions/aws-arch-agent@v0.2.4
   with:
     repo: .
     fail-on: high
@@ -106,7 +106,7 @@ Releases and notes: [GitHub releases](https://github.com/gutehall/aws-arch-agent
 - **V2** (`--mode v2`): runs `cdk synth`, then six LangGraph reviewers judge the static findings and the synthesised template. A release install needs the `v2` extra. A checkout installed with `.[dev]` already has it.
 
 ```bash
-pip install "aws-arch-agent[v2] @ git+https://github.com/gutehall/aws-arch-agent@v0.2.3"
+pip install "aws-arch-agent[v2] @ git+https://github.com/gutehall/aws-arch-agent@v0.2.4"
 aws-arch-agent --repo . --mode v2 --no-llm --rag ./docs/waf-snippets.md
 ```
 
