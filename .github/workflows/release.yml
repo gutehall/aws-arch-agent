@@ -54,9 +54,11 @@ jobs:
         run: gh release create "$TAG" --verify-tag --title "$TAG" --notes-file "$RUNNER_TEMP/notes.md"
 
   # Same tag, same commit. Trusted publishing: the id-token is minted only in this job.
+  # Off until the repository variable PUBLISH_TO_PYPI is 'true', which needs a PyPI trusted
+  # publisher registered for this repository, workflow and the pypi environment.
   pypi:
     needs: release
-    if: needs.release.outputs.created == 'true'
+    if: needs.release.outputs.created == 'true' && vars.PUBLISH_TO_PYPI == 'true'
     runs-on: ubuntu-latest
     environment: pypi
     permissions:
