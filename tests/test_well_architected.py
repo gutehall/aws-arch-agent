@@ -216,10 +216,10 @@ def test_html_report_has_answers_escaped() -> None:
     f = _finding("CF-RDS-001")
     f.title = "<script>alert(1)</script>"
     page = render_html(_ctx(), [f])
-    section = page.split('<section class="answers"', 1)[1].split("</section>", 1)[0]
-    assert "Well-Architected answers" in section
-    assert section.count("<li><b>") == 57
-    assert "[CF-RDS-001] &lt;script&gt;alert(1)&lt;/script&gt;" in section
+    section = page.split('<section id="view-answers"', 1)[1].split("</section>", 1)[0]
+    assert 'data-view="answers"' in page
+    assert section.count('<article class="answer') == 57
+    assert '<span class="id">CF-RDS-001</span> &lt;script&gt;alert(1)&lt;/script&gt;' in section
     assert "<script>alert" not in section
 
 

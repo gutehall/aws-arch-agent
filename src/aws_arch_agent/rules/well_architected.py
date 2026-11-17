@@ -208,6 +208,8 @@ def html_rows(items: List[Answer]) -> List[dict]:
     return [
         {
             "id": a.question.id,
+            "pillar": a.question.pillar,
+            "url": a.question.url,
             "title": a.question.title,
             "status": a.status,
             "met": a.met,
