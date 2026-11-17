@@ -135,7 +135,7 @@ jobs:
       - name: Install Python dependencies
         run: |
           python -m pip install -U pip
-          python -m pip install -e . pytest
+          python -m pip install -e . pytest pytest-cov
 
       - name: Install Node dependencies for CDK fixture
         working-directory: tests/fixtures/minimal-cdk
