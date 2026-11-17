@@ -86,8 +86,8 @@ node_modules/
 cdk.out/
 
 # Report outputs
-report.md
-report.json
-report.sarif
+/report.md
+/report.json
+/report.sarif
 *.sarif
-report.html
+/report.html
