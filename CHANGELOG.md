@@ -2,6 +2,19 @@
 
 New releases go at the top. See [CONTRIBUTING.md](CONTRIBUTING.md#releases) for when to cut one and how the version is bumped.
 
+## v0.2.2 - 2026-11-17
+
+### Changes
+
+- Move the Well-Architected answers in the HTML report into their own tab, one card per question grouped by pillar, with a met / not met filter, so the findings are no longer pushed down the page
+- Scan Terraform child modules at any depth, and with `--tf-plan` expand `count` and `for_each` instances and read data source values from the plan (#103)
+- Run V2 on Terraform with `--iac terraform`, and accept `--tf-plan` in V2 (#103)
+- Check ECS services for a deployment circuit breaker with rollback (CF-ECS-012, #103)
+- Add `--live-account`, which reads Security Hub, GuardDuty, CloudTrail, Config, Budgets, a CUR, Access Analyzer and Inspector (read-only) for the account-level rules. Off by default; no AWS call without it. The price snapshot now covers eleven regions (#103)
+- Make no LLM call unless a model server is configured (#103)
+- Publish each release to PyPI from the release workflow (#103)
+- Install `pytest-cov` in the Windows CI job
+
 ## v0.2.1 - 2026-11-14
 
 ### Changes
