@@ -10,15 +10,15 @@ No AWS credentials. No cloud calls, unless you opt in with `--live-account` (rea
 
 Requires Python 3.11+, git, and [ripgrep](https://github.com/BurntSushi/ripgrep#installation): `brew install ripgrep` (macOS), `sudo apt install ripgrep` (Debian/Ubuntu), or `winget install BurntSushi.ripgrep.MSVC` (Windows).
 
-Install a release (latest: [v0.2.2](https://github.com/gutehall/aws-arch-agent/releases/tag/v0.2.2)). Pin the tag. [CI](#ci) says what a newer tag can change.
+Install a release (latest: [v0.2.3](https://github.com/gutehall/aws-arch-agent/releases/tag/v0.2.3)). Pin the tag. [CI](#ci) says what a newer tag can change.
 
 macOS and Linux:
 
 ```bash
 python3 -m venv .venv
 source .venv/bin/activate
-pip install "git+https://github.com/gutehall/aws-arch-agent@v0.2.2"
-aws-arch-agent --version   # 0.2.2
+pip install "git+https://github.com/gutehall/aws-arch-agent@v0.2.3"
+aws-arch-agent --version   # 0.2.3
 ```
 
 Windows (PowerShell):
@@ -26,11 +26,11 @@ Windows (PowerShell):
 ```powershell
 py -m venv .venv
 .venv\Scripts\Activate.ps1
-pip install "git+https://github.com/gutehall/aws-arch-agent@v0.2.2"
-aws-arch-agent --version   # 0.2.2
+pip install "git+https://github.com/gutehall/aws-arch-agent@v0.2.3"
+aws-arch-agent --version   # 0.2.3
 ```
 
-Releases after v0.2.1 are also published to PyPI, as the same version the tag carries: `pip install aws-arch-agent`, `pip install "aws-arch-agent[v2]"`, `pip install "aws-arch-agent[rag]"`. The git install above stays for anyone who pins a tag.
+Releases after v0.2.2 are also published to PyPI, as the same version the tag carries: `pip install aws-arch-agent`, `pip install "aws-arch-agent[v2]"`, `pip install "aws-arch-agent[rag]"`. The git install above stays for anyone who pins a tag.
 
 CI tests on Linux (Python 3.11 and 3.12) and Windows, and runs the GitHub Action on Linux, macOS, and Windows. V2 synth also needs Node.js for `npx cdk synth`.
 
@@ -83,7 +83,7 @@ aws-arch-agent --repo . --no-llm --fail-on high --enforce-baseline
 Or use the composite GitHub Action, pinned to a release:
 
 ```yaml
-- uses: gutehall/aws-arch-agent/.github/actions/aws-arch-agent@v0.2.2
+- uses: gutehall/aws-arch-agent/.github/actions/aws-arch-agent@v0.2.3
   with:
     repo: .
     fail-on: high
@@ -106,7 +106,7 @@ Releases and notes: [GitHub releases](https://github.com/gutehall/aws-arch-agent
 - **V2** (`--mode v2`): runs `cdk synth`, then six LangGraph reviewers judge the static findings and the synthesised template. A release install needs the `v2` extra. A checkout installed with `.[dev]` already has it.
 
 ```bash
-pip install "aws-arch-agent[v2] @ git+https://github.com/gutehall/aws-arch-agent@v0.2.2"
+pip install "aws-arch-agent[v2] @ git+https://github.com/gutehall/aws-arch-agent@v0.2.3"
 aws-arch-agent --repo . --mode v2 --no-llm --rag ./docs/waf-snippets.md
 ```
 
