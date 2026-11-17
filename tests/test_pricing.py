@@ -284,7 +284,12 @@ def test_bad_region_flag_fails(tmp_path: Path) -> None:
     assert "--region must be an AWS region code" in result.output
 
 
-@pytest.mark.parametrize("content", [None, b"", b"not gzip", __import__("gzip").compress(b"{not json")])
+# mtime=0 keeps the gzip header, and so the test id, the same in every xdist worker.
+@pytest.mark.parametrize(
+    "content",
+    [None, b"", b"not gzip", __import__("gzip").compress(b"{not json", mtime=0)],
+    ids=["none", "empty", "not-gzip", "gzip-not-json"],
+)
 def test_missing_or_broken_snapshot_gives_no_prices(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, content: bytes | None
 ) -> None:
