@@ -2,6 +2,13 @@
 
 New releases go at the top. See [CONTRIBUTING.md](CONTRIBUTING.md#releases) for when to cut one and how the version is bumped.
 
+## v0.2.4 - 2026-11-17
+
+### Changes
+
+- Fix `--format html` on an installed copy: the HTML report template was left out of the wheel, so the command failed with `FileNotFoundError` for `report/templates/report.html`. Releases up to v0.2.3 are affected when installed (running from a source checkout was fine)
+- Only run the PyPI upload when the repository variable `PUBLISH_TO_PYPI` is `true`; no version is on PyPI yet (#107)
+
 ## v0.2.3 - 2026-11-17
 
 ### Changes
