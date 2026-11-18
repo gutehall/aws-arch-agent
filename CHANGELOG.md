@@ -2,6 +2,16 @@
 
 New releases go at the top. See [CONTRIBUTING.md](CONTRIBUTING.md#releases) for when to cut one and how the version is bumped.
 
+## v0.3.0 - 2026-11-18
+
+### Changes
+
+- Answer the four AI Well-Architected lenses (Machine Learning, Generative AI, Responsible AI, Agentic AI) for an AI workload, as a second list beside the 57 core answers: `lens_answers` in JSON (new in `docs/report-schema.json`, each item has `lens`) and a lens section in the Markdown and HTML reports, grouped by lens and pillar or focus area. The 133 questions and 404 best practices are committed in `rules/data/ai_lenses.json`; a scan never fetches the network (#109)
+- Run the lens answers and the AI findings only for an AI workload: on when the scan sees a Bedrock, SageMaker, or AgentCore resource, forced on or off with the new `lenses.ai` config key (#109)
+- Check Bedrock agents for a guardrail (CF-BEDROCK-001) and an idle session timeout (CF-BEDROCK-003), and model invocation logging as an account check that runs with `rules.org` (CF-BEDROCK-004) (#109)
+- Check SageMaker endpoints for a monitoring schedule (CF-SAGE-006) (#109)
+- Check AI workloads for a responsible-AI note, an evaluation set, a human-oversight note, an agent role note and a prompt catalog (REPO-194 to REPO-198) (#109)
+
 ## v0.2.4 - 2026-11-17
 
 ### Changes
