@@ -100,7 +100,13 @@ rules:
 - **no_synth**: if `true`, do not run cdk synth (V2 only). Use with **templates** for raw CF, or alone for static analysis only.
 - **rules.include**: list of rule IDs to run (e.g. `["SEC-001", "SEC-002"]`); if set, only these run
 - **rules.exclude**: list of rule IDs to skip
-- **rules.org**: if `true`, also run the account-level rules `SEC-026`, `SEC-027`, `OPS-001`, `OPS-014`, `COST-014`, `REPO-004`, `REPO-007`, `REPO-008`, `REPO-012`, `REPO-032`, `REPO-069`, `REPO-080`, `REPO-133`, `REPO-134`, `REPO-136`, `REPO-137`, `REPO-141`, `REPO-145`, `REPO-162`, and `REPO-163`. Default is `false` because an app stack does not own those controls. Listing an id in **rules.include** runs that rule even when this is false. **rules.exclude** still skips it.
+- **rules.org**: if `true`, also run the account-level rules `SEC-026`, `SEC-027`, `OPS-001`, `OPS-014`, `COST-014`, `REPO-004`, `REPO-007`, `REPO-008`, `REPO-012`, `REPO-032`, `REPO-069`, `REPO-080`, `REPO-133`, `REPO-134`, `REPO-136`, `REPO-137`, `REPO-141`, `REPO-145`, `REPO-162`, `REPO-163`, and the AI template check `CF-BEDROCK-004` (model invocation logging, which has no CloudFormation resource type). Default is `false` because an app stack does not own those controls. Listing an id in **rules.include** runs that rule even when this is false. **rules.exclude** still skips it.
+- **lenses.ai**: the four AI Well-Architected lenses (Machine Learning, Generative AI, Responsible AI, Agentic AI) and the findings written for them. Omitted means auto: they run when the scan sees a Bedrock, SageMaker, or AgentCore resource, and only then. `true` turns them on with no AI resource. `false` turns them off even when one exists. When they are off, `lens_answers` in the JSON report is `[]` and the reports show no lens section. The 57 core questions do not depend on this key. A CDK scan with no synth has no resources to see, so it needs `true`. V1 and V2 both read it:
+
+  ```yaml
+  lenses:
+    ai: true
+  ```
 - **themes**: only report rules in these themes. A list of names, or one comma-separated string. Same values as `--theme`: `finops`, `security-baseline`, `identity`, `data-protection`, `network-exposure`, `resilience`, `observability`, `sustainability`. Leave it out to report every theme.
 - **group_by**: `severity` (default) or `theme`. Groups Markdown findings. Same as `--group-by`. A finding in two themes is listed under both.
 - **rag.path**: path to a markdown doc for RAG context (V2 only). Pillar and merge prompts include retrieved snippets when set.

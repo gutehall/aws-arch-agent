@@ -137,6 +137,18 @@ def nonprod_max_size(value: Any) -> str | None:
     return str(size)
 
 
+def lenses_ai_setting(value: Any) -> bool | None:
+    """Config `lenses.ai`: true forces the four AI lenses on, false forces them off, omitted is auto."""
+    if value is None:
+        return None
+    if not isinstance(value, dict):
+        raise ConfigError(f"lenses must be a mapping with ai, got {value!r}")
+    unknown = set(value) - {"ai"}
+    if unknown:
+        raise ConfigError(f"lenses has unknown keys: {', '.join(sorted(unknown))} (use ai)")
+    return _as_bool(value["ai"], "lenses.ai") if "ai" in value else None
+
+
 def dashboards_min_resources(value: Any) -> int | None:
     """Config `dashboards.min_resources`: a stack with more resources and no dashboard is reported."""
     if value is None:
@@ -321,6 +333,8 @@ def load_config(
     )
     rules_org = _as_bool(file_rules["org"], "rules.org") if "org" in file_rules else False
 
+    lenses_ai = lenses_ai_setting(file_cfg.get("lenses"))
+
     if "severity_threshold" in file_cfg:
         severity_threshold = _severity_threshold(file_cfg["severity_threshold"])
     else:
@@ -340,6 +354,7 @@ def load_config(
         rules_include=rules_include,
         rules_exclude=rules_exclude,
         rules_org=rules_org,
+        lenses_ai=lenses_ai,
         severity_threshold=severity_threshold,
         templates=_optional_str(
             templates if templates is not None else file_cfg.get("templates"),
@@ -376,6 +391,7 @@ class RunConfig:
         "rules_include",
         "rules_exclude",
         "rules_org",
+        "lenses_ai",
         "severity_threshold",
         "templates",
         "no_synth",
@@ -403,6 +419,7 @@ class RunConfig:
         rules_include: list[str] | None = None,
         rules_exclude: list[str] | None = None,
         rules_org: bool = False,
+        lenses_ai: bool | None = None,
         severity_threshold: str | None = None,
         templates: str | None = None,
         no_synth: bool = False,
@@ -426,6 +443,7 @@ class RunConfig:
         self.rules_include = rules_include
         self.rules_exclude = rules_exclude
         self.rules_org = rules_org
+        self.lenses_ai = lenses_ai  # config lenses.ai: true/false forces the AI lenses; None is auto
         self.severity_threshold = severity_threshold
         self.templates = templates
         self.no_synth = no_synth

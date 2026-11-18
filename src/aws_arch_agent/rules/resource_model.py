@@ -132,6 +132,17 @@ CF_TYPE_TO_CANONICAL: dict[str, str] = {
     "AWS::FSx::DataRepositoryAssociation": "fsx_data_repository_association",
     "AWS::SageMaker::NotebookInstance": "sagemaker_notebook_instance",
     "AWS::SageMaker::EndpointConfig": "sagemaker_endpoint_config",
+    "AWS::SageMaker::Endpoint": "sagemaker_endpoint",
+    "AWS::SageMaker::MonitoringSchedule": "sagemaker_monitoring_schedule",
+    # The AI services. They tell the scan it is of an AI workload (rules/ai_gate.py) and feed the
+    # Bedrock checks (CF-BEDROCK-001, CF-BEDROCK-003).
+    "AWS::Bedrock::Agent": "bedrock_agent",
+    "AWS::Bedrock::Guardrail": "bedrock_guardrail",
+    "AWS::Bedrock::KnowledgeBase": "bedrock_knowledge_base",
+    "AWS::Bedrock::Prompt": "bedrock_prompt",
+    "AWS::BedrockAgentCore::Runtime": "bedrockagentcore_agent_runtime",
+    "AWS::BedrockAgentCore::Gateway": "bedrockagentcore_gateway",
+    "AWS::BedrockAgentCore::Memory": "bedrockagentcore_memory",
     "AWS::Route53::HostedZone": "route53_hosted_zone",
     "AWS::Route53::RecordSet": "route53_record_set",
     "AWS::Route53::RecordSetGroup": "route53_record_set_group",
@@ -173,6 +184,8 @@ TF_MODULE_CALL = "module"
 CANONICAL_TYPES: frozenset[str] = frozenset(CF_TYPE_TO_CANONICAL.values()) | {
     "events_target", "backup_vault_lock", "efs_backup_policy", "autoscaling_attachment",
     "route53_query_log", "guardduty_detector_feature", "iam_user_login_profile",
+    # Terraform only: model invocation logging has no CloudFormation resource type.
+    "bedrock_model_invocation_logging",
 }
 
 

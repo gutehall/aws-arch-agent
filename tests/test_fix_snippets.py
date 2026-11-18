@@ -34,7 +34,8 @@ def _ids(language: str) -> set[str]:
 
 
 def test_both_languages_cover_the_same_controls() -> None:
-    assert _ids("cloudformation") == _ids("terraform")
+    # Model invocation logging has no CloudFormation resource type, so CF-BEDROCK-004 is Terraform only.
+    assert _ids("cloudformation") | {"CF-BEDROCK-004"} == _ids("terraform")
     # Every per-resource check with a fix to write has one (V2 stage tracing has none: HTTP APIs lack X-Ray).
     assert set(CHECK_PROPERTIES) - {"CF-APIGW-V2-002"} <= _ids("terraform")
     assert TEMPLATE_LEVEL <= _ids("terraform")

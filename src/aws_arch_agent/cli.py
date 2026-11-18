@@ -327,6 +327,7 @@ def analyze(
             theme_filter=cfg.themes,
             group_by=cfg.group_by,
             account_facts=account_facts,
+            lenses_ai=cfg.lenses_ai,
         )
     else:
         report_md, ctx_report, findings, warnings = analyze_v1(
@@ -347,6 +348,7 @@ def analyze(
             theme_filter=cfg.themes,
             group_by=cfg.group_by,
             account_facts=account_facts,
+            lenses_ai=cfg.lenses_ai,
         )
 
     # What happened, not what was configured. soft_wrap keeps the line whole for anyone grepping it.

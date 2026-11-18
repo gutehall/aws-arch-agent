@@ -4,7 +4,7 @@ Local-first AWS architecture review for infrastructure code. It scans **CDK** (T
 
 No AWS credentials. No cloud calls, unless you opt in with `--live-account` (read-only account checks). LLM output is optional and self-hosted only. With `OLLAMA_HOST` or `LLM_BASE_URL` set, it calls that server; with neither set it makes no call. `--no-llm` skips it either way. If the model does not answer, the findings stay as the rules wrote them.
 
-> 372 static rules and 286 template checks are implemented and tested. 139 of the 372 CDK rules (37%) have a template check. Those checks run on CloudFormation, Terraform, and synthesised CDK. [docs/COVERAGE.md](docs/COVERAGE.md) gives the reason for each of the others. Expect some false positives and negatives, and API changes.
+> 377 static rules and 290 template checks are implemented and tested. 139 of the 377 CDK rules (37%) have a template check. Those checks run on CloudFormation, Terraform, and synthesised CDK. [docs/COVERAGE.md](docs/COVERAGE.md) gives the reason for each of the others. Expect some false positives and negatives, and API changes.
 
 ## Install
 
@@ -53,9 +53,9 @@ Each finding has a severity, a pillar, a file and line, evidence, a recommendati
 
 | Pillar | Rules | Examples |
 |--------|------:|----------|
-| **Security** | 113 | Missing encryption, public access, wildcard IAM, hardcoded secrets, no MFA, no threat model |
+| **Security** | 114 | Missing encryption, public access, wildcard IAM, hardcoded secrets, no MFA, no threat model |
 | **Reliability** | 75 | Missing DLQs, no backups, single-AZ, no health checks, untraced requests, no quota alarms |
-| **Operational Excellence** | 67 | No logging, alarms, or tracing; no owner, runbook, test gate, or rollback |
+| **Operational Excellence** | 71 | No logging, alarms, or tracing; no owner, runbook, test gate, or rollback |
 | **Performance Efficiency** | 33 | No caching, no Graviton, oversized tasks, no load balancer, no load test |
 | **Cost Optimization** | 52 | No autoscaling, NAT data processing, no lifecycle policy, no budgets or cost owner |
 | **Sustainability** | 27 | No Spot, no right-sizing, idle resources, unattached volumes, no data expiry |
@@ -66,6 +66,8 @@ Repo-level checks (`REPO-*`) read the IaC together with notes in the repo (READM
 ### Well-Architected answers
 
 The report ends with an answer for each of the 57 Well-Architected questions, **met** or **not met**, computed from the findings alone. Every one of the 307 best practices maps to at least one rule.
+
+A workload that uses Bedrock, SageMaker, or AgentCore also gets a second list, `lens_answers`: an answer for each question of the four AI Well-Architected lenses (Machine Learning, Generative AI, Responsible AI, Agentic AI), computed the same way. It appears only when the scan sees one of those services, or when the config sets `lenses.ai: true`; the 57 core answers do not change. See [docs/REFERENCE.md](docs/REFERENCE.md#ai-lens-answers).
 
 Some practices only make sense at account level (an organization trail, service control policies, a cost and usage report). Those rules are off by default. Set `rules.org: true` to turn them on. Until then a question with those practices reads "N of M best practices off unless rules.org is on", and JSON `answers` carry `needs_org` with the rule ids.
 
