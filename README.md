@@ -30,7 +30,19 @@ pip install "aws-arch-agent==0.3.1"
 aws-arch-agent --version   # 0.3.1
 ```
 
-The package is on [PyPI](https://pypi.org/project/aws-arch-agent/). To install the command on its own, without managing a virtual environment, use [pipx](https://pipx.pypa.io/): `pipx install aws-arch-agent`. To install a tag straight from GitHub instead, use `pip install "git+https://github.com/gutehall/aws-arch-agent@v0.3.1"`.
+The package is on [PyPI](https://pypi.org/project/aws-arch-agent/).
+
+To install the command on its own, without managing a virtual environment, use [pipx](https://pipx.pypa.io/):
+
+```bash
+pipx install aws-arch-agent
+```
+
+To install a tag straight from GitHub instead:
+
+```bash
+pip install "git+https://github.com/gutehall/aws-arch-agent@v0.3.1"
+```
 
 CI tests on Linux (Python 3.11 and 3.12) and Windows, and runs the GitHub Action on Linux, macOS, and Windows. V2 synth also needs Node.js for `npx cdk synth`.
 
