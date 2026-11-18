@@ -5,7 +5,7 @@ import re
 from typing import List, Dict
 from aws_arch_agent.models import Finding, RepoContext
 from aws_arch_agent.report.summary import _span_text, build_summary, markdown_lines
-from aws_arch_agent.rules import well_architected
+from aws_arch_agent.rules import lenses, well_architected
 
 
 def _fence(text: str) -> str:
@@ -122,6 +122,7 @@ def render_markdown(
     lines.extend(markdown_lines(build_summary(findings)))
     answers = well_architected.answers(findings, ctx.rules_run)
     lines.extend(well_architected.markdown_lines(answers))
+    lines.extend(lenses.markdown_lines(lenses.answers_for(ctx, findings)))
     lines.append("## Executive Summary")
     lines.append("This is an automated first-pass review. Always validate findings manually.")
     lines.append("")

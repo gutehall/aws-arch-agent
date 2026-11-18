@@ -253,6 +253,29 @@
       {% endfor %}
     </div>
     {% endfor %}
+    {% for lens in lens_groups %}
+    <div class="lens-group" data-lens="{{ lens.lens }}">
+      <h2>{{ lens.title }} <span class="meta">{{ lens.met }} of {{ lens.total }} met</span></h2>
+      {% for pg in lens.pillars %}
+      <div class="pillar-group">
+        <h3 class="pillar">{{ pg.name }} <span class="meta">{{ pg.met }} of {{ pg.rows | length }} met</span></h3>
+        {% for a in pg.rows %}
+        <article class="answer{% if a.met %} met{% endif %}" data-status="{{ a.status }}">
+          <header>
+            <span class="id">{{ a.id }}</span>
+            <h4>{% if a.url %}<a href="{{ a.url }}" target="_blank" rel="noopener noreferrer">{{ a.title }}</a>{% else %}{{ a.title }}{% endif %}</h4>
+            <span class="status">{{ a.status }}</span>
+          </header>
+          {% if a.reason %}<p class="reason">{{ a.reason }}</p>{% endif %}
+          {% if a.findings %}
+          <ul>{% for fid, title, n in a.findings %}<li><span class="id">{{ fid }}</span> {{ title }}{% if n > 1 %} ×{{ n }}{% endif %}</li>{% endfor %}</ul>
+          {% endif %}
+        </article>
+        {% endfor %}
+      </div>
+      {% endfor %}
+    </div>
+    {% endfor %}
   </section>
 
 </main>
@@ -301,6 +324,9 @@
         a.hidden = v !== "" && a.getAttribute("data-status") !== v;
       });
       document.querySelectorAll("#view-answers .pillar-group").forEach(function (g) {
+        g.hidden = g.querySelectorAll(".answer:not([hidden])").length === 0;
+      });
+      document.querySelectorAll("#view-answers .lens-group").forEach(function (g) {
         g.hidden = g.querySelectorAll(".answer:not([hidden])").length === 0;
       });
     });

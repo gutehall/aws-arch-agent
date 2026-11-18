@@ -867,6 +867,7 @@ from pathlib import Path
 from typing import ClassVar, List
 
 from aws_arch_agent.models import Finding, Severity
+from aws_arch_agent.rules import ai_gate
 from aws_arch_agent.rules.base import Rule
 from aws_arch_agent.rules.environments import from_words
 from aws_arch_agent.tools.cfn_yaml import is_cf_template, parse_template_text
@@ -13266,6 +13267,159 @@ class CostReviewMissing(_NoteRule):
     )
 
 
+# AI lens notes (rules/lens_map.py): responsible AI (REPO-194), an evaluation set (REPO-195),
+# human oversight (REPO-196), an agent's role and success criteria (REPO-197) and a prompt
+# catalog (REPO-198). They run only for an AI workload (rules/ai_gate.py): a non-AI repo gets
+# none of them. Each answers one best practice of an AI lens, never a core question.
+_AI_RESOURCE_TYPES = frozenset({
+    "bedrock_agent", "bedrock_knowledge_base",
+    "bedrockagentcore_agent_runtime", "bedrockagentcore_gateway", "bedrockagentcore_memory",
+})
+_AGENT_TYPES = ai_gate.BEDROCK_AGENT_TYPES
+
+
+class _AiNoteRule(_NoteRule):
+    """A note rule that fires only on an AI workload."""
+
+    category = "Operational Excellence"
+    themes = ("security-baseline",)
+    # The canonical resource types, one of which the scan must have seen, when the rule is
+    # about a resource (an agent) and not only about the workload being AI.
+    needs_types: ClassVar[frozenset[str]] = frozenset()
+
+    def applies(self) -> bool:
+        if not ai_gate.active():
+            return False
+        return not self.needs_types or bool(ai_gate.seen_types() & self.needs_types)
+
+    def run(self, repo_path: Path, language: str = "typescript") -> List[Finding]:
+        if not self.applies():
+            return []
+        return super().run(repo_path, language)
+
+
+class ResponsibleAiNoteMissing(_AiNoteRule):
+    id = "REPO-194"
+    title = "An AI workload has no responsible-AI, release-criteria or model-card note"
+    themes = ("security-baseline",)
+    note_name = re.compile(
+        r"responsible[-_ ]?ai|release[-_ ]?criteria|model[-_ ]?cards?|ai[-_ ]?(?:governance|policy)"
+    )
+    note_heading = re.compile(
+        r"(?i).*\b(?:responsible ai|release criteria|model cards?|ai governance|ai policy)\b.*"
+    )
+    recommendation = (
+        "Write down how the AI system is governed: a responsible-AI note (docs/responsible-ai.md) "
+        "or a model card that names the approvals the system needs, who signs them off, and the "
+        "release criteria it must meet before it ships."
+    )
+    searched = (
+        "the notes for a file or heading on responsible AI, release criteria, a model card or AI "
+        "governance"
+    )
+
+
+_EVAL_PATH = re.compile(r"(?i)(?:^|[-_./ ])(?:evals?|evaluations?|golden|ground[-_ ]?truth)(?:$|[-_./ ])")
+_EVAL_HEADING = re.compile(
+    r"(?i).*\b(?:evals?|evaluations?|golden (?:set|data ?set|answers?)|ground[- ]truth)\b.*"
+)
+
+
+class EvalSetMissing(_AiNoteRule):
+    id = "REPO-195"
+    title = "An AI workload has no evaluation or ground-truth set"
+    themes = ("observability",)
+    note_name = _EVAL_PATH
+    note_heading = _EVAL_HEADING
+    recommendation = (
+        "Keep a ground-truth set of prompts and expected responses in the repo (evals/golden.jsonl "
+        "or a ground-truth note), and run it on every change to the prompts, the model or the "
+        "retrieval so a regression in quality shows before release."
+    )
+    searched = (
+        "the repo for a file or directory named eval, golden or ground truth, and the notes for "
+        "a heading on one"
+    )
+
+    def present(self, repo_path: Path) -> str | None:
+        for path in walk(repo_path):
+            rel = "/".join(_rel_parts(path, repo_path))
+            if _EVAL_PATH.search(rel):
+                return rel
+        return super().present(repo_path)
+
+
+class HumanOversightMissing(_AiNoteRule):
+    id = "REPO-196"
+    title = "An AI workload has no note on human oversight"
+    themes = ("security-baseline",)
+    note_name = re.compile(r"human[-_ ]?(?:oversight|in[-_ ]the[-_ ]loop|review|approval)|hitl|oversight")
+    note_heading = re.compile(
+        r"(?i).*\b(?:human oversight|human[- ]in[- ]the[- ]loop|human review|human approval)\b.*"
+    )
+    recommendation = (
+        "Say where a person stays in the loop: a note (docs/human-oversight.md) that names the "
+        "decisions the AI system does not make alone, who reviews or approves them, and how a "
+        "person overrides or stops it."
+    )
+    searched = (
+        "the notes for a file or heading on human oversight, human in the loop, human review or "
+        "human approval"
+    )
+
+
+class AgentRoleMissing(_AiNoteRule):
+    id = "REPO-197"
+    title = "An agent has no note of its role and success criteria"
+    themes = ("observability",)
+    needs_types = _AGENT_TYPES
+    note_name = re.compile(
+        r"agent[-_ ]?(?:roles?|charter|spec|goals?|responsibilit\w*|success)|success[-_ ]?criteria"
+    )
+    note_heading = re.compile(
+        r"(?i).*\b(?:agent (?:role|charter|goals?|responsibilit\w+|success criteria)|success criteria)\b.*"
+    )
+    recommendation = (
+        "Define what the agent is for: a note (docs/agent-role.md) that states its role and "
+        "responsibilities, what it may and may not do, and the success criteria you measure it "
+        "against."
+    )
+    searched = (
+        "the notes for a file or heading on the agent's role, responsibilities, goals or success "
+        "criteria"
+    )
+
+
+class PromptCatalogMissing(_AiNoteRule):
+    id = "REPO-198"
+    title = "A Bedrock AI workload keeps no prompt catalog"
+    themes = ("security-baseline",)
+    category = "Security"
+    needs_types = _AI_RESOURCE_TYPES
+    note_name = re.compile(r"$^")
+    note_heading = re.compile(r"$^")
+    recommendation = (
+        "Keep prompts in one reviewed place: define them as AWS::Bedrock::Prompt resources, or "
+        "commit them under a prompts/ directory, so they are versioned, reviewed and not scattered "
+        "through the code."
+    )
+    searched = "the scanned resources for an AWS::Bedrock::Prompt and the repo for a prompts/ directory"
+
+    def present(self, repo_path: Path) -> str | None:
+        if "bedrock_prompt" in ai_gate.seen_types():
+            return "AWS::Bedrock::Prompt"
+        for path in walk(repo_path):
+            parts = _rel_parts(path, repo_path)
+            if "prompts" in [p.lower() for p in parts[:-1]]:
+                return "/".join(parts)
+        return None
+
+
+AI_REPO_RULES: List[Rule] = [
+    ResponsibleAiNoteMissing(), EvalSetMissing(), HumanOversightMissing(), AgentRoleMissing(),
+    PromptCatalogMissing(),
+]
+
 REPO_RULES: List[Rule] = [
     RepoTestsMissing(), RepoPipelineMissing(), SingleEnvironment(),
     OrgGuardrailsMissing(), AccountBaselineMissing(), RootUserUnchecked(),
@@ -13360,4 +13514,6 @@ REPO_RULES: List[Rule] = [
     ServiceBoundaryMissing(),
     UnusedRegion(),
     SustainabilityGoalsMissing(), DependencyUpdatesMissing(), BuildFleetAlwaysOn(), DeviceFarmMissing(),
+    ResponsibleAiNoteMissing(), EvalSetMissing(), HumanOversightMissing(), AgentRoleMissing(),
+    PromptCatalogMissing(),
 ]

@@ -15,7 +15,7 @@ Which CDK rules have a template check, and which AWS Foundational Security Best 
 
 ## CDK rules
 
-372 rules: 132 covered, 7 partial, 10 account, 5 cdk-only, 25 advice, 193 repo.
+377 rules: 132 covered, 7 partial, 10 account, 5 cdk-only, 25 advice, 198 repo.
 
 | Rule | Title | Template check | Status | Note |
 | -- | -- | -- | -- | -- |
@@ -391,6 +391,11 @@ Which CDK rules have a template check, and which AWS Foundational Security Best 
 | REPO-191 | Nothing proposes updates to dependencies, runtimes and base images |  | `repo` | Fires when the repo holds IaC and has no Dependabot or Renovate config. Deprecated Lambda runtimes stay on SEC 6. |
 | REPO-192 | A dedicated always-on fleet runs builds |  | `repo` | Fires when the IaC declares a CodeBuild fleet, or an instance, launch template or Auto Scaling group named for a runner, Jenkins or a build agent, and the file has no Spot option. |
 | REPO-193 | A mobile app is built and no device farm tests it |  | `repo` | Fires when the repo holds a mobile app (an AndroidManifest.xml, Podfile, Xcode project, Info.plist or pubspec.yaml) and neither the IaC, the build configs nor the notes name AWS Device Farm or another shared device service. |
+| REPO-194 | An AI workload has no responsible-AI, release-criteria or model-card note |  | `repo` | Fires only for an AI workload (a Bedrock, SageMaker or AgentCore resource, or `lenses.ai: true`) that holds IaC and has no note named or headed for responsible AI, release criteria, a model card or AI governance. Answers RAIUC05-BP01 of the Responsible AI lens. |
+| REPO-195 | An AI workload has no evaluation or ground-truth set |  | `repo` | Fires only for an AI workload that holds IaC and has no file, directory or note heading named eval, evaluation, golden or ground truth. Answers GENPERF01-BP01 of the Generative AI lens. |
+| REPO-196 | An AI workload has no note on human oversight |  | `repo` | Fires only for an AI workload that holds IaC and has no note named or headed for human oversight, human in the loop, human review or human approval. Answers RAIUC04-BP02 of the Responsible AI lens. |
+| REPO-197 | An agent has no note of its role and success criteria |  | `repo` | Fires only when the scan saw a Bedrock agent or an AgentCore runtime and no note is named or headed for the agent's role, responsibilities, goals or success criteria. Answers AGENTOPS01-BP01 of the Agentic AI lens. |
+| REPO-198 | A Bedrock AI workload keeps no prompt catalog |  | `repo` | Fires only when the scan saw a Bedrock agent, knowledge base or AgentCore resource and sees neither an `AWS::Bedrock::Prompt` resource nor a `prompts/` directory. Answers GENSEC04-BP01 of the Generative AI lens. |
 
 ## FSBP controls
 

@@ -115,6 +115,16 @@ TF_TYPE_TO_CANONICAL: dict[str, str] = {
     "aws_fsx_data_repository_association": "fsx_data_repository_association",
     "aws_sagemaker_notebook_instance": "sagemaker_notebook_instance",
     "aws_sagemaker_endpoint_configuration": "sagemaker_endpoint_config",
+    "aws_sagemaker_endpoint": "sagemaker_endpoint",
+    "aws_sagemaker_monitoring_schedule": "sagemaker_monitoring_schedule",
+    "aws_bedrock_model_invocation_logging_configuration": "bedrock_model_invocation_logging",
+    "aws_bedrockagent_agent": "bedrock_agent",
+    "aws_bedrock_guardrail": "bedrock_guardrail",
+    "aws_bedrockagent_knowledge_base": "bedrock_knowledge_base",
+    "aws_bedrockagent_prompt": "bedrock_prompt",
+    "aws_bedrockagentcore_agent_runtime": "bedrockagentcore_agent_runtime",
+    "aws_bedrockagentcore_gateway": "bedrockagentcore_gateway",
+    "aws_bedrockagentcore_memory": "bedrockagentcore_memory",
     "aws_route53_zone": "route53_hosted_zone",
     "aws_route53_record": "route53_record_set",
     "aws_route53_hosted_zone_dnssec": "route53_dnssec",
@@ -1490,6 +1500,18 @@ def _sagemaker_endpoint_config(body: dict) -> dict:
     _set(props, "KmsKeyId", _ref(body, "kms_key_arn"))
     _set(props, "ProductionVariants", _sagemaker_variants(body, "production_variants"))
     _set(props, "ShadowProductionVariants", _sagemaker_variants(body, "shadow_production_variants"))
+    return props
+
+
+def _bedrock_agent(body: dict) -> dict:
+    """aws_bedrockagent_agent. A guardrail_configuration block is the guardrail."""
+    props: dict = {}
+    _set(props, "IdleSessionTTLInSeconds", _ref(body, "idle_session_ttl_in_seconds"))
+    guard = _first_block(body, "guardrail_configuration")
+    if guard:
+        props["GuardrailConfiguration"] = {
+            "GuardrailIdentifier": _known(_ref(guard, "guardrail_identifier")),
+        }
     return props
 
 
@@ -2896,6 +2918,7 @@ _ADAPTERS: dict[str, Callable[[dict], dict]] = {
     "aws_cloudwatch_log_delivery_source": _log_delivery_source,
     "aws_sagemaker_notebook_instance": _sagemaker_notebook,
     "aws_sagemaker_endpoint_configuration": _sagemaker_endpoint_config,
+    "aws_bedrockagent_agent": _bedrock_agent,
     "aws_fsx_lustre_file_system": _fsx_file_system("LUSTRE", "LustreConfiguration"),
     "aws_fsx_windows_file_system": _fsx_file_system("WINDOWS", "WindowsConfiguration"),
     "aws_fsx_ontap_file_system": _fsx_file_system("ONTAP", "OntapConfiguration"),
@@ -2946,6 +2969,7 @@ _ADAPTERS: dict[str, Callable[[dict], dict]] = {
 # Nested block name -> CloudFormation property it feeds. A `dynamic` block of that name
 # is built from input the scan cannot see.
 _BLOCK_PROPERTY: dict[str, str] = {
+    "guardrail_configuration": "GuardrailConfiguration",
     "lifecycle_rule": "LifecycleConfiguration",
     "password_policy": "Policies",
     "user_pool_add_ons": "UserPoolAddOns",

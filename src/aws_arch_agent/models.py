@@ -96,3 +96,5 @@ class RepoContext(BaseModel):
     # or severity filter hides. The Well-Architected answers count a best practice as
     # checked only when one of these covers it. None means every rule.
     rules_run: List[str] | None = Field(default=None, exclude=True)
+    # Whether the scan is of an AI workload (rules/ai_gate.py). The lens answers show only then.
+    ai_lenses: bool = Field(default=False, exclude=True)

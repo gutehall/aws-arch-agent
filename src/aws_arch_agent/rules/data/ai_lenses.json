@@ -1,0 +1,2836 @@
+{
+  "_note": "Every question and best practice of the four AWS Well-Architected AI lenses, copied from the published lens pages. rules/lenses.py loads it; tests/test_ai_lenses.py checks the counts. A scan never fetches these pages. The Machine Learning lens pages carry no question text, so those titles come from the lens's custom-lens JSON.",
+  "lenses": {
+    "machine-learning": {
+      "_source": "https://docs.aws.amazon.com/wellarchitected/latest/machine-learning-lens/machine-learning-lens.html",
+      "_as_of": "2025-11-19"
+    },
+    "generative-ai": {
+      "_source": "https://docs.aws.amazon.com/wellarchitected/latest/generative-ai-lens/generative-ai-lens.html",
+      "_as_of": "2025-11-19"
+    },
+    "responsible-ai": {
+      "_source": "https://docs.aws.amazon.com/wellarchitected/latest/responsible-ai-lens/responsible-ai-lens.html",
+      "_as_of": "2025-11-19"
+    },
+    "agentic-ai": {
+      "_source": "https://docs.aws.amazon.com/wellarchitected/latest/agentic-ai-lens/agentic-ai-lens.html",
+      "_as_of": "2026-06-10"
+    }
+  },
+  "questions": [
+    {
+      "id": "MLOPS 1",
+      "lens": "machine-learning",
+      "pillar": "Operational Excellence",
+      "title": "How does your organizational structure and culture support your business outcomes?",
+      "url": "https://docs.aws.amazon.com/wellarchitected/latest/machine-learning-lens/ops-business-goal-identification.html",
+      "best_practices": [
+        {
+          "id": "MLOPS01-BP01",
+          "title": "Develop the right skills with accountability and empowerment"
+        },
+        {
+          "id": "MLOPS01-BP02",
+          "title": "Discuss and agree on the level of model explainability"
+        },
+        {
+          "id": "MLOPS01-BP03",
+          "title": "Monitor model adherence to business requirements"
+        }
+      ]
+    },
+    {
+      "id": "MLOPS 2",
+      "lens": "machine-learning",
+      "pillar": "Operational Excellence",
+      "title": "How do you establish operational processes that validate and maintain the technical feasibility of your ML problem formulation?",
+      "url": "https://docs.aws.amazon.com/wellarchitected/latest/machine-learning-lens/ops-ml-problem-framing.html",
+      "best_practices": [
+        {
+          "id": "MLOPS02-BP01",
+          "title": "Establish ML roles and responsibilities"
+        },
+        {
+          "id": "MLOPS02-BP02",
+          "title": "Prepare an ML profile template"
+        },
+        {
+          "id": "MLOPS02-BP03",
+          "title": "Establish model improvement strategies"
+        },
+        {
+          "id": "MLOPS02-BP04",
+          "title": "Establish a lineage tracker system"
+        },
+        {
+          "id": "MLOPS02-BP05",
+          "title": "Establish feedback loops across ML lifecycle phases"
+        },
+        {
+          "id": "MLOPS02-BP06",
+          "title": "Review fairness and explainability"
+        }
+      ]
+    },
+    {
+      "id": "MLOPS 3",
+      "lens": "machine-learning",
+      "pillar": "Operational Excellence",
+      "title": "How do you plan for continuous development and improvement?",
+      "url": "https://docs.aws.amazon.com/wellarchitected/latest/machine-learning-lens/ops-data-processing.html",
+      "best_practices": [
+        {
+          "id": "MLOPS03-BP01",
+          "title": "Profile data to improve quality"
+        },
+        {
+          "id": "MLOPS03-BP02",
+          "title": "Create tracking and version control mechanisms"
+        }
+      ]
+    },
+    {
+      "id": "MLOPS 4",
+      "lens": "machine-learning",
+      "pillar": "Operational Excellence",
+      "title": "How do you implement operational practices that ensure reproducible and maintainable model development?",
+      "url": "https://docs.aws.amazon.com/wellarchitected/latest/machine-learning-lens/ops-model-development.html",
+      "best_practices": [
+        {
+          "id": "MLOPS04-BP01",
+          "title": "Automate operations through MLOps and CI/CD"
+        },
+        {
+          "id": "MLOPS04-BP02",
+          "title": "Establish reliable packaging patterns to access approved public libraries"
+        }
+      ]
+    },
+    {
+      "id": "MLOPS 5",
+      "lens": "machine-learning",
+      "pillar": "Operational Excellence",
+      "title": "How do you manage scalable development and deployment?",
+      "url": "https://docs.aws.amazon.com/wellarchitected/latest/machine-learning-lens/ops-deployment.html",
+      "best_practices": [
+        {
+          "id": "MLOPS05-BP01",
+          "title": "Establish deployment environment metrics"
+        }
+      ]
+    },
+    {
+      "id": "MLOPS 6",
+      "lens": "machine-learning",
+      "pillar": "Operational Excellence",
+      "title": "How do you understand the operational health of your ML workload?",
+      "url": "https://docs.aws.amazon.com/wellarchitected/latest/machine-learning-lens/ops-monitoring.html",
+      "best_practices": [
+        {
+          "id": "MLOPS06-BP01",
+          "title": "Synchronize architecture and configuration, and check for skew across environments"
+        },
+        {
+          "id": "MLOPS06-BP02",
+          "title": "Enable model observability and tracking"
+        }
+      ]
+    },
+    {
+      "id": "MLSEC 1",
+      "lens": "machine-learning",
+      "pillar": "Security",
+      "title": "How do you incorporate security and compliance requirements into your ML business objectives from inception?",
+      "url": "https://docs.aws.amazon.com/wellarchitected/latest/machine-learning-lens/sec-business-goal-identification.html",
+      "best_practices": [
+        {
+          "id": "MLSEC01-BP01",
+          "title": "Validate ML data permissions, privacy, software, and license terms"
+        }
+      ]
+    },
+    {
+      "id": "MLSEC 2",
+      "lens": "machine-learning",
+      "pillar": "Security",
+      "title": "How do you incorporate security requirements and constraints into your ML problem formulation?",
+      "url": "https://docs.aws.amazon.com/wellarchitected/latest/machine-learning-lens/sec-ml-problem-framing.html",
+      "best_practices": [
+        {
+          "id": "MLSEC02-BP01",
+          "title": "Design data encryption and obfuscation"
+        }
+      ]
+    },
+    {
+      "id": "MLSEC 3",
+      "lens": "machine-learning",
+      "pillar": "Security",
+      "title": "How do you protect data?",
+      "url": "https://docs.aws.amazon.com/wellarchitected/latest/machine-learning-lens/sec-data-processing.html",
+      "best_practices": [
+        {
+          "id": "MLSEC03-BP01",
+          "title": "Provide least privilege access"
+        },
+        {
+          "id": "MLSEC03-BP02",
+          "title": "Secure data and modeling environment"
+        },
+        {
+          "id": "MLSEC03-BP03",
+          "title": "Protect sensitive data privacy"
+        },
+        {
+          "id": "MLSEC03-BP04",
+          "title": "Enforce data lineage"
+        },
+        {
+          "id": "MLSEC03-BP05",
+          "title": "Keep only relevant data"
+        }
+      ]
+    },
+    {
+      "id": "MLSEC 4",
+      "lens": "machine-learning",
+      "pillar": "Security",
+      "title": "How do you implement security controls and practices throughout the model development process?",
+      "url": "https://docs.aws.amazon.com/wellarchitected/latest/machine-learning-lens/sec-model-development.html",
+      "best_practices": [
+        {
+          "id": "MLSEC04-BP01",
+          "title": "Secure governed ML environment"
+        },
+        {
+          "id": "MLSEC04-BP02",
+          "title": "Secure inter-node cluster communications"
+        },
+        {
+          "id": "MLSEC04-BP03",
+          "title": "Protect against data poisoning threats"
+        }
+      ]
+    },
+    {
+      "id": "MLSEC 5",
+      "lens": "machine-learning",
+      "pillar": "Security",
+      "title": "How do you control access to your ML workload?",
+      "url": "https://docs.aws.amazon.com/wellarchitected/latest/machine-learning-lens/sec-deployment.html",
+      "best_practices": [
+        {
+          "id": "MLSEC05-BP01",
+          "title": "Protect against adversarial and malicious activities"
+        }
+      ]
+    },
+    {
+      "id": "MLSEC 6",
+      "lens": "machine-learning",
+      "pillar": "Security",
+      "title": "How do you monitor, detect and protect your workload from risks and threats?",
+      "url": "https://docs.aws.amazon.com/wellarchitected/latest/machine-learning-lens/sec-monitoring.html",
+      "best_practices": [
+        {
+          "id": "MLSEC06-BP01",
+          "title": "Restrict access to intended legitimate consumers"
+        },
+        {
+          "id": "MLSEC06-BP02",
+          "title": "Monitor human interactions with data for anomalous activity"
+        }
+      ]
+    },
+    {
+      "id": "MLREL 1",
+      "lens": "machine-learning",
+      "pillar": "Reliability",
+      "title": "How do you ensure your ML problem formulation accounts for reliability requirements and potential failure modes?",
+      "url": "https://docs.aws.amazon.com/wellarchitected/latest/machine-learning-lens/rel-ml-problem-framing.html",
+      "best_practices": [
+        {
+          "id": "MLREL01-BP01",
+          "title": "Use APIs to abstract change from model consuming applications"
+        },
+        {
+          "id": "MLREL01-BP02",
+          "title": "Adopt a machine learning microservice strategy"
+        }
+      ]
+    },
+    {
+      "id": "MLREL 2",
+      "lens": "machine-learning",
+      "pillar": "Reliability",
+      "title": "How do you ensure reliable and resilient data processing pipelines for your ML workflows?",
+      "url": "https://docs.aws.amazon.com/wellarchitected/latest/machine-learning-lens/rel-data-processing.html",
+      "best_practices": [
+        {
+          "id": "MLREL02-BP01",
+          "title": "Use a data catalog"
+        },
+        {
+          "id": "MLREL02-BP02",
+          "title": "Use a data pipeline"
+        },
+        {
+          "id": "MLREL02-BP03",
+          "title": "Automate managing data changes"
+        }
+      ]
+    },
+    {
+      "id": "MLREL 3",
+      "lens": "machine-learning",
+      "pillar": "Reliability",
+      "title": "How do you verify your model development practices result in reliable and robust ML models?",
+      "url": "https://docs.aws.amazon.com/wellarchitected/latest/machine-learning-lens/rel-model-development.html",
+      "best_practices": [
+        {
+          "id": "MLREL03-BP01",
+          "title": "Enable CI/CD/CT automation with traceability"
+        },
+        {
+          "id": "MLREL03-BP02",
+          "title": "Verify feature consistency across training and inference"
+        },
+        {
+          "id": "MLREL03-BP03",
+          "title": "Validate models with relevant data"
+        },
+        {
+          "id": "MLREL03-BP04",
+          "title": "Establish data bias detection and mitigation"
+        }
+      ]
+    },
+    {
+      "id": "MLREL 4",
+      "lens": "machine-learning",
+      "pillar": "Reliability",
+      "title": "How do you prepare your ML workload to manage and withstand failures?",
+      "url": "https://docs.aws.amazon.com/wellarchitected/latest/machine-learning-lens/rel-deployment.html",
+      "best_practices": [
+        {
+          "id": "MLREL04-BP01",
+          "title": "Automate endpoint changes through a pipeline"
+        },
+        {
+          "id": "MLREL04-BP02",
+          "title": "Use an appropriate deployment and testing strategy"
+        }
+      ]
+    },
+    {
+      "id": "MLREL 5",
+      "lens": "machine-learning",
+      "pillar": "Reliability",
+      "title": "How do you design your ML workload architecture to prevent failures?",
+      "url": "https://docs.aws.amazon.com/wellarchitected/latest/machine-learning-lens/rel-monitoring.html",
+      "best_practices": [
+        {
+          "id": "MLREL05-BP01",
+          "title": "Allow automatic scaling of the model endpoint"
+        },
+        {
+          "id": "MLREL05-BP02",
+          "title": "Create a recoverable endpoint with a managed version control strategy"
+        }
+      ]
+    },
+    {
+      "id": "MLPERF 1",
+      "lens": "machine-learning",
+      "pillar": "Performance Efficiency",
+      "title": "How do you define and align performance requirements with business objectives for your ML initiatives?",
+      "url": "https://docs.aws.amazon.com/wellarchitected/latest/machine-learning-lens/perf-business-goal-identification.html",
+      "best_practices": [
+        {
+          "id": "MLPERF01-BP01",
+          "title": "Determine key performance indicators"
+        }
+      ]
+    },
+    {
+      "id": "MLPERF 2",
+      "lens": "machine-learning",
+      "pillar": "Performance Efficiency",
+      "title": "How do you incorporate performance requirements and constraints into your ML problem formulation?",
+      "url": "https://docs.aws.amazon.com/wellarchitected/latest/machine-learning-lens/perf-ml-problem-framing.html",
+      "best_practices": [
+        {
+          "id": "MLPERF02-BP01",
+          "title": "Define relevant evaluation metrics"
+        },
+        {
+          "id": "MLPERF02-BP02",
+          "title": "Use purpose-built AI and ML services and resources"
+        }
+      ]
+    },
+    {
+      "id": "MLPERF 3",
+      "lens": "machine-learning",
+      "pillar": "Performance Efficiency",
+      "title": "How do you evaluate ML performance efficiency and plan for improvement?",
+      "url": "https://docs.aws.amazon.com/wellarchitected/latest/machine-learning-lens/perf-data-processing.html",
+      "best_practices": [
+        {
+          "id": "MLPERF03-BP01",
+          "title": "Use a modern data architecture"
+        }
+      ]
+    },
+    {
+      "id": "MLPERF 4",
+      "lens": "machine-learning",
+      "pillar": "Performance Efficiency",
+      "title": "How do you evolve your architecture and infrastructure?",
+      "url": "https://docs.aws.amazon.com/wellarchitected/latest/machine-learning-lens/perf-model-development.html",
+      "best_practices": [
+        {
+          "id": "MLPERF04-BP01",
+          "title": "Optimize training and inference instance types"
+        },
+        {
+          "id": "MLPERF04-BP02",
+          "title": "Explore alternatives for performance improvement"
+        },
+        {
+          "id": "MLPERF04-BP03",
+          "title": "Establish a model performance evaluation pipeline"
+        },
+        {
+          "id": "MLPERF04-BP04",
+          "title": "Establish feature statistics"
+        },
+        {
+          "id": "MLPERF04-BP05",
+          "title": "Perform a performance trade-off analysis"
+        },
+        {
+          "id": "MLPERF04-BP06",
+          "title": "Detect performance issues when using transfer learning"
+        }
+      ]
+    },
+    {
+      "id": "MLPERF 5",
+      "lens": "machine-learning",
+      "pillar": "Performance Efficiency",
+      "title": "How do you optimize deployment architectures and processes to achieve efficient model serving?",
+      "url": "https://docs.aws.amazon.com/wellarchitected/latest/machine-learning-lens/perf-deployment.html",
+      "best_practices": [
+        {
+          "id": "MLPERF05-BP01",
+          "title": "Evaluate cloud versus edge options for machine learning deployment"
+        },
+        {
+          "id": "MLPERF05-BP02",
+          "title": "Choose an optimal deployment option in the cloud"
+        }
+      ]
+    },
+    {
+      "id": "MLPERF 6",
+      "lens": "machine-learning",
+      "pillar": "Performance Efficiency",
+      "title": "How do you monitor, review and improve ML Performance?",
+      "url": "https://docs.aws.amazon.com/wellarchitected/latest/machine-learning-lens/perf-monitoring.html",
+      "best_practices": [
+        {
+          "id": "MLPERF06-BP01",
+          "title": "Include human-in-the-loop monitoring"
+        },
+        {
+          "id": "MLPERF06-BP02",
+          "title": "Evaluate model explainability"
+        },
+        {
+          "id": "MLPERF06-BP03",
+          "title": "Evaluate data drift"
+        },
+        {
+          "id": "MLPERF06-BP04",
+          "title": "Monitor, detect, and handle model performance degradation"
+        },
+        {
+          "id": "MLPERF06-BP05",
+          "title": "Establish an automated re-training framework"
+        },
+        {
+          "id": "MLPERF06-BP06",
+          "title": "Review for updated data and features for retraining"
+        }
+      ]
+    },
+    {
+      "id": "MLCOST 1",
+      "lens": "machine-learning",
+      "pillar": "Cost Optimization",
+      "title": "How do you align expenditure to your business objectives and create usage awareness?",
+      "url": "https://docs.aws.amazon.com/wellarchitected/latest/machine-learning-lens/cost-business-goal-identification.html",
+      "best_practices": [
+        {
+          "id": "MLCOST01-BP01",
+          "title": "Define overall return on investment (ROI) and opportunity cost"
+        },
+        {
+          "id": "MLCOST01-BP02",
+          "title": "Use managed services to reduce total cost of ownership (TCO)"
+        }
+      ]
+    },
+    {
+      "id": "MLCOST 2",
+      "lens": "machine-learning",
+      "pillar": "Cost Optimization",
+      "title": "How do you verify cost considerations are factored into your ML problem formulation to enable efficient resource utilization?",
+      "url": "https://docs.aws.amazon.com/wellarchitected/latest/machine-learning-lens/cost-ml-problem-framing.html",
+      "best_practices": [
+        {
+          "id": "MLCOST02-BP01",
+          "title": "Identify if machine learning is the right solution"
+        },
+        {
+          "id": "MLCOST02-BP02",
+          "title": "Perform a tradeoff analysis between custom and pre-trained models"
+        }
+      ]
+    },
+    {
+      "id": "MLCOST 3",
+      "lens": "machine-learning",
+      "pillar": "Cost Optimization",
+      "title": "How do you optimize cost during model training?",
+      "url": "https://docs.aws.amazon.com/wellarchitected/latest/machine-learning-lens/cost-data-processing.html",
+      "best_practices": [
+        {
+          "id": "MLCOST03-BP01",
+          "title": "Use managed data labeling"
+        },
+        {
+          "id": "MLCOST03-BP02",
+          "title": "Use no-code or low-code and code generation tools for interactive analysis"
+        },
+        {
+          "id": "MLCOST03-BP03",
+          "title": "Use managed data processing capabilities"
+        },
+        {
+          "id": "MLCOST03-BP04",
+          "title": "Enable feature reusability"
+        }
+      ]
+    },
+    {
+      "id": "MLCOST 4",
+      "lens": "machine-learning",
+      "pillar": "Cost Optimization",
+      "title": "How do you ensure cost-effective resource selection and usage?",
+      "url": "https://docs.aws.amazon.com/wellarchitected/latest/machine-learning-lens/cost-model-development.html",
+      "best_practices": [
+        {
+          "id": "MLCOST04-BP01",
+          "title": "Select optimal computing instance size"
+        },
+        {
+          "id": "MLCOST04-BP02",
+          "title": "Use managed build environments"
+        },
+        {
+          "id": "MLCOST04-BP03",
+          "title": "Select local training for small scale experiments"
+        },
+        {
+          "id": "MLCOST04-BP04",
+          "title": "Select an optimal ML framework"
+        },
+        {
+          "id": "MLCOST04-BP05",
+          "title": "Use automated machine learning"
+        },
+        {
+          "id": "MLCOST04-BP06",
+          "title": "Use managed training capabilities"
+        },
+        {
+          "id": "MLCOST04-BP07",
+          "title": "Use distributed training"
+        },
+        {
+          "id": "MLCOST04-BP08",
+          "title": "Stop resources when not in use"
+        },
+        {
+          "id": "MLCOST04-BP09",
+          "title": "Start training with small datasets"
+        },
+        {
+          "id": "MLCOST04-BP10",
+          "title": "Use warm start and checkpointing hyperparameter tuning"
+        },
+        {
+          "id": "MLCOST04-BP11",
+          "title": "Use hyperparameter optimization technologies"
+        },
+        {
+          "id": "MLCOST04-BP12",
+          "title": "Set up a budget and use resource tagging to track costs"
+        },
+        {
+          "id": "MLCOST04-BP13",
+          "title": "Enable data and compute proximity"
+        },
+        {
+          "id": "MLCOST04-BP14",
+          "title": "Select optimal algorithms"
+        }
+      ]
+    },
+    {
+      "id": "MLCOST 5",
+      "lens": "machine-learning",
+      "pillar": "Cost Optimization",
+      "title": "How do you manage demand and supply resources?",
+      "url": "https://docs.aws.amazon.com/wellarchitected/latest/machine-learning-lens/cost-deployment.html",
+      "best_practices": [
+        {
+          "id": "MLCOST05-BP01",
+          "title": "Use an appropriate deployment option"
+        },
+        {
+          "id": "MLCOST05-BP02",
+          "title": "Explore cost effective hardware options"
+        },
+        {
+          "id": "MLCOST05-BP03",
+          "title": "Right-size the model hosting instance fleet"
+        }
+      ]
+    },
+    {
+      "id": "MLCOST 6",
+      "lens": "machine-learning",
+      "pillar": "Cost Optimization",
+      "title": "How do you implement cost-effective monitoring strategies while maintaining comprehensive ML system observability?",
+      "url": "https://docs.aws.amazon.com/wellarchitected/latest/machine-learning-lens/cost-monitoring.html",
+      "best_practices": [
+        {
+          "id": "MLCOST06-BP01",
+          "title": "Monitor usage and cost by ML activity"
+        },
+        {
+          "id": "MLCOST06-BP02",
+          "title": "Monitor return on investment for ML models"
+        },
+        {
+          "id": "MLCOST06-BP03",
+          "title": "Monitor endpoint usage and right-size the instance fleet"
+        },
+        {
+          "id": "MLCOST06-BP04",
+          "title": "Enable debugging and logging"
+        }
+      ]
+    },
+    {
+      "id": "MLSUS 1",
+      "lens": "machine-learning",
+      "pillar": "Sustainability",
+      "title": "How do you align sustainability goals with business objectives and create awareness?",
+      "url": "https://docs.aws.amazon.com/wellarchitected/latest/machine-learning-lens/sus-business-goal-identification.html",
+      "best_practices": [
+        {
+          "id": "MLSUS01-BP01",
+          "title": "Define the overall environmental impact or benefit"
+        }
+      ]
+    },
+    {
+      "id": "MLSUS 2",
+      "lens": "machine-learning",
+      "pillar": "Sustainability",
+      "title": "How do you incorporate sustainability considerations into your ML problem formulation to minimize environmental impact?",
+      "url": "https://docs.aws.amazon.com/wellarchitected/latest/machine-learning-lens/sus-ml-problem-framing.html",
+      "best_practices": [
+        {
+          "id": "MLSUS02-BP01",
+          "title": "Consider AI services and pre-trained models"
+        },
+        {
+          "id": "MLSUS02-BP02",
+          "title": "Select sustainable Regions"
+        }
+      ]
+    },
+    {
+      "id": "MLSUS 3",
+      "lens": "machine-learning",
+      "pillar": "Sustainability",
+      "title": "How do you implement sustainable data processing practices that minimize environmental impact while maintaining data quality?",
+      "url": "https://docs.aws.amazon.com/wellarchitected/latest/machine-learning-lens/sus-data-processing.html",
+      "best_practices": [
+        {
+          "id": "MLSUS03-BP01",
+          "title": "Minimize idle resources"
+        },
+        {
+          "id": "MLSUS03-BP02",
+          "title": "Implement data lifecycle policies aligned with your sustainability goals"
+        },
+        {
+          "id": "MLSUS03-BP03",
+          "title": "Adopt sustainable storage options"
+        }
+      ]
+    },
+    {
+      "id": "MLSUS 4",
+      "lens": "machine-learning",
+      "pillar": "Sustainability",
+      "title": "How do you ensure sustainable resource selection and usage?",
+      "url": "https://docs.aws.amazon.com/wellarchitected/latest/machine-learning-lens/sus-model-development.html",
+      "best_practices": [
+        {
+          "id": "MLSUS04-BP01",
+          "title": "Define sustainable performance criteria"
+        },
+        {
+          "id": "MLSUS04-BP02",
+          "title": "Select energy-efficient algorithms"
+        },
+        {
+          "id": "MLSUS04-BP03",
+          "title": "Archive or delete unnecessary training artifacts"
+        },
+        {
+          "id": "MLSUS04-BP04",
+          "title": "Use efficient model tuning methods"
+        }
+      ]
+    },
+    {
+      "id": "MLSUS 5",
+      "lens": "machine-learning",
+      "pillar": "Sustainability",
+      "title": "How do you implement deployment practices that minimize environmental impact while maintaining model serving requirements?",
+      "url": "https://docs.aws.amazon.com/wellarchitected/latest/machine-learning-lens/sus-deployment.html",
+      "best_practices": [
+        {
+          "id": "MLSUS05-BP01",
+          "title": "Align SLAs with sustainability goals"
+        },
+        {
+          "id": "MLSUS05-BP02",
+          "title": "Use efficient silicon"
+        },
+        {
+          "id": "MLSUS05-BP03",
+          "title": "Optimize models for inference"
+        },
+        {
+          "id": "MLSUS05-BP04",
+          "title": "Deploy multiple models behind a single endpoint"
+        }
+      ]
+    },
+    {
+      "id": "MLSUS 6",
+      "lens": "machine-learning",
+      "pillar": "Sustainability",
+      "title": "How do you implement monitoring practices that minimize environmental impact while maintaining effective observability?",
+      "url": "https://docs.aws.amazon.com/wellarchitected/latest/machine-learning-lens/sus-monitoring.html",
+      "best_practices": [
+        {
+          "id": "MLSUS06-BP01",
+          "title": "Measure material efficiency"
+        },
+        {
+          "id": "MLSUS06-BP02",
+          "title": "Retrain only when necessary"
+        }
+      ]
+    },
+    {
+      "id": "GENOPS 1",
+      "lens": "generative-ai",
+      "pillar": "Operational Excellence",
+      "title": "How do you achieve and verify consistent model output quality?",
+      "url": "https://docs.aws.amazon.com/wellarchitected/latest/generative-ai-lens/genops01.html",
+      "best_practices": [
+        {
+          "id": "GENOPS01-BP01",
+          "title": "Periodically evaluate functional performance"
+        },
+        {
+          "id": "GENOPS01-BP02",
+          "title": "Collect and monitor user feedback"
+        }
+      ]
+    },
+    {
+      "id": "GENOPS 2",
+      "lens": "generative-ai",
+      "pillar": "Operational Excellence",
+      "title": "How do you monitor and manage the operational health of your applications?",
+      "url": "https://docs.aws.amazon.com/wellarchitected/latest/generative-ai-lens/genops02.html",
+      "best_practices": [
+        {
+          "id": "GENOPS02-BP01",
+          "title": "Monitor all application layers"
+        },
+        {
+          "id": "GENOPS02-BP02",
+          "title": "Monitor foundation model metrics"
+        },
+        {
+          "id": "GENOPS02-BP03",
+          "title": "Implement solutions to mitigate the risk of system overload"
+        }
+      ]
+    },
+    {
+      "id": "GENOPS 3",
+      "lens": "generative-ai",
+      "pillar": "Operational Excellence",
+      "title": "How do you maintain traceability for your models, prompts, and assets?",
+      "url": "https://docs.aws.amazon.com/wellarchitected/latest/generative-ai-lens/genops03.html",
+      "best_practices": [
+        {
+          "id": "GENOPS03-BP01",
+          "title": "Implement prompt template management"
+        },
+        {
+          "id": "GENOPS03-BP02",
+          "title": "Enable tracing for agents and RAG workflows"
+        }
+      ]
+    },
+    {
+      "id": "GENOPS 4",
+      "lens": "generative-ai",
+      "pillar": "Operational Excellence",
+      "title": "How do you automate the lifecycle management of your generative AI workloads?",
+      "url": "https://docs.aws.amazon.com/wellarchitected/latest/generative-ai-lens/genops4.html",
+      "best_practices": [
+        {
+          "id": "GENOPS04-BP01",
+          "title": "Automate generative AI application lifecycle with infrastructure as code (IaC)"
+        },
+        {
+          "id": "GENOPS04-BP02",
+          "title": "Implement GenAIOps to optimize the application lifecycle"
+        }
+      ]
+    },
+    {
+      "id": "GENOPS 5",
+      "lens": "generative-ai",
+      "pillar": "Operational Excellence",
+      "title": "How do you determine when to execute Gen AI model customization?",
+      "url": "https://docs.aws.amazon.com/wellarchitected/latest/generative-ai-lens/genops05.html",
+      "best_practices": [
+        {
+          "id": "GENOPS05-BP01",
+          "title": "Learn when to customize models"
+        }
+      ]
+    },
+    {
+      "id": "GENSEC 1",
+      "lens": "generative-ai",
+      "pillar": "Security",
+      "title": "How do you manage access to generative AI endpoints?",
+      "url": "https://docs.aws.amazon.com/wellarchitected/latest/generative-ai-lens/gensec01.html",
+      "best_practices": [
+        {
+          "id": "GENSEC01-BP01",
+          "title": "Grant least privilege access to foundation model endpoints"
+        },
+        {
+          "id": "GENSEC01-BP02",
+          "title": "Implement private network communication between foundation models and applications"
+        },
+        {
+          "id": "GENSEC01-BP03",
+          "title": "Implement least privilege access permissions for foundation models accessing data stores"
+        },
+        {
+          "id": "GENSEC01-BP04",
+          "title": "Implement access monitoring to generative AI services and foundation models"
+        }
+      ]
+    },
+    {
+      "id": "GENSEC 2",
+      "lens": "generative-ai",
+      "pillar": "Security",
+      "title": "How do you stop generative AI applications from generating harmful, biased, or factually incorrect responses?",
+      "url": "https://docs.aws.amazon.com/wellarchitected/latest/generative-ai-lens/gensec02.html",
+      "best_practices": [
+        {
+          "id": "GENSEC02-BP01",
+          "title": "Implement guardrails to mitigate harmful or incorrect model responses"
+        }
+      ]
+    },
+    {
+      "id": "GENSEC 3",
+      "lens": "generative-ai",
+      "pillar": "Security",
+      "title": "How do you monitor and audit events associated with your generative AI workloads?",
+      "url": "https://docs.aws.amazon.com/wellarchitected/latest/generative-ai-lens/gensec03.html",
+      "best_practices": [
+        {
+          "id": "GENSEC03-BP01",
+          "title": "Implement control plane and data access monitoring to generative AI services and foundation models"
+        }
+      ]
+    },
+    {
+      "id": "GENSEC 4",
+      "lens": "generative-ai",
+      "pillar": "Security",
+      "title": "How do you secure system and user prompts?",
+      "url": "https://docs.aws.amazon.com/wellarchitected/latest/generative-ai-lens/gensec04.html",
+      "best_practices": [
+        {
+          "id": "GENSEC04-BP01",
+          "title": "Implement a secure prompt catalog"
+        },
+        {
+          "id": "GENSEC04-BP02",
+          "title": "Sanitize and validate user inputs to foundation models"
+        }
+      ]
+    },
+    {
+      "id": "GENSEC 5",
+      "lens": "generative-ai",
+      "pillar": "Security",
+      "title": "How do you avoid excessive agency for models?",
+      "url": "https://docs.aws.amazon.com/wellarchitected/latest/generative-ai-lens/gensec05.html",
+      "best_practices": [
+        {
+          "id": "GENSEC05-BP01",
+          "title": "Implement least privilege access and permissions boundaries for agentic workflows"
+        }
+      ]
+    },
+    {
+      "id": "GENSEC 6",
+      "lens": "generative-ai",
+      "pillar": "Security",
+      "title": "How do you detect and remediate data poisoning risks?",
+      "url": "https://docs.aws.amazon.com/wellarchitected/latest/generative-ai-lens/gensec06.html",
+      "best_practices": [
+        {
+          "id": "GENSEC06-BP01",
+          "title": "Implement data purification filters for model training workflows"
+        }
+      ]
+    },
+    {
+      "id": "GENREL 1",
+      "lens": "generative-ai",
+      "pillar": "Reliability",
+      "title": "How do you determine throughput quotas (or needs) for foundation models?",
+      "url": "https://docs.aws.amazon.com/wellarchitected/latest/generative-ai-lens/genrel01.html",
+      "best_practices": [
+        {
+          "id": "GENREL01-BP01",
+          "title": "Scale and balance foundation model throughput as a function of utilization"
+        }
+      ]
+    },
+    {
+      "id": "GENREL 2",
+      "lens": "generative-ai",
+      "pillar": "Reliability",
+      "title": "How do you maintain reliable communication among different components of your generative AI architecture?",
+      "url": "https://docs.aws.amazon.com/wellarchitected/latest/generative-ai-lens/genrel02.html",
+      "best_practices": [
+        {
+          "id": "GENREL02-BP01",
+          "title": "Implement redundant network connections among model endpoints and supporting infrastructure"
+        }
+      ]
+    },
+    {
+      "id": "GENREL 3",
+      "lens": "generative-ai",
+      "pillar": "Reliability",
+      "title": "How do you implement remediation actions for generative AI workload loops, retries, and failures?",
+      "url": "https://docs.aws.amazon.com/wellarchitected/latest/generative-ai-lens/genrel03.html",
+      "best_practices": [
+        {
+          "id": "GENREL03-BP01",
+          "title": "Use logic to manage prompt flows and gracefully recover from failure"
+        },
+        {
+          "id": "GENREL03-BP02",
+          "title": "Implement timeout mechanisms on agentic workflows"
+        }
+      ]
+    },
+    {
+      "id": "GENREL 4",
+      "lens": "generative-ai",
+      "pillar": "Reliability",
+      "title": "How do you maintain versions for prompts, model parameters, and foundation models?",
+      "url": "https://docs.aws.amazon.com/wellarchitected/latest/generative-ai-lens/genrel04.html",
+      "best_practices": [
+        {
+          "id": "GENREL04-BP01",
+          "title": "Implement a prompt catalog"
+        },
+        {
+          "id": "GENREL04-BP02",
+          "title": "Implement a model catalog"
+        }
+      ]
+    },
+    {
+      "id": "GENREL 5",
+      "lens": "generative-ai",
+      "pillar": "Reliability",
+      "title": "How do you distribute inference workloads over multiple regions of availability?",
+      "url": "https://docs.aws.amazon.com/wellarchitected/latest/generative-ai-lens/genrel05.html",
+      "best_practices": [
+        {
+          "id": "GENREL05-BP01",
+          "title": "Load-balance inference requests across all regions of availability"
+        },
+        {
+          "id": "GENREL05-BP02",
+          "title": "Replicate embedding data across all regions of availability"
+        },
+        {
+          "id": "GENREL05-BP03",
+          "title": "Verify that agent capabilities are available across all regions of availability"
+        }
+      ]
+    },
+    {
+      "id": "GENREL 6",
+      "lens": "generative-ai",
+      "pillar": "Reliability",
+      "title": "How do you design high-performance distributed computation tasks to maximize successful completion?",
+      "url": "https://docs.aws.amazon.com/wellarchitected/latest/generative-ai-lens/genrel06.html",
+      "best_practices": [
+        {
+          "id": "GENREL06-BP01",
+          "title": "Design for fault-tolerance for high-performance distributed computation tasks"
+        }
+      ]
+    },
+    {
+      "id": "GENPERF 1",
+      "lens": "generative-ai",
+      "pillar": "Performance Efficiency",
+      "title": "How do you capture and improve the performance of your generative AI models in production?",
+      "url": "https://docs.aws.amazon.com/wellarchitected/latest/generative-ai-lens/genperf01.html",
+      "best_practices": [
+        {
+          "id": "GENPERF01-BP01",
+          "title": "Define a ground truth data set of prompts and responses"
+        },
+        {
+          "id": "GENPERF01-BP02",
+          "title": "Collect performance metrics from generative AI workloads"
+        }
+      ]
+    },
+    {
+      "id": "GENPERF 2",
+      "lens": "generative-ai",
+      "pillar": "Performance Efficiency",
+      "title": "How do you verify your generative AI workload maintains acceptable performance levels?",
+      "url": "https://docs.aws.amazon.com/wellarchitected/latest/generative-ai-lens/genperf02.html",
+      "best_practices": [
+        {
+          "id": "GENPERF02-BP01",
+          "title": "Load test model endpoints"
+        },
+        {
+          "id": "GENPERF02-BP02",
+          "title": "Optimize inference parameters to improve response quality"
+        },
+        {
+          "id": "GENPERF02-BP03",
+          "title": "Select and customize the appropriate model for your use case"
+        }
+      ]
+    },
+    {
+      "id": "GENPERF 3",
+      "lens": "generative-ai",
+      "pillar": "Performance Efficiency",
+      "title": "How do you optimize computational resources required for high-performance distributed computation tasks?",
+      "url": "https://docs.aws.amazon.com/wellarchitected/latest/generative-ai-lens/genperf03.html",
+      "best_practices": [
+        {
+          "id": "GENPERF03-BP01",
+          "title": "Use managed solutions for model hosting, customization, and data access where appropriate"
+        }
+      ]
+    },
+    {
+      "id": "GENPERF 4",
+      "lens": "generative-ai",
+      "pillar": "Performance Efficiency",
+      "title": "How do you improve the performance of data retrieval systems?",
+      "url": "https://docs.aws.amazon.com/wellarchitected/latest/generative-ai-lens/genperf04.html",
+      "best_practices": [
+        {
+          "id": "GENPERF04-BP01",
+          "title": "Test vector embeddings for latency and relevant performance"
+        },
+        {
+          "id": "GENPERF04-BP02",
+          "title": "Optimize vector sizes for your use case"
+        }
+      ]
+    },
+    {
+      "id": "GENCOST 1",
+      "lens": "generative-ai",
+      "pillar": "Cost Optimization",
+      "title": "How do you select the appropriate model to optimize costs?",
+      "url": "https://docs.aws.amazon.com/wellarchitected/latest/generative-ai-lens/gencost01.html",
+      "best_practices": [
+        {
+          "id": "GENCOST01-BP01",
+          "title": "Right-size model selection to optimize inference costs"
+        }
+      ]
+    },
+    {
+      "id": "GENCOST 2",
+      "lens": "generative-ai",
+      "pillar": "Cost Optimization",
+      "title": "How do you select a cost-effective pricing model (for example, provisioned, on-demand, hosted, or batch)?",
+      "url": "https://docs.aws.amazon.com/wellarchitected/latest/generative-ai-lens/gencost02.html",
+      "best_practices": [
+        {
+          "id": "GENCOST02-BP01",
+          "title": "Balance cost and performance when selecting inference paradigms"
+        },
+        {
+          "id": "GENCOST02-BP02",
+          "title": "Optimize resource consumption to minimize hosting costs"
+        }
+      ]
+    },
+    {
+      "id": "GENCOST 3",
+      "lens": "generative-ai",
+      "pillar": "Cost Optimization",
+      "title": "How do you engineer prompts to optimize cost?",
+      "url": "https://docs.aws.amazon.com/wellarchitected/latest/generative-ai-lens/gencost03.html",
+      "best_practices": [
+        {
+          "id": "GENCOST03-BP01",
+          "title": "Optimize prompt token length"
+        },
+        {
+          "id": "GENCOST03-BP02",
+          "title": "Control model response length"
+        },
+        {
+          "id": "GENCOST03-BP03",
+          "title": "Implement prompt caching to reduce token costs"
+        },
+        {
+          "id": "GENCOST03-BP04",
+          "title": "Annotate user input to enable cost-aware content filtering"
+        }
+      ]
+    },
+    {
+      "id": "GENCOST 4",
+      "lens": "generative-ai",
+      "pillar": "Cost Optimization",
+      "title": "How do you optimize vector stores for cost?",
+      "url": "https://docs.aws.amazon.com/wellarchitected/latest/generative-ai-lens/gencost04.html",
+      "best_practices": [
+        {
+          "id": "GENCOST04-BP01",
+          "title": "Reduce vector length on embedded tokens"
+        }
+      ]
+    },
+    {
+      "id": "GENCOST 5",
+      "lens": "generative-ai",
+      "pillar": "Cost Optimization",
+      "title": "How do you optimize agent workflows for cost?",
+      "url": "https://docs.aws.amazon.com/wellarchitected/latest/generative-ai-lens/gencost05.html",
+      "best_practices": [
+        {
+          "id": "GENCOST05-BP01",
+          "title": "Create stopping conditions to control long-running workflows"
+        }
+      ]
+    },
+    {
+      "id": "GENSUS 1",
+      "lens": "generative-ai",
+      "pillar": "Sustainability",
+      "title": "How do you minimize the computational resources needed for training, customizing, and hosting generative AI workloads?",
+      "url": "https://docs.aws.amazon.com/wellarchitected/latest/generative-ai-lens/gensus01.html",
+      "best_practices": [
+        {
+          "id": "GENSUS01-BP01",
+          "title": "Implement auto scaling and serverless architectures to optimize resource utilization"
+        },
+        {
+          "id": "GENSUS01-BP02",
+          "title": "Use efficient model customization services"
+        }
+      ]
+    },
+    {
+      "id": "GENSUS 2",
+      "lens": "generative-ai",
+      "pillar": "Sustainability",
+      "title": "How can you optimize data processing and storage to minimize energy consumption and maximize efficiency?",
+      "url": "https://docs.aws.amazon.com/wellarchitected/latest/generative-ai-lens/gensus02.html",
+      "best_practices": [
+        {
+          "id": "GENSUS02-BP01",
+          "title": "Optimize data processing and storage to minimize energy consumption"
+        }
+      ]
+    },
+    {
+      "id": "GENSUS 3",
+      "lens": "generative-ai",
+      "pillar": "Sustainability",
+      "title": "How do you maintain model efficiency and resource optimization when working with large language models?",
+      "url": "https://docs.aws.amazon.com/wellarchitected/latest/generative-ai-lens/gensus03.html",
+      "best_practices": [
+        {
+          "id": "GENSUS03-BP01",
+          "title": "Leverage smaller models and optimized inference techniques to reduce carbon footprint"
+        }
+      ]
+    },
+    {
+      "id": "RAIUC 1",
+      "lens": "responsible-ai",
+      "pillar": "Use case",
+      "title": "How do you define the specific problem you are trying to solve?",
+      "url": "https://docs.aws.amazon.com/wellarchitected/latest/responsible-ai-lens/raiuc01.html",
+      "best_practices": [
+        {
+          "id": "RAIUC01-BP01",
+          "title": "Clarify the business problem"
+        },
+        {
+          "id": "RAIUC01-BP02",
+          "title": "Verify that AI is required to solve the problem"
+        }
+      ]
+    },
+    {
+      "id": "RAIUC 2",
+      "lens": "responsible-ai",
+      "pillar": "Use case",
+      "title": "How will you identify the stakeholders of your use case?",
+      "url": "https://docs.aws.amazon.com/wellarchitected/latest/responsible-ai-lens/raiuc02.html",
+      "best_practices": [
+        {
+          "id": "RAIUC02-BP01",
+          "title": "Identify downstream stakeholders"
+        },
+        {
+          "id": "RAIUC02-BP02",
+          "title": "Identify contributing and other upstream stakeholders"
+        }
+      ]
+    },
+    {
+      "id": "RAIUC 3",
+      "lens": "responsible-ai",
+      "pillar": "Use case",
+      "title": "How will you refine your use case understanding without detailing the technical solution?",
+      "url": "https://docs.aws.amazon.com/wellarchitected/latest/responsible-ai-lens/raiuc03.html",
+      "best_practices": [
+        {
+          "id": "RAIUC03-BP01",
+          "title": "Identify the expected input and outputs for the AI system"
+        },
+        {
+          "id": "RAIUC03-BP02",
+          "title": "Identify how your expected inputs could vary in their content"
+        },
+        {
+          "id": "RAIUC03-BP03",
+          "title": "Identify the type of AI required by your AI use case"
+        }
+      ]
+    },
+    {
+      "id": "RAIUC 4",
+      "lens": "responsible-ai",
+      "pillar": "Use case",
+      "title": "How will you anticipate the impact of your AI solution on the workflow in which it is deployed?",
+      "url": "https://docs.aws.amazon.com/wellarchitected/latest/responsible-ai-lens/raiuc04.html",
+      "best_practices": [
+        {
+          "id": "RAIUC04-BP01",
+          "title": "Map the user journey to identify AI interaction requirements"
+        },
+        {
+          "id": "RAIUC04-BP02",
+          "title": "Identify human oversight opportunities"
+        },
+        {
+          "id": "RAIUC04-BP03",
+          "title": "Identify accessibility requirements for different user groups"
+        }
+      ]
+    },
+    {
+      "id": "RAIUC 5",
+      "lens": "responsible-ai",
+      "pillar": "Use case",
+      "title": "How will you identify applicable organizational requirements and approvals?",
+      "url": "https://docs.aws.amazon.com/wellarchitected/latest/responsible-ai-lens/raiuc05.html",
+      "best_practices": [
+        {
+          "id": "RAIUC05-BP01",
+          "title": "Engage your organization in approving your use case"
+        }
+      ]
+    },
+    {
+      "id": "RAIBR 1",
+      "lens": "responsible-ai",
+      "pillar": "Benefits and risks",
+      "title": "How will you characterize intended benefits?",
+      "url": "https://docs.aws.amazon.com/wellarchitected/latest/responsible-ai-lens/raibr01.html",
+      "best_practices": [
+        {
+          "id": "RAIBR01-BP01",
+          "title": "Aggregate beneficial events into intended benefits"
+        }
+      ]
+    },
+    {
+      "id": "RAIBR 2",
+      "lens": "responsible-ai",
+      "pillar": "Benefits and risks",
+      "title": "How will you identify and categorize potential harmful events?",
+      "url": "https://docs.aws.amazon.com/wellarchitected/latest/responsible-ai-lens/raibr02.html",
+      "best_practices": [
+        {
+          "id": "RAIBR02-BP01",
+          "title": "Identify potential harmful events impacting fairness"
+        },
+        {
+          "id": "RAIBR02-BP02",
+          "title": "Identify potential harmful events impacting veracity"
+        },
+        {
+          "id": "RAIBR02-BP03",
+          "title": "Identify potential harmful events impacting robustness"
+        },
+        {
+          "id": "RAIBR02-BP04",
+          "title": "Identify potential harmful events impacting privacy"
+        },
+        {
+          "id": "RAIBR02-BP05",
+          "title": "Identify potential harmful events impacting safety"
+        },
+        {
+          "id": "RAIBR02-BP06",
+          "title": "Identify potential harmful events impacting system and data security"
+        },
+        {
+          "id": "RAIBR02-BP07",
+          "title": "Identify potential harmful events impacting explainability"
+        },
+        {
+          "id": "RAIBR02-BP08",
+          "title": "Identify potential harmful events impacting transparency"
+        },
+        {
+          "id": "RAIBR02-BP09",
+          "title": "Choose multiple strategies to identify potential harmful events"
+        }
+      ]
+    },
+    {
+      "id": "RAIBR 3",
+      "lens": "responsible-ai",
+      "pillar": "Benefits and risks",
+      "title": "How will you assess the risks posed by the potential harmful events?",
+      "url": "https://docs.aws.amazon.com/wellarchitected/latest/responsible-ai-lens/raibr03.html",
+      "best_practices": [
+        {
+          "id": "RAIBR03-BP01",
+          "title": "Identify the likelihood of each potential harm"
+        },
+        {
+          "id": "RAIBR03-BP02",
+          "title": "Identify the severity of each potential harm"
+        },
+        {
+          "id": "RAIBR03-BP03",
+          "title": "Assign an overall risk level to each potential harm"
+        },
+        {
+          "id": "RAIBR03-BP04",
+          "title": "Use a risk registry to track and calibrate potential harms and risks"
+        }
+      ]
+    },
+    {
+      "id": "RAIBR 4",
+      "lens": "responsible-ai",
+      "pillar": "Benefits and risks",
+      "title": "How will you mitigate the risks you have identified?",
+      "url": "https://docs.aws.amazon.com/wellarchitected/latest/responsible-ai-lens/raibr04.html",
+      "best_practices": [
+        {
+          "id": "RAIBR04-BP01",
+          "title": "Narrow the use case"
+        },
+        {
+          "id": "RAIBR04-BP02",
+          "title": "Weigh trade-offs across competing use case objectives"
+        },
+        {
+          "id": "RAIBR04-BP03",
+          "title": "Assign your potential harm mitigations to implementation strategies"
+        }
+      ]
+    },
+    {
+      "id": "RAIRC 1",
+      "lens": "responsible-ai",
+      "pillar": "Release criteria",
+      "title": "How will you define release criteria?",
+      "url": "https://docs.aws.amazon.com/wellarchitected/latest/responsible-ai-lens/rairc01.html",
+      "best_practices": [
+        {
+          "id": "RAIRC01-BP01",
+          "title": "Turn your expected benefits and potential harms into testable release criteria"
+        }
+      ]
+    },
+    {
+      "id": "RAIRC 2",
+      "lens": "responsible-ai",
+      "pillar": "Release criteria",
+      "title": "How will you measure the properties tested by your release criteria?",
+      "url": "https://docs.aws.amazon.com/wellarchitected/latest/responsible-ai-lens/rairc02.html",
+      "best_practices": [
+        {
+          "id": "RAIRC02-BP01",
+          "title": "Select metrics to measure the properties tested by the release criteria"
+        },
+        {
+          "id": "RAIRC02-BP02",
+          "title": "Consider strength and limitation trade-offs when choosing metrics"
+        },
+        {
+          "id": "RAIRC02-BP03",
+          "title": "Design a custom metric if no suitable metric exists"
+        }
+      ]
+    },
+    {
+      "id": "RAIRC 3",
+      "lens": "responsible-ai",
+      "pillar": "Release criteria",
+      "title": "How will you select metrics for the release criteria across each responsible AI dimension?",
+      "url": "https://docs.aws.amazon.com/wellarchitected/latest/responsible-ai-lens/rairc03.html",
+      "best_practices": [
+        {
+          "id": "RAIRC03-BP01",
+          "title": "Measure safety harms and harmful outputs"
+        },
+        {
+          "id": "RAIRC03-BP02",
+          "title": "Measure fairness as unwanted bias across stakeholder groups"
+        },
+        {
+          "id": "RAIRC03-BP03",
+          "title": "Measure veracity of outputs"
+        },
+        {
+          "id": "RAIRC03-BP04",
+          "title": "Measure robustness of outputs to input variation"
+        },
+        {
+          "id": "RAIRC03-BP05",
+          "title": "Measure privacy protection"
+        },
+        {
+          "id": "RAIRC03-BP07",
+          "title": "Measure user controllability of system behavior"
+        },
+        {
+          "id": "RAIRC03-BP08",
+          "title": "Measure explainability of system behavior"
+        },
+        {
+          "id": "RAIRC03-BP09",
+          "title": "Measure security risks and threats"
+        },
+        {
+          "id": "RAIRC03-BP10",
+          "title": "Measure transparency quality"
+        }
+      ]
+    },
+    {
+      "id": "RAIRC 4",
+      "lens": "responsible-ai",
+      "pillar": "Release criteria",
+      "title": "How will you set your release criteria thresholds?",
+      "url": "https://docs.aws.amazon.com/wellarchitected/latest/responsible-ai-lens/rairc04.html",
+      "best_practices": [
+        {
+          "id": "RAIRC04-BP01",
+          "title": "Identify baseline performance targets"
+        },
+        {
+          "id": "RAIRC04-BP02",
+          "title": "Consider trade-offs between release criteria"
+        },
+        {
+          "id": "RAIRC04-BP03",
+          "title": "Set confidence requirements for your quantitative release criteria"
+        }
+      ]
+    },
+    {
+      "id": "RAIDP 1",
+      "lens": "responsible-ai",
+      "pillar": "Dataset planning",
+      "title": "How will you identify which datasets are needed to evaluate, train, and operate your AI system?",
+      "url": "https://docs.aws.amazon.com/wellarchitected/latest/responsible-ai-lens/raidp01.html",
+      "best_practices": [
+        {
+          "id": "RAIDP01-BP01",
+          "title": "Identify evaluation datasets needed to measure system performance against release criteria"
+        },
+        {
+          "id": "RAIDP01-BP02",
+          "title": "Identify the datasets needed for training and customizing your system"
+        },
+        {
+          "id": "RAIDP01-BP03",
+          "title": "Identify auxiliary datasets needed to operate your system"
+        },
+        {
+          "id": "RAIDP01-BP04",
+          "title": "Identify potential overlaps between datasets"
+        }
+      ]
+    },
+    {
+      "id": "RAIDP 2",
+      "lens": "responsible-ai",
+      "pillar": "Dataset planning",
+      "title": "How will you assess dataset quality?",
+      "url": "https://docs.aws.amazon.com/wellarchitected/latest/responsible-ai-lens/raidp02.html",
+      "best_practices": [
+        {
+          "id": "RAIDP02-BP01",
+          "title": "Validate the representativeness of datasets for the use case"
+        },
+        {
+          "id": "RAIDP02-BP02",
+          "title": "Set dataset quality requirements based on your release criteria"
+        },
+        {
+          "id": "RAIDP02-BP03",
+          "title": "Validate the quality of human and generated labels and features in your dataset"
+        },
+        {
+          "id": "RAIDP02-BP04",
+          "title": "Validate the quality and reliability of augmented or synthetic datasets"
+        }
+      ]
+    },
+    {
+      "id": "RAIDP 3",
+      "lens": "responsible-ai",
+      "pillar": "Dataset planning",
+      "title": "How will you identify and mitigate potential responsible AI issues in the datasets?",
+      "url": "https://docs.aws.amazon.com/wellarchitected/latest/responsible-ai-lens/raidp03.html",
+      "best_practices": [
+        {
+          "id": "RAIDP03-BP01",
+          "title": "Address data that may be unsafe or inappropriate for your use case"
+        },
+        {
+          "id": "RAIDP03-BP02",
+          "title": "Minimize unwanted bias in your datasets"
+        },
+        {
+          "id": "RAIDP03-BP03",
+          "title": "Protect the privacy of individuals represented in your datasets"
+        },
+        {
+          "id": "RAIDP03-BP04",
+          "title": "Include both intrinsic and confounding variations in your datasets"
+        },
+        {
+          "id": "RAIDP03-BP05",
+          "title": "Review the correctness of the content of your datasets"
+        }
+      ]
+    },
+    {
+      "id": "RAIDP 4",
+      "lens": "responsible-ai",
+      "pillar": "Dataset planning",
+      "title": "How will you manage dataset access and versioning?",
+      "url": "https://docs.aws.amazon.com/wellarchitected/latest/responsible-ai-lens/raidp04.html",
+      "best_practices": [
+        {
+          "id": "RAIDP04-BP01",
+          "title": "Create a dataset registry"
+        },
+        {
+          "id": "RAIDP04-BP02",
+          "title": "Periodically evaluate and update datasets in the registry"
+        },
+        {
+          "id": "RAIDP04-BP03",
+          "title": "Protect data from being manipulated or accessed for unintended purposes"
+        },
+        {
+          "id": "RAIDP04-BP04",
+          "title": "Establish governance procedures for managing your datasets"
+        },
+        {
+          "id": "RAIDP04-BP05",
+          "title": "Document the characteristics of each dataset using a datasheet"
+        }
+      ]
+    },
+    {
+      "id": "RAISP 1",
+      "lens": "responsible-ai",
+      "pillar": "System planning",
+      "title": "How will you design the core AI system architecture to meet your release criteria?",
+      "url": "https://docs.aws.amazon.com/wellarchitected/latest/responsible-ai-lens/raisp01.html",
+      "best_practices": [
+        {
+          "id": "RAISP01-BP01",
+          "title": "Detail your core AI system design in a system registry"
+        },
+        {
+          "id": "RAISP01-BP03",
+          "title": "Check if design choices have introduced new risks"
+        }
+      ]
+    },
+    {
+      "id": "RAISP 2",
+      "lens": "responsible-ai",
+      "pillar": "System planning",
+      "title": "How will you design the core AI system to meet the release criteria (baking)?",
+      "url": "https://docs.aws.amazon.com/wellarchitected/latest/responsible-ai-lens/raisp02.html",
+      "best_practices": [
+        {
+          "id": "RAISP02-BP01",
+          "title": "Design the core AI system to directly address your release criteria"
+        },
+        {
+          "id": "RAISP02-BP02",
+          "title": "Privacy: Build privacy-preserving mechanisms into the core AI system"
+        },
+        {
+          "id": "RAISP02-BP03",
+          "title": "Mitigate unwanted bias directly in the core AI system design"
+        },
+        {
+          "id": "RAISP02-BP04",
+          "title": "Build security protections directly into the core AI system design"
+        },
+        {
+          "id": "RAISP02-BP05",
+          "title": "Embed provenance indicators into core AI system outputs"
+        },
+        {
+          "id": "RAISP02-BP06",
+          "title": "Enable users to customize core AI system behaviors"
+        },
+        {
+          "id": "RAISP02-BP07",
+          "title": "Incorporate explainability mechanisms into the core AI system"
+        },
+        {
+          "id": "RAISP02-BP08",
+          "title": "Consider core AI system designs that improve factual accuracy"
+        },
+        {
+          "id": "RAISP02-BP09",
+          "title": "Design your core AI system to handle input variations"
+        },
+        {
+          "id": "RAISP02-BP10",
+          "title": "Build safety protections into the core AI system"
+        }
+      ]
+    },
+    {
+      "id": "RAISP 3",
+      "lens": "responsible-ai",
+      "pillar": "System planning",
+      "title": "How will you meet release criteria not fully addressed by the core AI system design (filtering)?",
+      "url": "https://docs.aws.amazon.com/wellarchitected/latest/responsible-ai-lens/raisp03.html",
+      "best_practices": [
+        {
+          "id": "RAISP03-BP01",
+          "title": "Add privacy-preserving filters"
+        },
+        {
+          "id": "RAISP03-BP02",
+          "title": "Add security filters"
+        },
+        {
+          "id": "RAISP03-BP03",
+          "title": "Implement output filtering to catch unsafe content before it reaches users"
+        },
+        {
+          "id": "RAISP03-BP04",
+          "title": "Implement output filtering to detect and block hallucinations"
+        }
+      ]
+    },
+    {
+      "id": "RAISP 4",
+      "lens": "responsible-ai",
+      "pillar": "System planning",
+      "title": "How will you choose between different system configurations?",
+      "url": "https://docs.aws.amazon.com/wellarchitected/latest/responsible-ai-lens/raisp04.html",
+      "best_practices": [
+        {
+          "id": "RAISP04-BP01",
+          "title": "Use paired tests to choose from candidate designs"
+        }
+      ]
+    },
+    {
+      "id": "RAIER 1",
+      "lens": "responsible-ai",
+      "pillar": "Evaluate and release",
+      "title": "How will you evaluate the AI system against your release criteria?",
+      "url": "https://docs.aws.amazon.com/wellarchitected/latest/responsible-ai-lens/raier01.html",
+      "best_practices": [
+        {
+          "id": "RAIER01-BP01",
+          "title": "Validate that release criteria still align with current industry standards"
+        },
+        {
+          "id": "RAIER01-BP02",
+          "title": "Independently corroborate more critical and subjective evaluations"
+        },
+        {
+          "id": "RAIER01-BP03",
+          "title": "For each system update, re-run the evaluation and update the system registry"
+        }
+      ]
+    },
+    {
+      "id": "RAIER 2",
+      "lens": "responsible-ai",
+      "pillar": "Evaluate and release",
+      "title": "How will you aggregate the release criteria results into a responsible release decision?",
+      "url": "https://docs.aws.amazon.com/wellarchitected/latest/responsible-ai-lens/raier02.html",
+      "best_practices": [
+        {
+          "id": "RAIER02-BP01",
+          "title": "Add statistical confidence to your release decision"
+        },
+        {
+          "id": "RAIER02-BP02",
+          "title": "Summarize critical information and review with appropriate internal stakeholders"
+        }
+      ]
+    },
+    {
+      "id": "RAIER 3",
+      "lens": "responsible-ai",
+      "pillar": "Evaluate and release",
+      "title": "How will you address release criteria that are not met?",
+      "url": "https://docs.aws.amazon.com/wellarchitected/latest/responsible-ai-lens/raier03.html",
+      "best_practices": [
+        {
+          "id": "RAIER03-BP01",
+          "title": "For each failed release criterion, re-assess the implementation strategy"
+        },
+        {
+          "id": "RAIER03-BP02",
+          "title": "Identify release criteria that cannot be met and narrow your use case"
+        }
+      ]
+    },
+    {
+      "id": "RAIGT 1",
+      "lens": "responsible-ai",
+      "pillar": "User guidance",
+      "title": "How will downstream stakeholders learn how to responsibly use the AI system (guiding)?",
+      "url": "https://docs.aws.amazon.com/wellarchitected/latest/responsible-ai-lens/raigt01.html",
+      "best_practices": [
+        {
+          "id": "RAIGT01-BP01",
+          "title": "Develop a transparency strategy"
+        },
+        {
+          "id": "RAIGT01-BP02",
+          "title": "Create a system card that communicates intended usage and limitations"
+        },
+        {
+          "id": "RAIGT01-BP03",
+          "title": "Create a plan for publishing and updating documentation"
+        },
+        {
+          "id": "RAIGT01-BP04",
+          "title": "Guide users on how to understand system outputs"
+        },
+        {
+          "id": "RAIGT01-BP06",
+          "title": "Guide users on how to responsibly change system behavior"
+        }
+      ]
+    },
+    {
+      "id": "RAIMON 1",
+      "lens": "responsible-ai",
+      "pillar": "Monitoring",
+      "title": "How will you monitor for unexpected deviations from release criteria in operation?",
+      "url": "https://docs.aws.amazon.com/wellarchitected/latest/responsible-ai-lens/raimon01.html",
+      "best_practices": [
+        {
+          "id": "RAIMON01-BP01",
+          "title": "Obtain consent for monitoring production data"
+        },
+        {
+          "id": "RAIMON01-BP02",
+          "title": "Set operational performance baselines and apply methods for drift detection"
+        },
+        {
+          "id": "RAIMON01-BP03",
+          "title": "Preserve data privacy and set access controls on monitored data"
+        },
+        {
+          "id": "RAIMON01-BP04",
+          "title": "Create monitoring dashboards for operational visibility"
+        },
+        {
+          "id": "RAIMON01-BP05",
+          "title": "Design protocols that trigger human oversight of automated monitoring alerts"
+        }
+      ]
+    },
+    {
+      "id": "RAIMON 2",
+      "lens": "responsible-ai",
+      "pillar": "Monitoring",
+      "title": "How will you respond to feedback from monitoring?",
+      "url": "https://docs.aws.amazon.com/wellarchitected/latest/responsible-ai-lens/raimon2.html",
+      "best_practices": [
+        {
+          "id": "RAIMON02-BP01",
+          "title": "Create feedback loops to apply monitoring results to system improvement"
+        }
+      ]
+    },
+    {
+      "id": "RAIMON 3",
+      "lens": "responsible-ai",
+      "pillar": "Monitoring",
+      "title": "How will you decommission your AI system?",
+      "url": "https://docs.aws.amazon.com/wellarchitected/latest/responsible-ai-lens/raimon03.html",
+      "best_practices": [
+        {
+          "id": "RAIMON03-BP01",
+          "title": "Establish mechanisms for honoring stakeholder obligations"
+        }
+      ]
+    },
+    {
+      "id": "AGENTOPS 1",
+      "lens": "agentic-ai",
+      "pillar": "Operational Excellence",
+      "title": "How do you establish operational practices for agentic AI systems?",
+      "url": "https://docs.aws.amazon.com/wellarchitected/latest/agentic-ai-lens/agentops01.html",
+      "best_practices": [
+        {
+          "id": "AGENTOPS01-BP01",
+          "title": "Establish well-defined agent roles, responsibilities, and success criteria"
+        },
+        {
+          "id": "AGENTOPS01-BP02",
+          "title": "Design multi-agent handoff procedures with human-in-the-loop escalation"
+        },
+        {
+          "id": "AGENTOPS01-BP03",
+          "title": "Develop test scenarios that accurately capture failures of dependent components, orchestration protocols, and business processes"
+        }
+      ]
+    },
+    {
+      "id": "AGENTOPS 2",
+      "lens": "agentic-ai",
+      "pillar": "Operational Excellence",
+      "title": "How do you manage prompt and configuration lifecycle?",
+      "url": "https://docs.aws.amazon.com/wellarchitected/latest/agentic-ai-lens/agentops02.html",
+      "best_practices": [
+        {
+          "id": "AGENTOPS02-BP01",
+          "title": "Evolve agent prompts, tool calls, and configurations to reflect evolving business needs"
+        },
+        {
+          "id": "AGENTOPS02-BP02",
+          "title": "Implement configuration drift detection and remediation"
+        },
+        {
+          "id": "AGENTOPS02-BP03",
+          "title": "Implement agent behavior versioning and rollback capabilities"
+        },
+        {
+          "id": "AGENTOPS02-BP04",
+          "title": "Maintain feedback control loops for continuous improvement"
+        }
+      ]
+    },
+    {
+      "id": "AGENTOPS 3",
+      "lens": "agentic-ai",
+      "pillar": "Operational Excellence",
+      "title": "How do you manage agent lifecycle and deployment processes?",
+      "url": "https://docs.aws.amazon.com/wellarchitected/latest/agentic-ai-lens/agentops03.html",
+      "best_practices": [
+        {
+          "id": "AGENTOPS03-BP01",
+          "title": "Define an agent lifecycle with clear SME ownership, testing, and governance"
+        },
+        {
+          "id": "AGENTOPS03-BP02",
+          "title": "Implement CI/CD pipelines tailored to agentic system deployment (AgentOps)"
+        },
+        {
+          "id": "AGENTOPS03-BP03",
+          "title": "Implement agent-specific scaling policies and capacity planning"
+        },
+        {
+          "id": "AGENTOPS03-BP04",
+          "title": "Implement organizational agent portfolio management and governance at scale"
+        }
+      ]
+    },
+    {
+      "id": "AGENTOPS 4",
+      "lens": "agentic-ai",
+      "pillar": "Operational Excellence",
+      "title": "How do you establish tool integration and management practices?",
+      "url": "https://docs.aws.amazon.com/wellarchitected/latest/agentic-ai-lens/agentops04.html",
+      "best_practices": [
+        {
+          "id": "AGENTOPS04-BP01",
+          "title": "Implement tool registry and catalog management"
+        },
+        {
+          "id": "AGENTOPS04-BP02",
+          "title": "Establish standardized tool integration protocols (MCP, A2A)"
+        },
+        {
+          "id": "AGENTOPS04-BP03",
+          "title": "Develop fallback behavior and error handling for tool invocations"
+        }
+      ]
+    },
+    {
+      "id": "AGENTOPS 5",
+      "lens": "agentic-ai",
+      "pillar": "Operational Excellence",
+      "title": "How do you implement comprehensive observability and monitoring for agentic systems?",
+      "url": "https://docs.aws.amazon.com/wellarchitected/latest/agentic-ai-lens/agentops05.html",
+      "best_practices": [
+        {
+          "id": "AGENTOPS05-BP01",
+          "title": "Establish end-to-end tracing and telemetry for agent operations"
+        },
+        {
+          "id": "AGENTOPS05-BP02",
+          "title": "Monitor agent behavior patterns and detect anomalies"
+        },
+        {
+          "id": "AGENTOPS05-BP03",
+          "title": "Implement structured logging and comprehensive audit trails"
+        },
+        {
+          "id": "AGENTOPS05-BP04",
+          "title": "Define and track KPIs for agent workflows"
+        },
+        {
+          "id": "AGENTOPS05-BP05",
+          "title": "Create workflow-specific dashboards for operational health"
+        }
+      ]
+    },
+    {
+      "id": "AGENTOPS 6",
+      "lens": "agentic-ai",
+      "pillar": "Operational Excellence",
+      "title": "How do you implement testing, evaluation, and validation frameworks?",
+      "url": "https://docs.aws.amazon.com/wellarchitected/latest/agentic-ai-lens/agentops06.html",
+      "best_practices": [
+        {
+          "id": "AGENTOPS06-BP01",
+          "title": "Design multi-layered testing frameworks"
+        },
+        {
+          "id": "AGENTOPS06-BP02",
+          "title": "Evaluate and track ongoing agent performance"
+        },
+        {
+          "id": "AGENTOPS06-BP03",
+          "title": "Establish SME-driven validation and business approval workflows"
+        }
+      ]
+    },
+    {
+      "id": "AGENTOPS 7",
+      "lens": "agentic-ai",
+      "pillar": "Operational Excellence",
+      "title": "How do you establish operational recovery and consumption monitoring?",
+      "url": "https://docs.aws.amazon.com/wellarchitected/latest/agentic-ai-lens/agentops07.html",
+      "best_practices": [
+        {
+          "id": "AGENTOPS07-BP01",
+          "title": "Implement automated response and recovery mechanisms"
+        },
+        {
+          "id": "AGENTOPS07-BP02",
+          "title": "Establish operational knowledge management systems"
+        },
+        {
+          "id": "AGENTOPS07-BP03",
+          "title": "Augment change management to accommodate technical improvements and business requirements"
+        },
+        {
+          "id": "AGENTOPS07-BP04",
+          "title": "Implement break-glass operational runbooks"
+        }
+      ]
+    },
+    {
+      "id": "AGENTSEC 1",
+      "lens": "agentic-ai",
+      "pillar": "Security",
+      "title": "How do you secure agentic memory and securely manage state between agents?",
+      "url": "https://docs.aws.amazon.com/wellarchitected/latest/agentic-ai-lens/agentsec01.html",
+      "best_practices": [
+        {
+          "id": "AGENTSEC01-BP01",
+          "title": "Implement memory isolation and integrity controls"
+        },
+        {
+          "id": "AGENTSEC01-BP02",
+          "title": "Validate and sanitize memory inputs"
+        },
+        {
+          "id": "AGENTSEC01-BP03",
+          "title": "Monitor for hallucination propagation"
+        }
+      ]
+    },
+    {
+      "id": "AGENTSEC 2",
+      "lens": "agentic-ai",
+      "pillar": "Security",
+      "title": "How do you control and secure agent tool usage?",
+      "url": "https://docs.aws.amazon.com/wellarchitected/latest/agentic-ai-lens/agentsec02.html",
+      "best_practices": [
+        {
+          "id": "AGENTSEC02-BP01",
+          "title": "Implement tool authorization"
+        },
+        {
+          "id": "AGENTSEC02-BP02",
+          "title": "Validate tool inputs and outputs"
+        },
+        {
+          "id": "AGENTSEC02-BP03",
+          "title": "Maintain approved tool registry with security assessments"
+        }
+      ]
+    },
+    {
+      "id": "AGENTSEC 3",
+      "lens": "agentic-ai",
+      "pillar": "Security",
+      "title": "How do you manage agent identities, permissions, and prevent privilege escalation?",
+      "url": "https://docs.aws.amazon.com/wellarchitected/latest/agentic-ai-lens/agentsec03.html",
+      "best_practices": [
+        {
+          "id": "AGENTSEC03-BP01",
+          "title": "Implement strong authentication for agent identities"
+        },
+        {
+          "id": "AGENTSEC03-BP02",
+          "title": "Separate agent and human user permission"
+        },
+        {
+          "id": "AGENTSEC03-BP03",
+          "title": "Implement least privilege with dynamic boundaries"
+        },
+        {
+          "id": "AGENTSEC03-BP04",
+          "title": "Regular permission audits and access reviews"
+        }
+      ]
+    },
+    {
+      "id": "AGENTSEC 4",
+      "lens": "agentic-ai",
+      "pillar": "Security",
+      "title": "How do you support agent goal alignment and prevent manipulation?",
+      "url": "https://docs.aws.amazon.com/wellarchitected/latest/agentic-ai-lens/agentsec04.html",
+      "best_practices": [
+        {
+          "id": "AGENTSEC04-BP01",
+          "title": "Implement guardrails and alignment controls"
+        },
+        {
+          "id": "AGENTSEC04-BP02",
+          "title": "Human-in-the-loop for critical decisions"
+        }
+      ]
+    },
+    {
+      "id": "AGENTSEC 5",
+      "lens": "agentic-ai",
+      "pillar": "Security",
+      "title": "How do you implement observability and prevent repudiation?",
+      "url": "https://docs.aws.amazon.com/wellarchitected/latest/agentic-ai-lens/agentsec05.html",
+      "best_practices": [
+        {
+          "id": "AGENTSEC05-BP01",
+          "title": "Implement comprehensive logging and decision artifact storage"
+        },
+        {
+          "id": "AGENTSEC05-BP02",
+          "title": "Implement distributed tracing for agent interactions"
+        }
+      ]
+    },
+    {
+      "id": "AGENTSEC 6",
+      "lens": "agentic-ai",
+      "pillar": "Security",
+      "title": "How do you secure multi-agent orchestration and coordination?",
+      "url": "https://docs.aws.amazon.com/wellarchitected/latest/agentic-ai-lens/agentsec06.html",
+      "best_practices": [
+        {
+          "id": "AGENTSEC06-BP01",
+          "title": "Encrypt and sign inter-agent messages"
+        },
+        {
+          "id": "AGENTSEC06-BP02",
+          "title": "Implement workflow orchestration security controls"
+        },
+        {
+          "id": "AGENTSEC06-BP03",
+          "title": "Establish trust boundaries between agents"
+        },
+        {
+          "id": "AGENTSEC06-BP04",
+          "title": "Monitor and detect coordination anomalies"
+        }
+      ]
+    },
+    {
+      "id": "AGENTSEC 7",
+      "lens": "agentic-ai",
+      "pillar": "Security",
+      "title": "How do you protect human oversight from manipulation and detect rogue agents?",
+      "url": "https://docs.aws.amazon.com/wellarchitected/latest/agentic-ai-lens/agentsec07.html",
+      "best_practices": [
+        {
+          "id": "AGENTSEC07-BP01",
+          "title": "Implement cognitive load management"
+        },
+        {
+          "id": "AGENTSEC07-BP02",
+          "title": "Clear confidence indicators and manipulation warnings"
+        },
+        {
+          "id": "AGENTSEC07-BP03",
+          "title": "Multiple reviewers for critical operations"
+        },
+        {
+          "id": "AGENTSEC07-BP04",
+          "title": "Behavioral anomaly detection and agent containment"
+        },
+        {
+          "id": "AGENTSEC07-BP05",
+          "title": "Regular security assessments and red teaming"
+        }
+      ]
+    },
+    {
+      "id": "AGENTSEC 8",
+      "lens": "agentic-ai",
+      "pillar": "Security",
+      "title": "How do you validate and secure agent inputs and outputs?",
+      "url": "https://docs.aws.amazon.com/wellarchitected/latest/agentic-ai-lens/agentsec08.html",
+      "best_practices": [
+        {
+          "id": "AGENTSEC08-BP01",
+          "title": "Multi-layer input validation and prompt injection defense"
+        },
+        {
+          "id": "AGENTSEC08-BP02",
+          "title": "Output filtering for sensitive information"
+        }
+      ]
+    },
+    {
+      "id": "AGENTSEC 9",
+      "lens": "agentic-ai",
+      "pillar": "Security",
+      "title": "How do you perform vulnerability scanning and penetration testing for agentic AI systems?",
+      "url": "https://docs.aws.amazon.com/wellarchitected/latest/agentic-ai-lens/agentsec09.html",
+      "best_practices": [
+        {
+          "id": "AGENTSEC09-BP01",
+          "title": "Integrate AI-powered vulnerability scanning across the development lifecycle"
+        },
+        {
+          "id": "AGENTSEC09-BP02",
+          "title": "Conduct context-aware penetration testing with multi-agent attack simulation"
+        },
+        {
+          "id": "AGENTSEC09-BP03",
+          "title": "Implement continuous security validation with automated remediation"
+        },
+        {
+          "id": "AGENTSEC09-BP04",
+          "title": "Establish scoped and controlled testing environments for agent security assessments"
+        },
+        {
+          "id": "AGENTSEC09-BP05",
+          "title": "Implement runtime threat detection, security event correlation, and automated remediation for agents"
+        }
+      ]
+    },
+    {
+      "id": "AGENTREL 1",
+      "lens": "agentic-ai",
+      "pillar": "Reliability",
+      "title": "How do I develop reliable agentic systems?",
+      "url": "https://docs.aws.amazon.com/wellarchitected/latest/agentic-ai-lens/agentrel01.html",
+      "best_practices": [
+        {
+          "id": "AGENTREL01-BP01",
+          "title": "Implement a resilient messaging layer"
+        },
+        {
+          "id": "AGENTREL01-BP02",
+          "title": "Establish modular, fault-isolated layers"
+        },
+        {
+          "id": "AGENTREL01-BP03",
+          "title": "Design specialized agents following actor model principles"
+        },
+        {
+          "id": "AGENTREL01-BP04",
+          "title": "Standardize communication protocols"
+        },
+        {
+          "id": "AGENTREL01-BP05",
+          "title": "Implement adaptive provisioning"
+        }
+      ]
+    },
+    {
+      "id": "AGENTREL 2",
+      "lens": "agentic-ai",
+      "pillar": "Reliability",
+      "title": "How do you develop agentic systems that reliably execute tasks with predictable outcomes?",
+      "url": "https://docs.aws.amazon.com/wellarchitected/latest/agentic-ai-lens/agentrel02.html",
+      "best_practices": [
+        {
+          "id": "AGENTREL02-BP01",
+          "title": "Design agents for specific and atomic tasks"
+        },
+        {
+          "id": "AGENTREL02-BP02",
+          "title": "Limit agent permissions to minimum required access"
+        },
+        {
+          "id": "AGENTREL02-BP03",
+          "title": "Implement behavioral anomaly detection and monitoring"
+        },
+        {
+          "id": "AGENTREL02-BP04",
+          "title": "Develop clear instruction protocols for agents"
+        },
+        {
+          "id": "AGENTREL02-BP05",
+          "title": "Establish tiered human oversight and approval workflows"
+        }
+      ]
+    },
+    {
+      "id": "AGENTREL 3",
+      "lens": "agentic-ai",
+      "pillar": "Reliability",
+      "title": "How do you support agent memory and state remaining reliably accessible throughout the agent lifecycle?",
+      "url": "https://docs.aws.amazon.com/wellarchitected/latest/agentic-ai-lens/agentrel03.html",
+      "best_practices": [
+        {
+          "id": "AGENTREL03-BP01",
+          "title": "Design an information classification model to identify short-term and long-term memories"
+        },
+        {
+          "id": "AGENTREL03-BP02",
+          "title": "Architect fault-tolerant memory stores with redundancy and failover"
+        },
+        {
+          "id": "AGENTREL03-BP03",
+          "title": "Implement comprehensive state management and checkpoint-based recovery"
+        },
+        {
+          "id": "AGENTREL03-BP04",
+          "title": "Implement graceful degradation for memory and state operations"
+        }
+      ]
+    },
+    {
+      "id": "AGENTREL 4",
+      "lens": "agentic-ai",
+      "pillar": "Reliability",
+      "title": "How do you orchestrate multi-agent systems to reliably execute tasks?",
+      "url": "https://docs.aws.amazon.com/wellarchitected/latest/agentic-ai-lens/agentrel04.html",
+      "best_practices": [
+        {
+          "id": "AGENTREL04-BP01",
+          "title": "Implement the arbiter agent pattern for coordinated multi-agent systems"
+        },
+        {
+          "id": "AGENTREL04-BP02",
+          "title": "Classify agents with a thorough capability taxonomy"
+        },
+        {
+          "id": "AGENTREL04-BP03",
+          "title": "Implement fallback mechanisms and graceful degradation for collaborative workflows"
+        },
+        {
+          "id": "AGENTREL04-BP04",
+          "title": "Implement resilient control planes for agent coordination"
+        }
+      ]
+    },
+    {
+      "id": "AGENTREL 5",
+      "lens": "agentic-ai",
+      "pillar": "Reliability",
+      "title": "How do you implement reliable agent cognition that accesses the right data at the right time?",
+      "url": "https://docs.aws.amazon.com/wellarchitected/latest/agentic-ai-lens/agentrel05.html",
+      "best_practices": [
+        {
+          "id": "AGENTREL05-BP01",
+          "title": "Design modular, fault-tolerant agentic reasoning components"
+        },
+        {
+          "id": "AGENTREL05-BP02",
+          "title": "Facilitate reliable adaptation through evaluation-driven improvement cycles"
+        },
+        {
+          "id": "AGENTREL05-BP03",
+          "title": "Ground agent cognition in real information"
+        }
+      ]
+    },
+    {
+      "id": "AGENTREL 6",
+      "lens": "agentic-ai",
+      "pillar": "Reliability",
+      "title": "How do agents integrate effectively with existing systems without impacting the reliability of established processes?",
+      "url": "https://docs.aws.amazon.com/wellarchitected/latest/agentic-ai-lens/agentrel06.html",
+      "best_practices": [
+        {
+          "id": "AGENTREL06-BP01",
+          "title": "Develop agent-based integrations with existing or legacy systems"
+        },
+        {
+          "id": "AGENTREL06-BP02",
+          "title": "Establish fallback mechanisms for legacy system degradation"
+        },
+        {
+          "id": "AGENTREL06-BP03",
+          "title": "Regularly test degraded system performance"
+        },
+        {
+          "id": "AGENTREL06-BP04",
+          "title": "Implement idempotent task execution patterns"
+        },
+        {
+          "id": "AGENTREL06-BP05",
+          "title": "Implement dynamic capability toggling"
+        }
+      ]
+    },
+    {
+      "id": "AGENTREL 7",
+      "lens": "agentic-ai",
+      "pillar": "Reliability",
+      "title": "How do fault tolerant agent systems recover?",
+      "url": "https://docs.aws.amazon.com/wellarchitected/latest/agentic-ai-lens/agentrel07.html",
+      "best_practices": [
+        {
+          "id": "AGENTREL07-BP01",
+          "title": "Design workflows in stages with incremental recovery"
+        },
+        {
+          "id": "AGENTREL07-BP02",
+          "title": "Enable automatic recovery from agent execution failures"
+        },
+        {
+          "id": "AGENTREL07-BP03",
+          "title": "Implement distributed tracing to track system dependencies and facilitate recovery"
+        }
+      ]
+    },
+    {
+      "id": "AGENTREL 8",
+      "lens": "agentic-ai",
+      "pillar": "Reliability",
+      "title": "How do agents determine when and where graceful degradation is appropriate?",
+      "url": "https://docs.aws.amazon.com/wellarchitected/latest/agentic-ai-lens/agentrel08.html",
+      "best_practices": [
+        {
+          "id": "AGENTREL08-BP01",
+          "title": "Establish consistent configuration management practices"
+        },
+        {
+          "id": "AGENTREL08-BP02",
+          "title": "Implement agent tracing for telemetry throughout agent processing"
+        },
+        {
+          "id": "AGENTREL08-BP03",
+          "title": "Architect agent systems with resource isolation and contention mitigation"
+        },
+        {
+          "id": "AGENTREL08-BP04",
+          "title": "Track agent memory utilization metrics"
+        }
+      ]
+    },
+    {
+      "id": "AGENTPERF 1",
+      "lens": "agentic-ai",
+      "pillar": "Performance Efficiency",
+      "title": "How do you plan strategically for agent performance and establish measurement practices?",
+      "url": "https://docs.aws.amazon.com/wellarchitected/latest/agentic-ai-lens/agentperf01.html",
+      "best_practices": [
+        {
+          "id": "AGENTPERF01-BP01",
+          "title": "Define performance-aligned success criteria for agent workloads"
+        },
+        {
+          "id": "AGENTPERF01-BP02",
+          "title": "Implement comprehensive performance telemetry"
+        },
+        {
+          "id": "AGENTPERF01-BP03",
+          "title": "Profile end-to-end agent latency and identify optimization targets"
+        }
+      ]
+    },
+    {
+      "id": "AGENTPERF 2",
+      "lens": "agentic-ai",
+      "pillar": "Performance Efficiency",
+      "title": "How do you optimize core agent processing and reasoning pipelines?",
+      "url": "https://docs.aws.amazon.com/wellarchitected/latest/agentic-ai-lens/agentperf02.html",
+      "best_practices": [
+        {
+          "id": "AGENTPERF02-BP01",
+          "title": "Design efficient reasoning pipelines"
+        },
+        {
+          "id": "AGENTPERF02-BP02",
+          "title": "Implement task-appropriate model selection strategies"
+        },
+        {
+          "id": "AGENTPERF02-BP03",
+          "title": "Optimize agent execution paths for reduced latency"
+        },
+        {
+          "id": "AGENTPERF02-BP04",
+          "title": "Optimize streaming responses and time-to-first-token for agent interactions"
+        }
+      ]
+    },
+    {
+      "id": "AGENTPERF 3",
+      "lens": "agentic-ai",
+      "pillar": "Performance Efficiency",
+      "title": "How do you optimize memory management, context windows, and retrieval-augmented generation?",
+      "url": "https://docs.aws.amazon.com/wellarchitected/latest/agentic-ai-lens/agentperf03.html",
+      "best_practices": [
+        {
+          "id": "AGENTPERF03-BP01",
+          "title": "Implement tiered memory management systems"
+        },
+        {
+          "id": "AGENTPERF03-BP02",
+          "title": "Optimize context window utilization and prompt management"
+        },
+        {
+          "id": "AGENTPERF03-BP03",
+          "title": "Optimize RAG retrieval pipelines for latency and precision"
+        },
+        {
+          "id": "AGENTPERF03-BP04",
+          "title": "Establish efficient agent caching and data access patterns"
+        },
+        {
+          "id": "AGENTPERF03-BP05",
+          "title": "Implement agentic retrieval patterns for dynamic, agent-driven knowledge access"
+        }
+      ]
+    },
+    {
+      "id": "AGENTPERF 4",
+      "lens": "agentic-ai",
+      "pillar": "Performance Efficiency",
+      "title": "How do you achieve efficient communication and protocol usage across agent interactions?",
+      "url": "https://docs.aws.amazon.com/wellarchitected/latest/agentic-ai-lens/agentperf04.html",
+      "best_practices": [
+        {
+          "id": "AGENTPERF04-BP01",
+          "title": "Optimize asynchronous message handling patterns"
+        },
+        {
+          "id": "AGENTPERF04-BP02",
+          "title": "Implement efficient protocol-based agent communications"
+        },
+        {
+          "id": "AGENTPERF04-BP03",
+          "title": "Design high-performing event-driven integration patterns"
+        }
+      ]
+    },
+    {
+      "id": "AGENTPERF 5",
+      "lens": "agentic-ai",
+      "pillar": "Performance Efficiency",
+      "title": "How do you optimize workflow orchestration and multi-agent collaboration for performance?",
+      "url": "https://docs.aws.amazon.com/wellarchitected/latest/agentic-ai-lens/agentperf05.html",
+      "best_practices": [
+        {
+          "id": "AGENTPERF05-BP01",
+          "title": "Design efficient workflow orchestration patterns"
+        },
+        {
+          "id": "AGENTPERF05-BP02",
+          "title": "Implement optimized multi-agent collaboration models"
+        },
+        {
+          "id": "AGENTPERF05-BP03",
+          "title": "Optimize multi-stage AI pipeline execution"
+        },
+        {
+          "id": "AGENTPERF05-BP04",
+          "title": "Implement efficient agent delegation and handoff patterns"
+        }
+      ]
+    },
+    {
+      "id": "AGENTPERF 6",
+      "lens": "agentic-ai",
+      "pillar": "Performance Efficiency",
+      "title": "How do you optimize tool integrations and framework usage for agent performance?",
+      "url": "https://docs.aws.amazon.com/wellarchitected/latest/agentic-ai-lens/agentperf06.html",
+      "best_practices": [
+        {
+          "id": "AGENTPERF06-BP01",
+          "title": "Design optimized tool integration strategies"
+        },
+        {
+          "id": "AGENTPERF06-BP02",
+          "title": "Implement efficient tool invocation patterns"
+        },
+        {
+          "id": "AGENTPERF06-BP03",
+          "title": "Optimize meta-tool utilization and tool chaining"
+        }
+      ]
+    },
+    {
+      "id": "AGENTPERF 7",
+      "lens": "agentic-ai",
+      "pillar": "Performance Efficiency",
+      "title": "How do you manage multitenant performance isolation and optimize resource utilization?",
+      "url": "https://docs.aws.amazon.com/wellarchitected/latest/agentic-ai-lens/agentperf07.html",
+      "best_practices": [
+        {
+          "id": "AGENTPERF07-BP01",
+          "title": "Design efficient multitenant agent deployment models"
+        },
+        {
+          "id": "AGENTPERF07-BP02",
+          "title": "Implement tenant-aware performance isolation and throttling"
+        }
+      ]
+    },
+    {
+      "id": "AGENTCOST 1",
+      "lens": "agentic-ai",
+      "pillar": "Cost Optimization",
+      "title": "How do you optimize agent reasoning and execution costs?",
+      "url": "https://docs.aws.amazon.com/wellarchitected/latest/agentic-ai-lens/agentcost01.html",
+      "best_practices": [
+        {
+          "id": "AGENTCOST01-BP01",
+          "title": "Use the reflection pattern to design efficient agent reasoning loops"
+        },
+        {
+          "id": "AGENTCOST01-BP02",
+          "title": "Optimize multi-agent collaboration cost through efficient handoff patterns"
+        },
+        {
+          "id": "AGENTCOST01-BP03",
+          "title": "Implement cost-effective patterns like hybrid supervisor for multi-agent coordination"
+        },
+        {
+          "id": "AGENTCOST01-BP04",
+          "title": "Design agent hierarchies and delegation patterns that reduce coordination overhead"
+        }
+      ]
+    },
+    {
+      "id": "AGENTCOST 2",
+      "lens": "agentic-ai",
+      "pillar": "Cost Optimization",
+      "title": "How do you optimize agent model invocation and token consumption costs?",
+      "url": "https://docs.aws.amazon.com/wellarchitected/latest/agentic-ai-lens/agentcost02.html",
+      "best_practices": [
+        {
+          "id": "AGENTCOST02-BP01",
+          "title": "Architect tiered model selection for cost-performance optimization"
+        },
+        {
+          "id": "AGENTCOST02-BP02",
+          "title": "Cost optimize token consumption through efficient prompt engineering"
+        },
+        {
+          "id": "AGENTCOST02-BP03",
+          "title": "Use intelligent caching to reduce redundant model invocations"
+        },
+        {
+          "id": "AGENTCOST02-BP04",
+          "title": "Implement model customization for long-term cost reduction"
+        }
+      ]
+    },
+    {
+      "id": "AGENTCOST 3",
+      "lens": "agentic-ai",
+      "pillar": "Cost Optimization",
+      "title": "How do you manage agent memory and state costs efficiently?",
+      "url": "https://docs.aws.amazon.com/wellarchitected/latest/agentic-ai-lens/agentcost03.html",
+      "best_practices": [
+        {
+          "id": "AGENTCOST03-BP01",
+          "title": "Design cost-effective retrieval systems with tiered memory"
+        },
+        {
+          "id": "AGENTCOST03-BP02",
+          "title": "Cost optimize through intelligent compression and pruning of context windows"
+        },
+        {
+          "id": "AGENTCOST03-BP03",
+          "title": "Implement cost-optimized state persistence and lifecycle management"
+        }
+      ]
+    },
+    {
+      "id": "AGENTCOST 4",
+      "lens": "agentic-ai",
+      "pillar": "Cost Optimization",
+      "title": "How do you optimize agent tool invocation costs?",
+      "url": "https://docs.aws.amazon.com/wellarchitected/latest/agentic-ai-lens/agentcost04.html",
+      "best_practices": [
+        {
+          "id": "AGENTCOST04-BP01",
+          "title": "Design cost effective tool selection to minimize unnecessary invocations"
+        },
+        {
+          "id": "AGENTCOST04-BP02",
+          "title": "Cost optimize tool serving through serverless and resource sharing"
+        },
+        {
+          "id": "AGENTCOST04-BP03",
+          "title": "Implement intelligent caching and failure handling for tool results"
+        }
+      ]
+    },
+    {
+      "id": "AGENTCOST 5",
+      "lens": "agentic-ai",
+      "pillar": "Cost Optimization",
+      "title": "How do you implement cost attribution?",
+      "url": "https://docs.aws.amazon.com/wellarchitected/latest/agentic-ai-lens/agentcost05.html",
+      "best_practices": [
+        {
+          "id": "AGENTCOST05-BP01",
+          "title": "Establish agent-level reasoning cost tracking and attribution"
+        },
+        {
+          "id": "AGENTCOST05-BP02",
+          "title": "Implement distributed cost tracing for multi-agent workflows"
+        },
+        {
+          "id": "AGENTCOST05-BP03",
+          "title": "Design tenant-aware cost allocation for agent as a service (AaaS) pricing models"
+        },
+        {
+          "id": "AGENTCOST05-BP04",
+          "title": "Create chargeback and ROI reporting"
+        }
+      ]
+    },
+    {
+      "id": "AGENTCOST 6",
+      "lens": "agentic-ai",
+      "pillar": "Cost Optimization",
+      "title": "How do you optimize agent discovery, registry, and deployment costs?",
+      "url": "https://docs.aws.amazon.com/wellarchitected/latest/agentic-ai-lens/agentcost06.html",
+      "best_practices": [
+        {
+          "id": "AGENTCOST06-BP01",
+          "title": "Implement lightweight discovery and registry for cost-effective collaboration"
+        },
+        {
+          "id": "AGENTCOST06-BP02",
+          "title": "Cost optimize versioning and deployment through efficient artifact management"
+        },
+        {
+          "id": "AGENTCOST06-BP03",
+          "title": "Design cost-efficient initialization through warm pools and caching"
+        }
+      ]
+    },
+    {
+      "id": "AGENTCOST 7",
+      "lens": "agentic-ai",
+      "pillar": "Cost Optimization",
+      "title": "How do you establish agent cost governance and continuous optimization?",
+      "url": "https://docs.aws.amazon.com/wellarchitected/latest/agentic-ai-lens/agentcost07.html",
+      "best_practices": [
+        {
+          "id": "AGENTCOST07-BP01",
+          "title": "Implement automated cost controls with intelligent cutoffs"
+        },
+        {
+          "id": "AGENTCOST07-BP02",
+          "title": "Establish proactive anomaly detection for agent cost patterns"
+        },
+        {
+          "id": "AGENTCOST07-BP03",
+          "title": "Create systematic optimization feedback loops for continuous improvement"
+        }
+      ]
+    },
+    {
+      "id": "AGENTSUS 1",
+      "lens": "agentic-ai",
+      "pillar": "Sustainability",
+      "title": "How do you build sustainable and repeatable frameworks for managing compute, memory, and other shareable agent resources?",
+      "url": "https://docs.aws.amazon.com/wellarchitected/latest/agentic-ai-lens/agentsus01.html",
+      "best_practices": [
+        {
+          "id": "AGENTSUS01-BP01",
+          "title": "Design specialized agents with explicit resource boundaries"
+        },
+        {
+          "id": "AGENTSUS01-BP02",
+          "title": "Implement reusable workflow patterns"
+        },
+        {
+          "id": "AGENTSUS01-BP03",
+          "title": "Optimize resource utilization through shared services"
+        },
+        {
+          "id": "AGENTSUS01-BP04",
+          "title": "Scale cognitive processing pathways appropriately"
+        },
+        {
+          "id": "AGENTSUS01-BP05",
+          "title": "Adopt specification-driven tasks for frontier agents and long-running workflows"
+        }
+      ]
+    },
+    {
+      "id": "AGENTSUS 2",
+      "lens": "agentic-ai",
+      "pillar": "Sustainability",
+      "title": "How do I establish sustainable frameworks for agent dependencies?",
+      "url": "https://docs.aws.amazon.com/wellarchitected/latest/agentic-ai-lens/agentsus02.html",
+      "best_practices": [
+        {
+          "id": "AGENTSUS02-BP01",
+          "title": "Optimize context management and memory utilization"
+        },
+        {
+          "id": "AGENTSUS02-BP02",
+          "title": "Establish efficient agent caching strategies"
+        },
+        {
+          "id": "AGENTSUS02-BP03",
+          "title": "Appropriately scale data, networking, and compute dependencies"
+        },
+        {
+          "id": "AGENTSUS02-BP04",
+          "title": "Measure and optimize the environmental footprint of agent workloads"
+        }
+      ]
+    },
+    {
+      "id": "AGENTSUS 3",
+      "lens": "agentic-ai",
+      "pillar": "Sustainability",
+      "title": "How do I establish durable patterns for agent interactions with users and business processes?",
+      "url": "https://docs.aws.amazon.com/wellarchitected/latest/agentic-ai-lens/agentsus03.html",
+      "best_practices": [
+        {
+          "id": "AGENTSUS03-BP01",
+          "title": "Maintain organizational skills and competencies"
+        },
+        {
+          "id": "AGENTSUS03-BP02",
+          "title": "Build agents to mirror your organizational skills and competencies"
+        },
+        {
+          "id": "AGENTSUS03-BP03",
+          "title": "Maintain comprehensive specifications for agents and agentic systems"
+        },
+        {
+          "id": "AGENTSUS03-BP04",
+          "title": "Decommission unused agents and prevent agent sprawl"
+        }
+      ]
+    }
+  ]
+}
