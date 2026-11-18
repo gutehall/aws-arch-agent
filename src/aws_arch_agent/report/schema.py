@@ -143,6 +143,38 @@ REPORT_SCHEMA: dict = {
                 },
             },
         },
+        "lens_answers": {
+            "type": "array",
+            "description": "One answer per question of the four AI Well-Architected lenses "
+            "(machine-learning, generative-ai, responsible-ai, agentic-ai), computed the same "
+            "way as answers. Empty unless the scan is of an AI workload: a Bedrock, SageMaker, "
+            "or AgentCore resource, or lenses.ai: true in the config. answers stays the 57 "
+            "core questions.",
+            "items": {
+                "type": "object",
+                "required": [
+                    "lens", "question", "pillar", "title", "status", "findings", "not_checked"
+                ],
+                "properties": {
+                    "lens": {
+                        "type": "string",
+                        "enum": ["machine-learning", "generative-ai", "responsible-ai",
+                                 "agentic-ai"],
+                    },
+                    "question": {"type": "string"},
+                    "pillar": {
+                        "type": "string",
+                        "description": "The pillar, or for the responsible-ai lens the focus "
+                        "area name.",
+                    },
+                    "title": {"type": "string"},
+                    "status": {"type": "string", "enum": ["met", "not met"]},
+                    "findings": {"type": "array", "items": {"type": "string"}},
+                    "not_checked": {"type": "array", "items": {"type": "string"}},
+                    "needs_org": {"type": "array", "items": {"type": "string"}},
+                },
+            },
+        },
         "llm": {
             "type": "object",
             "description": "What the verdict calls did. A connection failure is fallback, and "

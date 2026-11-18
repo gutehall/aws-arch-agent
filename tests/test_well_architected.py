@@ -13,6 +13,8 @@ from aws_arch_agent.report.json_report import render_json
 from aws_arch_agent.report.markdown import render_markdown
 from aws_arch_agent.rules import wa_map, well_architected
 from aws_arch_agent.rules.cf_template import CF_THEMES, CF_TITLES
+from aws_arch_agent.rules.lens_map import LENS_RULE_BEST_PRACTICES
+from aws_arch_agent.rules.lenses import lens_best_practices_of
 from aws_arch_agent.rules.registry import ALL_RULES
 from aws_arch_agent.rules.themes import themes_of
 from aws_arch_agent.rules.well_architected import (
@@ -66,7 +68,8 @@ def test_catalog_lists_every_question_and_best_practice() -> None:
 
 
 def test_every_rule_maps_to_best_practices_of_one_question() -> None:
-    ids = _rule_ids()
+    # The AI lens rules answer lens questions (rules/lens_map.py), not the 57 core ones.
+    ids = _rule_ids() - set(LENS_RULE_BEST_PRACTICES)
     assert sorted(ids - set(wa_map.RULE_BEST_PRACTICES)) == []
     assert sorted(set(wa_map.RULE_BEST_PRACTICES) - ids) == []
     for rule_id, bps in wa_map.RULE_BEST_PRACTICES.items():
@@ -89,7 +92,7 @@ def test_every_best_practice_has_a_rule() -> None:
 
 def test_rules_store_question_and_best_practices() -> None:
     for rule in ALL_RULES:
-        assert rule.best_practices == best_practices_of(rule.id)
+        assert rule.best_practices == (best_practices_of(rule.id) or lens_best_practices_of(rule.id))
         assert rule.question == question_id_of_practice(rule.best_practices[0])
     assert question_of("CF-RDS-001") == "SEC 8"
     assert best_practices_of("CF-RDS-001") == ("SEC08-BP02",)

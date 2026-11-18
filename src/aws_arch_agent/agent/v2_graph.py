@@ -23,9 +23,10 @@ from aws_arch_agent.tools.files import iter_files
 from aws_arch_agent.tools.llm import NO_LLM, LLMClient, LLMResult, aggregate_results
 from aws_arch_agent.rules.fix_snippets import attach_fixes
 from aws_arch_agent.rules.registry import ALL_RULES
+from aws_arch_agent.rules.repo_practices import AI_REPO_RULES
 from aws_arch_agent.rules.runner import filter_by_severity, run_all_rules
 from aws_arch_agent.rules import account, cf_template, effort, environments, nonprod, regions, stack_cost, themes
-from aws_arch_agent.rules import well_architected
+from aws_arch_agent.rules import ai_gate, well_architected
 from aws_arch_agent.rules.tag_policy import TagPolicy, use_tag_policy
 from aws_arch_agent.report.markdown import render_markdown
 from aws_arch_agent.tools.cdk_synth import (
@@ -524,11 +525,29 @@ def node_hypotheses(state: State) -> State:
     return out
 
 
+def _with_ai_repo_findings(findings: List[Finding], state: State, ctx: RepoContext) -> List[Finding]:
+    """Run the AI repo-note rules once synth has shown whether this is an AI workload.
+
+    node_collect runs every repo rule before node_synth sees a resource, so on a CDK scan the
+    gate was off for them. A rule that already ran (the Terraform path) is not run again."""
+    if not ai_gate.active():
+        return findings
+    have = {f.id for f in findings}
+    rules = [r for r in _filter_rules(AI_REPO_RULES, state.get("rules_include"),
+                                      state.get("rules_exclude"), org=bool(state.get("rules_org")))
+             if r.id not in have]
+    if not rules:
+        return findings
+    new, _warned = run_all_rules(Path(state["repo_path"]), rules, ["typescript"])
+    return [*findings, *_shown(new, state)]
+
+
 def node_report(state: State) -> State:
     ctx = state["ctx"]
     ctx.hypotheses = state.get("hypotheses") or []
     findings = state.get("raw_findings", [])
     warnings = state.get("rule_warnings") or []
+    findings = _with_ai_repo_findings(findings, state, ctx)
     effort.annotate(findings)  # the summary's quick wins need it
     themes.annotate(findings)
     well_architected.annotate(findings)
@@ -537,6 +556,7 @@ def node_report(state: State) -> State:
         findings = themes.select(findings, wanted)
         ctx.notes["themes"] = list(wanted)
     # The CDK source rules always run; the template checks only when synth or --templates did.
+    ctx.ai_lenses = ai_gate.active()
     ctx.rules_run = well_architected.rules_run(
         active_titles(state.get("rules_include"), state.get("rules_exclude"),
                       bool(state.get("rules_org"))),
@@ -643,6 +663,7 @@ def analyze_v2(
     theme_filter: List[str] | None = None,
     group_by: str = "severity",
     account_facts: account.AccountFacts | None = None,
+    lenses_ai: bool | None = None,
 ) -> tuple[str, RepoContext, List[Finding], List[str]]:
     """Run V2 graph; return (final_report_md, ctx, findings, warnings)."""
     graph = build_graph()
@@ -675,6 +696,7 @@ def analyze_v2(
         nonprod.use_max_size(nonprod_max_size),
         cf_template.use_dashboard_min_resources(dashboards_min_resources),
         account.use_facts(account_facts),
+        ai_gate.use(lenses_ai, account_checks=ai_gate.account_checks_flag(rules_org, rules_include)),
     ):
         out = graph.invoke(initial)
     report = out.get("final_report") or "No report produced."

@@ -11,6 +11,7 @@ from typing import Any, Callable, Iterator, List, TypeGuard
 from aws_arch_agent.models import Finding, Severity
 from aws_arch_agent.rules.secret_names import is_literal_secret, is_secret_name
 from aws_arch_agent.rules import (
+    ai_gate,
     eks_versions,
     environments,
     estimates,
@@ -339,7 +340,7 @@ _PER_RESOURCE_TYPES = frozenset({
     "autoscaling_policy", "autoscaling_schedule", "autoscaling_attachment",
     "athena_workgroup", "glue_job", "glue_security_configuration", "firehose_delivery_stream",
     "cloudwatch_log_delivery_source",
-    "sagemaker_notebook_instance", "sagemaker_endpoint_config",
+    "sagemaker_notebook_instance", "sagemaker_endpoint_config", "sagemaker_endpoint", "bedrock_agent",
     "fsx_file_system", "fsx_data_repository_association",
     "appsync_graphql_api", "appsync_api_cache", "transfer_server", "apprunner_service",
     "elastic_beanstalk_environment", "elastic_beanstalk_configuration_template",
@@ -505,6 +506,8 @@ CHECK_PROPERTIES: dict[str, frozenset[str]] = {
         # Template-level: _sagemaker_fsx_findings skips what it cannot read.
         **{c: set() for c in ("CF-SAGE-001", "CF-SAGE-002", "CF-SAGE-003", "CF-SAGE-004", "CF-SAGE-005",
                               "CF-FSX-001", "CF-FSX-002", "CF-FSX-003")},
+        # Template-level: _ai_findings skips what it cannot read.
+        **{c: set() for c in ("CF-BEDROCK-001", "CF-BEDROCK-003", "CF-BEDROCK-004", "CF-SAGE-006")},
         # Template-level: _app_services_findings skips what it cannot read.
         **{c: set() for c in ("CF-APPSYNC-001", "CF-APPSYNC-002", "CF-APPSYNC-003", "CF-APPSYNC-004",
                               "CF-TRANSFER-001", "CF-TRANSFER-002", "CF-TRANSFER-003", "CF-APPRUNNER-001",
@@ -565,7 +568,9 @@ CF_THEMES: dict[str, tuple[str, ...]] = {
     "CF-APPRUNNER-001": (_OBS,),
     "CF-BEANSTALK-001": (_OBS,), "CF-BEANSTALK-002": (_SB,), "CF-BEANSTALK-003": (_OBS,),
     "CF-SAGE-001": (_NET,), "CF-SAGE-002": (_NET,), "CF-SAGE-003": (_SB, _ID), "CF-SAGE-004": (_DP,),
-    "CF-SAGE-005": (_RES,), "CF-FSX-001": (_DP,), "CF-FSX-002": (_F,), "CF-FSX-003": (_RES,),
+    "CF-SAGE-005": (_RES,), "CF-SAGE-006": (_OBS,),
+    "CF-BEDROCK-001": (_SB,), "CF-BEDROCK-003": (_RES,), "CF-BEDROCK-004": (_OBS, _SB),
+    "CF-FSX-001": (_DP,), "CF-FSX-002": (_F,), "CF-FSX-003": (_RES,),
     "CF-S3-008": (_DP,), "CF-S3-009": (_NET, _DP), "CF-S3-010": (_RES, _DP), "CF-S3-011": (_OBS, _DP),
     "CF-S3-012": (_F,),
     "CF-EMR-001": (_NET,), "CF-EMR-002": (_DP,), "CF-EMR-003": (_DP,),
@@ -902,6 +907,10 @@ CF_TITLES: dict[str, str] = {
     "CF-SAGE-003": "SageMaker notebook gives users root access",
     "CF-SAGE-004": "SageMaker volume has no customer managed key",
     "CF-SAGE-005": "SageMaker endpoint variant runs on one instance",
+    "CF-SAGE-006": "SageMaker endpoint has no monitoring schedule",
+    "CF-BEDROCK-001": "Bedrock agent has no guardrail",
+    "CF-BEDROCK-003": "Bedrock agent sets no idle session timeout",
+    "CF-BEDROCK-004": "Bedrock model invocation logging is not set up",
     "CF-SFN-001": "Step Functions tasks have no retry or catch",
     "CF-SFN-002": "Step Functions state machine has no X-Ray tracing",
     "CF-SFN-003": "Step Functions state machine has no logging",
@@ -3252,6 +3261,73 @@ def _sagemaker_fsx_findings(resources: List[Resource], template_path: Path) -> L
     return out
 
 
+_BEDROCK_LOGGED_TYPES = frozenset({
+    "bedrock_agent", "bedrock_guardrail", "bedrock_knowledge_base", "bedrock_prompt",
+    "bedrockagentcore_agent_runtime", "bedrockagentcore_gateway", "bedrockagentcore_memory",
+})
+
+
+def _ai_findings(resources: List[Resource], template_path: Path) -> List[Finding]:
+    """The AI template checks, which run only for an AI workload (rules/ai_gate.py): Bedrock
+    agents (CF-BEDROCK-001, 003), model invocation logging (CF-BEDROCK-004, an account control,
+    off unless rules.org) and SageMaker endpoint monitoring (CF-SAGE-006). A value the scan cannot
+    read is not judged. Each id answers one best practice of an AI lens (rules/lens_map.py)."""
+    usable = [r for r in resources if not r.malformed]
+    out: List[Finding] = []
+
+    def add(res: Resource, check_id: str, severity: Severity, category: str, recommendation: str) -> None:
+        out.append(Finding(
+            id=check_id, title=CF_TITLES[check_id], severity=severity, category=category,
+            file=res.file or str(template_path), line=res.line,
+            evidence=f"{res.name} ({res.source_type})", recommendation=recommendation,
+        ))
+
+    for agent in (r for r in usable if r.type == "bedrock_agent"):
+        if "GuardrailConfiguration" not in agent.unresolved and not agent.properties.get("GuardrailConfiguration"):
+            add(agent, "CF-BEDROCK-001", "Medium", "Security",
+                "The agent has no GuardrailConfiguration, so nothing filters harmful, off-topic or "
+                "sensitive content in what it reads and says. Create an AWS::Bedrock::Guardrail with "
+                "content, topic, word or sensitive-information policies and set GuardrailConfiguration "
+                "(GuardrailIdentifier and GuardrailVersion) on the agent. In CDK: guardrailConfiguration "
+                "on the CfnAgent.")
+        if "IdleSessionTTLInSeconds" not in agent.unresolved and agent.properties.get("IdleSessionTTLInSeconds") is None:
+            add(agent, "CF-BEDROCK-003", "Low", "Reliability",
+                "The agent sets no IdleSessionTTLInSeconds, so it keeps a conversation open for the "
+                "service default and you did not choose how long. Set a timeout that fits the use case "
+                "(60 to 3600 seconds), so an abandoned session ends and its data is deleted. In CDK: "
+                "idleSessionTtlInSeconds on the CfnAgent.")
+
+    bedrock = [r for r in usable if r.type in _BEDROCK_LOGGED_TYPES]
+    if bedrock and ai_gate.account_checks_on() and not any(
+        r.type == "bedrock_model_invocation_logging" for r in resources
+    ):
+        add(bedrock[0], "CF-BEDROCK-004", "Low", "Operational Excellence",
+            "The template builds Bedrock resources and sets up no model invocation logging. Logging is "
+            "an account and Region setting with no CloudFormation resource type, so this reads the "
+            "template only and runs with rules.org. Turn it on with PutModelInvocationLoggingConfiguration, "
+            "or Terraform aws_bedrock_model_invocation_logging_configuration, so prompts and responses are "
+            "recorded to CloudWatch Logs or S3 for audit.")
+
+    endpoints = [r for r in usable if r.type == "sagemaker_endpoint"]
+    schedules = [r for r in resources if r.type == "sagemaker_monitoring_schedule"]
+    for endpoint in endpoints:
+        def covers(schedule: Resource) -> bool:
+            # A schedule that names no readable endpoint (Terraform ties it through a job definition)
+            # may belong to any of them.
+            name = schedule.properties.get("EndpointName")
+            if schedule.malformed or "EndpointName" in schedule.unresolved or name is None:
+                return True
+            return _value_mentions(name, endpoint.name)
+
+        if not any(covers(s) for s in schedules):
+            add(endpoint, "CF-SAGE-006", "Low", "Operational Excellence",
+                "No AWS::SageMaker::MonitoringSchedule in the template watches this endpoint, so drift in "
+                "its data or predictions goes unseen. Add a monitoring schedule (Model Monitor data "
+                "quality, model quality, bias or explainability) with EndpointName set to the endpoint. "
+                "In CDK: CfnMonitoringSchedule.")
+    return out
+
+
 def _unset_or_is(res: Resource, key: str, expected: str) -> bool:
     """True when a setting is unset, or literally this value in any case. Unknown is not judged."""
     if key in res.unresolved:
@@ -3962,7 +4038,8 @@ def _monitoring_findings(resources: List[Resource], template_path: Path) -> List
             _ESCALATION_RECOMMENDATION)
 
     # Wiring such as a security group rule or a permission does not make a stack large.
-    counted = [r for r in resources if r.type is not None and not r.malformed and not stack_cost.is_free(r.source_type)]
+    counted = [r for r in resources if r.type is not None and r.type not in ai_gate.UNCOUNTED_TYPES
+               and not r.malformed and not stack_cost.is_free(r.source_type)]
     if (len(counted) > _dashboard_min_resources
             and not any(r.type == "cloudwatch_dashboard" for r in resources)
             and not _may_be_out_of_sight(resources, ("aws_cloudwatch_dashboard",))):
@@ -7270,6 +7347,8 @@ def _run_resource_checks(
     if warnings is None:
         warnings = []
     findings: List[Finding] = []
+    ai_gate.observe(resources)
+    ai_on = ai_gate.checks_on(resources)  # the AI template checks run only for an AI workload
 
     def count(*types: str) -> int:
         return sum(1 for r in resources if r.type in types)
@@ -8132,6 +8211,10 @@ def _run_resource_checks(
 
     # --- SageMaker notebooks and endpoint configs, FSx file systems ---
     findings.extend(_sagemaker_fsx_findings(resources, template_path))
+
+    # --- Bedrock agents and logging, SageMaker endpoint monitoring: an AI workload only ---
+    if ai_on:
+        findings.extend(_ai_findings(resources, template_path))
 
     # --- AppSync, Transfer Family, App Runner and Elastic Beanstalk ---
     findings.extend(_app_services_findings(resources, template_path))

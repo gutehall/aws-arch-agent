@@ -18,6 +18,7 @@ _MARKET = {"m.tf": 'data "aws_ami" "m" {\n  owners = ["aws-marketplace"]\n}\n'
 _ADR = ("# Compute\n\nWe considered Lambda and Fargate. The Well-Architected guidance and the "
         "reference architecture favour Lambda. The cost comparison is $40 against $120. The "
         "tradeoff is cold starts. A benchmark gave measured results, the data we used.\n")
+_AI = {"a.tf": 'resource "aws_bedrockagent_agent" "a" {\n  agent_name = "a"\n}\n'}
 _ALIAS = 'provider "aws" {\n  alias  = "east"\n  region = "us-east-1"\n}\n'
 _RUNNER = 'resource "aws_instance" "gh_runner" {\n  instance_type = "m5.large"\n}\n'
 
@@ -62,6 +63,11 @@ CASES = {
     "REPO-192": ({"f.tf": _RUNNER},
                  {"f.tf": _RUNNER.replace("}\n", '  instance_market_options {\n'
                                           '    market_type = "spot"\n  }\n}\n')}),
+    "REPO-194": (_AI, {"docs/responsible-ai.md": "Release criteria.\n"}),
+    "REPO-195": (_AI, {"evals/golden.jsonl": "{}\n"}),
+    "REPO-196": (_AI, {"docs/human-oversight.md": "A person approves.\n"}),
+    "REPO-197": (_AI, {"docs/agent-role.md": "Success criteria.\n"}),
+    "REPO-198": (_AI, {"prompts/system.txt": "Be helpful.\n"}),
     "REPO-193": ({"/ios/Runner/Info.plist": "<plist/>"},
                  {"d.tf": 'resource "aws_devicefarm_project" "p" {\n  name = "p"\n}\n'}),
 }

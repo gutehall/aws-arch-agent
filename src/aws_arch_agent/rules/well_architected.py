@@ -16,7 +16,7 @@ import json
 from dataclasses import dataclass
 from functools import lru_cache
 from pathlib import Path
-from typing import Iterable, List
+from typing import Iterable, List, Sequence
 
 from aws_arch_agent.models import Finding
 from aws_arch_agent.rules.wa_map import RULE_BEST_PRACTICES
@@ -118,10 +118,20 @@ def question_of(rule_id: str) -> str | None:
 
 
 def annotate(findings: Iterable[Finding]) -> None:
-    """Set each finding's question and best practices from its rule. Mutates the findings."""
+    """Set each finding's question and best practices from its rule. Mutates the findings.
+
+    A rule the core map does not know may be in the AI lens map (rules/lens_map.py); its
+    finding then carries the lens question and practices. Core answers() reads only the core
+    map, so such a finding never lands under one of the 57 core questions.
+    """
+    from aws_arch_agent.rules.lenses import lens_best_practices_of, lens_question_of
+
     for f in findings:
         f.question = question_of(f.id)
         f.best_practices = list(best_practices_of(f.id))
+        if f.question is None:
+            f.question = lens_question_of(f.id)
+            f.best_practices = list(lens_best_practices_of(f.id))
 
 
 def rules_run(
@@ -203,7 +213,7 @@ def finding_rows(answer: Answer) -> List[tuple[str, str, int]]:
     return [(rid, title, n) for rid, (title, n) in rows.items()]
 
 
-def html_rows(items: List[Answer]) -> List[dict]:
+def html_rows(items: Sequence[Answer]) -> List[dict]:
     """The answers as the HTML template reads them."""
     return [
         {

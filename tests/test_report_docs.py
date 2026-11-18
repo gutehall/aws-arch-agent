@@ -86,7 +86,7 @@ def test_every_topic_is_used_and_every_rule_points_at_a_topic() -> None:
 def test_topic_links_name_a_page_not_a_start_page(topic: str) -> None:
     _, path, wa_label, wa_path = TOPICS[topic]
     assert re.fullmatch(r"/[\w./-]+\.html(#[\w-]+)?", path), path
-    assert re.fullmatch(r"/wellarchitected/latest/[\w-]+-pillar/[a-z0-9_]+\.html", wa_path), wa_path
+    assert re.fullmatch(r"/wellarchitected/latest/[\w-]+-(?:pillar|lens)/[a-z0-9_-]+\.html", wa_path), wa_path
     assert not wa_path.endswith(("/welcome.html", "/sustainability-pillar.html")), wa_path
     assert re.match(r"Well-Architected [A-Z]+\d\d-BP\d\d: ", wa_label), wa_label
 

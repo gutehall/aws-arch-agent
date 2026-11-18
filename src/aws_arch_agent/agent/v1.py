@@ -27,7 +27,7 @@ from aws_arch_agent.rules.terraform_model import (
 )
 from aws_arch_agent.rules.runner import filter_by_severity, run_all_rules
 from aws_arch_agent.rules import account, cf_template, effort, environments, nonprod, regions, stack_cost, themes
-from aws_arch_agent.rules import well_architected
+from aws_arch_agent.rules import ai_gate, well_architected
 from aws_arch_agent.rules.tag_policy import TagPolicy, policy_checked, use_tag_policy
 from aws_arch_agent.report.markdown import render_markdown
 from aws_arch_agent.agent.verdicts import (
@@ -275,6 +275,8 @@ ORG_RULE_IDS = frozenset({
     "REPO-012", "REPO-032", "REPO-069", "REPO-080", "REPO-133", "REPO-134", "REPO-136",
     "REPO-137", "REPO-141", "REPO-145",
     "REPO-162", "REPO-163",
+    # Model invocation logging has no CloudFormation type: it is an account and Region setting.
+    "CF-BEDROCK-004",
 })
 
 
@@ -439,6 +441,7 @@ def _collect_findings(
     iac: str = "auto",
     tf_plan: Path | None = None,
 ) -> tuple[RepoContext, list[Finding], list[str]]:
+    """Scan the repo. The caller scopes the AI gate with ai_gate.use()."""
     files = iter_files(repo_path, max_files=max_files)
     source = resolve_source(repo_path, iac, files)
     language = detect_language(repo_path)
@@ -485,6 +488,7 @@ def _collect_findings(
     effort.annotate(findings)
     themes.annotate(findings)
     well_architected.annotate(findings)
+    ctx.ai_lenses = ai_gate.active()
     return ctx, findings, warnings
 
 
@@ -506,6 +510,7 @@ def analyze_v1(
     theme_filter: list[str] | None = None,
     group_by: str = "severity",
     account_facts: account.AccountFacts | None = None,
+    lenses_ai: bool | None = None,
 ) -> tuple[str, RepoContext, list[Finding], list[str]]:
     """Run V1 pipeline: scan repo, run rules, optionally judge findings with the LLM; return (report_md, ctx, findings, warnings)."""
     with (
@@ -516,6 +521,7 @@ def analyze_v1(
         nonprod.use_max_size(nonprod_max_size),
         cf_template.use_dashboard_min_resources(dashboards_min_resources),
         account.use_facts(account_facts),
+        ai_gate.use(lenses_ai, account_checks=ai_gate.account_checks_flag(rules_org, rules_include)),
     ):
         ctx, findings, warnings = _collect_findings(
             repo_path, max_files, rules_include, rules_exclude, None, rules_org, iac,
@@ -596,9 +602,11 @@ def collect_ctx_findings(
     rules_org: bool = False,
     iac: str = "auto",
     tf_plan: Path | None = None,
+    lenses_ai: bool | None = None,
 ) -> tuple[RepoContext, list[Finding], list[str]]:
     """Run rules only and return context, findings, and warnings."""
-    return _collect_findings(
-        repo_path, max_files, rules_include, rules_exclude, severity_threshold, rules_org, iac,
-        tf_plan,
-    )
+    with ai_gate.use(lenses_ai, account_checks=ai_gate.account_checks_flag(rules_org, rules_include)):
+        return _collect_findings(
+            repo_path, max_files, rules_include, rules_exclude, severity_threshold, rules_org,
+            iac, tf_plan,
+        )

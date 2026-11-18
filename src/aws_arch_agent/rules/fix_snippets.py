@@ -1751,6 +1751,31 @@ _CLOUDFORMATION["CF-SAGE-005"] = """$name:
         InitialVariantWeight: 1
         InitialInstanceCount: 2"""
 
+_CLOUDFORMATION["CF-SAGE-006"] = """$name:
+  Type: AWS::SageMaker::MonitoringSchedule
+  Properties:
+    MonitoringScheduleName: my-endpoint-data-quality
+    EndpointName: !GetAtt MyEndpoint.EndpointName  # the endpoint this schedule watches
+    MonitoringScheduleConfig:
+      MonitoringJobDefinitionName: my-data-quality-job
+      MonitoringType: DataQuality
+      ScheduleConfig:
+        ScheduleExpression: cron(0 * ? * * *)"""
+
+_CLOUDFORMATION["CF-BEDROCK-001"] = """$name:
+  Type: AWS::Bedrock::Agent
+  Properties:
+    # keep the other properties as they are
+    GuardrailConfiguration:
+      GuardrailIdentifier: !GetAtt Guardrail.GuardrailId  # an AWS::Bedrock::Guardrail with policies
+      GuardrailVersion: DRAFT"""
+
+_CLOUDFORMATION["CF-BEDROCK-003"] = """$name:
+  Type: AWS::Bedrock::Agent
+  Properties:
+    # keep the other properties as they are
+    IdleSessionTTLInSeconds: 900"""
+
 _CLOUDFORMATION["CF-FSX-001"] = """$name:
   Type: AWS::FSx::FileSystem
   Properties:
@@ -2564,6 +2589,39 @@ _TERRAFORM["CF-SAGE-005"] = """resource "aws_sagemaker_endpoint_configuration" "
     model_name             = aws_sagemaker_model.main.name
     instance_type          = "ml.m5.large"
     initial_instance_count = 2
+  }
+}"""
+
+_TERRAFORM["CF-SAGE-006"] = """resource "aws_sagemaker_monitoring_schedule" "$tf_name" {
+  monitoring_schedule_config {
+    monitoring_job_definition_name = aws_sagemaker_data_quality_job_definition.main.name
+    monitoring_type                = "DataQuality"
+    schedule_config {
+      schedule_expression = "cron(0 * ? * * *)"
+    }
+  }
+}"""
+
+_TERRAFORM["CF-BEDROCK-001"] = """resource "aws_bedrockagent_agent" "$tf_name" {
+  # keep the other arguments as they are
+  guardrail_configuration {
+    guardrail_identifier = aws_bedrock_guardrail.main.guardrail_id
+    guardrail_version    = aws_bedrock_guardrail_version.main.version
+  }
+}"""
+
+_TERRAFORM["CF-BEDROCK-003"] = """resource "aws_bedrockagent_agent" "$tf_name" {
+  # keep the other arguments as they are
+  idle_session_ttl_in_seconds = 900
+}"""
+
+_TERRAFORM["CF-BEDROCK-004"] = """resource "aws_bedrock_model_invocation_logging_configuration" "main" {
+  logging_config {
+    text_data_delivery_enabled = true
+    cloudwatch_config {
+      log_group_name = aws_cloudwatch_log_group.bedrock.name
+      role_arn       = aws_iam_role.bedrock_logging.arn
+    }
   }
 }"""
 
