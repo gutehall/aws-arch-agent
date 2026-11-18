@@ -100,7 +100,7 @@ See [CONFIG.md](CONFIG.md) and [example-config.json](example-config.json). That 
 Use the composite action, pinned to a release tag (`@main` changes with every merged check; see the README's CI section). It runs on Linux, macOS, and Windows runners and installs ripgrep if the runner lacks it:
 
 ```yaml
-- uses: gutehall/aws-arch-agent/.github/actions/aws-arch-agent@v0.3.0
+- uses: gutehall/aws-arch-agent/.github/actions/aws-arch-agent@v0.3.1
   with:
     repo: .
     fail-on: high

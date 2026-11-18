@@ -2,6 +2,13 @@
 
 New releases go at the top. See [CONTRIBUTING.md](CONTRIBUTING.md#releases) for when to cut one and how the version is bumped.
 
+## v0.3.1 - 2026-11-18
+
+### Changes
+
+- Mention the AI lenses and their checks in the README
+- First release published to PyPI from the release workflow with trusted publishing
+
 ## v0.3.0 - 2026-11-18
 
 ### Changes
