@@ -1,6 +1,6 @@
 # AWS Arch Agent
 
-Local-first AWS architecture review for infrastructure code. It scans **CDK** (TypeScript and Python), **CloudFormation**, and **Terraform**, and reports security, reliability, operational excellence, performance, cost, and sustainability issues mapped to the AWS Well-Architected Framework.
+Local-first AWS architecture review for infrastructure code. It scans **CDK** (TypeScript and Python), **CloudFormation**, and **Terraform**, and reports security, reliability, operational excellence, performance, cost, and sustainability issues mapped to the AWS Well-Architected Framework. For workloads that use Bedrock, SageMaker, or AgentCore it also answers the four AI Well-Architected lenses (Machine Learning, Generative AI, Responsible AI, Agentic AI).
 
 No AWS credentials. No cloud calls, unless you opt in with `--live-account` (read-only account checks). LLM output is optional and self-hosted only. With `OLLAMA_HOST` or `LLM_BASE_URL` set, it calls that server; with neither set it makes no call. `--no-llm` skips it either way. If the model does not answer, the findings stay as the rules wrote them.
 
@@ -62,6 +62,8 @@ Each finding has a severity, a pillar, a file and line, evidence, a recommendati
 | **Best Practices** | 5 | Tags, secrets in environment variables, CDK Aspects |
 
 Repo-level checks (`REPO-*`) read the IaC together with notes in the repo (README, ADRs, runbooks, `docs/`). A missing process is a finding too.
+
+AI-specific checks run only for an AI workload: a Bedrock agent with no guardrail or idle session timeout (`CF-BEDROCK-001`, `CF-BEDROCK-003`), no model invocation logging with `rules.org` (`CF-BEDROCK-004`), a SageMaker endpoint with no monitoring schedule (`CF-SAGE-006`), and AI projects with no responsible-AI, evaluation, human-oversight, agent-role, or prompt-catalog notes (`REPO-194` to `REPO-198`). `lenses.ai` forces them on or off; see [docs/CONFIG.md](docs/CONFIG.md).
 
 ### Well-Architected answers
 
