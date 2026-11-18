@@ -17,7 +17,7 @@ macOS and Linux:
 ```bash
 python3 -m venv .venv
 source .venv/bin/activate
-pip install "git+https://github.com/gutehall/aws-arch-agent@v0.3.1"
+pip install "aws-arch-agent==0.3.1"
 aws-arch-agent --version   # 0.3.1
 ```
 
@@ -26,11 +26,11 @@ Windows (PowerShell):
 ```powershell
 py -m venv .venv
 .venv\Scripts\Activate.ps1
-pip install "git+https://github.com/gutehall/aws-arch-agent@v0.3.1"
+pip install "aws-arch-agent==0.3.1"
 aws-arch-agent --version   # 0.3.1
 ```
 
-The package is not on PyPI yet; install from the tag as above.
+The package is on [PyPI](https://pypi.org/project/aws-arch-agent/). To install a tag straight from GitHub instead, use `pip install "git+https://github.com/gutehall/aws-arch-agent@v0.3.1"`.
 
 CI tests on Linux (Python 3.11 and 3.12) and Windows, and runs the GitHub Action on Linux, macOS, and Windows. V2 synth also needs Node.js for `npx cdk synth`.
 
@@ -110,7 +110,7 @@ Releases and notes: [GitHub releases](https://github.com/gutehall/aws-arch-agent
 - **V2** (`--mode v2`): runs `cdk synth`, then six LangGraph reviewers judge the static findings and the synthesised template. A release install needs the `v2` extra. A checkout installed with `.[dev]` already has it.
 
 ```bash
-pip install "aws-arch-agent[v2] @ git+https://github.com/gutehall/aws-arch-agent@v0.3.1"
+pip install "aws-arch-agent[v2]==0.3.1"
 aws-arch-agent --repo . --mode v2 --no-llm --rag ./docs/waf-snippets.md
 ```
 

@@ -74,6 +74,7 @@ def _pins_action_to_current_release(text: str) -> bool:
 def test_readme_pins_the_action_to_the_current_release() -> None:
     readme = (ROOT / "README.md").read_text(encoding="utf-8")
     assert _pins_action_to_current_release(readme)
+    assert f'pip install "aws-arch-agent=={__version__}"' in readme
     assert f'pip install "git+https://github.com/gutehall/aws-arch-agent@v{__version__}"' in readme
     assert f"releases/tag/v{__version__})" in readme
 
