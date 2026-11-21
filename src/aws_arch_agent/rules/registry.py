@@ -27,40 +27,39 @@ from aws_arch_agent.rules.reliability import (
     BackupVaultMissing, CrossRegionBackup, StepFunctionsRetry, ElastiCacheMultiAz,
     EfsBackupPolicy, EfsLifecyclePolicy, KinesisRetention, GlobalAcceleratorHealthChecks,
     CodePipelineApproval, AcmCertificateValidation,
-    BlueGreenDeploymentMissing, SqsVisibilityTimeout, DynamoDbGlobalTables, S3ReplicationMissing,
+    SqsVisibilityTimeout, S3ReplicationMissing,
     LambdaReservedConcurrency, ApiGatewayRequestValidator, EventBridgeRetryPolicy,
     RdsDeletionProtection, S3VersioningMissing, VpcSingleAz, LambdaDirectInvoke,
 )
 from aws_arch_agent.rules.cost import (
     LogRetentionNeverExpire, MissingAutoscalingHint, DynamoDbAutoscalingMissing,
-    LambdaProvisionedConcurrency, RdsReservedInstances, NatGatewayCosts,
+    RdsReservedInstances, NatGatewayCosts,
     S3IntelligentTiering, EbsGp2ToGp3, ElastiCacheReservedNodes, RdsGraviton,
     CloudFrontPriceClass, UnusedEips, S3LifecycleMissing,
     AwsBudgetsMissing, CostAllocationTags, SavingsPlansOpportunity,
-    LambdaPowerTuning, S3StorageLens,
+    S3StorageLens,
 )
 from aws_arch_agent.rules.best_practices import (
     MissingStandardTags, SecretsInEnvVars,
     ResourceNamingConvention, CdkAspectsMissing, CdkContextMissing,
 )
 from aws_arch_agent.rules.operational_excellence import (
-    CloudTrailMissing, VpcFlowLogsMissing, XRayTracingMissing, DynamoDbStreamsMissing,
+    CloudTrailMissing, VpcFlowLogsMissing, XRayTracingMissing,
     ApiGatewayAccessLogs, AlbAccessLogs, CloudFrontAccessLogs, EcsContainerInsights,
     RdsEnhancedMonitoring, CloudWatchAlarmsMissing, SnsAlarmNotifications,
     StepFunctionsXRay, EventBridgeDlq, ConfigNotEnabled,
     GlueJobMetrics, TransitGatewayFlowLogs, CodePipelineNotifications, AppRunnerObservability,
     GlueJobBookmarks, CodeBuildLogging,
-    CloudWatchDashboardMissing, ResourceTaggingStrategy, SsmParameterAdvancedTier,
+    CloudWatchDashboardMissing, SsmParameterAdvancedTier,
     S3ReplicationMetrics, Ec2PatchBaselineMissing, AlarmEscalationMissing,
 )
 from aws_arch_agent.rules.performance_efficiency import (
-    GravitonNotUsed, CachingHint, DynamoDbProvisionedCapacity,
-    ApiGatewayCaching, LambdaMemoryOptimization, CloudFrontCaching,
+    GravitonNotUsed, CachingHint,
+    ApiGatewayCaching, CloudFrontCaching,
     EcsTaskSizing, RdsInstanceSizing,
-    KinesisEnhancedFanout, OpenSearchInstanceTypes, GlobalAcceleratorOptimization,
-    EfsPerformanceMode, AppSyncCaching, S3TransferAcceleration,
-    LambdaSnapStart, AuroraIoOptimized, EbsIo2BlockExpress,
-    CloudWatchContributorInsights, RdsProxyMissing,
+    GlobalAcceleratorOptimization,
+    AppSyncCaching, S3TransferAcceleration,
+    LambdaSnapStart,
 )
 from aws_arch_agent.rules.repo_practices import REPO_RULES
 from aws_arch_agent.rules.sustainability import (
@@ -144,7 +143,7 @@ ALL_RULES = [
     IamUserConsolePassword(),
     IamAccessKeyCreated(),
     IamUserDirectPolicies(),
-    # Reliability (75 rules: these 33, and REPO-012 to REPO-017, REPO-023 to REPO-026,
+    # Reliability (73 rules: these 31, and REPO-012 to REPO-017, REPO-023 to REPO-026,
     # REPO-042 to REPO-059, REPO-107, REPO-108, REPO-122 to REPO-124 and REPO-131 to
     # REPO-135 in REPO_RULES)
     RdsMultiAzMissing(),
@@ -169,9 +168,7 @@ ALL_RULES = [
     GlobalAcceleratorHealthChecks(),
     CodePipelineApproval(),
     AcmCertificateValidation(),
-    BlueGreenDeploymentMissing(),
     SqsVisibilityTimeout(),
-    DynamoDbGlobalTables(),
     S3ReplicationMissing(),
     LambdaReservedConcurrency(),
     ApiGatewayRequestValidator(),
@@ -180,11 +177,10 @@ ALL_RULES = [
     S3VersioningMissing(),
     VpcSingleAz(),
     LambdaDirectInvoke(),
-    # Cost Optimization (48 rules: these 18, and REPO-069 to REPO-097 in REPO_RULES)
+    # Cost Optimization (46 rules: these 16, and REPO-069 to REPO-097 in REPO_RULES)
     LogRetentionNeverExpire(),
     MissingAutoscalingHint(),
     DynamoDbAutoscalingMissing(),
-    LambdaProvisionedConcurrency(),
     RdsReservedInstances(),
     NatGatewayCosts(),
     S3IntelligentTiering(),
@@ -197,7 +193,6 @@ ALL_RULES = [
     AwsBudgetsMissing(),
     CostAllocationTags(),
     SavingsPlansOpportunity(),
-    LambdaPowerTuning(),
     S3StorageLens(),
     # Best Practices (5 rules)
     MissingStandardTags(),
@@ -205,13 +200,12 @@ ALL_RULES = [
     ResourceNamingConvention(),
     CdkAspectsMissing(),
     CdkContextMissing(),
-    # Operational Excellence (71 rules)
+    # Operational Excellence (69 rules)
     # These 26, and REPO-001 to REPO-003, REPO-018 to REPO-022, REPO-027 to REPO-030 and
     # REPO-109 to REPO-116 in REPO_RULES.
     CloudTrailMissing(),
     VpcFlowLogsMissing(),
     XRayTracingMissing(),
-    DynamoDbStreamsMissing(),
     ApiGatewayAccessLogs(),
     AlbAccessLogs(),
     CloudFrontAccessLogs(),
@@ -229,33 +223,23 @@ ALL_RULES = [
     GlueJobBookmarks(),
     CodeBuildLogging(),
     CloudWatchDashboardMissing(),
-    ResourceTaggingStrategy(),
     SsmParameterAdvancedTier(),
     S3ReplicationMetrics(),
     Ec2PatchBaselineMissing(),
     AlarmEscalationMissing(),
     *REPO_RULES,  # repo-level: tests, pipeline, guardrails, incidents, app security, testing,
     # observability, deployment risk, telemetry analysis
-    # Performance Efficiency (33 rules: these 19, and REPO-060 to REPO-068 in REPO_RULES)
+    # Performance Efficiency (24 rules: these 10, and REPO-060 to REPO-068 in REPO_RULES)
     GravitonNotUsed(),
     CachingHint(),
-    DynamoDbProvisionedCapacity(),
     ApiGatewayCaching(),
-    LambdaMemoryOptimization(),
     CloudFrontCaching(),
     EcsTaskSizing(),
     RdsInstanceSizing(),
-    KinesisEnhancedFanout(),
-    OpenSearchInstanceTypes(),
     GlobalAcceleratorOptimization(),
-    EfsPerformanceMode(),
     AppSyncCaching(),
     S3TransferAcceleration(),
     LambdaSnapStart(),
-    AuroraIoOptimized(),
-    EbsIo2BlockExpress(),
-    CloudWatchContributorInsights(),
-    RdsProxyMissing(),
     # Sustainability (27 rules: these 7, and REPO-098 to REPO-106 in REPO_RULES)
     SpotNotConsidered(),
     RightSizingHint(),

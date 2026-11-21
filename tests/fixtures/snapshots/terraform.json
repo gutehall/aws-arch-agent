@@ -63,11 +63,18 @@
     "evidence": "aws_lambda_function.worker (aws_lambda_function)"
   },
   {
-    "id": "CF-PERF-002",
+    "id": "CF-LOGS-001",
     "severity": "Low",
-    "file": "main.tf",
-    "line": 41,
-    "evidence": "Template has API Gateway or Lambda but no CloudFront or ElastiCache (aws_lambda_function.worker)"
+    "file": "modules/logs/main.tf",
+    "line": 2,
+    "evidence": "aws_cloudwatch_log_group.app (aws_cloudwatch_log_group)"
+  },
+  {
+    "id": "CF-NACL-001",
+    "severity": "Low",
+    "file": "network.tf",
+    "line": 1,
+    "evidence": "aws_vpc.network (aws_vpc)"
   },
   {
     "id": "CF-RDS-003",

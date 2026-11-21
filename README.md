@@ -4,7 +4,7 @@ Local-first AWS architecture review for infrastructure code. It scans **CDK** (T
 
 No AWS credentials. No cloud calls, unless you opt in with `--live-account` (read-only account checks). LLM output is optional and self-hosted only. With `OLLAMA_HOST` or `LLM_BASE_URL` set, it calls that server; with neither set it makes no call. `--no-llm` skips it either way. If the model does not answer, the findings stay as the rules wrote them.
 
-> 377 static rules and 290 template checks are implemented and tested. 139 of the 377 CDK rules (37%) have a template check. Those checks run on CloudFormation, Terraform, and synthesised CDK. [docs/COVERAGE.md](docs/COVERAGE.md) gives the reason for each of the others. Expect some false positives and negatives, and API changes.
+> 362 static rules and 299 template checks are implemented and tested. 141 of the 362 CDK rules (39%) have a template check. Those checks run on CloudFormation, Terraform, and synthesised CDK. [docs/COVERAGE.md](docs/COVERAGE.md) gives the reason for each of the others. Expect some false positives and negatives, and API changes.
 
 ## Install
 
@@ -66,10 +66,10 @@ Each finding has a severity, a pillar, a file and line, evidence, a recommendati
 | Pillar | Rules | Examples |
 |--------|------:|----------|
 | **Security** | 114 | Missing encryption, public access, wildcard IAM, hardcoded secrets, no MFA, no threat model |
-| **Reliability** | 75 | Missing DLQs, no backups, single-AZ, no health checks, untraced requests, no quota alarms |
-| **Operational Excellence** | 71 | No logging, alarms, or tracing; no owner, runbook, test gate, or rollback |
-| **Performance Efficiency** | 33 | No caching, no Graviton, oversized tasks, no load balancer, no load test |
-| **Cost Optimization** | 52 | No autoscaling, NAT data processing, no lifecycle policy, no budgets or cost owner |
+| **Reliability** | 73 | Missing DLQs, no backups, single-AZ, no health checks, untraced requests, no quota alarms |
+| **Operational Excellence** | 69 | No logging, alarms, or tracing; no owner, runbook, test gate, or rollback |
+| **Performance Efficiency** | 24 | No caching, no Graviton, oversized tasks, no load balancer, no load test |
+| **Cost Optimization** | 50 | No autoscaling, NAT data processing, no lifecycle policy, no budgets or cost owner |
 | **Sustainability** | 27 | No Spot, no right-sizing, idle resources, unattached volumes, no data expiry |
 | **Best Practices** | 5 | Tags, secrets in environment variables, CDK Aspects |
 

@@ -56,28 +56,6 @@
       "evidence_hash": null
     },
     {
-      "id": "COST-004",
-      "file": "src/aws_arch_agent/rules/cf_template.py",
-      "evidence_hash": "3ab837e227b087c8",
-      "logical_id": "\"reservedConcurrentExecutions.\")"
-    },
-    {
-      "id": "COST-004",
-      "file": "src/aws_arch_agent/rules/cost.py",
-      "evidence_hash": null
-    },
-    {
-      "id": "COST-004",
-      "file": "src/aws_arch_agent/rules/cost.py",
-      "evidence_hash": "76cb2e8924b63eb0",
-      "logical_id": "provisioned = rg(repo_path, r'provisionedConcurrentExecutions|reservedConcurrentExecutions', glob=code_glob(language))"
-    },
-    {
-      "id": "COST-004",
-      "file": "src/aws_arch_agent/rules/operational_excellence.py",
-      "evidence_hash": null
-    },
-    {
       "id": "COST-005",
       "file": null,
       "evidence_hash": null
@@ -166,16 +144,6 @@
     },
     {
       "id": "PERF-014",
-      "file": null,
-      "evidence_hash": null
-    },
-    {
-      "id": "PERF-016",
-      "file": null,
-      "evidence_hash": null
-    },
-    {
-      "id": "PERF-019",
       "file": null,
       "evidence_hash": null
     },

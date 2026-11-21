@@ -42,11 +42,11 @@
     "evidence": "Worker (AWS::Lambda::Function)"
   },
   {
-    "id": "CF-PERF-002",
+    "id": "CF-NACL-001",
     "severity": "Low",
     "file": "stack.yaml",
     "line": null,
-    "evidence": "Template has API Gateway or Lambda but no CloudFront or ElastiCache"
+    "evidence": "Network (AWS::EC2::VPC)"
   },
   {
     "id": "CF-RDS-003",

@@ -15,7 +15,7 @@ Which CDK rules have a template check, and which AWS Foundational Security Best 
 
 ## CDK rules
 
-377 rules: 132 covered, 7 partial, 10 account, 5 cdk-only, 25 advice, 198 repo.
+362 rules: 141 covered, 10 account, 5 cdk-only, 8 advice, 198 repo.
 
 | Rule | Title | Template check | Status | Note |
 | -- | -- | -- | -- | -- |
@@ -73,7 +73,7 @@ Which CDK rules have a template check, and which AWS Foundational Security Best 
 | SEC-052 | CodePipeline artifact encryption not enabled | `CF-CP-001` | `covered` |  |
 | SEC-053 | CodeBuild project using privileged mode | `CF-CB-003` | `covered` |  |
 | SEC-054 | Security Group egress too permissive (0.0.0.0/0) | `CF-SG-003` | `covered` |  |
-| SEC-055 | Network ACLs not configured | `CF-NACL-001` | `partial` | CF-NACL-001 checks entries that open 22 or 3389; SEC-055 reports a VPC with no custom network ACL. |
+| SEC-055 | Network ACLs not configured | `CF-NACL-001` | `covered` | CF-NACL-001 reports a VPC with no custom network ACL, and entries that open 22 or 3389. |
 | SEC-056 | Stack termination protection not enabled |  | `cdk-only` | Termination protection is a stack setting, not in the template. |
 | SEC-057 | Lambda function URL without authentication | `CF-LAM-004` | `covered` |  |
 | SEC-058 | ECS task may run as root user | `CF-ECS-003` | `covered` |  |
@@ -90,7 +90,7 @@ Which CDK rules have a template check, and which AWS Foundational Security Best 
 | SEC-069 | IAM user has a console password | `CF-IAM-009` | `covered` |  |
 | SEC-070 | IAM access key is created in the code | `CF-IAM-010` | `covered` | The template check passes on a key with `Status: Inactive`. |
 | SEC-071 | IAM user has policies attached directly | `CF-IAM-011` | `covered` |  |
-| REL-001 | RDS may miss Multi-AZ | `CF-RDS-003` | `partial` | Checks DB instances only; REL-001 also flags DatabaseCluster. |
+| REL-001 | RDS may miss Multi-AZ | `CF-RDS-003` | `covered` | CF-RDS-003 reads DB instances, and an Aurora cluster with one DB instance in the template. |
 | REL-002 | RDS may miss backup retention | `CF-RDS-002` | `covered` |  |
 | REL-003 | Lambda may miss DLQ / on-failure destination | `CF-LAM-001` | `covered` |  |
 | REL-004 | DynamoDB may miss point-in-time recovery | `CF-DDB-001` | `covered` |  |
@@ -99,7 +99,7 @@ Which CDK rules have a template check, and which AWS Foundational Security Best 
 | REL-007 | ALB health check configuration missing | `CF-ALB-007` | `covered` |  |
 | REL-008 | SQS missing dead-letter queue configuration | `CF-SQS-002` | `covered` |  |
 | REL-009 | Lambda timeout may be too low or too high | `CF-LAM-007` | `covered` |  |
-| REL-010 | Lambda not in VPC when accessing RDS/ElastiCache |  | `advice` | Whether a function needs the VPC depends on what it calls. |
+| REL-010 | Lambda not in VPC when accessing RDS/ElastiCache | `CF-LAM-011` | `covered` | CF-LAM-011 reads a function with no VpcConfig that refers to an RDS database or ElastiCache cluster that is not public. |
 | REL-011 | RDS read replicas missing for read-heavy workloads |  | `advice` | Read replicas depend on read load. |
 | REL-012 | NAT Gateway single point of failure (need multi-AZ) | `CF-NAT-001` | `covered` |  |
 | REL-013 | AWS Backup vault not configured | `CF-BAK-005` | `covered` |  |
@@ -112,9 +112,7 @@ Which CDK rules have a template check, and which AWS Foundational Security Best 
 | REL-020 | Global Accelerator health checks not configured | `CF-GA-001` | `covered` | Advice: EC2 and Elastic IP endpoints. A load balancer's own health checks decide. |
 | REL-021 | CodePipeline missing manual approval for production | `CF-CP-002` | `covered` |  |
 | REL-022 | ACM certificate validation method not specified | `CF-ACM-001` | `covered` | An imported or private CA certificate is not judged. |
-| REL-023 | Blue-green deployment not configured for critical services |  | `advice` | Deployment strategy, not a resource property. |
 | REL-024 | SQS visibility timeout may need review | `CF-SQS-003` | `covered` |  |
-| REL-025 | DynamoDB global tables not configured for multi-region |  | `advice` | Global tables depend on multi-Region needs. |
 | REL-026 | S3 replication not configured for critical buckets | `CF-S3-010` | `covered` |  |
 | REL-027 | Lambda reserved concurrency not configured for critical functions | `CF-LAM-006` | `covered` |  |
 | REL-028 | API Gateway request validation not configured | `CF-APIGW-006` | `covered` |  |
@@ -124,9 +122,8 @@ Which CDK rules have a template check, and which AWS Foundational Security Best 
 | REL-032 | VPC uses one Availability Zone | `CF-VPC-004` | `covered` | The template check reads each subnet tier (public, private) of the synthesised VPC. |
 | REL-033 | Lambda function is granted direct invoke on another function | `CF-LAM-009` | `covered` | The template check reads the caller's role policies and the callee's event invoke config. |
 | COST-001 | Log retention may be infinite (cost risk) | `CF-CW-001` | `covered` |  |
-| COST-002 | Compute resources may miss autoscaling | `CF-ASG-006` | `partial` | CF-ASG-006 checks Auto Scaling groups of fixed size; COST-002 reports ECS services in code with no Auto Scaling at all. |
+| COST-002 | Compute resources may miss autoscaling | `CF-ECS-013` | `covered` | CF-ECS-013 reports an ECS service that no Application Auto Scaling target scales. CF-ASG-006 (fixed-size group) is a reliability check. |
 | COST-003 | DynamoDB provisioned capacity may miss autoscaling | `CF-DDB-003` | `covered` |  |
-| COST-004 | Lambda provisioned concurrency may be overprovisioned |  | `advice` | Provisioned concurrency sizing needs traffic data. |
 | COST-005 | RDS not using Reserved Instances (savings opportunity) |  | `account` | Reserved Instances are bought for the account. |
 | COST-006 | NAT Gateway incurs data processing costs | `CF-COST-002`, `CF-VPC-002`, `CF-VPC-003` | `covered` |  |
 | COST-007 | S3 Intelligent-Tiering not enabled | `CF-S3-007` | `covered` |  |
@@ -139,7 +136,6 @@ Which CDK rules have a template check, and which AWS Foundational Security Best 
 | COST-014 | AWS Budgets not configured |  | `account` | Budgets are account-level. `CF-BUDGET-001` checks a budget the repo defines. |
 | COST-015 | Cost allocation tags may not be configured | `CF-TAG-001` | `covered` |  |
 | COST-016 | Savings Plans opportunity for compute workloads |  | `account` | Savings Plans are bought for the account. |
-| COST-017 | Lambda memory/CPU may not be optimized |  | `advice` | Memory tuning needs invocation data. |
 | COST-018 | S3 Storage Lens not enabled |  | `account` | Storage Lens is configured for the account or organization. |
 | BP-001 | Standard tags may be missing | `CF-TAG-001` | `covered` |  |
 | BP-002 | Using environment variables instead of Secrets Manager | `CF-LAM-005` | `covered` |  |
@@ -149,7 +145,6 @@ Which CDK rules have a template check, and which AWS Foundational Security Best 
 | OPS-001 | CloudTrail / audit trail may be missing |  | `account` | A trail is usually an organization or account trail outside the app. CF-CT-001 to CF-CT-005 check a trail the template defines. |
 | OPS-002 | VPC Flow Logs may be missing | `CF-FL-001` | `covered` |  |
 | OPS-003 | X-Ray / distributed tracing may be missing | `CF-APIGW-002`, `CF-APIGW-V2-002`, `CF-LAM-002` | `covered` |  |
-| OPS-004 | DynamoDB table may benefit from streams for event-driven patterns |  | `advice` | Streams depend on the event design. |
 | OPS-005 | API Gateway access logging not enabled | `CF-APIGW-001`, `CF-APIGW-V2-001` | `covered` |  |
 | OPS-006 | ALB/NLB access logs not enabled | `CF-ALB-001` | `covered` |  |
 | OPS-007 | CloudFront access logging not enabled | `CF-CF-005` | `covered` |  |
@@ -167,31 +162,21 @@ Which CDK rules have a template check, and which AWS Foundational Security Best 
 | OPS-019 | Glue job bookmarks not enabled | `CF-GLUE-003` | `covered` | CF-GLUE-003 reports a literal job-bookmark-disable; a job with the option unset keeps OPS-019. |
 | OPS-020 | CodeBuild project logging not configured | `CF-CB-004` | `covered` |  |
 | OPS-021 | CloudWatch dashboards not configured | `CF-DASH-001` | `covered` | Stacks with more than `dashboards.min_resources` resources (default 20). Not reported in dev. |
-| OPS-022 | Resource tagging strategy may be incomplete |  | `advice` | Tag choice. CF-TAG-001 checks a configured tag policy. |
 | OPS-023 | SSM Parameter Store throughput setting may need review |  | `advice` | Restated: it used to recommend the advanced tier for throughput, but AWS sets throughput per account and Region, whatever the tier. Throughput needs traffic data. `CF-SSM-002` reports the separate cost of an advanced parameter that does not need that tier. |
 | OPS-025 | S3 replication metrics not enabled | `CF-S3-011` | `covered` |  |
 | OPS-026 | EC2 instances have no patch baseline | `CF-PATCH-001` | `covered` |  |
 | OPS-027 | Alarms have no escalation path | `CF-ALARM-003` | `covered` | The template check also passes on an alarm action that targets a response plan ARN, and needs an alarm with an action. |
-| PERF-001 | Compute may not use Graviton/ARM (cost and performance) | `CF-PERF-001`, `CF-PERF-005`, `CF-PERF-006` | `partial` | CF-PERF-001 checks Lambda, CF-PERF-005 checks EC2 and CF-PERF-006 checks ECS task definitions; PERF-001 matches any compute, so the CDK finding stays. |
-| PERF-002 | No caching layer detected (performance) | `CF-PERF-002` | `partial` | API Gateway and Lambda only; PERF-002 also counts load balancers, API caches and DAX. |
-| PERF-003 | DynamoDB table may use provisioned capacity (consider on-demand) |  | `advice` | On-demand versus provisioned depends on traffic. |
+| PERF-001 | Compute may not use Graviton/ARM (cost and performance) | `CF-PERF-001`, `CF-PERF-005`, `CF-PERF-006` | `covered` | CF-PERF-001 checks Lambda, CF-PERF-005 EC2 and CF-PERF-006 ECS task definitions: each kind of compute PERF-001 matches. |
+| PERF-002 | No caching layer detected (performance) | `CF-PERF-002` | `covered` | Both read APIs and Application Load Balancers, and count CloudFront, ElastiCache, an API cache or DAX as a cache. |
 | PERF-004 | API Gateway caching not enabled | `CF-APIGW-008` | `covered` |  |
-| PERF-005 | Lambda memory not optimized (too low/high) |  | `advice` | Memory tuning needs invocation data. |
 | PERF-006 | CloudFront caching strategy not optimized | `CF-CF-013` | `covered` | Narrowed: CF-CF-013 reports only the managed CachingDisabled policy on a static-looking path, because a template does not show other caching gaps. |
 | PERF-007 | ECS task sizing (CPU/memory) may need review | `CF-ECS-011` | `covered` |  |
-| PERF-008 | RDS instance class may be oversized | `CF-PERF-003`, `CF-PERF-004` | `partial` | CF-PERF-003 checks RDS and CF-PERF-004 checks EC2; PERF-008 matches any large instanceType. |
-| PERF-009 | Kinesis enhanced fan-out not used |  | `advice` | Enhanced fan-out depends on consumer count. |
-| PERF-010 | OpenSearch instance types not optimized |  | `advice` | Instance choice depends on the workload. |
+| PERF-008 | RDS instance class may be oversized | `CF-PERF-003` | `covered` | PERF-008 reads instance types in files that define an RDS database; CF-PERF-003 reads DBInstanceClass. |
 | PERF-011 | Global Accelerator not used for global traffic |  | `advice` | Global Accelerator depends on where users are. |
-| PERF-012 | EFS performance mode not configured |  | `advice` | Performance mode depends on the workload. |
 | PERF-013 | AppSync API caching not enabled | `CF-APPSYNC-004` | `covered` | Advice: a cache suits repeated reads. A merged API is not judged. |
 | PERF-014 | S3 Transfer Acceleration not enabled for global uploads |  | `advice` | Transfer Acceleration depends on where uploads come from. |
-| PERF-015 | Lambda SnapStart not enabled for Java functions |  | `advice` | SnapStart depends on cold-start needs. |
-| PERF-016 | Aurora not using I/O-Optimized for high I/O workloads |  | `advice` | I/O-Optimized depends on I/O spend. |
-| PERF-017 | EBS io2 Block Express not used for high IOPS |  | `advice` | io2 Block Express depends on IOPS needs. |
-| PERF-018 | CloudWatch Contributor Insights not enabled |  | `advice` | Contributor Insights depends on access patterns. |
-| PERF-019 | RDS Proxy not used for connection pooling |  | `advice` | RDS Proxy depends on connection patterns. |
-| SUST-001 | Fleet may not use Spot for interruptible workloads | `CF-SUST-001`, `CF-SUST-002`, `CF-SUST-003` | `partial` | CF-SUST-001 checks Auto Scaling groups, CF-SUST-002 Fargate and CF-SUST-003 launch templates; SUST-001 also flags EC2 instances and ECS on EC2. |
+| PERF-015 | Lambda SnapStart not enabled for Java functions | `CF-LAM-010` | `covered` | CF-LAM-010 reads a Java runtime with SnapStart.ApplyOn not PublishedVersions. |
+| SUST-001 | Fleet may not use Spot for interruptible workloads | `CF-SUST-001`, `CF-SUST-002`, `CF-SUST-003` | `covered` | CF-SUST-001 checks Auto Scaling groups (ECS on EC2 runs on one), CF-SUST-002 Fargate and CF-SUST-003 launch templates. |
 | SUST-002 | Right-sizing and efficiency review recommended |  | `advice` | Right-sizing needs usage data. CF-PERF-003/004 flag large instances. |
 | SUST-003 | Scheduled scaling not configured for predictable patterns |  | `advice` | Scheduled scaling depends on traffic patterns. |
 | SUST-004 | Consider async processing for batch workloads |  | `advice` | Architecture advice. |
@@ -567,3 +552,19 @@ Controls a template can show. Account-level controls (for example S3.1, EC2.7 an
 | SQS.1 | `CF-SQS-001` | `AWS::SQS::Queue` |
 | StepFunctions.1 | `CF-SFN-003` | `AWS::StepFunctions::StateMachine` |
 | Transfer.2 | `CF-TRANSFER-001` | `AWS::Transfer::Server` |
+
+## Practices that stay on a repo rule
+
+Operational excellence, cost optimization and sustainability best practices that only a `REPO-*` rule answers. `tests/test_coverage_doc.py` checks both lists against `wa_map.py`.
+
+Process practices are about people, ownership, reviews, documents and account-wide policy. No resource property in a stack shows them, so the repo rule (a note, a runbook, CI config, a template in the repo) stays the answer:
+
+- Operational excellence (47): OPS01-BP01, OPS01-BP02, OPS01-BP03, OPS01-BP04, OPS01-BP05, OPS01-BP06, OPS02-BP02, OPS02-BP03, OPS02-BP04, OPS02-BP05, OPS02-BP06, OPS03-BP01, OPS03-BP02, OPS03-BP03, OPS03-BP04, OPS03-BP05, OPS03-BP06, OPS03-BP07, OPS04-BP01, OPS05-BP01, OPS05-BP02, OPS05-BP03, OPS05-BP04, OPS05-BP07, OPS05-BP09, OPS05-BP10, OPS06-BP02, OPS07-BP01, OPS07-BP02, OPS07-BP03, OPS07-BP04, OPS07-BP06, OPS09-BP01, OPS09-BP02, OPS09-BP03, OPS10-BP03, OPS10-BP05, OPS10-BP06, OPS11-BP01, OPS11-BP02, OPS11-BP03, OPS11-BP04, OPS11-BP05, OPS11-BP06, OPS11-BP07, OPS11-BP08, OPS11-BP09
+- Cost optimization (32): COST01-BP01, COST01-BP02, COST01-BP04, COST01-BP07, COST01-BP08, COST01-BP09, COST02-BP01, COST02-BP02, COST02-BP03, COST02-BP04, COST02-BP05, COST02-BP06, COST03-BP03, COST03-BP04, COST03-BP06, COST04-BP02, COST05-BP01, COST05-BP02, COST05-BP03, COST05-BP04, COST05-BP06, COST06-BP01, COST06-BP04, COST07-BP01, COST07-BP02, COST07-BP03, COST07-BP05, COST08-BP01, COST09-BP01, COST10-BP01, COST10-BP02, COST11-BP01
+- Sustainability (14): SUS01-BP01, SUS02-BP02, SUS02-BP04, SUS02-BP05, SUS03-BP02, SUS03-BP03, SUS03-BP04, SUS03-BP05, SUS04-BP01, SUS06-BP01, SUS06-BP02, SUS06-BP03, SUS06-BP04, SUS06-BP05
+
+These have a resource control but no template check yet, so the repo rule still answers them:
+
+- Operational excellence (4): OPS04-BP04, OPS08-BP01, OPS08-BP03, OPS10-BP07
+- Cost optimization (4): COST03-BP01, COST04-BP01, COST08-BP02, COST09-BP02
+- Sustainability (5): SUS02-BP06, SUS04-BP02, SUS04-BP06, SUS04-BP08, SUS05-BP04

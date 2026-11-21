@@ -120,3 +120,21 @@ def test_rule_count_line_matches_the_rows() -> None:
         f"{counts[s]} {s}" for s in STATUSES if counts[s]
     ) + "."
     assert line in _section("CDK rules"), f"update the count line to: {line}"
+
+
+def test_repo_only_practices_are_listed_as_process_or_open() -> None:
+    from collections import defaultdict
+
+    from aws_arch_agent.rules.wa_map import RULE_BEST_PRACTICES
+
+    rules: dict[str, list[str]] = defaultdict(list)
+    for rule_id, practices in RULE_BEST_PRACTICES.items():
+        for bp in practices:
+            rules[bp].append(rule_id)
+    repo_only = {bp for bp, ids in rules.items()
+                 if bp[:3] in ("OPS", "COS", "SUS") and all(i.startswith("REPO-") for i in ids)}
+    listed = re.findall(r"\b((?:OPS|COST|SUS)\d{2}-BP\d{2})\b", _section("Practices that stay on a repo rule"))
+    assert len(listed) == len(set(listed)), "a practice is listed twice"
+    assert set(listed) == repo_only, (
+        f"listed but has a resource rule: {sorted(set(listed) - repo_only)}; "
+        f"repo-only but not listed: {sorted(repo_only - set(listed))}")
