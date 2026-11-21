@@ -2,6 +2,18 @@
 
 New releases go at the top. See [CONTRIBUTING.md](CONTRIBUTING.md#releases) for when to cut one and how the version is bumped.
 
+## v0.4.0 - 2026-11-21
+
+### Changes
+
+- Read resources for six best practices that only a repo rule answered: user experience telemetry (CF-SYN-001), log analysis (CF-LOGS-001), cost anomaly alerts (CF-CE-001), unattached EBS volumes (CF-EBS-003), RDS storage autoscaling (CF-RDS-015) and noncurrent S3 versions (CF-S3-013). `docs/COVERAGE.md` lists the practices that stay on a repo rule (#112)
+- Close the seven partial CDK/template pairs. CF-NACL-001 also reports a VPC with no custom network ACL, CF-RDS-003 an Aurora cluster with one DB instance, and new CF-ECS-013 an ECS service nothing scales. CF-PERF-002 reads ALBs, API caches and DAX. PERF-008 reads RDS only and SUST-001 reads fleets only. All seven are now covered in V2 (#112)
+- Check Java Lambda functions for SnapStart (CF-LAM-010) and functions outside a VPC that reach a private RDS or ElastiCache store (CF-LAM-011); they replace PERF-015 and REL-010 in V2 (#112)
+- Remove 15 advice rules that read no property: REL-023, REL-025, COST-004, COST-017, OPS-004, OPS-022, PERF-003, PERF-005, PERF-009, PERF-010, PERF-012, PERF-016, PERF-017, PERF-018, PERF-019. Their IDs in `rules.include` or `rules.exclude` are ignored (#112)
+- CF-PERF-002 no longer fires on a template with Lambda and no API or load balancer (#112)
+- A CDK scan without `cdk synth` output now reports OPS06-BP03 as not checked (#112)
+- Install from PyPI (pip or pipx) in the README
+
 ## v0.3.1 - 2026-11-18
 
 ### Changes
