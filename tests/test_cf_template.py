@@ -568,7 +568,9 @@ def test_aurora_member_skips_cluster_level_rds_findings(tmp_path: Path) -> None:
     (cdk_out / "mystack.template.json").write_text(json.dumps(template), encoding="utf-8")
     findings = run_cf_rules(cdk_out)
     standalone = {"CF-RDS-001", "CF-RDS-002", "CF-RDS-003", "CF-RDS-005"}
-    assert not any(f.id in standalone for f in findings)
+    assert not any(f.id in standalone and (f.evidence or "").startswith("Instance ") for f in findings)
+    # One member in the template: the cluster itself has no instance in a second AZ.
+    assert {(f.evidence or "").split(" ")[0] for f in findings if f.id == "CF-RDS-003"} == {"Cluster"}
 
 
 def test_backup_retention_zero_is_a_finding(tmp_path: Path) -> None:

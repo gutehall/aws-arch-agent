@@ -35,10 +35,6 @@
     "negative_ts": "autoScaleReadCapacity",
     "positive_ts": "new dynamodb.Table(this, 'T', { partitionKey: { name: 'id', type: dynamodb.AttributeType.STRING }, billingMode: dynamodb.BillingMode.PROVISIONED, readCapacity: 5, writeCapacity: 5 });"
   },
-  "COST-004": {
-    "negative_ts": "// clean",
-    "positive_ts": "new lambda.Function(this, 'Fn', { provisionedConcurrentExecutions: 5, runtime: lambda.Runtime.NODEJS_18_X, handler: 'h', code: lambda.Code.fromInline('x') });"
-  },
   "COST-005": {
     "negative_ts": "// clean",
     "positive_ts": "new rds.DatabaseInstance(this, 'DB', { vpc, engine: rds.DatabaseInstanceEngine.postgres({ version: rds.PostgresEngineVersion.VER_15 }) });"
@@ -86,10 +82,6 @@
     "negative_ts": "// clean compliant stack",
     "positive_ts": "new lambda.Function(this, 'Fn', { runtime: lambda.Runtime.NODEJS_18_X, handler: 'h', code: lambda.Code.fromInline('x') });"
   },
-  "COST-017": {
-    "negative_ts": "// clean compliant stack",
-    "positive_ts": "new lambda.Function(this, 'Fn', { environment: { PASSWORD: 'secret123456789' } });"
-  },
   "COST-018": {
     "negative_ts": "// clean compliant stack",
     "positive_ts": "new s3.Bucket(this, \"B\");"
@@ -105,10 +97,6 @@
   "OPS-003": {
     "negative_ts": "tracingEnabled: true",
     "positive_ts": "new apigateway.RestApi(this, \"Api\");"
-  },
-  "OPS-004": {
-    "negative_ts": "// clean compliant stack",
-    "positive_ts": "new dynamodb.Table(this, 'T', { partitionKey: { name: 'id', type: dynamodb.AttributeType.STRING } });"
   },
   "OPS-005": {
     "negative_ts": "accessLogDestination",
@@ -183,10 +171,6 @@
     "negative_ts": "// clean compliant stack",
     "positive_ts": "new lambda.Function(this, 'Fn', { runtime: lambda.Runtime.NODEJS_18_X, handler: 'h', code: lambda.Code.fromInline('x') });"
   },
-  "OPS-022": {
-    "negative_ts": "CostCenter:",
-    "positive_ts": "new s3.Bucket(this, 'B', { tags: { Name: 'app' } });"
-  },
   "OPS-023": {
     "negative_ts": "// clean compliant stack",
     "positive_ts": "new ssm.StringParameter(this, 'P', { parameterName: '/x', stringValue: 'v' });"
@@ -209,17 +193,9 @@
     "negative_py": "s3.Bucket(self, 'B')",
     "positive_py": "aws_apigateway.RestApi(self, 'Api')"
   },
-  "PERF-003": {
-    "negative_ts": "// clean compliant stack",
-    "positive_ts": "new dynamodb.Table(this, 'T', { partitionKey: { name: 'id', type: dynamodb.AttributeType.STRING } });"
-  },
   "PERF-004": {
     "negative_ts": "caching:",
     "positive_ts": "new apigateway.RestApi(this, 'Api');"
-  },
-  "PERF-005": {
-    "negative_ts": "// clean compliant stack",
-    "positive_ts": "new lambda.Function(this, 'Fn', { environment: { PASSWORD: 'secret123456789' } });"
   },
   "PERF-006": {
     "negative_ts": "// clean compliant stack",
@@ -231,23 +207,11 @@
   },
   "PERF-008": {
     "negative_ts": "instanceType: 'db.t3.micro'",
-    "positive_ts": "instanceType: 'db.r5.xlarge'"
-  },
-  "PERF-009": {
-    "negative_ts": "// clean compliant stack",
-    "positive_ts": "new kinesis.Stream(this, 'S');"
-  },
-  "PERF-010": {
-    "negative_ts": "// clean compliant stack",
-    "positive_ts": "new opensearch.Domain(this, 'D', { version: opensearch.EngineVersion.OPENSEARCH_2_3 });"
+    "positive_ts": "new rds.DatabaseInstance(this, 'Db', { instanceType: 'db.r5.xlarge' });"
   },
   "PERF-011": {
     "negative_ts": "globalaccelerator",
     "positive_ts": "new elbv2.ApplicationLoadBalancer(this, 'Alb', { vpc });"
-  },
-  "PERF-012": {
-    "negative_ts": "// clean compliant stack",
-    "positive_ts": "new efs.FileSystem(this, 'Fs', { vpc });"
   },
   "PERF-013": {
     "negative_ts": "// clean compliant stack",
@@ -260,22 +224,6 @@
   "PERF-015": {
     "negative_ts": "snapStart",
     "positive_ts": "new lambda.Function(this, 'Fn', { runtime: lambda.Runtime.JAVA_11, handler: 'h', code: lambda.Code.fromInline('x') });"
-  },
-  "PERF-016": {
-    "negative_ts": "// clean compliant stack",
-    "positive_ts": "new rds.DatabaseInstance(this, 'DB', { engine: rds.DatabaseInstanceEngine.postgres({ version: rds.PostgresEngineVersion.VER_15 }), vpc });"
-  },
-  "PERF-017": {
-    "negative_ts": "io2",
-    "positive_ts": "volumeType: ec2.EbsDeviceVolumeType.GP3"
-  },
-  "PERF-018": {
-    "negative_ts": "// clean compliant stack",
-    "positive_ts": "new dynamodb.Table(this, 'T', { partitionKey: { name: 'id', type: dynamodb.AttributeType.STRING } });"
-  },
-  "PERF-019": {
-    "negative_ts": "// clean compliant stack",
-    "positive_ts": "new rds.DatabaseInstance(this, 'DB', { engine: rds.DatabaseInstanceEngine.postgres({ version: rds.PostgresEngineVersion.VER_15 }), vpc });"
   },
   "REL-001": {
     "negative_ts": "multiAz: true",
@@ -373,17 +321,9 @@
     "negative_ts": "new acm.Certificate(this, 'C', { domainName: 'example.com', validation: acm.CertificateValidation.fromDns() });",
     "positive_ts": "new acm.Certificate(this, 'C', { domainName: 'example.com' });"
   },
-  "REL-023": {
-    "negative_ts": "blueGreenDeployment",
-    "positive_ts": "new ecs.FargateService(this, 'Svc', { cluster, taskDefinition });"
-  },
   "REL-024": {
     "negative_ts": "visibilityTimeout:",
     "positive_ts": "new sqs.Queue(this, 'Q');"
-  },
-  "REL-025": {
-    "negative_ts": "// clean compliant stack",
-    "positive_ts": "new dynamodb.Table(this, 'T', { partitionKey: { name: 'id', type: dynamodb.AttributeType.STRING } });"
   },
   "REL-026": {
     "negative_ts": "replicationRule:",

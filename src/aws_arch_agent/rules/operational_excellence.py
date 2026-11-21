@@ -102,37 +102,6 @@ class XRayTracingMissing(Rule):
         return []
 
 
-class DynamoDbStreamsMissing(Rule):
-    id = "OPS-004"
-    title = "DynamoDB table may benefit from streams for event-driven patterns"
-    category = "Operational Excellence"
-    severity = "Low"
-    themes = ("resilience",)
-    recommendation = (
-        "Consider enabling DynamoDB Streams for event-driven patterns, change data capture, or "
-        "cross-region replication. In CDK: stream: dynamodb.StreamViewType.NEW_AND_OLD_IMAGES"
-    )
-
-    def run(self, repo_path: Path, language: str = "typescript") -> List[Finding]:
-        ddb_pat = r'new\s+(dynamodb\.Table|Table)\(' if language == "typescript" else r'(dynamodb.Table|aws_dynamodb.Table)\('
-        tables = rg(repo_path, ddb_pat, glob=code_glob(language))
-        streams = rg(repo_path, r'stream\s*:\s*(StreamViewType|dynamodb\.StreamViewType)|stream_view_type', glob=code_glob(language))
-        out: List[Finding] = []
-        if tables and not streams:
-            f, ln, txt = tables[0]
-            out.append(Finding(
-                id=self.id,
-                title=self.title,
-                severity="Low",
-                category=self.category,
-                file=f,
-                line=ln,
-                evidence=txt,
-                recommendation=self.recommendation,
-            ))
-        return out
-
-
 class ApiGatewayAccessLogs(Rule):
     id = "OPS-005"
     title = "API Gateway access logging not enabled"
@@ -634,35 +603,6 @@ class CloudWatchDashboardMissing(Rule):
         dashboards = rg(repo_path, r'new\s+cloudwatch\.Dashboard\(|Dashboard\(', glob=code_glob(language))
         out: List[Finding] = []
         if resources and not dashboards:
-            return [Finding(
-                id=self.id,
-                title=self.title,
-                severity="Low",
-                category=self.category,
-                file=None,
-                line=None,
-                evidence=None,
-                recommendation=self.recommendation,
-            )]
-        return out
-
-
-class ResourceTaggingStrategy(Rule):
-    id = "OPS-022"
-    title = "Resource tagging strategy may be incomplete"
-    category = "Operational Excellence"
-    severity = "Low"
-    themes = ("finops", "observability",)
-    recommendation = (
-        "Consider adding CostCenter and Project tags for cost allocation and resource management."
-    )
-
-    def run(self, repo_path: Path, language: str = "typescript") -> List[Finding]:
-        tags = rg(repo_path, r'tags\s*:\s*\{|tags\s*=\s*\{', glob=code_glob(language))
-        cost_center = rg(repo_path, r'CostCenter|cost_center|CostCenter', glob=code_glob(language))
-        project = rg(repo_path, r'Project|project', glob=code_glob(language))
-        out: List[Finding] = []
-        if tags and not (cost_center or project):
             return [Finding(
                 id=self.id,
                 title=self.title,

@@ -227,14 +227,18 @@ def test_rollback_control_passes(tmp_path: Path, source: str, kind: str) -> None
 def test_all_controls_answer_ops6_met(tmp_path: Path, source: str) -> None:
     rollback = next(iter(_ROLLBACKS[source].values()))
     if source == "cdk":
-        # REL-023 (OPS06-BP03) asks an ECS service for blue/green; use the Lambda control.
+        # Use the Lambda CodeDeploy control for the CDK case.
         rollback = _CDK_ROLLBACK["codedeploy"]
     ctx, findings = _scan(tmp_path, _BUILDERS[source](test=_TESTS[source], rollback=rollback))
     assert not [f for f in findings if f.id in RULES]
     answer = {a.question.id: a for a in well_architected.answers(findings, ctx.rules_run)}
     ops6 = answer["OPS 6"]
-    assert set(OPS6).isdisjoint(ops6.not_checked)
     assert not ops6.findings
+    if source == "cdk":
+        # Without cdk synth output no CDK rule reads the deployment strategy (OPS06-BP03).
+        assert ops6.not_checked == ("OPS06-BP03",)
+        return
+    assert set(OPS6).isdisjoint(ops6.not_checked)
     assert ops6.met
 
 

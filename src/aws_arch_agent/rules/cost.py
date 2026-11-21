@@ -98,34 +98,6 @@ class DynamoDbAutoscalingMissing(Rule):
         return out
 
 
-class LambdaProvisionedConcurrency(Rule):
-    id = "COST-004"
-    title = "Lambda provisioned concurrency may be overprovisioned"
-    category = "Cost"
-    severity = "Low"
-    themes = ("finops",)
-    recommendation = (
-        "Review Lambda provisioned concurrency settings. Use Application Auto Scaling to adjust "
-        "based on utilization to reduce costs."
-    )
-
-    def run(self, repo_path: Path, language: str = "typescript") -> List[Finding]:
-        provisioned = rg(repo_path, r'provisionedConcurrentExecutions|reservedConcurrentExecutions', glob=code_glob(language))
-        out: List[Finding] = []
-        for f, ln, txt in provisioned[:2]:
-            out.append(Finding(
-                id=self.id,
-                title=self.title,
-                severity="Low",
-                category=self.category,
-                file=f,
-                line=ln,
-                evidence=txt,
-                recommendation=self.recommendation,
-            ))
-        return out
-
-
 class RdsReservedInstances(Rule):
     id = "COST-005"
     title = "RDS not using Reserved Instances (savings opportunity)"
@@ -473,36 +445,6 @@ class SavingsPlansOpportunity(Rule):
                 recommendation=self.recommendation,
             )]
         return []
-
-
-class LambdaPowerTuning(Rule):
-    id = "COST-017"
-    title = "Lambda memory/CPU may not be optimized"
-    category = "Cost"
-    severity = "Low"
-    themes = ("finops",)
-    recommendation = (
-        "Use AWS Lambda Power Tuning to find optimal memory/CPU configuration for cost and "
-        "performance."
-    )
-
-    def run(self, repo_path: Path, language: str = "typescript") -> List[Finding]:
-        lambda_pat = r'new\s+(lambda\.Function|NodejsFunction|PythonFunction)\(' if language == "typescript" else r'(lambda_.Function|aws_lambda.Function)\('
-        lambdas = rg(repo_path, lambda_pat, glob=code_glob(language))
-        memory = rg(repo_path, r'memorySize\s*:\s*\d+', glob=code_glob(language))
-        out: List[Finding] = []
-        if lambdas and not memory:
-            return [Finding(
-                id=self.id,
-                title=self.title,
-                severity="Low",
-                category=self.category,
-                file=None,
-                line=None,
-                evidence=None,
-                recommendation=self.recommendation,
-            )]
-        return out
 
 
 class S3StorageLens(Rule):
