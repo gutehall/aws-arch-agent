@@ -31,7 +31,8 @@ _FREE_CF = re.compile(
     r"DHCPOptions|VPCDHCPOptionsAssociation|EgressOnlyInternetGateway|PrefixList)$"
     r"|^AWS::(?:S3::BucketPolicy|SQS::QueuePolicy|SNS::TopicPolicy|SNS::Subscription|KMS::Alias|"
     r"Lambda::Permission|Lambda::EventSourceMapping|Lambda::Version|Lambda::Alias|Events::Rule|"
-    r"Logs::SubscriptionFilter|Logs::MetricFilter|ECR::RegistryPolicy|"
+    r"Logs::SubscriptionFilter|Logs::MetricFilter|Logs::QueryDefinition|ECR::RegistryPolicy|"
+    r"CE::AnomalyMonitor|CE::AnomalySubscription|EC2::VolumeAttachment|"
     r"SecretsManager::RotationSchedule|SecretsManager::ResourcePolicy|"
     r"ElasticLoadBalancingV2::(?:Listener|ListenerRule|TargetGroup)|"
     r"ApiGateway::(?:Resource|Method|Deployment|Account)|WAFv2::WebACLAssociation|"
@@ -46,6 +47,7 @@ _FREE_TF = re.compile(
     r"ecr_lifecycle_policy|ecr_repository_policy|secretsmanager_secret_\w+|"
     r"eip_association|lb_listener\w*|lb_target_group\w*|wafv2_web_acl_association|"
     r"api_gateway_(?:resource|method|integration|deployment)\w*|cloudwatch_log_subscription_filter|"
+    r"cloudwatch_log_metric_filter|cloudwatch_query_definition|ce_anomaly_\w+|volume_attachment|"
     r"backup_plan|backup_selection|backup_vault_lock_configuration)$"
 )
 

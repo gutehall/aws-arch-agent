@@ -19,7 +19,9 @@ class SpotNotConsidered(Rule):
     )
 
     def run(self, repo_path: Path, language: str = "typescript") -> List[Finding]:
-        ec2_ecs = rg(repo_path, r"Ec2Service|FargateService|ec2\.Instance|AutoScalingGroup", glob=code_glob(language))
+        # Fleets only, as the title says: Auto Scaling groups (ECS on EC2 runs on one), Fargate
+        # and the services on them. CF-SUST-001..003 read the same fleets from the template.
+        ec2_ecs = rg(repo_path, r"Ec2Service|FargateService|AutoScalingGroup", glob=code_glob(language))
         spot = rg(repo_path, r"spot|Spot|capacity_type.*SPOT", glob=code_glob(language))
         if ec2_ecs and not spot:
             f, ln, txt = ec2_ecs[0]

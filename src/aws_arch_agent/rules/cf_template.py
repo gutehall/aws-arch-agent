@@ -190,30 +190,31 @@ CF_COVERS_STATIC: dict[str, tuple[str, ...]] = {
     "CF-COST-002": ("COST-006",),
     "CF-VPC-002": ("COST-006",),
     "CF-VPC-003": ("COST-006",),
+    # Once partial; each template check now also reads the case the CDK rule flagged beyond it,
+    # or the CDK rule was narrowed to what the template check owns.
+    "CF-NACL-001": ("SEC-055",),  # also a VPC with no custom network ACL
+    "CF-RDS-003": ("REL-001",),  # also an Aurora cluster with one DB instance
+    "CF-ECS-013": ("COST-002",),  # COST-002 flags ECS services with no scaling
+    "CF-LAM-010": ("PERF-015",),  # once advice: a Java runtime with SnapStart off
+    "CF-LAM-011": ("REL-010",),  # once advice: a function outside the VPC that names a private store
+    # PERF-001 matches Lambda, EC2 instances and ECS services: one check each.
+    "CF-PERF-001": ("PERF-001",),
+    "CF-PERF-005": ("PERF-001",),
+    "CF-PERF-006": ("PERF-001",),
+    "CF-PERF-002": ("PERF-002",),  # APIs and ALBs; CloudFront, ElastiCache, API cache or DAX
+    "CF-PERF-003": ("PERF-008",),  # PERF-008 reads RDS instance types only
+    # SUST-001 reads fleets: Auto Scaling groups (ECS on EC2 runs on one), Fargate, launch templates.
+    "CF-SUST-001": ("SUST-001",),
+    "CF-SUST-002": ("SUST-001",),
+    "CF-SUST-003": ("SUST-001",),
 }
 
 # Template checks that name a CDK rule's control but cover only part of it, so the CDK
 # finding stays. Each value is (CDK rules, why the pair is not in CF_COVERS_STATIC).
 CF_PARTLY_COVERS_STATIC: dict[str, tuple[tuple[str, ...], str]] = {
-    "CF-RDS-003": (("REL-001",), "checks DB instances only; REL-001 also flags DatabaseCluster"),
-    "CF-PERF-001": (("PERF-001",), "checks Lambda only; PERF-001 also flags EC2 and ECS"),
-    "CF-PERF-002": (("PERF-002",), "API Gateway and Lambda only; PERF-002 also counts load "
-                    "balancers, API caches and DAX"),
-    "CF-PERF-003": (("PERF-008",), "RDS only; PERF-008 matches any large instanceType"),
-    "CF-PERF-004": (("PERF-008",), "EC2 only; PERF-008 matches any large instanceType"),
-    "CF-PERF-005": (("PERF-001",), "EC2 only; PERF-001 also flags Lambda and ECS"),
-    "CF-PERF-006": (("PERF-001",), "ECS task definitions only; PERF-001 also flags Lambda and EC2"),
-    "CF-SUST-001": (("SUST-001",), "Auto Scaling groups only; SUST-001 also flags EC2 "
-                    "instances and ECS services"),
-    "CF-SUST-002": (("SUST-001",), "Fargate only; SUST-001 also flags EC2 instances"),
-    "CF-SUST-003": (("SUST-001",), "launch templates only; SUST-001 also flags ECS services"),
-    "CF-ASG-006": (("COST-002",), "Auto Scaling groups of fixed size only; COST-002 reports ECS "
-                   "services in code with no Auto Scaling at all"),
     "CF-CT-001": (("OPS-001",), "checks an existing trail; OPS-001 reports no trail at all"),
     "CF-CT-002": (("OPS-001",), "checks an existing trail; OPS-001 reports no trail at all"),
     "CF-CT-003": (("OPS-001",), "checks an existing trail; OPS-001 reports no trail at all"),
-    "CF-NACL-001": (("SEC-055",), "checks ACL entries that open 22 or 3389; SEC-055 reports a "
-                    "VPC with no custom network ACL"),
     # Not a gap: tag_policy.REPLACED_STATIC_RULES drops BP-001 once the policy ran.
     "CF-TAG-001": (("BP-001",), "replaced through tag_policy.REPLACED_STATIC_RULES"),
 }
@@ -520,6 +521,13 @@ CHECK_PROPERTIES: dict[str, frozenset[str]] = {
                               "CF-CT-005")},
         # Template-level: _account_baseline_findings skips what it cannot read.
         **{c: set() for c in ("CF-GD-001", "CF-SH-001", "CF-CFG-001", "CF-MACIE-001", "CF-BUDGET-001")},
+        # Template-level: _practice_findings skips what it cannot read.
+        **{c: set() for c in ("CF-SYN-001", "CF-LOGS-001", "CF-CE-001", "CF-EBS-003", "CF-RDS-015",
+                              "CF-S3-013")},
+        # Template-level: _cdk_parity_findings skips what it cannot read.
+        "CF-ECS-013": set(),
+        # Template-level: _lambda_property_findings skips what it cannot read.
+        "CF-LAM-010": set(), "CF-LAM-011": set(),
         # Template-level: _backup_findings skips what it cannot read.
         **{c: set() for c in ("CF-BAK-001", "CF-BAK-002", "CF-BAK-003", "CF-BAK-004", "CF-BAK-005")},
         # Template-level: _ci_cd_findings skips what it cannot read.
@@ -558,6 +566,10 @@ _F, _SB, _ID, _DP, _NET, _RES, _OBS, _SUS = (
 CF_THEMES: dict[str, tuple[str, ...]] = {
     "CF-GD-001": (_SB,), "CF-SH-001": (_SB,), "CF-CFG-001": (_OBS, _SB), "CF-MACIE-001": (_DP, _SB),
     "CF-BUDGET-001": (_F,),
+    "CF-SYN-001": (_OBS,), "CF-LOGS-001": (_OBS,), "CF-CE-001": (_F,),
+    "CF-EBS-003": (_F, _SUS), "CF-RDS-015": (_SUS,), "CF-S3-013": (_F, _SUS),
+    "CF-ECS-013": (_F,),
+    "CF-LAM-010": (_RES,), "CF-LAM-011": (_RES, _NET),
     "CF-ALARM-001": (_OBS,), "CF-ALARM-002": (_OBS,), "CF-ALARM-003": (_OBS,),
     "CF-DASH-001": (_OBS,),
     "CF-CT-004": (_OBS, _SB), "CF-CT-005": (_OBS, _DP),
@@ -700,6 +712,15 @@ CF_TITLES: dict[str, str] = {
     "CF-BEANSTALK-002": "Elastic Beanstalk environment has managed updates off",
     "CF-BEANSTALK-003": "Elastic Beanstalk environment does not stream logs to CloudWatch",
     "CF-BUDGET-001": "Budget sends no notifications",
+    "CF-SYN-001": "Public endpoint has no canary or real-user monitoring",
+    "CF-LOGS-001": "Log groups have no metric filter, subscription or analysis",
+    "CF-CE-001": "Cost anomaly monitor has no subscription",
+    "CF-EBS-003": "EBS volume is not attached in this template",
+    "CF-RDS-015": "RDS storage cannot grow (no MaxAllocatedStorage)",
+    "CF-S3-013": "Versioned S3 bucket never expires noncurrent versions",
+    "CF-ECS-013": "ECS service has no Application Auto Scaling target",
+    "CF-LAM-010": "Java Lambda function has SnapStart off",
+    "CF-LAM-011": "Lambda function reaches a private database but has no VPC config",
     "CF-CB-001": "CodeBuild environment variable holds a secret in plain text",
     "CF-CB-002": "CodeBuild source URL contains credentials",
     "CF-CB-003": "CodeBuild project uses privileged mode",
@@ -4208,6 +4229,300 @@ def _account_baseline_findings(resources: List[Resource], template_path: Path) -
     return out
 
 
+_LOG_ANALYSIS_TYPES = ("cloudwatch_log_metric_filter", "cloudwatch_log_subscription_filter",
+                       "cloudwatch_log_anomaly_detector", "cloudwatch_query_definition")
+_LOG_ANALYSIS_TF_TYPES = ("aws_cloudwatch_log_metric_filter", "aws_cloudwatch_log_subscription_filter",
+                          "aws_cloudwatch_log_anomaly_detector", "aws_cloudwatch_query_definition")
+_USER_TELEMETRY_TF_TYPES = ("aws_synthetics_canary", "aws_rum_app_monitor")
+
+
+def _public_entry_point(res: Resource) -> bool:
+    """A CloudFront distribution, an HTTP or WebSocket API, a REST API that is not PRIVATE, or an
+    internet-facing load balancer. A value the scan cannot read is not judged."""
+    if res.type in ("cloudfront_distribution", "apigatewayv2_api"):
+        return True
+    if res.type == "api_gateway_rest_api":
+        if "EndpointConfiguration" in res.unresolved:
+            return False
+        endpoint = res.properties.get("EndpointConfiguration")
+        types = endpoint.get("Types") if isinstance(endpoint, dict) else None
+        return not (isinstance(types, list) and "PRIVATE" in types) and not _unread(endpoint) \
+            and not _unread(types)
+    if res.type == "lb":
+        scheme = res.properties.get("Scheme", "internet-facing")
+        return "Scheme" not in res.unresolved and scheme == "internet-facing"
+    return False
+
+
+def _expires_noncurrent_versions(lifecycle: Any) -> bool | None:
+    """True when an enabled lifecycle rule expires noncurrent versions; None when unreadable."""
+    if lifecycle is None:
+        return False
+    if not isinstance(lifecycle, dict) or _is_intrinsic(lifecycle):
+        return None
+    rules = lifecycle.get("Rules")
+    if not isinstance(rules, list) or any(not isinstance(r, dict) or _is_intrinsic(r) for r in rules):
+        return None
+    if any(type(r.get("Status", "Enabled")) is not str for r in rules):
+        return None  # a status from a parameter or Fn::If: not judged
+    return any(
+        rule.get("Status") != "Disabled"
+        and (rule.get("NoncurrentVersionExpiration") or rule.get("NoncurrentVersionExpirationInDays"))
+        for rule in rules
+    )
+
+
+_CACHE_TF_TYPES = ("aws_cloudfront_distribution", "aws_elasticache_cluster",
+                   "aws_elasticache_replication_group", "aws_dax_cluster")
+
+
+def _is_application_lb(lb: Resource) -> bool:
+    """An Application Load Balancer: Type application, or unset (the default). Unknown is not judged."""
+    return "Type" not in lb.unresolved and lb.properties.get("Type", "application") == "application"
+
+
+def _rds_storage_is_fixed(db: Resource) -> bool:
+    """A standalone RDS instance (not Aurora, not a read replica) with no MaxAllocatedStorage."""
+    props = db.properties
+    if db.type != "db_instance" or {"MaxAllocatedStorage", "Engine", "DBClusterIdentifier"} & db.unresolved:
+        return False
+    engine = props.get("Engine")
+    if props.get("DBClusterIdentifier") or props.get("SourceDBInstanceIdentifier") or type(engine) is not str:
+        return False
+    return not engine.lower().startswith("aurora") and props.get("MaxAllocatedStorage") is None
+
+
+def _aurora_members(cluster: Resource, resources: List[Resource]) -> int | None:
+    """DB instances in this template that join the cluster; None when a count cannot be read."""
+    total = 0
+    for db in (r for r in resources if r.type == "db_instance"):
+        if "DBClusterIdentifier" in db.unresolved:
+            return None
+        if not _points_at(db, "DBClusterIdentifier", cluster):
+            continue
+        if "InstanceCount" in db.unresolved:
+            return None
+        count = db.properties.get("InstanceCount", 1)
+        total += count if type(count) is int else 1
+    return total
+
+
+def _scaled_ecs_services(resources: List[Resource]) -> tuple[set[str], bool]:
+    """ECS services an Application Auto Scaling target in this template scales, and whether an
+    ECS target names something the scan cannot tie to a service (it may scale any of them)."""
+    services = [r for r in resources if r.type == "ecs_service"]
+    covered: set[str] = set()
+    unlinked = False
+    for r in resources:
+        if r.type != "scalable_target":
+            continue
+        namespace = r.properties.get("ServiceNamespace")
+        if type(namespace) is str and namespace != "ecs":
+            continue
+        target = r.properties.get("ResourceId")
+        text = target if type(target) is str else json.dumps(target, default=str)
+        hits = {s.name for s in services if _references(text, s.name) or s.name in r.references
+                or (type(s.properties.get("ServiceName")) is str
+                    and text.endswith(f"/{s.properties['ServiceName']}"))}
+        covered |= hits
+        unlinked = unlinked or not hits
+    return covered, unlinked
+
+
+def _cdk_parity_findings(resources: List[Resource], template_path: Path) -> List[Finding]:
+    """The halves of CDK rules that the per-resource template checks skipped, so a template scan
+    reports the condition the CDK rule reports: a VPC with no custom network ACL (CF-NACL-001,
+    SEC-055), an Aurora cluster with one instance (CF-RDS-003, REL-001) and an ECS service that
+    nothing scales (CF-ECS-013, COST-002). A value the scan cannot read is not judged."""
+    usable = [r for r in resources if not r.malformed]
+    present = {r.type for r in resources}
+    out: List[Finding] = []
+
+    def add(res: Resource, check_id: str, title: str, severity: Severity, category: str,
+            recommendation: str) -> None:
+        out.append(Finding(
+            id=check_id, title=title, severity=severity, category=category,
+            file=res.file or str(template_path), line=res.line,
+            evidence=f"{res.name} ({res.source_type})", recommendation=recommendation,
+        ))
+
+    if (not {"network_acl", "network_acl_entry"} & present
+            and not _may_be_out_of_sight(resources, ("aws_network_acl", "aws_network_acl_rule"))):
+        for vpc in (r for r in usable if r.type == "vpc"):
+            add(vpc, "CF-NACL-001", "VPC has no custom network ACL", "Low", "Security",
+                "Every subnet in this VPC uses the default network ACL, which allows all traffic in and out, "
+                "so security groups are the only network filter. Add an AWS::EC2::NetworkAcl (Terraform "
+                "aws_network_acl) with entries that deny what no subnet needs, such as SSH and RDP from the "
+                "internet, as a second layer. In CDK: new ec2.NetworkAcl() with subnetSelection.")
+
+    for cluster in (r for r in usable if r.type == "rds_cluster"):
+        engine = cluster.properties.get("Engine")
+        mode = cluster.properties.get("EngineMode")
+        if ({"Engine", "EngineMode"} & cluster.unresolved or type(engine) is not str
+                or not engine.lower().startswith("aurora") or (mode is not None and mode != "provisioned")):
+            continue  # Multi-AZ DB clusters span three AZs by design; Serverless v1 has no instances
+        if (_aurora_members(cluster, resources) == 1
+                and not _may_be_out_of_sight(resources, ("aws_rds_cluster_instance",))):
+            add(cluster, "CF-RDS-003", "Aurora cluster has one DB instance (no Multi-AZ)", "Medium",
+                "Reliability",
+                "The cluster has a single DB instance in this template, so a failure of that instance or its "
+                "Availability Zone stops the database until Aurora creates a new one. Add a reader in another "
+                "AZ: Aurora promotes it in about a minute. In CDK: readers: [rds.ClusterInstance.provisioned()] "
+                "or serverlessV2().")
+
+    services = [r for r in usable if r.type == "ecs_service"]
+    if services and not _may_be_out_of_sight(resources, ("aws_appautoscaling_target",)):
+        scaled, unlinked = _scaled_ecs_services(resources)
+        if not unlinked:
+            for service in services:
+                if service.name not in scaled and service.properties.get("SchedulingStrategy") != "DAEMON":
+                    add(service, "CF-ECS-013", CF_TITLES["CF-ECS-013"], "Low", "Cost Optimization",
+                        "No AWS::ApplicationAutoScaling::ScalableTarget (Terraform aws_appautoscaling_target) "
+                        "in this template scales this service, so it runs DesiredCount tasks for its peak "
+                        "all day. Register a scalable target with a target-tracking policy on CPU, memory or "
+                        "request count. In CDK: service.autoScaleTaskCount({ maxCapacity }).scaleOnCpuUtilization().")
+    return out
+
+
+_PRIVATE_DATA_STORES = ("db_instance", "rds_cluster", "elasticache_cluster", "elasticache_replication_group")
+
+
+def _lambda_property_findings(resources: List[Resource], template_path: Path) -> List[Finding]:
+    """Two CDK advice rules that a template can answer from properties: a Java function with no
+    SnapStart (CF-LAM-010, PERF-015) and a function outside a VPC that refers to an RDS database
+    or ElastiCache cluster (CF-LAM-011, REL-010). A value the scan cannot read is not judged."""
+    out: List[Finding] = []
+    stores = [r for r in resources if r.type in _PRIVATE_DATA_STORES and not r.malformed
+              and "PubliclyAccessible" not in r.unresolved and r.properties.get("PubliclyAccessible") is not True]
+    for fn in (r for r in resources if r.type == "lambda_function" and not r.malformed):
+        props = fn.properties
+
+        def add(check_id: str, severity: Severity, category: str, recommendation: str) -> None:
+            out.append(Finding(
+                id=check_id, title=CF_TITLES[check_id], severity=severity, category=category,
+                file=fn.file or str(template_path), line=fn.line,
+                evidence=f"{fn.name} ({fn.source_type})", recommendation=recommendation,
+            ))
+
+        runtime = props.get("Runtime")
+        snap = props.get("SnapStart")
+        if (not {"Runtime", "SnapStart"} & fn.unresolved and type(runtime) is str
+                and runtime.lower().startswith("java")
+                and not (isinstance(snap, dict) and snap.get("ApplyOn") == "PublishedVersions")
+                and not (isinstance(snap, dict) and _is_intrinsic(snap))):
+            add("CF-LAM-010", "Low", "Performance Efficiency",
+                f"The function runs {runtime} and SnapStart is off, so every cold start initialises the JVM "
+                "and the application from scratch. Set SnapStart.ApplyOn to PublishedVersions and invoke a "
+                "published version or alias; SnapStart for Java costs nothing extra. Check that "
+                "initialisation code does not cache unique values or open connections it reuses. "
+                "In CDK: snapStart: lambda.SnapStartConf.ON_PUBLISHED_VERSIONS.")
+
+        if "VpcConfig" in fn.unresolved or props.get("VpcConfig"):
+            continue
+        if fn.source_type.startswith("AWS::"):
+            text = json.dumps(props, default=str)
+            reached = [s.name for s in stores if _references(text, s.name)]
+        else:
+            reached = [s.name for s in stores if s.name in fn.references]
+        if reached:
+            add("CF-LAM-011", "Medium", "Security",
+                f"The function refers to {', '.join(reached)}, which is not publicly accessible, and has no "
+                "VpcConfig, so it runs outside the VPC and cannot reach the database or cache. Making the "
+                "store public to fix that would expose it. Set VpcConfig with private subnets and a security "
+                "group the store allows. In CDK: vpc and vpcSubnets on the function.")
+    return out
+
+
+def _practice_findings(resources: List[Resource], template_path: Path) -> List[Finding]:
+    """Best practices that were answered only from the repo tree, read from resources:
+    user experience telemetry (CF-SYN-001), log analysis (CF-LOGS-001), cost anomaly alerts
+    (CF-CE-001), unattached volumes (CF-EBS-003), RDS storage autoscaling (CF-RDS-015) and
+    noncurrent S3 versions (CF-S3-013). A value the scan cannot read is not judged."""
+    usable = [r for r in resources if not r.malformed]
+    of = {t: [r for r in usable if r.type == t] for t in (
+        "cloudwatch_log_group", "ce_anomaly_monitor", "ebs_volume", "db_instance", "s3_bucket")}
+    present = {r.type for r in resources}
+    out: List[Finding] = []
+
+    def add(res: Resource, check_id: str, category: str, recommendation: str) -> None:
+        out.append(Finding(
+            id=check_id, title=CF_TITLES[check_id], severity="Low", category=category,
+            file=res.file or str(template_path), line=res.line,
+            evidence=f"{res.name} ({res.source_type})", recommendation=recommendation,
+        ))
+
+    entry_points = [r for r in usable if _public_entry_point(r)]
+    if (entry_points and not {"synthetics_canary", "rum_app_monitor"} & present
+            and not _may_be_out_of_sight(resources, _USER_TELEMETRY_TF_TYPES)):
+        add(entry_points[0], "CF-SYN-001", "Operational Excellence",
+            "This stack serves users through a CloudFront distribution, a public API or an internet-facing "
+            "load balancer, and defines no AWS::Synthetics::Canary or AWS::RUM::AppMonitor (Terraform "
+            "aws_synthetics_canary, aws_rum_app_monitor). Server metrics then say nothing about what a user "
+            "sees: a broken page or a slow sign-in raises no signal. Add a canary that runs the main user "
+            "path, or a RUM app monitor on the web front end. Another stack or a third-party monitor may "
+            "cover it: if so, exclude this check. In CDK: new synthetics.Canary().")
+
+    if (of["cloudwatch_log_group"] and not set(_LOG_ANALYSIS_TYPES) & present
+            and not _may_be_out_of_sight(resources, _LOG_ANALYSIS_TF_TYPES)):
+        add(of["cloudwatch_log_group"][0], "CF-LOGS-001", "Operational Excellence",
+            f"This stack defines {len(of['cloudwatch_log_group'])} log group(s) and no metric filter, "
+            "subscription filter, log anomaly detector or saved Logs Insights query, so the logs are kept "
+            "but nothing reads them. Add a metric filter for errors (and an alarm on it), a log anomaly "
+            "detector, or a subscription that sends them to your log analysis tool. A central log account "
+            "may already read them: if so, exclude this check. In CDK: logGroup.addMetricFilter().")
+
+    if (of["ce_anomaly_monitor"] and "ce_anomaly_subscription" not in present
+            and not _may_be_out_of_sight(resources, ("aws_ce_anomaly_subscription",))):
+        for monitor in of["ce_anomaly_monitor"]:
+            add(monitor, "CF-CE-001", "Cost Optimization",
+                "This Cost Anomaly Detection monitor has no AWS::CE::AnomalySubscription (Terraform "
+                "aws_ce_anomaly_subscription) in the template, so anomalies are found but nobody is told. "
+                "Add a subscription with an email or SNS subscriber and a threshold. In CDK: "
+                "new ce.CfnAnomalySubscription().")
+
+    volumes = of["ebs_volume"]
+    if volumes and not _may_be_out_of_sight(resources, ("aws_volume_attachment",)):
+        attached: set[str] = set()
+        for r in resources:
+            if r.type == "ebs_volume":
+                continue
+            if r.source_type.startswith("AWS::"):
+                text = json.dumps(r.properties, default=str)
+                attached |= {v.name for v in volumes if _references(text, v.name)}
+            else:
+                attached |= {v.name for v in volumes if v.name in r.references}
+        for volume in volumes:
+            if volume.name not in attached:
+                add(volume, "CF-EBS-003", "Sustainability",
+                    "No instance Volumes entry or AWS::EC2::VolumeAttachment (Terraform aws_volume_attachment) "
+                    "in this template attaches this volume, so it is stored, billed and replicated for "
+                    "nothing. Attach it, or delete it after taking a snapshot if the data is needed. If a "
+                    "script or another stack attaches it, exclude this check.")
+
+    for db in of["db_instance"]:
+        if _rds_storage_is_fixed(db):
+            add(db, "CF-RDS-015", "Sustainability",
+                "MaxAllocatedStorage is not set, so the storage cannot grow by itself: it has to be "
+                "allocated for the peak up front, and that capacity sits idle until it is needed. Set "
+                "MaxAllocatedStorage above AllocatedStorage so RDS storage autoscaling adds space as the "
+                "data grows, and start from a smaller AllocatedStorage. In CDK: maxAllocatedStorage.")
+
+    for bucket in of["s3_bucket"]:
+        if {"VersioningConfiguration", "LifecycleConfiguration"} & bucket.unresolved:
+            continue
+        versioning = bucket.properties.get("VersioningConfiguration")
+        status = versioning.get("Status") if isinstance(versioning, dict) else None
+        if status == "Enabled" and _expires_noncurrent_versions(
+                bucket.properties.get("LifecycleConfiguration")) is False:
+            add(bucket, "CF-S3-013", "Sustainability",
+                "Versioning is on and no enabled lifecycle rule has NoncurrentVersionExpiration, so every "
+                "overwritten or deleted object is kept as a noncurrent version for ever. Add a lifecycle rule "
+                "that expires noncurrent versions after the time you need to recover from a mistake "
+                "(for example 30 days). In CDK: lifecycleRules: [{ noncurrentVersionExpiration: "
+                "Duration.days(30) }].")
+    return out
+
+
 def _is_off(res: Resource, key: str) -> bool:
     """True when a boolean setting that defaults to off is unset or false. Unknown is not judged."""
     return key not in res.unresolved and _flag(res.properties.get(key)) is False
@@ -7372,12 +7687,15 @@ def _run_resource_checks(
     vpce_count = count("vpc_endpoint")
     flow_log_count = count("flow_log")
     nat_count = count("nat_gateway")
-    has_apigw = count(
-        "api_gateway_rest_api", "api_gateway_stage", "apigatewayv2_api", "apigatewayv2_stage"
-    ) > 0
-    has_lambda = count("lambda_function") > 0
-    has_cloudfront = count("cloudfront_distribution") > 0
-    has_elasticache = count("elasticache_cluster", "elasticache_replication_group") > 0
+    # The workloads and caches PERF-002 counts: APIs and ALBs; CloudFront, ElastiCache, an API cache, DAX.
+    cache_workloads = [r for r in resources if r.type in (
+        "api_gateway_rest_api", "api_gateway_stage", "apigatewayv2_api", "apigatewayv2_stage")
+        or (r.type == "lb" and _is_application_lb(r))]
+    has_cache = count("cloudfront_distribution", "elasticache_cluster", "elasticache_replication_group",
+                      "dax_cluster") > 0 or any(
+        r.type == "api_gateway_stage" and ("CacheClusterEnabled" in r.unresolved
+                                           or _is_true(r.properties.get("CacheClusterEnabled")))
+        for r in resources)
     asg_count = count("autoscaling_group")
     cf_policies, cf_policy_unlinked = _cf_bucket_policies(resources)
     waf_covered, waf_unlinked = _waf_coverage(resources)
@@ -8137,17 +8455,20 @@ def _run_resource_checks(
             recommendation=_PATCH_RECOMMENDATION,
         ))
 
-    # --- Caching (template-level: API/Lambda but no CloudFront/ElastiCache) ---
-    if (has_apigw or has_lambda) and not has_cloudfront and not has_elasticache:
+    # --- Caching (template-level: an API or ALB with no cache layer in front or behind) ---
+    if cache_workloads and not has_cache and not _may_be_out_of_sight(resources, _CACHE_TF_TYPES):
+        file, line, label = _at(cache_workloads[0])
         findings.append(Finding(
             id="CF-PERF-002",
             title="Consider CloudFront or ElastiCache for caching",
             severity="Low",
             category="Performance Efficiency",
-            file=_anchor("api_gateway_rest_api", "api_gateway_stage", "apigatewayv2_api", "apigatewayv2_stage", "lambda_function")[0],
-            line=_anchor("api_gateway_rest_api", "api_gateway_stage", "apigatewayv2_api", "apigatewayv2_stage", "lambda_function")[1],
-            evidence="Template has API Gateway or Lambda but no CloudFront or ElastiCache" + _anchor("api_gateway_rest_api", "api_gateway_stage", "apigatewayv2_api", "apigatewayv2_stage", "lambda_function")[2],
-            recommendation="Consider CloudFront (for APIs/static content) or ElastiCache (for data) to improve latency and efficiency.",
+            file=file,
+            line=line,
+            evidence="Template has an API Gateway API or an Application Load Balancer and no CloudFront, "
+                     "ElastiCache, API cache or DAX" + label,
+            recommendation="Consider CloudFront (for APIs/static content), an API Gateway cache, ElastiCache "
+                           "or DAX (for data) to improve latency and efficiency.",
         ))
 
     # --- NAT Gateway cost (template-level) ---
@@ -8190,6 +8511,15 @@ def _run_resource_checks(
 
     # --- GuardDuty, Security Hub, AWS Config, Macie and Budgets a repo defines ---
     findings.extend(_account_baseline_findings(resources, template_path))
+
+    # --- Telemetry, log analysis, cost alerts and storage that grows or expires ---
+    findings.extend(_practice_findings(resources, template_path))
+
+    # --- The parts of CDK rules the per-resource checks skip: NACLs, Aurora members, ECS scaling ---
+    findings.extend(_cdk_parity_findings(resources, template_path))
+
+    # --- Lambda: SnapStart for Java, a VPC for functions that reach a private store ---
+    findings.extend(_lambda_property_findings(resources, template_path))
 
     # --- ECS network, secrets, logging, platform, insights and sizing; EKS version ---
     findings.extend(_container_findings(resources, template_path))

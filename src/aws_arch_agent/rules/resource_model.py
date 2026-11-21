@@ -174,6 +174,19 @@ CF_TYPE_TO_CANONICAL: dict[str, str] = {
     "AWS::EMR::SecurityConfiguration": "emr_security_configuration",
     "AWS::DMS::ReplicationInstance": "dms_replication_instance",
     "AWS::DMS::Endpoint": "dms_endpoint",
+    # Telemetry and cost practices read from the template (CF-SYN-001, CF-LOGS-001, CF-CE-001).
+    "AWS::Synthetics::Canary": "synthetics_canary",
+    "AWS::RUM::AppMonitor": "rum_app_monitor",
+    "AWS::Logs::MetricFilter": "cloudwatch_log_metric_filter",
+    "AWS::Logs::SubscriptionFilter": "cloudwatch_log_subscription_filter",
+    "AWS::Logs::LogAnomalyDetector": "cloudwatch_log_anomaly_detector",
+    "AWS::Logs::QueryDefinition": "cloudwatch_query_definition",
+    "AWS::CE::AnomalyMonitor": "ce_anomaly_monitor",
+    "AWS::CE::AnomalySubscription": "ce_anomaly_subscription",
+    # Ties a volume to an instance (CF-EBS-003).
+    "AWS::EC2::VolumeAttachment": "volume_attachment",
+    # A DynamoDB cache, counted as a cache layer by CF-PERF-002.
+    "AWS::DAX::Cluster": "dax_cluster",
 }
 
 # Terraform only: CloudFormation sets these on the rule, the vault and the file system.

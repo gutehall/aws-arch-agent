@@ -71,6 +71,16 @@ TF_TYPE_TO_CANONICAL: dict[str, str] = {
     "aws_sqs_queue": "sqs_queue",
     "aws_sns_topic": "sns_topic",
     "aws_ebs_volume": "ebs_volume",
+    "aws_volume_attachment": "volume_attachment",
+    "aws_dax_cluster": "dax_cluster",
+    "aws_synthetics_canary": "synthetics_canary",
+    "aws_rum_app_monitor": "rum_app_monitor",
+    "aws_cloudwatch_log_metric_filter": "cloudwatch_log_metric_filter",
+    "aws_cloudwatch_log_subscription_filter": "cloudwatch_log_subscription_filter",
+    "aws_cloudwatch_log_anomaly_detector": "cloudwatch_log_anomaly_detector",
+    "aws_cloudwatch_query_definition": "cloudwatch_query_definition",
+    "aws_ce_anomaly_monitor": "ce_anomaly_monitor",
+    "aws_ce_anomaly_subscription": "ce_anomaly_subscription",
     "aws_efs_file_system": "efs_file_system",
     "aws_efs_access_point": "efs_access_point",
     "aws_efs_backup_policy": "efs_backup_policy",
@@ -763,7 +773,7 @@ def _lifecycle_rules(rules: list[dict]) -> Any:
     """
     out = []
     for rule in rules:
-        if {"transition", "noncurrent_version_transition"} & _dynamic_names(rule):
+        if {"transition", "noncurrent_version_transition", "noncurrent_version_expiration"} & _dynamic_names(rule):
             return UNRESOLVED
         status = _v(rule, "status")
         enabled = _v(rule, "enabled")  # inline lifecycle_rule (provider < v4)
@@ -776,7 +786,12 @@ def _lifecycle_rules(rules: list[dict]) -> Any:
             for key in ("transition", "noncurrent_version_transition")
             for t in _blocks(rule, key)
         ]
-        out.append({"Status": status or "Enabled", "Transitions": transitions})
+        entry = {"Status": status or "Enabled", "Transitions": transitions}
+        expiry = _blocks(rule, "noncurrent_version_expiration")
+        if expiry:  # CF-S3-013: noncurrent_days (v4 rule) or days (inline lifecycle_rule)
+            days = _ref(expiry[0], "noncurrent_days") or _ref(expiry[0], "days")  # presence is enough
+            entry["NoncurrentVersionExpiration"] = {"NoncurrentDays": days}
+        out.append(entry)
     return {"Rules": out}
 
 
@@ -806,8 +821,13 @@ def _db(body: dict) -> dict:
         ("replicate_source_db", "SourceDBInstanceIdentifier"),
         ("parameter_group_name", "DBParameterGroupName"),
         ("db_cluster_parameter_group_name", "DBClusterParameterGroupName"),
+        ("allocated_storage", "AllocatedStorage"),
+        ("max_allocated_storage", "MaxAllocatedStorage"),  # CF-RDS-015
     ):
         _set(props, cf_key, body.get(tf_key))
+    if "for_each" in body or "count" in body:  # how many Aurora members a block makes (CF-RDS-003)
+        count = _v(body, "count") if "for_each" not in body else UNRESOLVED
+        props["InstanceCount"] = count if type(count) is int else UNRESOLVED
     _set(props, "Engine", _v(body, "engine"))
     return props
 
@@ -2066,8 +2086,14 @@ def _lambda(body: dict) -> dict:
         elif variables is not None:
             props["Environment"] = UNRESOLVED
     vpc = _first_block(body, "vpc_config")
-    if vpc:
+    if "vpc_config" in _dynamic_names(body):
+        props["VpcConfig"] = UNRESOLVED
+    elif vpc:
         props["VpcConfig"] = {"SubnetIds": _ref(vpc, "subnet_ids")}
+    if "snap_start" in _dynamic_names(body):  # CF-LAM-010
+        props["SnapStart"] = UNRESOLVED
+    elif _first_block(body, "snap_start"):
+        props["SnapStart"] = {"ApplyOn": _v(_first_block(body, "snap_start"), "apply_on")}
     return props
 
 
@@ -2393,6 +2419,11 @@ def _api_rest_api(body: dict) -> dict:
     props: dict = {}
     _set(props, "SecurityPolicy", _v(body, "security_policy"))
     _set(props, "DisableExecuteApiEndpoint", _v(body, "disable_execute_api_endpoint"))
+    endpoint = _first_block(body, "endpoint_configuration")
+    if "endpoint_configuration" in _dynamic_names(body):
+        props["EndpointConfiguration"] = UNRESOLVED
+    elif endpoint:  # a PRIVATE API has no public users to watch (CF-SYN-001)
+        props["EndpointConfiguration"] = {"Types": _v(endpoint, "types")}
     return props
 
 

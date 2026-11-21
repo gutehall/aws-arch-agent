@@ -325,6 +325,40 @@ PAIRS: list[tuple[str, str, dict, str]] = [
     ("CF-CF-013", "PERF-006", {"Type": "AWS::CloudFront::Distribution", "Properties": {"DistributionConfig": {
          "Origins": [{"Id": "a", "DomainName": "a.example.com", "CustomOriginConfig": {"OriginProtocolPolicy": "https-only"}}],
          "DefaultCacheBehavior": {"TargetOriginId": "a", "ViewerProtocolPolicy": "https-only"}, "CacheBehaviors": [{"PathPattern": "*.js", "TargetOriginId": "a", "ViewerProtocolPolicy": "https-only", "CachePolicyId": "4135ea2d-6df8-44a3-9df3-4b5a84be39ad"}]}}}, "new cloudfront.Distribution(this, 'D', {});"),
+    # Once partial: the case each template check used to skip.
+    ("CF-NACL-001", "SEC-055", {"Type": "AWS::EC2::VPC", "Properties": {"CidrBlock": "10.0.0.0/16"}},
+     "new ec2.Vpc(this, 'V');"),
+    ("CF-RDS-003", "REL-001", {
+        "Cluster": {"Type": "AWS::RDS::DBCluster", "Properties": {"Engine": "aurora-postgresql"}},
+        "Writer": {"Type": "AWS::RDS::DBInstance", "Properties": {
+            "Engine": "aurora-postgresql", "DBClusterIdentifier": {"Ref": "Cluster"},
+            "DBInstanceClass": "db.r7g.large"}}},
+     "new rds.DatabaseCluster(this, 'C', { engine, writer: rds.ClusterInstance.provisioned('w') });"),
+    ("CF-ECS-013", "COST-002", {"Type": "AWS::ECS::Service", "Properties": {"DesiredCount": 2}},
+     "new ecs.FargateService(this, 'S', { cluster, taskDefinition });"),
+    ("CF-PERF-006", "PERF-001", {"Type": "AWS::ECS::TaskDefinition", "Properties": {
+        "RequiresCompatibilities": ["FARGATE"], "Cpu": "256", "Memory": "512"}},
+     "new ecs.FargateService(this, 'S', { cluster, taskDefinition });"),
+    ("CF-PERF-005", "PERF-001", {"Type": "AWS::EC2::Instance", "Properties": {"InstanceType": "m7i.large"}},
+     "new ec2.Instance(this, 'I', { vpc, instanceType, machineImage });"),
+    ("CF-PERF-001", "PERF-001", _lambda(), "new lambda.Function(this, 'F', { runtime, handler, code });"),
+    ("CF-PERF-002", "PERF-002", {"Type": "AWS::ElasticLoadBalancingV2::LoadBalancer", "Properties": {
+        "Type": "application"}},
+     "new elbv2.ApplicationLoadBalancer(this, 'L', { vpc });"),
+    ("CF-PERF-003", "PERF-008", _db(DBInstanceClass="db.r5.xlarge"),
+     "new rds.DatabaseInstance(this, 'Db', { instanceType: 'db.r5.xlarge' });"),
+    ("CF-SUST-001", "SUST-001", {"Type": "AWS::AutoScaling::AutoScalingGroup", "Properties": {
+        "MinSize": "1", "MaxSize": "3"}},
+     "new autoscaling.AutoScalingGroup(this, 'G', { vpc, instanceType, machineImage });"),
+    ("CF-SUST-002", "SUST-001", {"Type": "AWS::ECS::Service", "Properties": {"LaunchType": "FARGATE"}},
+     "new ecs.FargateService(this, 'S', { cluster, taskDefinition });"),
+    # Once advice: the property the CDK rule guessed at from a keyword.
+    ("CF-LAM-010", "PERF-015", _lambda(Runtime="java21"),
+     "new lambda.Function(this, 'F', { runtime: lambda.Runtime.JAVA_21, handler, code });"),
+    ("CF-LAM-011", "REL-010", {
+        "Db": _db(),
+        "Fn": _lambda(Environment={"Variables": {"DB_HOST": {"Fn::GetAtt": ["Db", "Endpoint.Address"]}}})},
+     "new rds.DatabaseInstance(this, 'Db', { engine });\nnew lambda.Function(this, 'F', { runtime, handler, code });"),
 ]
 
 
@@ -398,7 +432,7 @@ KNOWN_SAME_CONTROL: list[tuple[str, str]] = [
     ("CF-CT-003", "OPS-001"),
     ("CF-TAG-001", "BP-001"),
     ("CF-NACL-001", "SEC-055"),
-    ("CF-ASG-006", "COST-002"),
+    ("CF-ECS-013", "COST-002"),
 ]
 
 # Title words that do not name a control.

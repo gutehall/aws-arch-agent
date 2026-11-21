@@ -649,37 +649,6 @@ class AcmCertificateValidation(Rule):
         return out
 
 
-class BlueGreenDeploymentMissing(Rule):
-    id = "REL-023"
-    title = "Blue-green deployment not configured for critical services"
-    category = "Reliability"
-    severity = "Low"
-    themes = ("resilience",)
-    recommendation = (
-        "Consider blue-green deployment for zero-downtime releases. Use CodeDeploy deployment "
-        "controller for ECS."
-    )
-
-    def run(self, repo_path: Path, language: str = "typescript") -> List[Finding]:
-        ecs_pat = r'new\s+ecs\.(FargateService|Ec2Service)\(' if language == "typescript" else r'ecs\.(FargateService|Ec2Service)\('
-        ecs = rg(repo_path, ecs_pat, glob=code_glob(language))
-        blue_green = rg(repo_path, r'blueGreenDeployment|blue_green|deploymentController.*CODE_DEPLOY', glob=code_glob(language))
-        out: List[Finding] = []
-        if ecs and not blue_green:
-            f, ln, txt = ecs[0]
-            out.append(Finding(
-                id=self.id,
-                title=self.title,
-                severity="Low",
-                category=self.category,
-                file=f,
-                line=ln,
-                evidence=txt,
-                recommendation=self.recommendation,
-            ))
-        return out
-
-
 class SqsVisibilityTimeout(Rule):
     id = "REL-024"
     title = "SQS visibility timeout may need review"
@@ -708,36 +677,6 @@ class SqsVisibilityTimeout(Rule):
                 evidence=txt,
                 recommendation=self.recommendation,
             ))
-        return out
-
-
-class DynamoDbGlobalTables(Rule):
-    id = "REL-025"
-    title = "DynamoDB global tables not configured for multi-region"
-    category = "Reliability"
-    severity = "Low"
-    themes = ("resilience",)
-    recommendation = (
-        "For multi-region workloads, consider DynamoDB global tables for active-active "
-        "replication."
-    )
-
-    def run(self, repo_path: Path, language: str = "typescript") -> List[Finding]:
-        ddb_pat = r'new\s+(dynamodb\.Table|Table)\(' if language == "typescript" else r'(dynamodb.Table|aws_dynamodb.Table)\('
-        tables = rg(repo_path, ddb_pat, glob=code_glob(language))
-        global_tables = rg(repo_path, r'replicationRegions|globalTables|enableReplica', glob=code_glob(language))
-        out: List[Finding] = []
-        if tables and not global_tables:
-            return [Finding(
-                id=self.id,
-                title=self.title,
-                severity="Low",
-                category=self.category,
-                file=None,
-                line=None,
-                evidence=None,
-                recommendation=self.recommendation,
-            )]
         return out
 
 

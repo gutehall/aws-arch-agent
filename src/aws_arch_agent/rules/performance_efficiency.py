@@ -22,6 +22,9 @@ _CACHE_LAYER = (
 )
 
 
+_RDS_CONSTRUCT = r"rds\.(?:DatabaseInstance|DatabaseCluster|DatabaseInstanceFromSnapshot|DatabaseClusterFromSnapshot|DatabaseInstanceReadReplica|ClusterInstance)\b"
+
+
 class GravitonNotUsed(Rule):
     id = "PERF-001"
     title = "Compute may not use Graviton/ARM (cost and performance)"
@@ -73,41 +76,6 @@ class CachingHint(Rule):
         )
 
 
-class DynamoDbProvisionedCapacity(Rule):
-    id = "PERF-003"
-    title = "DynamoDB table may use provisioned capacity (consider on-demand)"
-    category = "Performance Efficiency"
-    severity = "Low"
-    themes = ("finops",)
-    recommendation = (
-        "Consider PAY_PER_REQUEST (on-demand) billing for unpredictable workloads to optimize "
-        "cost and eliminate capacity planning. In CDK: billingMode: "
-        "dynamodb.BillingMode.PAY_PER_REQUEST"
-    )
-
-    def run(self, repo_path: Path, language: str = "typescript") -> List[Finding]:
-        ddb_pat = r'new\s+(dynamodb\.Table|Table)\(' if language == "typescript" else r'(dynamodb.Table|aws_dynamodb.Table)\('
-        tables = rg(repo_path, ddb_pat, glob=code_glob(language))
-        # Check for PROVISIONED billing mode
-        provisioned = rg(repo_path, r'billingMode\s*:\s*(dynamodb\.BillingMode\.)?PROVISIONED|readCapacity|writeCapacity', glob=code_glob(language))
-        on_demand = rg(repo_path, r'billingMode\s*:\s*(dynamodb\.BillingMode\.)?PAY_PER_REQUEST', glob=code_glob(language))
-        out: List[Finding] = []
-        # If tables exist and using provisioned (or not specified which defaults to provisioned)
-        if tables and (provisioned or not on_demand):
-            f, ln, txt = tables[0]
-            out.append(Finding(
-                id=self.id,
-                title=self.title,
-                severity="Low",
-                category=self.category,
-                file=f,
-                line=ln,
-                evidence=txt,
-                recommendation=self.recommendation,
-            ))
-        return out
-
-
 class ApiGatewayCaching(Rule):
     id = "PERF-004"
     title = "API Gateway caching not enabled"
@@ -126,37 +94,6 @@ class ApiGatewayCaching(Rule):
         out: List[Finding] = []
         if apis and not caching:
             f, ln, txt = apis[0]
-            out.append(Finding(
-                id=self.id,
-                title=self.title,
-                severity="Low",
-                category=self.category,
-                file=f,
-                line=ln,
-                evidence=txt,
-                recommendation=self.recommendation,
-            ))
-        return out
-
-
-class LambdaMemoryOptimization(Rule):
-    id = "PERF-005"
-    title = "Lambda memory not optimized (too low/high)"
-    category = "Performance Efficiency"
-    severity = "Low"
-    themes = ("finops",)
-    recommendation = (
-        "Set appropriate Lambda memory size (128-10240 MB). Use Lambda Power Tuning to find "
-        "optimal value. In CDK: memorySize: 1024"
-    )
-
-    def run(self, repo_path: Path, language: str = "typescript") -> List[Finding]:
-        lambda_pat = r'new\s+(lambda\.Function|NodejsFunction|PythonFunction|DockerImageFunction)\(' if language == "typescript" else r'(lambda_.Function|aws_lambda_python_alpha.PythonFunction|aws_lambda.Function)\('
-        lambdas = rg(repo_path, lambda_pat, glob=code_glob(language))
-        memory = rg(repo_path, r'memorySize\s*:\s*\d+', glob=code_glob(language))
-        out: List[Finding] = []
-        if lambdas and not memory:
-            f, ln, txt = lambdas[0]
             out.append(Finding(
                 id=self.id,
                 title=self.title,
@@ -244,70 +181,17 @@ class RdsInstanceSizing(Rule):
     )
 
     def run(self, repo_path: Path, language: str = "typescript") -> List[Finding]:
-        # Look for large instance classes
-        large_instances = rg(repo_path, r'instanceType.*\.(xlarge|2xlarge|4xlarge|8xlarge|12xlarge|16xlarge)', glob=code_glob(language))
+        # Large instance classes, in files that define an RDS instance or cluster: an EC2 or
+        # cache instance type is not an RDS class (CF-PERF-003 reads the same on DBInstanceClass).
+        glob = code_glob(language)
+        rds_files = {f for f, _ln, _txt in rg(repo_path, _RDS_CONSTRUCT, glob=glob, max_hits=10_000)}
+        large_instances = [
+            hit for hit in rg(repo_path, r'instanceType.*\.(xlarge|2xlarge|4xlarge|8xlarge|12xlarge|16xlarge)', glob=glob,
+               max_hits=10_000)
+            if hit[0] in rds_files
+        ]
         out: List[Finding] = []
         for f, ln, txt in large_instances[:2]:
-            out.append(Finding(
-                id=self.id,
-                title=self.title,
-                severity="Low",
-                category=self.category,
-                file=f,
-                line=ln,
-                evidence=txt,
-                recommendation=self.recommendation,
-            ))
-        return out
-
-
-class KinesisEnhancedFanout(Rule):
-    id = "PERF-009"
-    title = "Kinesis enhanced fan-out not used"
-    category = "Performance Efficiency"
-    severity = "Low"
-    themes = ("resilience",)
-    recommendation = (
-        "Consider enhanced fan-out for Kinesis consumers with high throughput requirements "
-        "(dedicated throughput per consumer)"
-    )
-
-    def run(self, repo_path: Path, language: str = "typescript") -> List[Finding]:
-        kinesis_consumer = rg(repo_path, r'StreamConsumer|registerStreamConsumer', glob=code_glob(language))
-        streams = rg(repo_path, r'new\s+kinesis\.(Stream|CfnStream)\(', glob=code_glob(language))
-        out: List[Finding] = []
-        if streams and not kinesis_consumer:
-            return [Finding(
-                id=self.id,
-                title=self.title,
-                severity="Low",
-                category=self.category,
-                file=None,
-                line=None,
-                evidence=None,
-                recommendation=self.recommendation,
-            )]
-        return out
-
-
-class OpenSearchInstanceTypes(Rule):
-    id = "PERF-010"
-    title = "OpenSearch instance types not optimized"
-    category = "Performance Efficiency"
-    severity = "Low"
-    themes = ("finops",)
-    recommendation = (
-        "Consider current-gen instance types for OpenSearch (r6g/c6g for Graviton, i3 for "
-        "storage, r5 for memory)"
-    )
-
-    def run(self, repo_path: Path, language: str = "typescript") -> List[Finding]:
-        os_pat = r'new\s+opensearch\.(Domain|CfnDomain)\(' if language == "typescript" else r'opensearch\.(Domain|CfnDomain)\('
-        domains = rg(repo_path, os_pat, glob=code_glob(language))
-        optimized = rg(repo_path, r'r6g\.|c6g\.|i3\.|r5\.', glob=code_glob(language))
-        out: List[Finding] = []
-        if domains and not optimized:
-            f, ln, txt = domains[0]
             out.append(Finding(
                 id=self.id,
                 title=self.title,
@@ -348,37 +232,6 @@ class GlobalAcceleratorOptimization(Rule):
                 evidence=None,
                 recommendation=self.recommendation,
             )]
-        return out
-
-
-class EfsPerformanceMode(Rule):
-    id = "PERF-012"
-    title = "EFS performance mode not configured"
-    category = "Performance Efficiency"
-    severity = "Low"
-    themes = ("resilience",)
-    recommendation = (
-        "Configure EFS performance mode (generalPurpose vs maxIO) and throughput mode based on "
-        "workload. Consider PROVISIONED for consistent high throughput"
-    )
-
-    def run(self, repo_path: Path, language: str = "typescript") -> List[Finding]:
-        efs_pat = r'new\s+efs\.FileSystem\(' if language == "typescript" else r'efs\.FileSystem\('
-        filesystems = rg(repo_path, efs_pat, glob=code_glob(language))
-        perf = rg(repo_path, r'performanceMode.*MAX_IO|throughputMode.*PROVISIONED', glob=code_glob(language))
-        out: List[Finding] = []
-        if filesystems and not perf:
-            f, ln, txt = filesystems[0]
-            out.append(Finding(
-                id=self.id,
-                title=self.title,
-                severity="Low",
-                category=self.category,
-                file=f,
-                line=ln,
-                evidence=txt,
-                recommendation=self.recommendation,
-            ))
         return out
 
 
@@ -471,110 +324,3 @@ class LambdaSnapStart(Rule):
         return out
 
 
-class AuroraIoOptimized(Rule):
-    id = "PERF-016"
-    title = "Aurora not using I/O-Optimized for high I/O workloads"
-    category = "Performance Efficiency"
-    severity = "Low"
-    themes = ("finops",)
-    recommendation = "Consider Aurora I/O-Optimized for workloads with high I/O requirements."
-
-    def run(self, repo_path: Path, language: str = "typescript") -> List[Finding]:
-        aurora = rg(repo_path, r'DatabaseInstance|DatabaseCluster|rds\.', glob=code_glob(language))
-        io_optimized = rg(repo_path, r'ioOptimized|storageType.*aurora-io', glob=code_glob(language))
-        out: List[Finding] = []
-        if aurora and not io_optimized:
-            return [Finding(
-                id=self.id,
-                title=self.title,
-                severity="Low",
-                category=self.category,
-                file=None,
-                line=None,
-                evidence=None,
-                recommendation=self.recommendation,
-            )]
-        return out
-
-
-class EbsIo2BlockExpress(Rule):
-    id = "PERF-017"
-    title = "EBS io2 Block Express not used for high IOPS"
-    category = "Performance Efficiency"
-    severity = "Low"
-    themes = ("resilience",)
-    recommendation = "For workloads requiring >64K IOPS, consider io2 Block Express volumes."
-
-    def run(self, repo_path: Path, language: str = "typescript") -> List[Finding]:
-        ebs = rg(repo_path, r'EbsDeviceVolumeType|volume_type|gp3|io1', glob=code_glob(language))
-        io2 = rg(repo_path, r'io2|IO2', glob=code_glob(language))
-        out: List[Finding] = []
-        if ebs and not io2:
-            return [Finding(
-                id=self.id,
-                title=self.title,
-                severity="Low",
-                category=self.category,
-                file=None,
-                line=None,
-                evidence=None,
-                recommendation=self.recommendation,
-            )]
-        return out
-
-
-class CloudWatchContributorInsights(Rule):
-    id = "PERF-018"
-    title = "CloudWatch Contributor Insights not enabled"
-    category = "Performance Efficiency"
-    severity = "Low"
-    themes = ("observability",)
-    recommendation = (
-        "Enable Contributor Insights for DynamoDB to identify top contributors to consumed "
-        "capacity."
-    )
-
-    def run(self, repo_path: Path, language: str = "typescript") -> List[Finding]:
-        dynamodb = rg(repo_path, r'dynamodb\.Table|DynamoDB', glob=code_glob(language))
-        contributor = rg(repo_path, r'ContributorInsights|contributorInsights', glob=code_glob(language))
-        out: List[Finding] = []
-        if dynamodb and not contributor:
-            return [Finding(
-                id=self.id,
-                title=self.title,
-                severity="Low",
-                category=self.category,
-                file=None,
-                line=None,
-                evidence=None,
-                recommendation=self.recommendation,
-            )]
-        return out
-
-
-class RdsProxyMissing(Rule):
-    id = "PERF-019"
-    title = "RDS Proxy not used for connection pooling"
-    category = "Performance Efficiency"
-    severity = "Low"
-    themes = ("resilience",)
-    recommendation = (
-        "Consider RDS Proxy for database connection pooling when using serverless (Lambda)."
-    )
-
-    def run(self, repo_path: Path, language: str = "typescript") -> List[Finding]:
-        rds = rg(repo_path, r'rds\.(DatabaseInstance|DatabaseCluster)\(' if language == "typescript" else r'rds\.(DatabaseInstance|DatabaseCluster)\(', glob=code_glob(language))
-        proxy = rg(repo_path, r'DatabaseProxy|DatabaseProxyBase', glob=code_glob(language))
-        out: List[Finding] = []
-        if rds and not proxy:
-            return [Finding(
-                id=self.id,
-                title=self.title,
-                severity="Low",
-                category=self.category,
-                file=None,
-                line=None,
-                evidence=None,
-                recommendation=self.recommendation,
-            )]
-        return out

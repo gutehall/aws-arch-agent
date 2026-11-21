@@ -4401,6 +4401,190 @@ _TERRAFORM.update({
     }"""),
 })
 
+# Practices read from resources: user telemetry, log analysis, cost alerts, unused and growing storage.
+_CLOUDFORMATION.update({
+    "CF-SYN-001": """UserPathCanary:
+  Type: AWS::Synthetics::Canary
+  Properties:
+    Name: user-path
+    RuntimeVersion: syn-nodejs-puppeteer-9.1
+    ArtifactS3Location: s3://my-canary-artifacts/user-path
+    ExecutionRoleArn: !GetAtt CanaryRole.Arn
+    StartCanaryAfterCreation: true
+    Schedule:
+      Expression: rate(5 minutes)
+    Code:
+      Handler: index.handler
+      Script: |
+        const synthetics = require('Synthetics');
+        exports.handler = async () => synthetics.executeHttpStep('home', 'https://example.com/');""",
+    "CF-LOGS-001": """${name}ErrorFilter:
+  Type: AWS::Logs::MetricFilter
+  Properties:
+    LogGroupName: !Ref $name
+    FilterPattern: '?ERROR ?Error ?Exception'
+    MetricTransformations:
+      - MetricNamespace: App
+        MetricName: Errors
+        MetricValue: '1'""",
+    "CF-CE-001": """${name}Alerts:
+  Type: AWS::CE::AnomalySubscription
+  Properties:
+    SubscriptionName: cost-anomalies
+    Frequency: DAILY
+    MonitorArnList:
+      - !GetAtt $name.MonitorArn
+    Subscribers:
+      - Type: EMAIL
+        Address: finops@example.com
+    ThresholdExpression: '{"Dimensions": {"Key": "ANOMALY_TOTAL_IMPACT_ABSOLUTE", "Values": ["100"], "MatchOptions": ["GREATER_THAN_OR_EQUAL"]}}'""",
+    "CF-EBS-003": """${name}Attachment:
+  Type: AWS::EC2::VolumeAttachment
+  Properties:
+    VolumeId: !Ref $name
+    InstanceId: !Ref Instance
+    Device: /dev/sdf""",
+    "CF-RDS-015": """$name:
+  Type: AWS::RDS::DBInstance
+  Properties:
+    AllocatedStorage: '20'
+    MaxAllocatedStorage: 200""",
+    "CF-S3-013": """$name:
+  Type: AWS::S3::Bucket
+  Properties:
+    VersioningConfiguration:
+      Status: Enabled
+    LifecycleConfiguration:
+      Rules:
+        - Id: expire-noncurrent-versions
+          Status: Enabled
+          NoncurrentVersionExpiration:
+            NoncurrentDays: 30""",
+    "CF-LAM-010": """$name:
+  Type: AWS::Lambda::Function
+  Properties:
+    SnapStart:
+      ApplyOn: PublishedVersions""",
+    "CF-LAM-011": """$name:
+  Type: AWS::Lambda::Function
+  Properties:
+    VpcConfig:
+      SubnetIds:
+        - !Ref PrivateSubnetA
+        - !Ref PrivateSubnetB
+      SecurityGroupIds:
+        - !Ref FunctionSecurityGroup""",
+    "CF-ECS-013": """${name}ScalableTarget:
+  Type: AWS::ApplicationAutoScaling::ScalableTarget
+  Properties:
+    ServiceNamespace: ecs
+    ScalableDimension: ecs:service:DesiredCount
+    ResourceId: !Sub service/$${Cluster}/$${$name.Name}
+    MinCapacity: 1
+    MaxCapacity: 10""",
+})
+_TERRAFORM.update({
+    "CF-LAM-010": """resource "aws_lambda_function" "$tf_name" {
+  publish = true
+
+  snap_start {
+    apply_on = "PublishedVersions"
+  }
+}""",
+    "CF-LAM-011": """resource "aws_lambda_function" "$tf_name" {
+  vpc_config {
+    subnet_ids         = [aws_subnet.private_a.id, aws_subnet.private_b.id]
+    security_group_ids = [aws_security_group.function.id]
+  }
+}""",
+    "CF-ECS-013": """resource "aws_appautoscaling_target" "$tf_name" {
+  service_namespace  = "ecs"
+  scalable_dimension = "ecs:service:DesiredCount"
+  resource_id        = "service/$${aws_ecs_cluster.main.name}/$${aws_ecs_service.$tf_name.name}"
+  min_capacity       = 1
+  max_capacity       = 10
+}
+
+resource "aws_appautoscaling_policy" "$tf_name" {
+  name               = "cpu"
+  policy_type        = "TargetTrackingScaling"
+  service_namespace  = aws_appautoscaling_target.$tf_name.service_namespace
+  scalable_dimension = aws_appautoscaling_target.$tf_name.scalable_dimension
+  resource_id        = aws_appautoscaling_target.$tf_name.resource_id
+
+  target_tracking_scaling_policy_configuration {
+    target_value = 60
+    predefined_metric_specification {
+      predefined_metric_type = "ECSServiceAverageCPUUtilization"
+    }
+  }
+}""",
+    "CF-SYN-001": """resource "aws_synthetics_canary" "user_path" {
+  name                 = "user-path"
+  runtime_version      = "syn-nodejs-puppeteer-9.1"
+  handler              = "index.handler"
+  zip_file             = "canary.zip"
+  artifact_s3_location = "s3://my-canary-artifacts/user-path"
+  execution_role_arn   = aws_iam_role.canary.arn
+  start_canary         = true
+
+  schedule {
+    expression = "rate(5 minutes)"
+  }
+}""",
+    "CF-LOGS-001": """resource "aws_cloudwatch_log_metric_filter" "${tf_name}_errors" {
+  name           = "errors"
+  log_group_name = aws_cloudwatch_log_group.$tf_name.name
+  pattern        = "?ERROR ?Error ?Exception"
+
+  metric_transformation {
+    name      = "Errors"
+    namespace = "App"
+    value     = "1"
+  }
+}""",
+    "CF-CE-001": """resource "aws_ce_anomaly_subscription" "${tf_name}_alerts" {
+  name             = "cost-anomalies"
+  frequency        = "DAILY"
+  monitor_arn_list = [aws_ce_anomaly_monitor.$tf_name.arn]
+
+  subscriber {
+    type    = "EMAIL"
+    address = "finops@example.com"
+  }
+
+  threshold_expression {
+    dimension {
+      key           = "ANOMALY_TOTAL_IMPACT_ABSOLUTE"
+      values        = ["100"]
+      match_options = ["GREATER_THAN_OR_EQUAL"]
+    }
+  }
+}""",
+    "CF-EBS-003": """resource "aws_volume_attachment" "$tf_name" {
+  device_name = "/dev/sdf"
+  volume_id   = aws_ebs_volume.$tf_name.id
+  instance_id = aws_instance.app.id
+}""",
+    "CF-RDS-015": """resource "$tf_type" "$tf_name" {
+  allocated_storage     = 20
+  max_allocated_storage = 200
+}""",
+    "CF-S3-013": """resource "aws_s3_bucket_lifecycle_configuration" "$tf_name" {
+  bucket = aws_s3_bucket.$tf_name.id
+
+  rule {
+    id     = "expire-noncurrent-versions"
+    status = "Enabled"
+    filter {}
+
+    noncurrent_version_expiration {
+      noncurrent_days = 30
+    }
+  }
+}""",
+})
+
 SNIPPETS: dict[FixLanguage, dict[str, str]] = {
     "cloudformation": _CLOUDFORMATION,
     "terraform": _TERRAFORM,

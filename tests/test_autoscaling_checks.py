@@ -472,9 +472,12 @@ def test_fixed_size_is_worded_as_advice(tmp_path: Path) -> None:
     assert "can be intended" in found[0].recommendation
 
 
-def test_cost_002_stays_beside_the_fixed_size_check() -> None:
+def test_cost_002_is_covered_by_the_ecs_scaling_check_not_the_fixed_size_check() -> None:
+    # COST-002 flags ECS services with no scaling; CF-ECS-013 reads that. A fixed-size group
+    # (CF-ASG-006, REL07-BP01) is another control, so it ties to no CDK rule.
+    assert CF_COVERS_STATIC["CF-ECS-013"] == ("COST-002",)
     assert "CF-ASG-006" not in CF_COVERS_STATIC
-    assert CF_PARTLY_COVERS_STATIC["CF-ASG-006"][0] == ("COST-002",)
+    assert "CF-ASG-006" not in CF_PARTLY_COVERS_STATIC
 
 
 # --- Spot check still reads the group, and a healthy pair reports nothing ---

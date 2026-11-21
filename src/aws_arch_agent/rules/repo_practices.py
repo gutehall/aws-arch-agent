@@ -564,7 +564,7 @@ Backup recovery (REL 9):
   start-restore-job, aws rds restore-db-*, or aws dynamodb restore-table-*.
 
 Disaster recovery (REL 13) runs by default. REL13-BP02 (the copies themselves) is REL-014,
-REL-025, REL-026, CF-BAK-002 and CF-S3-010. Three of the rules below judge only a repo that
+REL-026, CF-BAK-002 and CF-S3-010. Three of the rules below judge only a repo that
 copies data or workloads to another Region: S3 replication, a DynamoDB global table, an
 Aurora global database, an RDS read replica from another Region (SourceRegion, or a
 Terraform replicate_source_db that is an ARN), an AWS Backup copy action, or Elastic
