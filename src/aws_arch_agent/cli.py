@@ -7,6 +7,7 @@ from typing import NoReturn, cast
 
 import typer
 from rich.console import Console
+from rich.markup import escape
 from rich.panel import Panel
 
 from aws_arch_agent import __version__, pricing, suppressions
@@ -35,7 +36,7 @@ from aws_arch_agent.rules import account, cost_diff, stack_cost
 from aws_arch_agent.rules.themes import THEMES
 from aws_arch_agent.report.json_report import render_json
 from aws_arch_agent.report.html import render_html
-from aws_arch_agent.report.summary import _span_text
+from aws_arch_agent.report.summary import _span_text, build_summary, terminal_lines
 from aws_arch_agent.report.sarif import BASELINE_SUPPRESSION, render_sarif
 from aws_arch_agent.tools.files import iter_files, truncation_message
 
@@ -510,7 +511,10 @@ def analyze(
         content = _mark_baselined(content, cfg.format, findings, accepted_before or set())
 
     out_path.write_text(content, encoding="utf-8")
-    console.print(f"Wrote report to: [bold]{out_path}[/bold]")
+    console.print(f"Wrote report to: [bold]{escape(str(out_path))}[/bold]")
+    # Before any exit, so a failing run still shows what it found.
+    for line in terminal_lines(build_summary(findings), str(out_path)):
+        console.print(line, markup=False, highlight=False, emoji=False, soft_wrap=True)
 
     if suggestions:
         suggestions_path = Path(suggestions).expanduser().resolve()

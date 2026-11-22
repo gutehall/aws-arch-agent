@@ -2,7 +2,7 @@
 
 Local-first AWS architecture review for infrastructure code. It scans **CDK** (TypeScript and Python), **CloudFormation**, and **Terraform**, and reports security, reliability, operational excellence, performance, cost, and sustainability issues mapped to the AWS Well-Architected Framework. For workloads that use Bedrock, SageMaker, or AgentCore it also answers the four AI Well-Architected lenses (Machine Learning, Generative AI, Responsible AI, Agentic AI).
 
-No AWS credentials needed. The only cloud calls read public AWS prices for cost estimates (`--pricing-source off` turns them off), and the read-only account checks you opt in to with `--live-account`. LLM output is optional and self-hosted only. With `OLLAMA_HOST` or `LLM_BASE_URL` set, it calls that server; with neither set it makes no call. `--no-llm` skips it either way. If the model does not answer, the findings stay as the rules wrote them.
+No AWS credentials needed. The only cloud calls are AWS price lookups for cost estimates (the public Price List bulk API, or the Price List Query API when credentials exist; `--pricing-source off` turns them off), and the read-only account checks you opt in to with `--live-account`. LLM output is optional and self-hosted only. With `OLLAMA_HOST` or `LLM_BASE_URL` set, it calls that server; with neither set it makes no call. `--no-llm` skips it either way. If the model does not answer, the findings stay as the rules wrote them.
 
 > 368 static rules and 317 template checks are implemented and tested. 141 of the 368 CDK rules (38%) have a template check. Those checks run on CloudFormation, Terraform, and synthesised CDK. [docs/COVERAGE.md](docs/COVERAGE.md) gives the reason for each of the others. Expect some false positives and negatives, and API changes.
 
@@ -38,6 +38,8 @@ To install the command on its own, without managing a virtual environment, use [
 pipx install aws-arch-agent
 ```
 
+Optional extras: `aws` (boto3, for prices from the Price List Query API with your credentials), `account` (boto3, for `--live-account`), `v2` (LangGraph mode, see [Modes](#modes)), `rag` (embedding RAG). For example `pip install "aws-arch-agent[aws]==0.5.0"`.
+
 To install a tag straight from GitHub instead:
 
 ```bash
@@ -57,21 +59,41 @@ aws-arch-agent --repo . --no-llm --format sarif --out results.sarif  # GitHub Co
 aws-arch-agent --repo . --no-llm --fail-on high                      # fail CI on High findings
 ```
 
+A finished scan prints a short summary on the terminal: the severity counts, up to five top fixes (the same as the report's Summary), and the report path. It is plain text in CI logs. The report file and exit codes are unchanged; it is not a TUI, so read findings in the report. See [docs/REFERENCE.md](docs/REFERENCE.md#terminal-summary).
+
 The IaC source is detected automatically. `--iac cdk|cloudformation|terraform` forces one. V1 and V2 both scan Terraform; in V2, CloudFormation needs `--templates`. `--tf-plan plan.json` fills Terraform values from `terraform show -json`, in the root module and in local child modules at any depth.
 
-Each finding has a severity, a pillar, a file and line, evidence, a recommendation, and often suggested code. CloudFormation findings point at the line of the resource's logical ID. The walk reads files in a fixed order and stops at `--max-files` (400); a truncated walk is noted on the console and in the report. The HTML report is one self-contained dark-theme page with severity tabs. Each finding links to the AWS docs for that control and to the Well-Architected best practice it supports.
+Each finding has a severity, a pillar, a file and line, evidence, a recommendation, and often suggested code. CloudFormation findings point at the line of the resource's logical ID. The walk reads files in a fixed order and stops at `--max-files` (400); a truncated walk is noted on the console and in the report. The HTML report is one self-contained dark-theme page with severity tabs and, when templates were priced, a cost tab. Each finding links to the AWS docs for that control and to the Well-Architected best practice it supports.
 
 ### Cost
 
-Template scans (CloudFormation, Terraform, `cdk synth` output) get an estimated monthly cost per stack, priced in each stack's region from live AWS on-demand prices. With boto3 installed (`pip install 'aws-arch-agent[aws]'`) and AWS credentials, prices come from the AWS Price List Query API (`pricing:GetProducts`). Without them, from the public AWS Price List bulk API. Prices are cached locally for 24 hours, so the first scan of a region without credentials is the slow one. A scan never fails because pricing failed.
+Template scans (CloudFormation, Terraform, `cdk synth` output) get an estimated monthly cost per stack, priced in each stack's region from live AWS on-demand prices. With boto3 installed (`pip install 'aws-arch-agent[aws]'`) and AWS credentials, prices come from the AWS Price List Query API (`pricing:GetProducts`). Without them, from the public AWS Price List bulk API. Prices are cached locally for 24 hours (`~/.cache/aws-arch-agent/pricing.sqlite3`, or `$AWS_ARCH_AGENT_CACHE_DIR`), so the first scan of a region without credentials is the slow one. Any region can be priced. A scan never fails because pricing failed: without a price there is no estimate, never a guess.
+
+The total covers EC2 and Auto Scaling groups, RDS (instances and storage), NAT gateways, EBS, public IPv4, provisioned DynamoDB, load balancers, EKS, Fargate services, ElastiCache, OpenSearch, Redshift, interface endpoints, KMS keys, Secrets Manager and Kinesis. A Terraform literal `count = N` multiplies a resource's cost. CDK source in V1 is not priced; use `--mode v2` (or `--mode v2 --templates cdk.out`).
 
 ```bash
 aws-arch-agent --repo . --no-llm --update-baseline                          # also records the cost
 aws-arch-agent --repo . --no-llm --compare-cost .aws-arch-agent-baseline.json --max-cost-increase 10%
 aws-arch-agent --repo . --no-llm --max-monthly-cost 500                     # exit 1 above $500/month
+aws-arch-agent --repo . --no-llm --pricing-source off                       # no price lookups, no estimates
 ```
 
-Usage-based resources (S3, Lambda, on-demand DynamoDB, ...) are priced only from a usage profile, `.aws-arch-agent-usage.yaml`. A breached budget exits 1. See [docs/REFERENCE.md](docs/REFERENCE.md#prices).
+`--pricing-source auto|api|bulk|off` picks the price source, `--price-cache-ttl <hours>` sets the cache lifetime, and `--refresh-prices` empties the cache. `--compare-cost` takes a baseline (written with its `cost_snapshot` by `--update-baseline`) or an earlier JSON report, and lists the resources added, removed and changed. `--max-cost-increase` takes USD (`50`) or a percentage (`10%`). A breached budget exits 1.
+
+Usage-based resources (S3, Lambda, NAT data, on-demand DynamoDB, CloudWatch Logs, API Gateway, load balancer LCUs, SQS, SNS) are priced only from a usage profile, `.aws-arch-agent-usage.yaml` in the repo or `--usage-file`. Usage cost is reported apart from the fixed cost and tagged "usage assumed":
+
+```yaml
+defaults:
+  lambda_function:
+    monthly_requests: 2000000
+    avg_duration_ms: 120
+resources:
+  aws_s3_bucket.uploads:          # logical ID or Terraform address
+    storage_gb: 2000
+    storage_class: standard-ia
+```
+
+See [docs/REFERENCE.md](docs/REFERENCE.md#prices).
 
 ## What it checks
 
@@ -125,7 +147,7 @@ Or use the composite GitHub Action, pinned to a release:
     job-summary: "true"
 ```
 
-The action also takes `tf-plan`, `live-account`, `region`, `theme`, `group-by`, `config`, and `templates`. `job-summary: "true"` adds the Markdown report to the job summary. See [docs/REFERENCE.md](docs/REFERENCE.md#github-action).
+The action also takes `tf-plan`, `live-account`, `region`, `theme`, `group-by`, `config`, and `templates`. To fail the job on cost, set `budget.max_monthly_usd` in the config file the action reads ([docs/CONFIG.md](docs/CONFIG.md)). The increase limits need `--compare-cost`, which the action does not take, so run the CLI for those. `job-summary: "true"` adds the Markdown report to the job summary. See [docs/REFERENCE.md](docs/REFERENCE.md#github-action).
 
 `@main` moves every time a check merges, so a pipeline using `fail-on` or a baseline can start failing with no change on your side. Pin a tag and upgrade on purpose:
 
