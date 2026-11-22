@@ -15,7 +15,7 @@ The agent covers all six AWS Well-Architected pillars. Static and CloudFormation
 | `--config` | (auto-detect) | Path to config file |
 | `--format`, `-f` | `markdown` | `markdown`, `json`, `sarif`, or `html`. `html` writes one self-contained page (inline CSS and script, no external assets, dark theme) to open in a browser. Each finding links to AWS documentation. With `--enforce-baseline` it labels each finding Accepted or New. `--out` still defaults to `report.md`, so pass a `.html` path. An unknown format fails the run and writes no report |
 | `--fail-on` | `none` | Exit 1 if any finding at or above: `high`, `medium`, `low`, `none` |
-| `--live-account` | off | Read the AWS account with read-only describe and list calls, for the org-gated controls an app repo cannot show: Security Hub and its standards (`SEC-026`, `REPO-136`, `REPO-162`), GuardDuty (`SEC-027`), CloudTrail (`OPS-001`), AWS Config (`OPS-014`), AWS Budgets (`COST-014`), a Cost and Usage Report (`REPO-069`), IAM Access Analyzer (`REPO-141`), Inspector (`REPO-145`), and GuardDuty or Security Hub (`REPO-163`). A rule whose service was read runs even without `rules.org`; if the service is on, its finding is dropped and the practice reads as met. A service that is off still reports. Without credentials or a permission, that service gets a report warning and its rule stays as `rules.org` decides. Needs `pip install 'aws-arch-agent[account]'` (boto3), the standard AWS credential chain, and `--region` or `AWS_REGION` for the Region to read. Without the flag a scan makes no AWS call. Listed under `context.notes.live_account` |
+| `--live-account` | off | Read the AWS account with read-only describe and list calls, for the org-gated controls an app repo cannot show: Security Hub and its standards (`SEC-026`, `REPO-136`, `REPO-162`), GuardDuty (`SEC-027`), CloudTrail (`OPS-001`), AWS Config (`OPS-014`), AWS Budgets (`COST-014`), a Cost and Usage Report (`REPO-069`), IAM Access Analyzer (`REPO-141`), Inspector (`REPO-145`), and GuardDuty or Security Hub (`REPO-163`). A rule whose service was read runs even without `rules.org`; if the service is on, its finding is dropped and the practice reads as met. A service that is off still reports. Without credentials or a permission, that service gets a report warning and its rule stays as `rules.org` decides. Needs `pip install 'aws-arch-agent[aws]'` (boto3), the standard AWS credential chain, and `--region` or `AWS_REGION` for the Region to read. Without the flag a scan makes no AWS call. Listed under `context.notes.live_account` |
 | `--no-llm` | `false` | Make no LLM calls: no verdicts, no hypotheses. See [LLM review](#llm-review) |
 | `--llm-mode` | `full` | V2 only: `full` (one verdict call per pillar with findings) or `compact` (one verdict call). Either way, plus one hypothesis call |
 | `--templates` | — | Path to CloudFormation templates (dir or file); V2 only, skips cdk synth |
@@ -24,8 +24,15 @@ The agent covers all six AWS Well-Architected pillars. Static and CloudFormation
 | `--suggestions` | — | Write findings JSON to this path |
 | `--baseline` | `.aws-arch-agent-baseline.json` | Path to baseline suppressions file |
 | `--enforce-baseline` | `false` | Only fail on findings not in baseline |
-| `--update-baseline` | `false` | Add current findings to baseline file |
-| `--region` | detected | AWS region whose on-demand prices cost estimates use, for every stack (config `region`). Without it each stack is priced in its own region, then `AWS_REGION`, then `us-east-1`: see [Price region](#price-region). Prices come from a snapshot shipped in the package, so the scan makes no network call. The report states the region and the AWS price list date. A region the snapshot lacks gives no estimates, and the run says so. See [Prices](#prices) |
+| `--update-baseline` | `false` | Add current findings to baseline file. It also writes a `cost_snapshot` block (the total, each stack, and each priced resource's monthly cost) for `--compare-cost`. A baseline without one still loads |
+| `--region` | detected | AWS region whose on-demand prices cost estimates use, for every stack (config `region`). Without it each stack is priced in its own region, then `AWS_REGION`, then `us-east-1`: see [Price region](#price-region). Any AWS region can be priced. The report states the region, the price source and the AWS price list date. See [Prices](#prices) |
+| `--pricing-source` | `auto` | Where prices come from (config `pricing.source`): `auto` (the AWS Price List Query API when boto3 is installed and AWS credentials resolve, else the public bulk API), `api`, `bulk`, or `off` (no estimates and no network call). See [Prices](#prices) |
+| `--price-cache-ttl` | `24` | Hours a fetched price is reused from the local price cache (config `pricing.cache_ttl_hours`) |
+| `--refresh-prices` | `false` | Empty the price cache and fetch the prices again |
+| `--usage-file` | `.aws-arch-agent-usage.yaml` if present | Usage profile that prices usage-based resources (config `usage_file`). A path passed here is relative to the working directory. See [Usage profile](#usage-profile) |
+| `--compare-cost` | — | A baseline file with a `cost_snapshot`, or an earlier JSON report. The report shows the previous and current monthly cost, the change in USD and percent, and the resources added, removed and changed. See [Cost change and budget](#cost-change-and-budget) |
+| `--max-monthly-cost` | — | Exit 1 when the estimated monthly cost (USD) is above this (config `budget.max_monthly_usd`) |
+| `--max-cost-increase` | — | Exit 1 when the cost rises more than this against `--compare-cost`: USD (`50`) or percent (`10%`) (config `budget.max_monthly_increase_usd` or `budget.max_increase_percent`). Without `--compare-cost` the limit is reported as not checked, not as a failure |
 | `--theme` | — | Only report rules in these themes. Repeatable or comma-separated: `finops`, `security-baseline`, `identity`, `data-protection`, `network-exposure`, `resilience`, `observability`, `sustainability` |
 | `--group-by` | `severity` | Group Markdown findings by `severity` or `theme` |
 | `--version` | — | Print the version and exit. The version is the release tag the rules come from |
@@ -358,7 +365,20 @@ Incident routing (OPS 10) is `CF-ALARM-002` and `OPS-011` for an alarm with no a
 
 ## Prices
 
-Cost estimates read `aws_arch_agent/pricing/prices.json.gz`, an offline snapshot of the AWS Price List bulk API: on-demand USD prices for the resources the cost rules touch (EC2 and RDS instance types, NAT gateway hour and GB, EBS gp2/gp3/io2, public IPv4 addresses including Elastic IPs, Lambda, DynamoDB on-demand and provisioned, S3 storage classes, CloudWatch Logs ingestion and storage). Each price carries its region and the publication date of its AWS offer. A tiered price is the first paid tier. An instance type or region the snapshot lacks gives no estimate, never a guess.
+Cost estimates use live on-demand USD prices from AWS. Each price is looked up in this order, and the first answer wins:
+
+1. Memory, for a price already looked up in this run.
+2. The local price cache, while the entry is within its TTL (`--price-cache-ttl`, config `pricing.cache_ttl_hours`, default 24 hours).
+3. The AWS Price List Query API (`pricing:GetProducts` on the `us-east-1` endpoint, filtered by `regionCode`), when boto3 is installed and AWS credentials resolve. Install boto3 with `pip install 'aws-arch-agent[aws]'`. A price the API has no product for is a miss.
+4. The public AWS Price List bulk API, which needs no credentials. The region's offer CSV is streamed once, and every price in it goes into the cache. The EC2 offer file is hundreds of MB per region, so the first scan of a region without credentials can take a while. Later scans read the cache.
+5. An expired cache entry, with a report warning, when the sources cannot be reached.
+6. Otherwise no price, and no estimate. A scan never fails because pricing failed.
+
+`--pricing-source` (config `pricing.source`) picks the sources: `auto` (default) tries the API, then the bulk API; `api` and `bulk` use only that one; `off` makes no network call and gives no estimates. Any AWS region can be priced. The minimal IAM permission for the API is `pricing:GetProducts`.
+
+The cache is `$AWS_ARCH_AGENT_CACHE_DIR/pricing.sqlite3`, else `$XDG_CACHE_HOME/aws-arch-agent/pricing.sqlite3`, else `~/.cache/aws-arch-agent/pricing.sqlite3`. It is an SQLite file in WAL mode, so scans can run at the same time. `--refresh-prices` empties it and fetches again.
+
+Each price carries its region, its source, the publication date of its AWS offer, when it was fetched, and whether it is stale. A tiered price is the first paid tier, and free tiers are not deducted. An instance type the price list lacks gives no estimate, never a guess. JSON `context.notes.prices` lists each region with `pricing_source`, `fetched_at` and `stale`, plus a `warnings` list.
 
 ### Price region
 
@@ -369,15 +389,84 @@ Each stack (one template, or one Terraform root module) is priced in one region,
 3. `AWS_REGION`, then `AWS_DEFAULT_REGION`.
 4. `us-east-1`.
 
-The report's Prices line names each region and what decided it, for example `eu-north-1 (CDK stack env; AWS price list of 2026-11-05)`. The cost table has a Region column. JSON `context.notes.prices.regions` lists them with their `source`. CDK source scanned without synth has no stacks to read, so it uses steps 1, 3 and 4.
+The report's Prices line names each region, what decided it, the price source and the price list date, for example `on-demand, us-east-1 (default; AWS Price List Query API, AWS price list of 2026-11-05)`. When nothing was priced it reads `us-east-1 (default; no prices used)`. The cost table has a Region column. JSON `context.notes.prices.regions` lists them with their `source`. CDK source scanned without synth has no stacks to read, so it uses steps 1, 3 and 4.
 
-The snapshot covers `us-east-1`, `us-east-2`, `us-west-2`, `ca-central-1`, `eu-west-1`, `eu-west-2`, `eu-central-1`, `eu-north-1`, `ap-southeast-1`, `ap-southeast-2` and `ap-northeast-1`. A stack in another region gets no estimates, and the run says so. To refresh the snapshot, or to add regions:
+### Stack cost coverage
 
-```bash
-python scripts/refresh_prices.py --regions us-east-1 eu-north-1 --cache-dir /tmp/offers
+Besides EC2 instances, RDS instances, NAT gateways, EBS gp2/gp3 volumes, public IPv4 addresses and DynamoDB provisioned capacity, the stack total prices these fixed costs:
+
+- Load balancer hours: ALB, NLB, GWLB and Classic ELB.
+- The EKS control plane.
+- Fargate ECS services: `DesiredCount` × the task definition's CPU and memory, x86 and ARM64. The EC2 launch type and `FARGATE_SPOT` are not priced.
+- ElastiCache cluster and replication group nodes.
+- OpenSearch data nodes, dedicated master nodes and EBS storage.
+- Redshift nodes.
+- Interface VPC endpoints, per subnet or AZ. Gateway endpoints are free.
+- KMS customer managed keys and Secrets Manager secrets.
+- Kinesis provisioned shards and on-demand stream hours.
+- RDS allocated storage, × 2 for Multi-AZ. Aurora storage is not priced.
+- EBS io1, st1, sc1 and standard volumes, gp3 IOPS above 3,000 and throughput above 125 MiB/s, and io1/io2 provisioned IOPS.
+- Auto Scaling groups: `DesiredCapacity`, else `MinSize`, × the launch template or launch configuration instance type. A `MixedInstancesPolicy` is not priced.
+
+A Terraform literal `count = N` multiplies a resource's cost. A value from `var`, `local` or another unresolved input is never guessed: the resource is listed as not priced. A V1 scan of CDK source is not priced; the report and console say to use `--mode v2` (cdk synth) or `--mode v2 --templates cdk.out`.
+
+### Usage profile
+
+Usage-based resources (S3, Lambda, on-demand DynamoDB, ...) stay in "not priced" unless a usage profile says how much they are used. The profile is `.aws-arch-agent-usage.yaml` in the repo when present, or the file `--usage-file` or config `usage_file` names:
+
+```yaml
+defaults:                       # every resource of a type
+  lambda_function:
+    monthly_requests: 2000000
+    avg_duration_ms: 120
+  s3_bucket:
+    storage_gb: 50
+resources:                      # one resource, by CloudFormation logical ID or Terraform address
+  aws_s3_bucket.uploads:
+    storage_gb: 2000
+    storage_class: standard-ia
 ```
 
-The script streams the offer files (the EC2 one is about 300 MB per region) and writes the same file for the same offers. `--cache-dir` keeps the downloads so a rebuild needs no network. A price two offer rows disagree on stops the build.
+| Type | Keys |
+|------|------|
+| `s3_bucket` | `storage_gb`, `storage_class`: `standard`, `intelligent-tiering`, `standard-ia`, `onezone-ia`, `glacier-ir`, `glacier` or `deep-archive` |
+| `lambda_function` | `monthly_requests`, `avg_duration_ms`. Uses the function's `MemorySize`, and `arm64` from `Architectures` |
+| `nat_gateway` | `monthly_data_processed_gb` |
+| `dynamodb_table` | `monthly_read_request_units` and `monthly_write_request_units` (on-demand tables), `storage_gb` |
+| `cloudwatch_log_group` | `monthly_ingest_gb`, `storage_gb` |
+| `api_gateway_rest_api` | `monthly_requests` |
+| `apigatewayv2_api` | `monthly_requests`. HTTP APIs only |
+| `lb` | `monthly_lcu_hours`. ALB and NLB |
+| `vpc_endpoint` | `monthly_data_processed_gb`. Interface endpoints |
+| `sqs_queue` | `monthly_requests`. A FIFO queue is priced as FIFO |
+| `sns_topic` | `monthly_requests` |
+
+A resource's own entry wins over the type default, key by key. An unknown key, an unknown type or a negative value is a config error. Usage prices use the first paid tier, and free tiers are not deducted. Usage cost is reported apart from fixed cost (`fixed_monthly_usd` and `usage_monthly_usd` in JSON `context.notes.cost`), and each usage-priced line is tagged "usage assumed".
+
+### Cost change and budget
+
+`--update-baseline` writes a `cost_snapshot` into the baseline file. `--compare-cost` reads that file, or an earlier JSON report, and reports the previous and current total, the delta in USD and percent, and the resources added, removed and changed. JSON has it as `context.notes.cost.diff`.
+
+A budget sets a limit on the estimate:
+
+```yaml
+pricing:
+  source: auto        # auto | api | bulk | off
+  cache_ttl_hours: 24
+usage_file: finops/usage.yaml
+budget:
+  max_monthly_usd: 500
+  max_monthly_increase_usd: 50
+  max_increase_percent: 10
+```
+
+`--max-monthly-cost` and `--max-cost-increase` set the same limits from the CLI. A breached limit prints a `Budget breached: ...` line and the run exits 1. Exit 2 for analysis warnings still takes precedence. An increase limit without `--compare-cost` is reported as not checked, not as a failure. JSON has the result as `context.notes.cost.budget`.
+
+### Cost in the reports
+
+- **Markdown**: the **Estimated Monthly Cost** section shows the budget result, the price source and date, the fixed and usage totals, the "usage assumed" tags, and a **Cost change** table with `--compare-cost`.
+- **HTML**: a **Cost ($X/mo)** tab next to the severity tabs, which hides the findings and the theme filter while it is open, and an **Est. monthly cost** card in the summary strip.
+- **JSON**: `context.notes.cost` has `fixed_monthly_usd`, `usage_monthly_usd`, `usage_file`, `resources`, `diff` and `budget`. `context.notes.cost_hint` says why nothing was priced (CDK source in V1). See [report-schema.json](report-schema.json).
 
 ## Report summary
 

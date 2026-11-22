@@ -4,7 +4,7 @@ These checks run only when a stack resolves to dev or staging (rules/environment
 They flag settings copied from production that a dev or staging stack pays for without
 needing: Multi-AZ, provisioned concurrency, large instances, a NAT gateway per AZ, long
 log retention, provisioned DynamoDB capacity. Each carries an estimated saving when the
-price snapshot covers it. The reliability rules that recommend the opposite (CF-RDS-003,
+live pricing covers it. The reliability rules that recommend the opposite (CF-RDS-003,
 CF-DEL-001; REL-001 and REL-016 in CDK source) are prod-only, so no stack gets both.
 """
 from __future__ import annotations

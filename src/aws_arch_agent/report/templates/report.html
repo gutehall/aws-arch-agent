@@ -24,6 +24,12 @@
   .count .label { color: var(--muted); font-size: 13px; }
   .count.High .n { color: var(--high); } .count.Medium .n { color: var(--medium); }
   .count.Low .n { color: var(--low); } .count.warnings .n { color: var(--warn); }
+  .count.cost-kpi.over .n { color: var(--high); }
+  .cost table { border-collapse: collapse; width: 100%; margin: 8px 0 16px; font-size: 14px; }
+  .cost th, .cost td { border-bottom: 1px solid var(--line); padding: 6px 8px; text-align: left; }
+  .budget { border: 1px solid var(--line); border-radius: 8px; padding: 8px 12px; background: var(--panel); }
+  .budget.pass { border-color: var(--low); } .budget.fail { border-color: var(--high); color: var(--high); font-weight: 600; }
+  .tag.usage { font-size: 12px; padding: 1px 8px; border-radius: 999px; border: 1px solid var(--warn); color: var(--warn); }
   .warnings-list { border: 1px solid var(--line); border-left: 4px solid var(--warn); border-radius: 8px;
                    padding: 12px 16px; margin-bottom: 24px; background: var(--panel); }
   .warnings-list h2 { font-size: 15px; margin: 0 0 8px; }
@@ -98,41 +104,14 @@
   <p class="meta">Accepted findings stay in the report and do not fail the build.</p>
   {% endif %}
 
-  {% if cost and cost.stacks %}
-  <section class="cost" aria-label="Estimated monthly cost">
-    <h2>Estimated monthly cost (estimate)</h2>
-    <p class="meta">{{ cost.basis }} {% if "," in cost.region %}Regions{% else %}Region{% endif %} {{ cost.region }}{% if cost.snapshot_date %}, AWS prices of {{ cost.snapshot_date }}{% endif %}.</p>
-    <table>
-      <thead><tr><th>Template / module</th><th>Region</th><th>Resources priced</th><th>Estimated monthly cost</th></tr></thead>
-      <tbody>
-        {% for s in cost.stacks %}
-        <tr><td><code>{{ s.name }}</code></td><td>{{ s.region or cost.region }}</td><td>{{ s.resources_priced }}</td><td>${{ "{:,.2f}".format(s.monthly_usd) }}</td></tr>
-        {% endfor %}
-        <tr><td><b>Total</b></td><td></td><td>{{ cost.stacks | sum(attribute="resources_priced") }}</td><td><b>${{ "{:,.2f}".format(cost.total_monthly_usd) }}</b></td></tr>
-      </tbody>
-    </table>
-    {% if cost.top_resources %}
-    <h3>Top resources by estimated cost</h3>
-    <ol>
-      {% for r in cost.top_resources %}
-      <li><code>{{ r.name }}</code> ({{ r.type }}) in <code>{{ r.file }}</code>{% if r.line %} (line {{ r.line }}){% endif %}: ${{ "{:,.2f}".format(r.monthly_usd) }}/month. {{ r.basis }}</li>
-      {% endfor %}
-    </ol>
-    {% endif %}
-    {% if cost.savings_findings %}
-    <p>Possible savings from {{ cost.savings_findings }} finding(s) in this report: <b>${{ "{:,.2f}".format(cost.savings_monthly_usd) }}/month</b> (estimate; not subtracted from the total).</p>
-    {% endif %}
-    {% if cost.not_priced %}
-    <p class="meta">Not priced (usage-based, or not in the price snapshot): {% for t, n in cost.not_priced.items() %}{{ t }} ×{{ n }}{% if not loop.last %}, {% endif %}{% endfor %}.</p>
-    {% endif %}
-  </section>
-  {% endif %}
-
   <section class="counts" aria-label="Summary">
     {% for sev in severities %}
     <div class="count {{ sev }}"><div class="n">{{ counts[sev] }}</div><div class="label">{{ sev }}</div></div>
     {% endfor %}
     <div class="count warnings"><div class="n">{{ warnings | length }}</div><div class="label">Warnings</div></div>
+    {% if cost and cost.stacks %}
+    <div class="count cost-kpi{% if cost.budget and not cost.budget.passed %} over{% endif %}"><div class="n">${{ "{:,.0f}".format(cost.total_monthly_usd) }}</div><div class="label">Est. monthly cost{% if cost.budget %} · budget {{ "passed" if cost.budget.passed else "FAILED" }}{% endif %}</div></div>
+    {% endif %}
   </section>
 
   {% if warnings %}
@@ -157,6 +136,9 @@
     {% for sev in severities %}
     <button type="button" data-tab="{{ sev }}" aria-pressed="false" aria-controls="findings">{{ sev }} ({{ counts[sev] }})</button>
     {% endfor %}
+    {% if cost and cost.stacks %}
+    <button type="button" data-tab="Cost" aria-pressed="false" aria-controls="cost">Cost (${{ "{:,.0f}".format(cost.total_monthly_usd) }}/mo)</button>
+    {% endif %}
     {% if theme_counts %}
     <label class="theme-filter">Theme
       <select id="theme-filter" aria-controls="findings">
@@ -216,6 +198,64 @@
     {% endfor %}
     <p class="empty"{% if findings %} hidden{% endif %}>No findings.</p>
   </section>
+
+  {% if cost and cost.stacks %}
+  <section id="cost" class="cost" aria-label="Estimated monthly cost" hidden>
+    <h2>Estimated monthly cost (estimate)</h2>
+    {% if cost.budget %}
+    <p class="budget {{ 'pass' if cost.budget.passed else 'fail' }}" role="status">
+      {% if cost.budget.passed %}Budget passed{% else %}Budget FAILED: {{ cost.budget.breaches | join("; ") }}{% endif %}.
+      {% if cost.budget.max_monthly_usd is not none %}Limit ${{ "{:,.2f}".format(cost.budget.max_monthly_usd) }}/month.{% endif %}
+      {% if cost.budget.max_increase_usd is not none %}Rise at most ${{ "{:,.2f}".format(cost.budget.max_increase_usd) }}/month.{% endif %}
+      {% if cost.budget.max_increase_percent is not none %}Rise at most {{ cost.budget.max_increase_percent }}%.{% endif %}
+      {% for n in cost.budget.not_checked %}Not checked: {{ n }}.{% endfor %}
+    </p>
+    {% endif %}
+    <p class="meta">{{ cost.basis }} {% if "," in cost.region %}Regions{% else %}Region{% endif %} {{ cost.region }}{% if cost.snapshot_date %}, AWS prices of {{ cost.snapshot_date }}{% endif %}.{% if prices %} Prices: {{ prices }}.{% endif %}</p>
+    {% if cost.usage_monthly_usd %}
+    <p>Fixed (from the IaC): <b>${{ "{:,.2f}".format(cost.fixed_monthly_usd) }}/month</b>. <span class="tag usage">usage assumed</span> from the usage profile: <b>${{ "{:,.2f}".format(cost.usage_monthly_usd) }}/month</b>.</p>
+    {% endif %}
+    <table>
+      <thead><tr><th>Template / module</th><th>Region</th><th>Resources priced</th>{% if cost.usage_monthly_usd %}<th>Fixed</th><th>Usage assumed</th>{% endif %}<th>Estimated monthly cost</th></tr></thead>
+      <tbody>
+        {% for s in cost.stacks %}
+        <tr><td><code>{{ s.name }}</code></td><td>{{ s.region or cost.region }}</td><td>{{ s.resources_priced }}</td>{% if cost.usage_monthly_usd %}<td>${{ "{:,.2f}".format(s.fixed_monthly_usd if s.fixed_monthly_usd is defined else s.monthly_usd) }}</td><td>${{ "{:,.2f}".format(s.usage_monthly_usd if s.usage_monthly_usd is defined else 0) }}</td>{% endif %}<td>${{ "{:,.2f}".format(s.monthly_usd) }}</td></tr>
+        {% endfor %}
+        <tr><td><b>Total</b></td><td></td><td>{{ cost.stacks | sum(attribute="resources_priced") }}</td>{% if cost.usage_monthly_usd %}<td>${{ "{:,.2f}".format(cost.fixed_monthly_usd) }}</td><td>${{ "{:,.2f}".format(cost.usage_monthly_usd) }}</td>{% endif %}<td><b>${{ "{:,.2f}".format(cost.total_monthly_usd) }}</b></td></tr>
+      </tbody>
+    </table>
+    {% if cost.top_resources %}
+    <h3>Top resources by estimated cost</h3>
+    <ol>
+      {% for r in cost.top_resources %}
+      <li><code>{{ r.name }}</code> ({{ r.type }}) in <code>{{ r.file }}</code>{% if r.line %} (line {{ r.line }}){% endif %}: ${{ "{:,.2f}".format(r.monthly_usd) }}/month{% if r.usage_assumed %} <span class="tag usage">usage assumed</span>{% endif %}. {{ r.basis }}</li>
+      {% endfor %}
+    </ol>
+    {% endif %}
+    {% if cost.diff %}
+    <h3>Cost change</h3>
+    <p>Compared with {% if cost.diff.source %}<code>{{ cost.diff.source }}</code>{% else %}the earlier scan{% endif %}: ${{ "{:,.2f}".format(cost.diff.previous_monthly_usd) }} → ${{ "{:,.2f}".format(cost.diff.current_monthly_usd) }}/month (<b>{{ "{:+,.2f}".format(cost.diff.delta_monthly_usd) }}{% if cost.diff.delta_percent is not none %}, {{ "{:+g}".format(cost.diff.delta_percent) }}%{% endif %}</b>).</p>
+    {% if cost.diff.added or cost.diff.removed or cost.diff.changed %}
+    <table>
+      <thead><tr><th>Change</th><th>Resource</th><th>Template / module</th><th>Before</th><th>After</th><th>Delta</th></tr></thead>
+      <tbody>
+        {% for r in cost.diff.added %}<tr><td>added</td><td><code>{{ r.name }}</code></td><td><code>{{ r.stack }}</code></td><td></td><td>${{ "{:,.2f}".format(r.monthly_usd) }}</td><td>{{ "{:+,.2f}".format(r.monthly_usd) }}</td></tr>{% endfor %}
+        {% for r in cost.diff.removed %}<tr><td>removed</td><td><code>{{ r.name }}</code></td><td><code>{{ r.stack }}</code></td><td>${{ "{:,.2f}".format(r.monthly_usd) }}</td><td></td><td>{{ "{:+,.2f}".format(-r.monthly_usd) }}</td></tr>{% endfor %}
+        {% for r in cost.diff.changed %}<tr><td>changed</td><td><code>{{ r.name }}</code></td><td><code>{{ r.stack }}</code></td><td>${{ "{:,.2f}".format(r.previous_monthly_usd) }}</td><td>${{ "{:,.2f}".format(r.current_monthly_usd) }}</td><td>{{ "{:+,.2f}".format(r.delta_monthly_usd) }}</td></tr>{% endfor %}
+      </tbody>
+    </table>
+    {% endif %}
+    {% endif %}
+    {% if cost.savings_findings %}
+    <p>Possible savings from {{ cost.savings_findings }} finding(s) in this report: <b>${{ "{:,.2f}".format(cost.savings_monthly_usd) }}/month</b> (estimate; not subtracted from the total).</p>
+    {% endif %}
+    {% if cost.not_priced %}
+    <p class="meta">Not priced (usage-based, or no AWS price found): {% for t, n in cost.not_priced.items() %}{{ t }} ×{{ n }}{% if not loop.last %}, {% endif %}{% endfor %}.</p>
+    {% endif %}
+  </section>
+  {% elif cost_hint %}
+  <p class="meta">{{ cost_hint }}</p>
+  {% endif %}
 
   {% if hypotheses %}
   <section class="hypotheses">
@@ -290,8 +330,17 @@
   var items = document.querySelectorAll("#findings .finding");
   var empty = document.querySelector("#findings .empty");
   var themeSelect = document.getElementById("theme-filter");
+  var themeLabel = document.querySelector(".theme-filter");
+  var findingsPanel = document.getElementById("findings");
+  var costPanel = document.getElementById("cost");
   var want = "All";
   function apply() {
+    // The Cost tab shows the cost panel in place of the findings and their theme filter.
+    var onCost = want === "Cost";
+    findingsPanel.hidden = onCost;
+    if (costPanel) { costPanel.hidden = !onCost; }
+    if (themeLabel) { themeLabel.hidden = onCost; }
+    if (onCost) { return; }
     var theme = themeSelect ? themeSelect.value : "";
     var shown = 0;
     items.forEach(function (item) {

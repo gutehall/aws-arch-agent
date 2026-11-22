@@ -45,7 +45,347 @@
           }
         },
         "notes": {
-          "type": "object"
+          "type": "object",
+          "properties": {
+            "prices": {
+              "type": "object",
+              "description": "The regions cost estimates priced in, and where their live prices came from.",
+              "properties": {
+                "region": {
+                  "type": "string"
+                },
+                "snapshot_date": {
+                  "type": [
+                    "string",
+                    "null"
+                  ],
+                  "description": "YYYY-MM-DD publication date of the AWS prices used."
+                },
+                "regions": {
+                  "type": "array",
+                  "items": {
+                    "type": "object",
+                    "properties": {
+                      "region": {
+                        "type": "string"
+                      },
+                      "source": {
+                        "type": "string",
+                        "description": "How the region was chosen (--region / config, CDK stack env, ...)."
+                      },
+                      "snapshot_date": {
+                        "type": [
+                          "string",
+                          "null"
+                        ],
+                        "description": "YYYY-MM-DD publication date of the AWS prices used."
+                      },
+                      "pricing_source": {
+                        "type": [
+                          "string",
+                          "null"
+                        ],
+                        "description": "Where the prices came from: AWS Price List Query API or bulk API."
+                      },
+                      "fetched_at": {
+                        "type": [
+                          "string",
+                          "null"
+                        ],
+                        "description": "Newest fetch time (UTC) of the prices used."
+                      },
+                      "stale": {
+                        "type": "boolean",
+                        "description": "Some prices came from an expired cache (offline)."
+                      }
+                    }
+                  }
+                },
+                "warnings": {
+                  "type": "array",
+                  "items": {
+                    "type": "string"
+                  },
+                  "description": "What pricing could not do (offline, expired cache)."
+                }
+              }
+            },
+            "cost": {
+              "type": "object",
+              "description": "Estimated monthly cost per template or Terraform root module.",
+              "properties": {
+                "region": {
+                  "type": "string"
+                },
+                "snapshot_date": {
+                  "type": [
+                    "string",
+                    "null"
+                  ],
+                  "description": "YYYY-MM-DD publication date of the AWS prices used."
+                },
+                "basis": {
+                  "type": "string"
+                },
+                "stacks": {
+                  "type": "array",
+                  "items": {
+                    "type": "object",
+                    "properties": {
+                      "name": {
+                        "type": "string"
+                      },
+                      "region": {
+                        "type": "string"
+                      },
+                      "snapshot_date": {
+                        "type": [
+                          "string",
+                          "null"
+                        ],
+                        "description": "YYYY-MM-DD publication date of the AWS prices used."
+                      },
+                      "resources_priced": {
+                        "type": "integer",
+                        "minimum": 0
+                      },
+                      "monthly_usd": {
+                        "type": "number"
+                      },
+                      "fixed_monthly_usd": {
+                        "type": "number"
+                      },
+                      "usage_monthly_usd": {
+                        "type": "number"
+                      }
+                    }
+                  }
+                },
+                "total_monthly_usd": {
+                  "type": "number",
+                  "description": "fixed_monthly_usd + usage_monthly_usd."
+                },
+                "fixed_monthly_usd": {
+                  "type": "number",
+                  "description": "Cost the IaC states: instance hours, sizes, counts."
+                },
+                "usage_monthly_usd": {
+                  "type": "number",
+                  "description": "Cost of the usage a usage profile states (usage assumed)."
+                },
+                "usage_file": {
+                  "type": "string",
+                  "description": "The usage profile read, when one was."
+                },
+                "top_resources": {
+                  "type": "array",
+                  "items": {
+                    "type": "object",
+                    "properties": {
+                      "name": {
+                        "type": "string"
+                      },
+                      "type": {
+                        "type": "string"
+                      },
+                      "stack": {
+                        "type": "string"
+                      },
+                      "file": {
+                        "type": "string"
+                      },
+                      "line": {
+                        "type": [
+                          "integer",
+                          "null"
+                        ]
+                      },
+                      "monthly_usd": {
+                        "type": "number"
+                      },
+                      "basis": {
+                        "type": "string"
+                      },
+                      "usage_assumed": {
+                        "type": "boolean"
+                      }
+                    }
+                  }
+                },
+                "resources": {
+                  "type": "array",
+                  "description": "Every priced resource; --compare-cost reads these.",
+                  "items": {
+                    "type": "object",
+                    "properties": {
+                      "stack": {
+                        "type": "string"
+                      },
+                      "name": {
+                        "type": "string"
+                      },
+                      "type": {
+                        "type": "string"
+                      },
+                      "monthly_usd": {
+                        "type": "number"
+                      },
+                      "usage_assumed": {
+                        "type": "boolean"
+                      }
+                    }
+                  }
+                },
+                "savings_monthly_usd": {
+                  "type": "number"
+                },
+                "savings_findings": {
+                  "type": "integer",
+                  "minimum": 0
+                },
+                "not_priced": {
+                  "type": "object",
+                  "additionalProperties": {
+                    "type": "integer"
+                  }
+                },
+                "diff": {
+                  "type": "object",
+                  "description": "The change against --compare-cost (a baseline cost_snapshot or an earlier report).",
+                  "properties": {
+                    "source": {
+                      "type": "string"
+                    },
+                    "previous_monthly_usd": {
+                      "type": "number"
+                    },
+                    "current_monthly_usd": {
+                      "type": "number"
+                    },
+                    "delta_monthly_usd": {
+                      "type": "number"
+                    },
+                    "delta_percent": {
+                      "type": [
+                        "number",
+                        "null"
+                      ],
+                      "description": "None when the earlier cost was zero."
+                    },
+                    "added": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "stack": {
+                            "type": "string"
+                          },
+                          "name": {
+                            "type": "string"
+                          },
+                          "type": {
+                            "type": "string"
+                          },
+                          "monthly_usd": {
+                            "type": "number"
+                          }
+                        }
+                      }
+                    },
+                    "removed": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "stack": {
+                            "type": "string"
+                          },
+                          "name": {
+                            "type": "string"
+                          },
+                          "type": {
+                            "type": "string"
+                          },
+                          "monthly_usd": {
+                            "type": "number"
+                          }
+                        }
+                      }
+                    },
+                    "changed": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "stack": {
+                            "type": "string"
+                          },
+                          "name": {
+                            "type": "string"
+                          },
+                          "type": {
+                            "type": "string"
+                          },
+                          "previous_monthly_usd": {
+                            "type": "number"
+                          },
+                          "current_monthly_usd": {
+                            "type": "number"
+                          },
+                          "delta_monthly_usd": {
+                            "type": "number"
+                          }
+                        }
+                      }
+                    }
+                  }
+                },
+                "budget": {
+                  "type": "object",
+                  "description": "The CI budget check; passed false makes the run exit 1.",
+                  "properties": {
+                    "max_monthly_usd": {
+                      "type": [
+                        "number",
+                        "null"
+                      ]
+                    },
+                    "max_increase_usd": {
+                      "type": [
+                        "number",
+                        "null"
+                      ]
+                    },
+                    "max_increase_percent": {
+                      "type": [
+                        "number",
+                        "null"
+                      ]
+                    },
+                    "passed": {
+                      "type": "boolean"
+                    },
+                    "breaches": {
+                      "type": "array",
+                      "items": {
+                        "type": "string"
+                      }
+                    },
+                    "not_checked": {
+                      "type": "array",
+                      "items": {
+                        "type": "string"
+                      }
+                    }
+                  }
+                }
+              }
+            },
+            "cost_hint": {
+              "type": "string",
+              "description": "Why nothing was priced (CDK source in V1)."
+            }
+          }
         }
       }
     },

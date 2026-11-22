@@ -26,7 +26,7 @@ def _group(findings: List[Finding]) -> Dict[str, List[Finding]]:
 
 
 def price_line(ctx: RepoContext) -> str | None:
-    """The region and snapshot date cost estimates use, or None when the scan set none."""
+    """The region, price source and AWS price list date estimates use, or None when the scan set none."""
     note = ctx.notes.get("prices")
     if not isinstance(note, dict) or not note.get("region"):
         return None
@@ -37,9 +37,11 @@ def price_line(ctx: RepoContext) -> str | None:
     for e in entries:
         source = f"{e['source']}; " if e.get("source") else ""
         if e.get("snapshot_date"):
-            parts.append(f"{e['region']} ({source}AWS price list of {e['snapshot_date']})")
+            origin = f"{e['pricing_source']}, " if e.get("pricing_source") else ""
+            stale = ", some from an expired cache" if e.get("stale") else ""
+            parts.append(f"{e['region']} ({source}{origin}AWS price list of {e['snapshot_date']}{stale})")
         else:
-            parts.append(f"{e['region']} ({source}not in the price snapshot, so no cost estimates)")
+            parts.append(f"{e['region']} ({source}no prices used)")
     return "on-demand, " + ", ".join(parts)
 
 
@@ -69,16 +71,82 @@ def _usd(value: float) -> str:
     return f"${value:,.2f}"
 
 
+def budget_line(cost: dict) -> str | None:
+    """The budget result in one line, or None when no budget is set."""
+    budget = cost.get("budget")
+    if not isinstance(budget, dict):
+        return None
+    if not budget.get("passed"):
+        return "**Budget: FAILED** — " + "; ".join(budget.get("breaches") or []) + "."
+    limits = []
+    if budget.get("max_monthly_usd") is not None:
+        limits.append(f"at most {_usd(budget['max_monthly_usd'])}/month")
+    if budget.get("max_increase_usd") is not None:
+        limits.append(f"a rise of at most {_usd(budget['max_increase_usd'])}/month")
+    if budget.get("max_increase_percent") is not None:
+        limits.append(f"a rise of at most {budget['max_increase_percent']:g}%")
+    skipped = f" Not checked: {'; '.join(budget['not_checked'])}." if budget.get("not_checked") else ""
+    return f"**Budget: passed** ({', '.join(limits)}).{skipped}"
+
+
+def _signed(value: float) -> str:
+    return ("+" if value >= 0 else "-") + _usd(abs(value))
+
+
+def diff_lines(cost: dict) -> List[str]:
+    """The cost diff as a summary line and a table of changed resources; empty without one."""
+    change = cost.get("diff")
+    if not isinstance(change, dict):
+        return []
+    pct = f", {change['delta_percent']:+g}%" if change.get("delta_percent") is not None else ""
+    source = f" `{_span_text(change['source'])}`" if change.get("source") else ""
+    out = [
+        "### Cost change",
+        f"Compared with{source}: {_usd(change['previous_monthly_usd'])} → "
+        f"{_usd(change['current_monthly_usd'])}/month (**{_signed(change['delta_monthly_usd'])}{pct}**).",
+        "",
+    ]
+    rows = (
+        [("added", r["name"], r["stack"], None, r["monthly_usd"], r["monthly_usd"]) for r in change.get("added") or []]
+        + [("removed", r["name"], r["stack"], r["monthly_usd"], None, -r["monthly_usd"]) for r in change.get("removed") or []]
+        + [("changed", r["name"], r["stack"], r["previous_monthly_usd"], r["current_monthly_usd"], r["delta_monthly_usd"])
+           for r in change.get("changed") or []]
+    )
+    if rows:
+        out += ["| Change | Resource | Template / module | Before | After | Delta |", "|---|---|---|---:|---:|---:|"]
+        for kind, name, stack, before, after, delta in rows:
+            out.append(
+                f"| {kind} | `{_span_text(str(name))}` | `{_span_text(str(stack))}` | "
+                f"{_usd(before) if before is not None else ''} | {_usd(after) if after is not None else ''} | {_signed(delta)} |"
+            )
+        out.append("")
+    return out
+
+
 def cost_section(ctx: RepoContext) -> List[str]:
     """The estimated monthly cost section; empty when the scan priced no template."""
     cost = ctx.notes.get("cost")
     if not isinstance(cost, dict) or not cost.get("stacks"):
+        if ctx.notes.get("cost_hint"):
+            return ["## Estimated Monthly Cost (estimate)", str(ctx.notes["cost_hint"]), ""]
         return []
     when = f", AWS prices of {cost['snapshot_date']}" if cost.get("snapshot_date") else ""
-    out = [
-        "## Estimated Monthly Cost (estimate)",
+    out = ["## Estimated Monthly Cost (estimate)"]
+    budget = budget_line(cost)
+    if budget:
+        out += [budget, ""]
+    out += [
         f"{cost['basis']} {'Regions' if ',' in cost['region'] else 'Region'} {cost['region']}{when}.",
         "",
+    ]
+    usage = cost.get("usage_monthly_usd") or 0
+    if usage:
+        out += [
+            f"Fixed (from the IaC): **{_usd(cost.get('fixed_monthly_usd', 0.0))}/month**. "
+            f"Usage assumed (from the usage profile): **{_usd(usage)}/month**.",
+            "",
+        ]
+    out += [
         "| Template / module | Region | Resources priced | Estimated monthly cost |",
         "|---|---|---:|---:|",
     ]
@@ -93,8 +161,10 @@ def cost_section(ctx: RepoContext) -> List[str]:
         out.append(f"Top {len(cost['top_resources'])} resources by estimated cost:")
         for i, r in enumerate(cost["top_resources"], 1):
             where = f"`{_span_text(r['file'])}`" + (f" (line {r['line']})" if r.get("line") else "")
-            out.append(f"{i}. `{_span_text(r['name'])}` ({r['type']}) in {where}: {_usd(r['monthly_usd'])}/month. {r['basis']}")
+            tag = " *(usage assumed)*" if r.get("usage_assumed") else ""
+            out.append(f"{i}. `{_span_text(r['name'])}` ({r['type']}) in {where}: {_usd(r['monthly_usd'])}/month{tag}. {r['basis']}")
         out.append("")
+    out.extend(diff_lines(cost))
     if cost.get("savings_findings"):
         out.append(
             f"Possible savings from {cost['savings_findings']} finding(s) in this report: "
@@ -103,7 +173,7 @@ def cost_section(ctx: RepoContext) -> List[str]:
         out.append("")
     if cost.get("not_priced"):
         listed = ", ".join(f"{t} ×{n}" for t, n in cost["not_priced"].items())
-        out.append(f"Not priced (usage-based, or not in the price snapshot): {listed}.")
+        out.append(f"Not priced (usage-based, or no AWS price found): {listed}.")
         out.append("")
     return out
 

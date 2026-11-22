@@ -2,7 +2,7 @@
 
 Local-first AWS architecture review for infrastructure code. It scans **CDK** (TypeScript and Python), **CloudFormation**, and **Terraform**, and reports security, reliability, operational excellence, performance, cost, and sustainability issues mapped to the AWS Well-Architected Framework. For workloads that use Bedrock, SageMaker, or AgentCore it also answers the four AI Well-Architected lenses (Machine Learning, Generative AI, Responsible AI, Agentic AI).
 
-No AWS credentials. No cloud calls, unless you opt in with `--live-account` (read-only account checks). LLM output is optional and self-hosted only. With `OLLAMA_HOST` or `LLM_BASE_URL` set, it calls that server; with neither set it makes no call. `--no-llm` skips it either way. If the model does not answer, the findings stay as the rules wrote them.
+No AWS credentials needed. The only cloud calls read public AWS prices for cost estimates (`--pricing-source off` turns them off), and the read-only account checks you opt in to with `--live-account`. LLM output is optional and self-hosted only. With `OLLAMA_HOST` or `LLM_BASE_URL` set, it calls that server; with neither set it makes no call. `--no-llm` skips it either way. If the model does not answer, the findings stay as the rules wrote them.
 
 > 368 static rules and 317 template checks are implemented and tested. 141 of the 368 CDK rules (38%) have a template check. Those checks run on CloudFormation, Terraform, and synthesised CDK. [docs/COVERAGE.md](docs/COVERAGE.md) gives the reason for each of the others. Expect some false positives and negatives, and API changes.
 
@@ -60,6 +60,18 @@ aws-arch-agent --repo . --no-llm --fail-on high                      # fail CI o
 The IaC source is detected automatically. `--iac cdk|cloudformation|terraform` forces one. V1 and V2 both scan Terraform; in V2, CloudFormation needs `--templates`. `--tf-plan plan.json` fills Terraform values from `terraform show -json`, in the root module and in local child modules at any depth.
 
 Each finding has a severity, a pillar, a file and line, evidence, a recommendation, and often suggested code. CloudFormation findings point at the line of the resource's logical ID. The walk reads files in a fixed order and stops at `--max-files` (400); a truncated walk is noted on the console and in the report. The HTML report is one self-contained dark-theme page with severity tabs. Each finding links to the AWS docs for that control and to the Well-Architected best practice it supports.
+
+### Cost
+
+Template scans (CloudFormation, Terraform, `cdk synth` output) get an estimated monthly cost per stack, priced in each stack's region from live AWS on-demand prices. With boto3 installed (`pip install 'aws-arch-agent[aws]'`) and AWS credentials, prices come from the AWS Price List Query API (`pricing:GetProducts`). Without them, from the public AWS Price List bulk API. Prices are cached locally for 24 hours, so the first scan of a region without credentials is the slow one. A scan never fails because pricing failed.
+
+```bash
+aws-arch-agent --repo . --no-llm --update-baseline                          # also records the cost
+aws-arch-agent --repo . --no-llm --compare-cost .aws-arch-agent-baseline.json --max-cost-increase 10%
+aws-arch-agent --repo . --no-llm --max-monthly-cost 500                     # exit 1 above $500/month
+```
+
+Usage-based resources (S3, Lambda, on-demand DynamoDB, ...) are priced only from a usage profile, `.aws-arch-agent-usage.yaml`. A breached budget exits 1. See [docs/REFERENCE.md](docs/REFERENCE.md#prices).
 
 ## What it checks
 
@@ -137,7 +149,7 @@ aws-arch-agent --repo . --mode v2 --no-llm --rag ./docs/waf-snippets.md
 
 ## Documentation
 
-- [docs/REFERENCE.md](docs/REFERENCE.md): CLI options, IaC sources, Terraform plans, modes, LLM providers, HTML report
+- [docs/REFERENCE.md](docs/REFERENCE.md): CLI options, IaC sources, Terraform plans, modes, LLM providers, HTML report, prices and cost
 - [docs/CONFIG.md](docs/CONFIG.md): config file (`aws-arch-agent.yaml` or JSON)
 - [docs/CF_RULES.md](docs/CF_RULES.md): all rules
 - [docs/V2_LANGGRAPH.md](docs/V2_LANGGRAPH.md): V2 pipeline

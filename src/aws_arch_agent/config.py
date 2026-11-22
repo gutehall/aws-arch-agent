@@ -2,12 +2,14 @@
 from __future__ import annotations
 
 import json
+import math
 import re
 from pathlib import Path
 from typing import Any, Literal, cast
 
 import yaml
 
+from aws_arch_agent.pricing.providers import SOURCES as PRICING_SOURCES
 from aws_arch_agent.rules.estimates import SIZES
 from aws_arch_agent.rules.tag_policy import TagPolicy
 from aws_arch_agent.rules.themes import THEMES
@@ -233,6 +235,54 @@ def tag_policy_from(value: Any) -> TagPolicy | None:
     return TagPolicy(required=tuple(dict.fromkeys(required)), allowed=allowed)
 
 
+def _number(value: Any, key: str, positive: bool = False) -> float:
+    if isinstance(value, bool) or not isinstance(value, (int, float)) or not math.isfinite(value):
+        raise ConfigError(f"{key} must be a number")
+    if value < 0 or (positive and value == 0):
+        raise ConfigError(f"{key} must be {'above zero' if positive else 'zero or more'}")
+    return float(value)
+
+
+def pricing_from(value: Any) -> tuple[str | None, float | None]:
+    """config pricing: {source: auto|api|bulk|off, cache_ttl_hours: N} -> (source, ttl)."""
+    if value is None:
+        return None, None
+    if not isinstance(value, dict):
+        raise ConfigError("pricing must be a mapping with source and/or cache_ttl_hours")
+    unknown = sorted(set(map(str, value)) - {"source", "cache_ttl_hours"})
+    if unknown:
+        raise ConfigError(f"pricing: unknown key(s) {', '.join(unknown)}")
+    source = _choice(value["source"], PRICING_SOURCES, "pricing.source") if "source" in value else None
+    ttl = _number(value["cache_ttl_hours"], "pricing.cache_ttl_hours") if "cache_ttl_hours" in value else None
+    return source, ttl
+
+
+_BUDGET_KEYS = ("max_monthly_usd", "max_monthly_increase_usd", "max_increase_percent")
+
+
+def budget_from(value: Any) -> dict[str, float]:
+    """config budget: the limits set, by key (max_monthly_usd, max_monthly_increase_usd, max_increase_percent)."""
+    if value is None:
+        return {}
+    if not isinstance(value, dict):
+        raise ConfigError(f"budget must be a mapping with {', '.join(_BUDGET_KEYS)}")
+    unknown = sorted(set(map(str, value)) - set(_BUDGET_KEYS))
+    if unknown:
+        raise ConfigError(f"budget: unknown key(s) {', '.join(unknown)}; allowed: {', '.join(_BUDGET_KEYS)}")
+    return {str(k): _number(v, f"budget.{k}") for k, v in value.items() if v is not None}
+
+
+def cost_increase(value: str) -> tuple[float | None, float | None]:
+    """--max-cost-increase: "50" (USD a month) or "10%" -> (usd, percent)."""
+    text = value.strip()
+    try:
+        if text.endswith("%"):
+            return None, _number(float(text[:-1]), "--max-cost-increase")
+        return _number(float(text.lstrip("$")), "--max-cost-increase"), None
+    except ValueError as exc:
+        raise ConfigError("--max-cost-increase must be an amount in USD (50) or a percentage (10%)") from exc
+
+
 def _load_config_file(path: Path) -> dict[str, Any]:
     """Load config from JSON or YAML file."""
     try:
@@ -309,6 +359,11 @@ def load_config(
     region: str | None = None,
     themes: list[str] | None = None,
     group_by: str | None = None,
+    pricing_source: str | None = None,
+    price_cache_ttl_hours: float | None = None,
+    usage_file: str | None = None,
+    max_monthly_cost: float | None = None,
+    max_cost_increase: str | None = None,
 ) -> "RunConfig":
     """Load config from file and override with CLI flags that were passed.
 
@@ -375,6 +430,18 @@ def load_config(
     if not isinstance(resolved_out, str) or not resolved_out:
         raise ConfigError(f"out must be a string, got {resolved_out!r}")
 
+    file_pricing = pricing_from(file_cfg.get("pricing"))
+    file_budget = budget_from(file_cfg.get("budget"))
+    increase = cost_increase(max_cost_increase) if max_cost_increase is not None else (None, None)
+    # A usage file named in the config is relative to the repo; one passed by flag, to the
+    # working directory.
+    if usage_file is not None:
+        resolved_usage: str | None = str(Path(usage_file).expanduser().resolve())
+    elif file_cfg.get("usage_file") is not None:
+        named = Path(str(_optional_str(file_cfg.get("usage_file"), "usage_file"))).expanduser()
+        resolved_usage = str(named if named.is_absolute() else (repo_path / named).resolve())
+    else:
+        resolved_usage = None
     return RunConfig(
         format=cast(OutputFormat, _pick_choice(file_cfg, "format", format, "markdown", _FORMATS)),
         fail_on=cast(SeverityThreshold, _pick_choice(file_cfg, "fail_on", fail_on, "none", _FAIL_ON)),
@@ -407,6 +474,23 @@ def load_config(
         dashboards_min_resources=dashboards_min_resources(file_cfg.get("dashboards")),
         themes=themes_from(themes, "--theme") if themes is not None else themes_from(file_cfg.get("themes")),
         group_by=_pick_choice(file_cfg, "group_by", group_by, "severity", ("severity", "theme")),
+        pricing_source=(
+            _choice(pricing_source, PRICING_SOURCES, "--pricing-source") if pricing_source is not None
+            else file_pricing[0] or "auto"
+        ),
+        price_cache_ttl_hours=(
+            _number(price_cache_ttl_hours, "--price-cache-ttl") if price_cache_ttl_hours is not None
+            else file_pricing[1] if file_pricing[1] is not None else 24.0
+        ),
+        usage_file=resolved_usage,
+        budget_max_monthly_usd=(
+            _number(max_monthly_cost, "--max-monthly-cost") if max_monthly_cost is not None
+            else file_budget.get("max_monthly_usd")
+        ),
+        budget_max_increase_usd=increase[0] if max_cost_increase is not None else file_budget.get("max_monthly_increase_usd"),
+        budget_max_increase_percent=(
+            increase[1] if max_cost_increase is not None else file_budget.get("max_increase_percent")
+        ),
     )
 
 
@@ -438,6 +522,12 @@ class RunConfig:
         "dashboards_min_resources",
         "themes",
         "group_by",
+        "pricing_source",
+        "price_cache_ttl_hours",
+        "usage_file",
+        "budget_max_monthly_usd",
+        "budget_max_increase_usd",
+        "budget_max_increase_percent",
     )
 
     def __init__(
@@ -467,6 +557,12 @@ class RunConfig:
         dashboards_min_resources: int | None = None,
         themes: list[str] | None = None,
         group_by: str = "severity",
+        pricing_source: str = "auto",
+        price_cache_ttl_hours: float = 24.0,
+        usage_file: str | None = None,
+        budget_max_monthly_usd: float | None = None,
+        budget_max_increase_usd: float | None = None,
+        budget_max_increase_percent: float | None = None,
     ):
         self.format = format
         self.fail_on = fail_on
@@ -492,3 +588,9 @@ class RunConfig:
         self.dashboards_min_resources = dashboards_min_resources  # config dashboards.min_resources
         self.themes = themes  # config themes / --theme: limit the scan to these themes
         self.group_by = group_by  # config group_by / --group-by: severity or theme
+        self.pricing_source = pricing_source  # config pricing.source / --pricing-source
+        self.price_cache_ttl_hours = price_cache_ttl_hours  # config pricing.cache_ttl_hours / --price-cache-ttl
+        self.usage_file = usage_file  # config usage_file / --usage-file; None: .aws-arch-agent-usage.yaml if present
+        self.budget_max_monthly_usd = budget_max_monthly_usd  # config budget.max_monthly_usd / --max-monthly-cost
+        self.budget_max_increase_usd = budget_max_increase_usd  # budget.max_monthly_increase_usd
+        self.budget_max_increase_percent = budget_max_increase_percent  # budget.max_increase_percent

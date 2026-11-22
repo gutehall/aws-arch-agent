@@ -95,7 +95,26 @@ rules:
   dashboards:
     min_resources: 40
   ```
-- **region**: AWS region whose on-demand prices cost estimates use, for every stack (`--region` overrides it). Leave it out to price each stack in its own region: see [Price region](REFERENCE.md#price-region). Prices come from the snapshot shipped with the package; see [Prices](REFERENCE.md#prices)
+- **region**: AWS region whose on-demand prices cost estimates use, for every stack (`--region` overrides it). Leave it out to price each stack in its own region: see [Price region](REFERENCE.md#price-region). Any AWS region can be priced; see [Prices](REFERENCE.md#prices)
+- **pricing.source**: where prices come from. `auto` (default) uses the AWS Price List Query API when boto3 is installed and AWS credentials resolve, else the public bulk API. `api` and `bulk` use only that source. `off` gives no estimates and makes no network call. Same as `--pricing-source`
+- **pricing.cache_ttl_hours**: hours a fetched price is reused from the local price cache. Default `24`. Same as `--price-cache-ttl`:
+
+  ```yaml
+  pricing:
+    source: auto        # auto | api | bulk | off
+    cache_ttl_hours: 24
+  ```
+- **usage_file**: usage profile that prices usage-based resources (S3, Lambda, on-demand DynamoDB, ...), relative to the repo. Default `.aws-arch-agent-usage.yaml` in the repo, if present. Without a profile those resources stay in "not priced". Same as `--usage-file`, whose path is relative to the working directory. The keys are in [Usage profile](REFERENCE.md#usage-profile)
+- **budget.max_monthly_usd**: exit 1 when the estimated monthly cost (USD) is above this. Same as `--max-monthly-cost`
+- **budget.max_monthly_increase_usd**, **budget.max_increase_percent**: exit 1 when the cost rises more than this many USD, or this percent, against `--compare-cost`. Without `--compare-cost` the limit is reported as not checked, not as a failure. `--max-cost-increase 50` or `--max-cost-increase 10%` sets one from the CLI. A breach prints `Budget breached: ...`; exit 2 for analysis warnings still takes precedence. See [Cost change and budget](REFERENCE.md#cost-change-and-budget):
+
+  ```yaml
+  usage_file: finops/usage.yaml
+  budget:
+    max_monthly_usd: 500
+    max_monthly_increase_usd: 50
+    max_increase_percent: 10
+  ```
 - **severity_threshold**: only report findings at or above this severity
 - **templates**: path to CloudFormation templates (dir or file); V2 only. When set, cdk synth is skipped and CF rules run on these templates (JSON or YAML).
 - **no_synth**: if `true`, do not run cdk synth (V2 only). Use with **templates** for raw CF, or alone for static analysis only.
@@ -136,6 +155,8 @@ aws-arch-agent --repo . --no-llm --fail-on high --enforce-baseline
 ```
 
 CLI flags override config file values only when that flag is passed. A quoted YAML boolean such as `"false"` is false.
+
+`--update-baseline` also writes a `cost_snapshot` block (the total, each stack, and each priced resource's monthly cost), which `--compare-cost` diffs against. A baseline written before it still loads.
 
 A corrupt baseline with `--enforce-baseline` or `--update-baseline` fails the run and does not change the file. Using both flags still fails on findings that were not accepted before the run. The report lists every finding and marks which ones are accepted.
 

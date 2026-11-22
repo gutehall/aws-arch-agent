@@ -3,6 +3,94 @@ from __future__ import annotations
 
 import json
 
+_USD = {"type": "number"}
+_NULLABLE_USD = {"type": ["number", "null"]}
+_DATE = {"type": ["string", "null"], "description": "YYYY-MM-DD publication date of the AWS prices used."}
+_DIFF_ITEM = {
+    "type": "object",
+    "properties": {"stack": {"type": "string"}, "name": {"type": "string"}, "type": {"type": "string"},
+                   "monthly_usd": _USD},
+}
+_PRICE_REGION = {
+    "type": "object",
+    "properties": {
+        "region": {"type": "string"},
+        "source": {"type": "string", "description": "How the region was chosen (--region / config, CDK stack env, ...)."},
+        "snapshot_date": _DATE,
+        "pricing_source": {"type": ["string", "null"],
+                           "description": "Where the prices came from: AWS Price List Query API or bulk API."},
+        "fetched_at": {"type": ["string", "null"], "description": "Newest fetch time (UTC) of the prices used."},
+        "stale": {"type": "boolean", "description": "Some prices came from an expired cache (offline)."},
+    },
+}
+_PRICES_NOTE = {
+    "type": "object",
+    "description": "The regions cost estimates priced in, and where their live prices came from.",
+    "properties": {
+        "region": {"type": "string"},
+        "snapshot_date": _DATE,
+        "regions": {"type": "array", "items": _PRICE_REGION},
+        "warnings": {"type": "array", "items": {"type": "string"},
+                     "description": "What pricing could not do (offline, expired cache)."},
+    },
+}
+_COST_NOTE = {
+    "type": "object",
+    "description": "Estimated monthly cost per template or Terraform root module.",
+    "properties": {
+        "region": {"type": "string"},
+        "snapshot_date": _DATE,
+        "basis": {"type": "string"},
+        "stacks": {"type": "array", "items": {"type": "object", "properties": {
+            "name": {"type": "string"}, "region": {"type": "string"}, "snapshot_date": _DATE,
+            "resources_priced": {"type": "integer", "minimum": 0}, "monthly_usd": _USD,
+            "fixed_monthly_usd": _USD, "usage_monthly_usd": _USD,
+        }}},
+        "total_monthly_usd": {**_USD, "description": "fixed_monthly_usd + usage_monthly_usd."},
+        "fixed_monthly_usd": {**_USD, "description": "Cost the IaC states: instance hours, sizes, counts."},
+        "usage_monthly_usd": {**_USD, "description": "Cost of the usage a usage profile states (usage assumed)."},
+        "usage_file": {"type": "string", "description": "The usage profile read, when one was."},
+        "top_resources": {"type": "array", "items": {"type": "object", "properties": {
+            "name": {"type": "string"}, "type": {"type": "string"}, "stack": {"type": "string"},
+            "file": {"type": "string"}, "line": {"type": ["integer", "null"]}, "monthly_usd": _USD,
+            "basis": {"type": "string"}, "usage_assumed": {"type": "boolean"},
+        }}},
+        "resources": {"type": "array", "description": "Every priced resource; --compare-cost reads these.",
+                      "items": {"type": "object", "properties": {
+                          "stack": {"type": "string"}, "name": {"type": "string"}, "type": {"type": "string"},
+                          "monthly_usd": _USD, "usage_assumed": {"type": "boolean"}}}},
+        "savings_monthly_usd": _USD,
+        "savings_findings": {"type": "integer", "minimum": 0},
+        "not_priced": {"type": "object", "additionalProperties": {"type": "integer"}},
+        "diff": {
+            "type": "object",
+            "description": "The change against --compare-cost (a baseline cost_snapshot or an earlier report).",
+            "properties": {
+                "source": {"type": "string"},
+                "previous_monthly_usd": _USD, "current_monthly_usd": _USD, "delta_monthly_usd": _USD,
+                "delta_percent": {"type": ["number", "null"], "description": "None when the earlier cost was zero."},
+                "added": {"type": "array", "items": _DIFF_ITEM},
+                "removed": {"type": "array", "items": _DIFF_ITEM},
+                "changed": {"type": "array", "items": {"type": "object", "properties": {
+                    "stack": {"type": "string"}, "name": {"type": "string"}, "type": {"type": "string"},
+                    "previous_monthly_usd": _USD, "current_monthly_usd": _USD, "delta_monthly_usd": _USD,
+                }}},
+            },
+        },
+        "budget": {
+            "type": "object",
+            "description": "The CI budget check; passed false makes the run exit 1.",
+            "properties": {
+                "max_monthly_usd": _NULLABLE_USD, "max_increase_usd": _NULLABLE_USD,
+                "max_increase_percent": {"type": ["number", "null"]},
+                "passed": {"type": "boolean"},
+                "breaches": {"type": "array", "items": {"type": "string"}},
+                "not_checked": {"type": "array", "items": {"type": "string"}},
+            },
+        },
+    },
+}
+
 REPORT_SCHEMA: dict = {
     "$schema": "https://json-schema.org/draft/2020-12/schema",
     "title": "AWS Arch Agent Report",
@@ -21,7 +109,15 @@ REPORT_SCHEMA: dict = {
                 },
                 "files_scanned": {"type": "integer", "minimum": 0},
                 "key_files": {"type": "array", "items": {"type": "string"}},
-                "notes": {"type": "object"},
+                "notes": {
+                    "type": "object",
+                    "properties": {
+                        "prices": _PRICES_NOTE,
+                        "cost": _COST_NOTE,
+                        "cost_hint": {"type": "string",
+                                      "description": "Why nothing was priced (CDK source in V1)."},
+                    },
+                },
             },
         },
         "findings": {

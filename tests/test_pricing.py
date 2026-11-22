@@ -1,11 +1,11 @@
-"""Offline AWS price snapshot."""
+"""Live AWS pricing: bulk CSV parsing, providers, the hybrid lookup order. All offline."""
 import csv
-import importlib.util
 import io
 import json
-import re
 import socket
+import sys
 from pathlib import Path
+from typing import Any
 
 import pytest
 from typer.testing import CliRunner
@@ -13,17 +13,19 @@ from typer.testing import CliRunner
 from aws_arch_agent import pricing
 from aws_arch_agent.cli import app
 from aws_arch_agent.config import ConfigError, load_config
-from aws_arch_agent.pricing.build import (
-    DEFAULT_REGIONS,
-    OFFERS,
-    PriceBuildError,
-    build,
-    build_region,
-    dump,
-    read_offer,
+from aws_arch_agent.pricing import (
+    Boto3PricingProvider,
+    BulkPricingProvider,
+    HybridPriceProvider,
+    InMemoryPriceProvider,
+    OffPriceProvider,
 )
+from aws_arch_agent.pricing.build import OFFER_URL, PriceBuildError, build_region, read_offer
+from aws_arch_agent.pricing.cache import PriceCache
+from aws_arch_agent.pricing.providers import PricingUnavailable
 
 ROOT = Path(__file__).resolve().parents[1]
+PACKAGE = ROOT / "src" / "aws_arch_agent" / "pricing"
 COLUMNS = [
     "SKU", "TermType", "StartingRange", "Unit", "PricePerUnit", "Currency", "Product Family",
     "Instance Type", "Operating System", "Tenancy", "Pre Installed S/W", "License Model",
@@ -126,12 +128,13 @@ def _offers(prefix: str = "") -> dict[str, list[str]]:
 @pytest.mark.parametrize("prefix", ["", "EUN1-", "EU-"])
 def test_build_keeps_only_the_skus_the_rules_use(prefix: str) -> None:
     region = build_region(_offers(prefix))
-    assert region["published"] == {code: "2026-11-05" for code in OFFERS}
+    assert region["published"] == {code: "2026-11-05" for code in _offers(prefix)}
     assert region["prices"] == {
         "ec2:m5.large": [0.096, "Hrs"],
         "nat:hour": [0.045, "Hrs"],
         "nat:gb": [0.045, "GB"],
         "ebs:gp3": [0.08, "GB-Mo"],
+        "ebs:sc1": [0.015, "GB-Mo"],
         "eip:idle-hour": [0.005, "Hrs"],
         "rds:postgres:multi-az:db.m5.large": [0.356, "Hrs"],
         "lambda:gb-second": [0.0000166667, "Lambda-GB-Second"],
@@ -158,79 +161,237 @@ def test_offer_without_publication_date_fails() -> None:
         read_offer(['"FormatVersion","v1.0"\n', "\n", "\n", "\n", "\n", '"SKU"\n'])
 
 
-def test_build_is_deterministic() -> None:
-    first = dump(build({"us-east-1": _offers(), "eu-north-1": _offers("EUN1-")}))
-    reordered = {"eu-north-1": dict(reversed(list(_offers("EUN1-").items()))), "us-east-1": _offers()}
-    assert dump(build(reordered)) == first
-
-
-def test_refresh_script_rebuilds_from_cached_offers(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
-    """With the offers cached, the script needs no network and writes the same bytes twice."""
-    cache = tmp_path / "cache"
-    for region, prefix in (("us-east-1", ""), ("eu-north-1", "EUN1-")):
-        (cache / region).mkdir(parents=True)
-        for code, lines in _offers(prefix).items():
-            (cache / region / f"{code}.csv").write_text("".join(lines), encoding="utf-8")
-    spec = importlib.util.spec_from_file_location("refresh_prices", ROOT / "scripts" / "refresh_prices.py")
-    assert spec and spec.loader
-    script = importlib.util.module_from_spec(spec)
-    spec.loader.exec_module(script)
-    monkeypatch.setattr(socket, "socket", _no_network)
-    outs = []
-    for name in ("a.json.gz", "b.json.gz"):
-        out = tmp_path / name
-        assert script.main(["--regions", "us-east-1", "eu-north-1", "--cache-dir", str(cache), "--out", str(out)]) == 0
-        outs.append(out.read_bytes())
-    assert outs[0] == outs[1]
-
 
 def _no_network(*_args, **_kwargs):
-    raise AssertionError("a scan must not open a network connection")
+    raise AssertionError("the test suite must not open a network connection")
 
 
-def test_shipped_snapshot_loads_without_network(monkeypatch: pytest.MonkeyPatch) -> None:
+# --- Providers -----------------------------------------------------------------
+
+
+def test_no_static_price_list_ships() -> None:
+    assert not list(PACKAGE.glob("*.json*")) and not list(PACKAGE.glob("*.csv*"))
+    assert not (ROOT / "scripts" / "refresh_prices.py").exists()
+
+
+def test_suite_prices_offline(monkeypatch: pytest.MonkeyPatch) -> None:
+    """conftest installs an in-memory provider: no test reaches AWS."""
     monkeypatch.setattr(socket, "socket", _no_network)
-    pricing._snapshot.cache_clear()
+    assert isinstance(pricing.provider(), InMemoryPriceProvider)
     m5 = pricing.price("ec2:m5.large", "us-east-1")
-    assert m5 is not None and m5.unit == "Hrs" and 0.01 < m5.usd < 1
-    assert m5.region == "us-east-1" and len(m5.snapshot_date) == 10
-    assert set(DEFAULT_REGIONS) <= set(pricing.regions())
-    deep = pricing.price("s3:deep-archive", "us-east-1")
-    assert deep is not None and deep.snapshot_date == pricing._snapshot()["regions"]["us-east-1"][
-        "published"]["AmazonS3GlacierDeepArchive"]
-    for key in ("nat:hour", "nat:gb", "ebs:gp2", "ebs:gp3", "ebs:io2", "eip:in-use-hour", "eip:idle-hour",
-                "rds:postgres:single-az:db.m5.large", "rds:mysql:multi-az:db.m5.large",
-                "lambda:gb-second", "lambda:gb-second-arm", "lambda:request",
-                "dynamodb:read-request", "dynamodb:write-request", "dynamodb:rcu-hour",
-                "dynamodb:wcu-hour", "dynamodb:storage-gb", "s3:standard", "s3:glacier-ir",
-                "s3:deep-archive", "logs:ingest-gb", "logs:storage-gb"):
-        assert pricing.price(key, "eu-north-1") is not None, key
+    assert m5 is not None and m5.unit == "Hrs" and 0.01 < m5.usd < 1 and m5.source == "memory"
 
 
-def test_docs_list_the_packaged_regions() -> None:
-    text = (Path(__file__).resolve().parents[1] / "docs" / "REFERENCE.md").read_text(encoding="utf-8")
-    line = next(ln for ln in text.splitlines() if ln.startswith("The snapshot covers"))
-    assert re.findall(r"`([a-z]{2}-[a-z]+-\d)`", line.split(".")[0]) == list(DEFAULT_REGIONS)
+def test_in_memory_provider() -> None:
+    mem = InMemoryPriceProvider({"eu-north-1": {"ec2:m5.large": [0.102, "Hrs"]}},
+                                {"eu-north-1": {"AmazonEC2": "2026-11-05"}})
+    found = mem.price("ec2:m5.large", "eu-north-1")
+    assert found == pricing.Price(0.102, "Hrs", "eu-north-1", "2026-11-05", "memory")
+    assert mem.price("ec2:m5.large", "us-east-1") is None and mem.price("nat:hour", "eu-north-1") is None
+    assert InMemoryPriceProvider.from_snapshot({"regions": {"eu-north-1": build_region(_offers("EUN1-"))}}).price(
+        "nat:gb", "eu-north-1") == pricing.Price(0.045, "GB", "eu-north-1", "2026-11-05", "memory")
 
 
-def test_a_newly_added_region_is_priced_from_the_snapshot() -> None:
-    for region in ("ap-southeast-1", "ca-central-1", "us-east-2"):
-        assert pricing.price("ec2:m5.large", region) is not None, region
-        assert pricing.price("ebs:gp3", region) is not None, region
+def test_seen_prices_give_the_note() -> None:
+    mem = InMemoryPriceProvider({"eu-north-1": {"ec2:m5.large": [0.102, "Hrs"], "ebs:gp3": [0.08, "GB-Mo"]}},
+                                {"eu-north-1": {"AmazonEC2": "2026-11-05"}})
+    with pricing.use_provider(mem):
+        assert pricing.snapshot_date("eu-north-1") is None  # nothing priced yet
+        pricing.price("ec2:m5.large", "eu-north-1")
+        assert pricing.price_note("eu-north-1") == {
+            "region": "eu-north-1", "snapshot_date": "2026-11-05",
+            "pricing_source": "prices supplied in memory", "fetched_at": None, "stale": False,
+        }
+    assert pricing.snapshot_date("eu-north-1") is None  # the outer provider saw nothing
 
 
-def test_unknown_type_or_region_gives_no_estimate() -> None:
-    assert pricing.price("ec2:m99.huge", "us-east-1") is None
-    assert pricing.price("ec2:m5.large", "mars-north-1") is None
-    assert pricing.price("unknown", "us-east-1") is None
-    assert pricing.snapshot_date("mars-north-1") is None
-    assert pricing.price_note("mars-north-1") == {"region": "mars-north-1", "snapshot_date": None}
+def test_off() -> None:
+    assert isinstance(pricing.configure("off"), OffPriceProvider)
+    with pricing.use_provider(pricing.configure("off")):
+        assert pricing.price("ec2:m5.large", "us-east-1") is None
+    with pytest.raises(ValueError, match="pricing source"):
+        HybridPriceProvider(source="sometimes")
 
 
-def test_snapshot_is_small() -> None:
-    assert pricing.DATA_PATH.stat().st_size < 200_000
-    data = json.loads(__import__("gzip").decompress(pricing.DATA_PATH.read_bytes()))
-    assert data["schema"] == 1
+def _api_item(usage: str, usd: str, instance: str = "m5.large") -> str:
+    return json.dumps({
+        "product": {"productFamily": "Compute Instance", "attributes": {
+            "instanceType": instance, "operatingSystem": "Linux", "tenancy": "Shared", "preInstalledSw": "NA",
+            "capacitystatus": "Used", "licenseModel": "No License required", "usagetype": usage}},
+        "publicationDate": "2026-11-05T16:26:28Z",
+        "terms": {"OnDemand": {"T": {"priceDimensions": {"D": {"pricePerUnit": {"USD": usd}, "unit": "Hrs"}}}}},
+    })
+
+
+class FakeClient:
+    def __init__(self, items: list[str] | None = None, error: Exception | None = None) -> None:
+        self.items, self.error, self.calls = items or [], error, []
+
+    def get_paginator(self, name: str) -> "FakeClient":
+        assert name == "get_products"
+        return self
+
+    def paginate(self, **kwargs: Any) -> list[dict]:
+        self.calls.append(kwargs)
+        if self.error:
+            raise self.error
+        return [{"PriceList": self.items[:1]}, {"PriceList": self.items[1:]}]
+
+
+def test_boto3_provider_queries_by_region_code() -> None:
+    client = FakeClient([_api_item("EUN1-BoxUsage:m5.large", "0.102"), _api_item("EUN1-BoxUsage:m5.large", "0")])
+    api = Boto3PricingProvider(client)
+    found = api.price("ec2:m5.large", "eu-north-1")
+    assert found == pricing.Price(0.102, "Hrs", "eu-north-1", "2026-11-05", "api")
+    call = client.calls[0]
+    assert call["ServiceCode"] == "AmazonEC2"
+    assert {"Type": "TERM_MATCH", "Field": "regionCode", "Value": "eu-north-1"} in call["Filters"]
+    assert {"Type": "TERM_MATCH", "Field": "instanceType", "Value": "m5.large"} in call["Filters"]
+    assert Boto3PricingProvider(FakeClient([])).price("ec2:m5.large", "eu-north-1") is None
+    assert Boto3PricingProvider(FakeClient(error=RuntimeError("throttled"))).price("ec2:m5.large", "x") is None
+    with pytest.raises(PricingUnavailable, match="throttled"):
+        Boto3PricingProvider(FakeClient(error=RuntimeError("throttled"))).fetch("ec2:m5.large", "eu-north-1")
+
+
+def test_boto3_provider_without_boto3_or_credentials(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setitem(sys.modules, "boto3", None)
+    with pytest.raises(PricingUnavailable, match="boto3"):
+        Boto3PricingProvider().fetch("ec2:m5.large", "us-east-1")
+
+    class Session:
+        def get_credentials(self) -> None:
+            return None
+
+    monkeypatch.setitem(sys.modules, "boto3", type(sys)("boto3"))
+    sys.modules["boto3"].Session = Session  # type: ignore[attr-defined]
+    with pytest.raises(PricingUnavailable, match="credentials"):
+        Boto3PricingProvider().fetch("ec2:m5.large", "us-east-1")
+
+
+class FakeBulk:
+    """An opener serving the test offers by URL; counts downloads."""
+
+    def __init__(self, prefix: str = "EUN1-", fail: bool = False) -> None:
+        self.offers, self.fail, self.urls = _offers(prefix), fail, []
+
+    def __call__(self, url: str) -> list[str]:
+        self.urls.append(url)
+        if self.fail:
+            raise PricingUnavailable("Price List bulk API: no network")
+        for code, lines in self.offers.items():
+            if url == OFFER_URL.format(offer=code, region="eu-north-1"):
+                return lines
+        return []  # 404: no file for this region
+
+
+def test_bulk_provider_streams_one_offer() -> None:
+    opener = FakeBulk()
+    bulk = BulkPricingProvider(opener)
+    assert bulk.price("nat:hour", "eu-north-1") == pricing.Price(0.045, "Hrs", "eu-north-1", "2026-11-05", "bulk")
+    assert opener.urls == [OFFER_URL.format(offer="AmazonEC2", region="eu-north-1")]
+    assert bulk.price("nat:hour", "mars-north-1") is None  # no such file
+    assert bulk.fetch_offer("AmazonEC2", "mars-north-1") == (None, {})
+
+    def broken(_url: str):
+        yield '"FormatVersion","v1.0"\n'
+        raise OSError("connection reset")
+
+    with pytest.raises(PricingUnavailable, match="connection reset"):
+        BulkPricingProvider(broken).fetch_offer("AmazonEC2", "eu-north-1")
+
+
+def _hybrid(tmp_path: Path, source: str = "auto", api: Any = None, bulk: Any = None, **kw: Any) -> HybridPriceProvider:
+    return HybridPriceProvider(
+        source=source, cache=PriceCache(tmp_path / "cache.sqlite3", kw.pop("ttl", 24), **kw),
+        api=api or Boto3PricingProvider(FakeClient(error=PricingUnavailable("no AWS credentials"))),
+        bulk=bulk or BulkPricingProvider(FakeBulk()),
+    )
+
+
+def test_hybrid_uses_the_api_and_caches(tmp_path: Path) -> None:
+    client = FakeClient([_api_item("EUN1-BoxUsage:m5.large", "0.102")])
+    first = _hybrid(tmp_path, api=Boto3PricingProvider(client), bulk=BulkPricingProvider(FakeBulk(fail=True)))
+    found = first.price("ec2:m5.large", "eu-north-1")
+    assert found is not None and found.usd == 0.102 and found.source == "api" and found.fetched_at
+    first.price("ec2:m5.large", "eu-north-1")
+    assert len(client.calls) == 1  # memory
+    # A new process: the SQLite cache answers.
+    again = _hybrid(tmp_path, api=Boto3PricingProvider(FakeClient(error=AssertionError("not called"))))
+    cached = again.price("ec2:m5.large", "eu-north-1")
+    assert cached is not None and cached.usd == 0.102 and cached.source == "api" and not cached.stale
+
+
+def test_hybrid_api_miss_is_final(tmp_path: Path) -> None:
+    opener = FakeBulk()
+    hybrid = _hybrid(tmp_path, api=Boto3PricingProvider(FakeClient([])), bulk=BulkPricingProvider(opener))
+    assert hybrid.price("ec2:m99.huge", "eu-north-1") is None
+    assert opener.urls == []
+    assert hybrid.price("unknown", "eu-north-1") is None
+
+
+def test_hybrid_falls_back_to_bulk_and_reads_each_offer_once(tmp_path: Path) -> None:
+    opener = FakeBulk()
+    hybrid = _hybrid(tmp_path, bulk=BulkPricingProvider(opener))
+    assert hybrid.price("nat:hour", "eu-north-1").source == "bulk"  # type: ignore[union-attr]
+    assert hybrid.price("ec2:m5.large", "eu-north-1").usd == 0.096  # type: ignore[union-attr]
+    assert hybrid.price("ec2:m99.huge", "eu-north-1") is None
+    assert len(opener.urls) == 1 and hybrid.warnings == []
+    # A new process within the TTL: hits come from the cache, and a miss does not download again.
+    opener2 = FakeBulk()
+    again = _hybrid(tmp_path, bulk=BulkPricingProvider(opener2))
+    assert again.price("ebs:gp3", "eu-north-1").usd == 0.08  # type: ignore[union-attr]
+    assert again.price("ec2:m99.huge", "eu-north-1") is None
+    assert opener2.urls == []
+
+
+class Clock:
+    now = 1_000_000.0
+
+    def __call__(self) -> float:
+        return self.now
+
+
+def test_hybrid_offline_uses_stale_cache_then_none(tmp_path: Path) -> None:
+    clock = Clock()
+    online = _hybrid(tmp_path, ttl=1, clock=clock)
+    assert online.price("nat:hour", "eu-north-1") is not None
+    clock.now += 7200
+    offline = _hybrid(tmp_path, ttl=1, clock=clock, bulk=BulkPricingProvider(FakeBulk(fail=True)))
+    stale = offline.price("nat:hour", "eu-north-1")
+    assert stale is not None and stale.stale and stale.usd == 0.045
+    assert offline.price("s3:standard", "eu-north-1") is None  # never cached
+    assert any("expired cached prices" in w for w in offline.warnings)
+    assert any("no network" in w for w in offline.warnings)
+    assert any("offline" in w for w in offline.warnings)
+
+
+def test_hybrid_refresh_and_sources(tmp_path: Path) -> None:
+    opener = FakeBulk()
+    _hybrid(tmp_path, bulk=BulkPricingProvider(opener)).price("nat:hour", "eu-north-1")
+    refreshed = HybridPriceProvider(
+        source="bulk", cache=PriceCache(tmp_path / "cache.sqlite3"), bulk=BulkPricingProvider(opener), refresh=True,
+        api=Boto3PricingProvider(FakeClient(error=AssertionError("bulk only"))),
+    )
+    assert refreshed.price("nat:hour", "eu-north-1") is not None
+    assert len(opener.urls) == 2  # --refresh-prices downloaded again
+    api_only = _hybrid(tmp_path / "b", source="api", bulk=BulkPricingProvider(FakeBulk(fail=True)))
+    assert api_only.price("nat:hour", "eu-north-1") is None
+    assert api_only.warnings == [
+        "Price List Query API: no AWS credentials",
+        "Prices could not be fetched (offline?); resources without a cached price are not estimated.",
+    ]
+    assert _hybrid(tmp_path / "c", source="off").price("nat:hour", "eu-north-1") is None
+
+
+def test_hybrid_survives_a_broken_cache(tmp_path: Path) -> None:
+    (tmp_path / "file").write_text("x", encoding="utf-8")
+    hybrid = HybridPriceProvider(cache=PriceCache(tmp_path / "file" / "c.sqlite3"),
+                                 api=Boto3PricingProvider(FakeClient(error=RuntimeError("down"))),
+                                 bulk=BulkPricingProvider(FakeBulk()))
+    assert hybrid.price("nat:hour", "eu-north-1") is not None
+
+
+# --- Scan wiring ----------------------------------------------------------------
 
 
 def test_config_region(tmp_path: Path) -> None:
@@ -249,31 +410,51 @@ def _repo(root: Path) -> None:
     (root / "lib" / "stack.ts").write_text('new s3.Bucket(this, "B");', encoding="utf-8")
 
 
+def _priced_repo(root: Path) -> None:
+    (root / "template.json").write_text(json.dumps({"Resources": {
+        "Nat": {"Type": "AWS::EC2::NatGateway", "Properties": {"SubnetId": "s"}}}}), encoding="utf-8")
+
+
 def test_report_states_the_price_region(tmp_path: Path) -> None:
     _repo(tmp_path)
     out = tmp_path / "report.md"
     result = CliRunner().invoke(app, ["--repo", str(tmp_path), "--no-llm", "--out", str(out)])
     assert result.exit_code == 0, result.output
-    date = pricing.snapshot_date("us-east-1")
-    assert f"- Prices: on-demand, us-east-1 (default; AWS price list of {date})" in out.read_text(encoding="utf-8")
+    assert "- Prices: on-demand, us-east-1 (default; no prices used)" in out.read_text(encoding="utf-8")
 
+    priced = tmp_path / "priced"
+    priced.mkdir()
+    _priced_repo(priced)
     out_json = tmp_path / "report.json"
-    result = CliRunner().invoke(app, ["--repo", str(tmp_path), "--no-llm", "--format", "json",
+    result = CliRunner().invoke(app, ["--repo", str(priced), "--no-llm", "--format", "json",
                                       "--region", "eu-north-1", "--out", str(out_json)])
     assert result.exit_code == 0, result.output
     notes = json.loads(out_json.read_text(encoding="utf-8"))["context"]["notes"]
-    north = pricing.snapshot_date("eu-north-1")
+    north = notes["prices"]["snapshot_date"]
+    assert north and len(north) == 10
     assert notes["prices"] == {
-        "region": "eu-north-1", "snapshot_date": north,
-        "regions": [{"region": "eu-north-1", "source": "--region / config", "snapshot_date": north}],
+        "region": "eu-north-1", "snapshot_date": north, "warnings": [],
+        "regions": [{"region": "eu-north-1", "source": "--region / config", "snapshot_date": north,
+                     "pricing_source": "prices supplied in memory", "fetched_at": None, "stale": False}],
     }
 
-    out_html = tmp_path / "report.html"
-    result = CliRunner().invoke(app, ["--repo", str(tmp_path), "--no-llm", "--format", "html",
-                                      "--region", "ap-south-2", "--out", str(out_html)])
+
+def test_pricing_warnings_reach_the_console(tmp_path: Path) -> None:
+    _priced_repo(tmp_path)
+
+    class Down:
+        warnings = ["Prices could not be fetched (offline?); resources without a cached price are not estimated."]
+
+        def price(self, key: str, region: str) -> None:
+            return None
+
+    with pricing.use_provider(Down()):
+        result = CliRunner().invoke(app, ["--repo", str(tmp_path), "--no-llm", "--format", "json",
+                                          "--out", str(tmp_path / "r.json")])
     assert result.exit_code == 0, result.output
-    assert "not in the price snapshot" in out_html.read_text(encoding="utf-8")
-    assert "No prices for region ap-south-2" in result.output
+    assert "Prices could not be fetched (offline?)" in result.output
+    notes = json.loads((tmp_path / "r.json").read_text(encoding="utf-8"))["context"]["notes"]
+    assert notes["prices"]["warnings"] == Down.warnings
 
 
 def test_bad_region_flag_fails(tmp_path: Path) -> None:
@@ -282,28 +463,6 @@ def test_bad_region_flag_fails(tmp_path: Path) -> None:
                                       "--out", str(tmp_path / "r.md")])
     assert result.exit_code != 0
     assert "--region must be an AWS region code" in result.output
-
-
-# mtime=0 keeps the gzip header, and so the test id, the same in every xdist worker.
-@pytest.mark.parametrize(
-    "content",
-    [None, b"", b"not gzip", __import__("gzip").compress(b"{not json", mtime=0)],
-    ids=["none", "empty", "not-gzip", "gzip-not-json"],
-)
-def test_missing_or_broken_snapshot_gives_no_prices(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, content: bytes | None
-) -> None:
-    path = tmp_path / "prices.json.gz"
-    if content is not None:
-        path.write_bytes(content)
-    monkeypatch.setattr(pricing, "DATA_PATH", path)
-    pricing._snapshot.cache_clear()
-    try:
-        assert pricing.price("ec2:m5.large") is None
-        assert pricing.price_note() == {"region": "us-east-1", "snapshot_date": None}
-    finally:
-        monkeypatch.undo()
-        pricing._snapshot.cache_clear()
 
 
 def test_short_offer_row_is_skipped_not_a_crash() -> None:
@@ -323,14 +482,6 @@ def test_row_without_a_price_is_a_build_error() -> None:
         build_region({"AmazonS3": lines})
 
 
-def test_write_is_atomic(tmp_path: Path) -> None:
-    from aws_arch_agent.pricing.build import write
-
-    out = tmp_path / "prices.json.gz"
-    write({"schema": 1, "regions": {}}, out)
-    assert out.is_file() and not (tmp_path / "prices.json.gz.tmp").exists()
-
-
 @pytest.mark.parametrize("region", ["us-gov-west-1", "cn-north-1", "eusc-de-east-1", "ap-southeast-5"])
 def test_region_codes_accepted(tmp_path: Path, region: str) -> None:
     assert load_config(tmp_path, region=region).region == region
@@ -344,3 +495,38 @@ def test_v2_states_the_price_region(tmp_path: Path) -> None:
                                                    price_region="eu-north-1")
     assert ctx.notes["prices"]["region"] == "eu-north-1"
     assert "- Prices: on-demand, eu-north-1" in report
+
+
+def test_boto3_setup_errors_are_unavailable_not_crashes(monkeypatch: pytest.MonkeyPatch) -> None:
+    class Session:
+        def __init__(self) -> None:
+            raise RuntimeError("The config profile (nope) could not be found")
+
+    monkeypatch.setitem(sys.modules, "boto3", type(sys)("boto3"))
+    sys.modules["boto3"].Session = Session  # type: ignore[attr-defined]
+    with pytest.raises(PricingUnavailable, match="could not be found"):
+        Boto3PricingProvider().fetch("ec2:m5.large", "us-east-1")
+    assert Boto3PricingProvider().price("ec2:m5.large", "us-east-1") is None
+
+
+def test_a_page_that_is_not_an_offer_is_not_cached_as_a_miss(tmp_path: Path) -> None:
+    calls: list[str] = []
+
+    def proxy_page(url: str) -> list[str]:
+        calls.append(url)
+        return ["<html>Access denied</html>\n"]
+
+    hybrid = _hybrid(tmp_path, bulk=BulkPricingProvider(proxy_page))
+    assert hybrid.price("nat:hour", "eu-north-1") is None
+    assert not hybrid.cache.offer_fresh("eu-north-1", "AmazonEC2")
+    assert any("not an offer" in w or "Publication Date" in w for w in hybrid.warnings)
+
+
+def test_truncated_query_results_are_not_known_misses(tmp_path: Path) -> None:
+    client = FakeClient([_api_item("EUN1-BoxUsage:m5.large", "0.102"), _api_item("EUN1-BoxUsage:m5.large", "0.102")])
+    api = Boto3PricingProvider(client, max_items=2)
+    hybrid = _hybrid(tmp_path, api=api)
+    assert hybrid.price("ec2:m5.xlarge", "eu-north-1") is None
+    assert hybrid.cache.get("eu-north-1", "ec2:m5.xlarge") is None  # not stored as a miss
+    assert hybrid.cache.get("eu-north-1", "ec2:m5.large").usd == 0.102  # type: ignore[union-attr]
+    assert api.price("ec2:m5.large", "eu-north-1") is not None

@@ -50,6 +50,10 @@ v2 = [
 account = [
   "boto3>=1.34.0",
 ]
+# Live prices from the AWS Price List Query API (else the public bulk API is used).
+aws = [
+  "boto3>=1.34.0",
+]
 rag = [
   "sentence-transformers>=2.2.0",
 ]

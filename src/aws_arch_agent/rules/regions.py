@@ -26,7 +26,8 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
-from aws_arch_agent.pricing import DEFAULT_REGION, current_region, snapshot_date, use_region
+from aws_arch_agent.pricing import DEFAULT_REGION, current_region, price_info, snapshot_date, use_region
+from aws_arch_agent.pricing import warnings as pricing_warnings
 from aws_arch_agent.rules.resource_model import Resource
 
 REGION = re.compile(r"[a-z]{2}(?:-gov|-iso[a-z]?)?-[a-z]+-\d{1,2}")
@@ -217,13 +218,15 @@ def note() -> dict[str, Any]:
     """What the report says about prices: one entry per region the scan priced in.
 
     `region` and `snapshot_date` are kept for one-region reports and JSON readers; with
-    several regions `region` lists them, comma-separated.
+    several regions `region` lists them, comma-separated. Each entry says where its prices
+    came from (pricing_source), when they were fetched, and whether any were expired cache.
     """
     by_region: dict[str, set[str]] = {}
     for resolved in _used.values() or [_override or _fallback]:
         by_region.setdefault(resolved.region, set()).add(resolved.source)
     entries = [
-        {"region": region, "source": ", ".join(sorted(sources)), "snapshot_date": snapshot_date(region)}
+        {"region": region, "source": ", ".join(sorted(sources)), "snapshot_date": snapshot_date(region),
+         **price_info(region)}
         for region, sources in sorted(by_region.items())
     ]
     dates = [e["snapshot_date"] for e in entries if e["snapshot_date"]]
@@ -231,4 +234,5 @@ def note() -> dict[str, Any]:
         "region": ", ".join(str(e["region"]) for e in entries),
         "snapshot_date": max(dates) if len(dates) == len(entries) else None,
         "regions": entries,
+        "warnings": pricing_warnings(),
     }

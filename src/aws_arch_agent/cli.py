@@ -9,7 +9,7 @@ import typer
 from rich.console import Console
 from rich.panel import Panel
 
-from aws_arch_agent import __version__, suppressions
+from aws_arch_agent import __version__, pricing, suppressions
 from aws_arch_agent.agent.v1 import IAC_CHOICES, IacError, analyze_v1, resolve_source
 from aws_arch_agent.baseline import (
     DEFAULT_BASELINE_NAME,
@@ -25,11 +25,13 @@ from aws_arch_agent.config import (
     ConfigError,
     LLMMode,
     OutputFormat,
+    RunConfig,
     SeverityThreshold,
     load_config,
 )
 from aws_arch_agent.models import Finding, IacSource, RepoContext
-from aws_arch_agent.rules import account
+from aws_arch_agent.pricing import usage as usage_profile
+from aws_arch_agent.rules import account, cost_diff, stack_cost
 from aws_arch_agent.rules.themes import THEMES
 from aws_arch_agent.report.json_report import render_json
 from aws_arch_agent.report.html import render_html
@@ -157,6 +159,67 @@ def _print_version(value: bool) -> None:
         raise typer.Exit()
 
 
+def _run(
+    mode_value: str, repo_path: Path, max_files: int, use_llm: bool, cfg: RunConfig, iac_value: str,
+    tf_plan_path: Path | None, account_facts: account.AccountFacts | None, finops: stack_cost.FinOps,
+) -> tuple[str, RepoContext, list[Finding], list[str]]:
+    """Run the V1 or V2 pipeline with the resolved options."""
+    if mode_value == "v2":
+        from aws_arch_agent.agent.v2_graph import analyze_v2
+
+        return analyze_v2(
+            repo_path,
+            max_files=max_files,
+            use_llm=use_llm,
+            rules_include=cfg.rules_include,
+            rules_exclude=cfg.rules_exclude,
+            rules_org=cfg.rules_org,
+            severity_threshold=cfg.severity_threshold,
+            templates_path=cfg.templates,
+            skip_synth=cfg.no_synth,
+            rag_path=cfg.rag_path,
+            rag_use_embeddings=cfg.rag_use_embeddings,
+            rag_embedding_provider=cfg.rag_embedding_provider,
+            rag_embedding_model=cfg.rag_embedding_model,
+            llm_mode=cast(LLMMode, cfg.llm_mode),
+            iac=iac_value,
+            tf_plan=tf_plan_path,
+            price_region=cfg.region,
+            tag_policy=cfg.tag_policy,
+            environment_map=cfg.environments,
+            nonprod_max_size=cfg.nonprod_max_size,
+            dashboards_min_resources=cfg.dashboards_min_resources,
+            theme_filter=cfg.themes,
+            group_by=cfg.group_by,
+            account_facts=account_facts,
+            lenses_ai=cfg.lenses_ai,
+            rules_exclude_paths=cfg.rules_exclude_paths,
+            finops=finops,
+        )
+    return analyze_v1(
+        repo_path,
+        max_files=max_files,
+        use_llm=use_llm,
+        rules_include=cfg.rules_include,
+        rules_exclude=cfg.rules_exclude,
+        rules_org=cfg.rules_org,
+        severity_threshold=cfg.severity_threshold,
+        iac=iac_value,
+        tf_plan=tf_plan_path,
+        price_region=cfg.region,
+        tag_policy=cfg.tag_policy,
+        environment_map=cfg.environments,
+        nonprod_max_size=cfg.nonprod_max_size,
+        dashboards_min_resources=cfg.dashboards_min_resources,
+        theme_filter=cfg.themes,
+        group_by=cfg.group_by,
+        account_facts=account_facts,
+        lenses_ai=cfg.lenses_ai,
+        rules_exclude_paths=cfg.rules_exclude_paths,
+        finops=finops,
+    )
+
+
 @app.command()
 def analyze(
     ctx: typer.Context,
@@ -197,8 +260,36 @@ def analyze(
     update_baseline: bool = typer.Option(False, "--update-baseline", help="Add current findings to baseline file"),
     region: str | None = typer.Option(
         None, "--region",
-        help="AWS region whose prices cost estimates use (offline snapshot). Default: each "
+        help="AWS region whose prices cost estimates use. Default: each "
              "stack's own region (CDK env, Terraform provider), then AWS_REGION, then us-east-1",
+    ),
+    pricing_source: str | None = typer.Option(
+        None, "--pricing-source",
+        help="Where prices come from: auto (Price List Query API with AWS credentials, else the "
+             "public bulk API), api, bulk, or off (no estimates, no network). Config pricing.source",
+    ),
+    price_cache_ttl: float | None = typer.Option(
+        None, "--price-cache-ttl",
+        help="Hours a fetched price is reused from the local cache (default 24). Config pricing.cache_ttl_hours",
+    ),
+    refresh_prices: bool = typer.Option(False, "--refresh-prices", help="Empty the price cache and fetch again"),
+    usage_file: str | None = typer.Option(
+        None, "--usage-file",
+        help="Usage profile YAML that prices usage-based resources (default .aws-arch-agent-usage.yaml "
+             "in the repo, if present). Config usage_file",
+    ),
+    compare_cost: str | None = typer.Option(
+        None, "--compare-cost",
+        help="Baseline file or earlier JSON report to diff the estimated monthly cost against",
+    ),
+    max_monthly_cost: float | None = typer.Option(
+        None, "--max-monthly-cost",
+        help="Exit 1 when the estimated monthly cost (USD) is above this. Config budget.max_monthly_usd",
+    ),
+    max_cost_increase: str | None = typer.Option(
+        None, "--max-cost-increase",
+        help="Exit 1 when the cost rises more than this against --compare-cost: USD (50) or percent (10%). "
+             "Config budget.max_monthly_increase_usd / max_increase_percent",
     ),
     theme: list[str] = typer.Option(
         [], "--theme",
@@ -250,9 +341,23 @@ def analyze(
             region=region if _passed(ctx, "region") else None,
             themes=list(theme) if theme else None,
             group_by=group_by.lower() if _passed(ctx, "group_by") else None,
+            pricing_source=pricing_source.lower() if pricing_source is not None else None,
+            price_cache_ttl_hours=price_cache_ttl,
+            usage_file=usage_file,
+            max_monthly_cost=max_monthly_cost,
+            max_cost_increase=max_cost_increase,
         )
+        found_usage = usage_profile.find(repo_path, Path(cfg.usage_file) if cfg.usage_file else None)
+        profile = usage_profile.load(found_usage) if found_usage is not None else None
+        previous = cost_diff.load_previous(Path(compare_cost).expanduser().resolve()) if compare_cost else None
     except ConfigError as exc:
         _fail(str(exc))
+    budget = cost_diff.Budget(cfg.budget_max_monthly_usd, cfg.budget_max_increase_usd, cfg.budget_max_increase_percent)
+    finops = stack_cost.FinOps(
+        usage=profile, previous=previous, previous_source=compare_cost or "",
+        budget=budget if budget.is_set() else None,
+    )
+    price_provider = pricing.configure(cfg.pricing_source, cfg.price_cache_ttl_hours, refresh=refresh_prices)
 
     out_path = Path(cfg.out).expanduser().resolve()
     baseline_path = _resolve_baseline_path(repo_path, baseline)
@@ -265,7 +370,7 @@ def analyze(
 
     if mode_value == "v2":
         try:
-            from aws_arch_agent.agent.v2_graph import analyze_v2
+            from aws_arch_agent.agent.v2_graph import analyze_v2  # noqa: F401 - fail early without the v2 extra
         except ImportError as exc:
             _fail(
                 "V2 mode requires the v2 extra: pip install 'aws-arch-agent[v2]'. "
@@ -307,60 +412,9 @@ def analyze(
 
     use_llm = not cfg.no_llm
     account_facts = account.read_live(cfg.region) if live_account else None
-    rules_include = cfg.rules_include
-    rules_exclude = cfg.rules_exclude
-    severity_threshold = cfg.severity_threshold
-
-    if mode_value == "v2":
-        report_md, ctx_report, findings, warnings = analyze_v2(
-            repo_path,
-            max_files=max_files,
-            use_llm=use_llm,
-            rules_include=rules_include,
-            rules_exclude=rules_exclude,
-            rules_org=cfg.rules_org,
-            severity_threshold=severity_threshold,
-            templates_path=cfg.templates,
-            skip_synth=cfg.no_synth,
-            rag_path=cfg.rag_path,
-            rag_use_embeddings=cfg.rag_use_embeddings,
-            rag_embedding_provider=cfg.rag_embedding_provider,
-            rag_embedding_model=cfg.rag_embedding_model,
-            llm_mode=cast(LLMMode, cfg.llm_mode),
-            iac=iac_value,
-            tf_plan=tf_plan_path,
-            price_region=cfg.region,
-            tag_policy=cfg.tag_policy,
-            environment_map=cfg.environments,
-            nonprod_max_size=cfg.nonprod_max_size,
-            dashboards_min_resources=cfg.dashboards_min_resources,
-            theme_filter=cfg.themes,
-            group_by=cfg.group_by,
-            account_facts=account_facts,
-            lenses_ai=cfg.lenses_ai,
-            rules_exclude_paths=cfg.rules_exclude_paths,
-        )
-    else:
-        report_md, ctx_report, findings, warnings = analyze_v1(
-            repo_path,
-            max_files=max_files,
-            use_llm=use_llm,
-            rules_include=rules_include,
-            rules_exclude=rules_exclude,
-            rules_org=cfg.rules_org,
-            severity_threshold=severity_threshold,
-            iac=iac_value,
-            tf_plan=tf_plan_path,
-            price_region=cfg.region,
-            tag_policy=cfg.tag_policy,
-            environment_map=cfg.environments,
-            nonprod_max_size=cfg.nonprod_max_size,
-            dashboards_min_resources=cfg.dashboards_min_resources,
-            theme_filter=cfg.themes,
-            group_by=cfg.group_by,
-            account_facts=account_facts,
-            lenses_ai=cfg.lenses_ai,
-            rules_exclude_paths=cfg.rules_exclude_paths,
+    with pricing.use_provider(price_provider):
+        report_md, ctx_report, findings, warnings = _run(
+            mode_value, repo_path, max_files, use_llm, cfg, iac_value, tf_plan_path, account_facts, finops,
         )
 
     # What happened, not what was configured. soft_wrap keeps the line whole for anyone grepping it.
@@ -395,19 +449,39 @@ def analyze(
             style="yellow",
             markup=False,
         )
-    missing = [e["region"] for e in ctx_report.notes.get("prices", {}).get("regions", [])
-               if e.get("snapshot_date") is None]
-    if missing:
+    for warning in ctx_report.notes.get("prices", {}).get("warnings", []):
+        console.print(warning, style="yellow", markup=False, soft_wrap=True)
+    cost_note = ctx_report.notes.get("cost") if isinstance(ctx_report.notes.get("cost"), dict) else None
+    if ctx_report.notes.get("cost_hint"):
+        console.print(ctx_report.notes["cost_hint"], style="yellow", markup=False, soft_wrap=True)
+    if cost_note is None and (finops.budget is not None or finops.previous is not None):
         console.print(
-            f"No prices for region {', '.join(missing)} in the snapshot: cost estimates there are skipped.",
-            style="yellow",
-            markup=False,
+            "No stack was priced, so the cost comparison and budget were not checked.",
+            style="yellow", markup=False, soft_wrap=True,
         )
+    change = (cost_note or {}).get("diff")
+    if change:
+        pct = f", {change['delta_percent']:+g}%" if change.get("delta_percent") is not None else ""
+        console.print(
+            f"Cost vs {change['source']}: ${change['previous_monthly_usd']:,.2f} -> "
+            f"${change['current_monthly_usd']:,.2f}/month ({change['delta_monthly_usd']:+,.2f}{pct}); "
+            f"{len(change['added'])} added, {len(change['removed'])} removed, {len(change['changed'])} changed",
+            markup=False, soft_wrap=True,
+        )
+    budget_note = (cost_note or {}).get("budget")
+    budget_breached = isinstance(budget_note, dict) and not budget_note["passed"]
+    if isinstance(budget_note, dict):
+        for line in budget_note["breaches"]:
+            console.print(f"Budget breached: {line}", style="red", markup=False, soft_wrap=True)
+        for line in budget_note["not_checked"]:
+            console.print(f"Budget not checked: {line}", style="yellow", markup=False, soft_wrap=True)
+        if budget_note["passed"]:
+            console.print("Budget: within limits", markup=False)
 
     if update_baseline:
         merged = merge_into_baseline(accepted_before or set(), findings)
         try:
-            save_baseline(baseline_path, merged)
+            save_baseline(baseline_path, merged, cost_diff.snapshot(cost_note) if cost_note else None)
         except OSError as exc:
             _fail(f"Failed to write baseline {baseline_path}: {exc}")
         console.print(f"Updated baseline: [bold]{baseline_path}[/bold] ({len(merged)} entries)")
@@ -451,7 +525,7 @@ def analyze(
         console.print(f"[red]fail-on={cfg.fail_on}: findings at or above threshold[/red]")
     if warnings:
         raise typer.Exit(code=2)
-    if severity_hit:
+    if severity_hit or budget_breached:
         raise typer.Exit(code=1)
 
 

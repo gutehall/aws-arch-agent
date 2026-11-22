@@ -191,8 +191,23 @@ def load_baseline(path: Path) -> set[Fingerprint]:
     return {_entry_fingerprint(item) for item in entries}
 
 
-def save_baseline(path: Path, fingerprints: set[Fingerprint]) -> None:
-    """Write baseline file atomically. A failed write leaves the previous file intact."""
+def load_cost_snapshot(path: Path) -> dict[str, Any] | None:
+    """The baseline's cost_snapshot, or None (no file, an older baseline, or no priced scan)."""
+    try:
+        data = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError):
+        return None
+    snapshot = data.get("cost_snapshot") if isinstance(data, dict) else None
+    return dict(snapshot) if isinstance(snapshot, dict) else None
+
+
+def save_baseline(path: Path, fingerprints: set[Fingerprint], cost_snapshot: dict[str, Any] | None = None) -> None:
+    """Write baseline file atomically. A failed write leaves the previous file intact.
+
+    cost_snapshot (cost_diff.snapshot) is stored for --compare-cost; None keeps the file's
+    existing snapshot, if any."""
+    if cost_snapshot is None:
+        cost_snapshot = load_cost_snapshot(path)
     accepted = []
     for fp in sorted(fingerprints, key=_sort_key):
         entry: dict[str, Any] = {
@@ -203,7 +218,10 @@ def save_baseline(path: Path, fingerprints: set[Fingerprint]) -> None:
         if fp.logical_id is not None:
             entry["logical_id"] = fp.logical_id
         accepted.append(entry)
-    payload = json.dumps({"accepted": accepted}, indent=2)
+    body: dict[str, Any] = {"accepted": accepted}
+    if cost_snapshot is not None:
+        body["cost_snapshot"] = cost_snapshot
+    payload = json.dumps(body, indent=2)
     directory = path.parent
     directory.mkdir(parents=True, exist_ok=True)
     fd, tmp_name = tempfile.mkstemp(dir=directory, prefix=f".{path.name}.", suffix=".tmp")
