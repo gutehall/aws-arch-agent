@@ -19,11 +19,26 @@ pip install "aws-arch-agent==1.0.0"
 aws-arch-agent --version   # 1.0.0
 ```
 
-Windows (PowerShell): `py -m venv .venv`, then `.venv\Scripts\Activate.ps1`, then the same `pip install`.
+Windows (PowerShell):
 
-Without a virtual environment: `pipx install aws-arch-agent`.
+```powershell
+py -m venv .venv
+.venv\Scripts\Activate.ps1
+pip install "aws-arch-agent==1.0.0"
+aws-arch-agent --version   # 1.0.0
+```
 
-From GitHub: `pip install "git+https://github.com/gutehall/aws-arch-agent@v1.0.0"`.
+Without a virtual environment:
+
+```bash
+pipx install aws-arch-agent
+```
+
+From GitHub:
+
+```bash
+pip install "git+https://github.com/gutehall/aws-arch-agent@v1.0.0"
+```
 
 | Extra | Adds |
 |-------|------|
