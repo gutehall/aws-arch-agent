@@ -5,6 +5,7 @@ import logging
 from pathlib import Path
 
 from aws_arch_agent.models import Finding
+from aws_arch_agent.progress import report
 
 logger = logging.getLogger(__name__)
 
@@ -40,8 +41,12 @@ def run_all_rules(
     findings: list[Finding] = []
     warnings: list[str] = []
     seen: set[tuple[str, str | None, int | None, str | None]] = set()
+    total = len(rules) * len(languages)
+    done = 0
     for lang in languages:
         for rule in rules:
+            done += 1
+            report(f"{rule.id} ({done}/{total}, {lang})")
             try:
                 produced = rule.run(repo_path, lang)
             except Exception as e:

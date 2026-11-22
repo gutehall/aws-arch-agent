@@ -37,6 +37,8 @@ The agent covers all six AWS Well-Architected pillars. Static and CloudFormation
 | `--group-by` | `severity` | Group Markdown findings by `severity` or `theme` |
 | `--version` | — | Print the version and exit. The version is the release tag the rules come from |
 
+A scan prints each step as it goes: detecting the source, reading files, every rule (`SEC-001 (12/174, typescript)`), each CloudFormation template, each Terraform module, CDK synth, and an LLM review when one is running. A step that is still going after 15 seconds is printed again, so a long rule or synth does not look stalled.
+
 ## IaC sources
 
 | `--iac` | What V1 scans |

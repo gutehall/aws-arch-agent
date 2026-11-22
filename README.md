@@ -61,6 +61,8 @@ aws-arch-agent --repo . --no-llm --fail-on high                      # fail CI o
 
 A plain `--repo` scan does everything it can on its own. It writes an HTML report to `report.html`, with estimated monthly cost for every stack it can price. It uses a local Ollama for the LLM review when one is running. For CDK it synthesises the stacks (V2) when the `v2` extra and Node.js are installed, so they are priced too. Otherwise it says why and scans with V1. Flags override each of these: `--format` or an `--out` suffix (`.md`, `.json`, `.sarif`) picks the format, `--mode v1|v2` the mode, and `--no-llm` turns the LLM off.
 
+While a scan runs it prints each step: detecting the source, reading files, the current rule, synth, templates, and any LLM call. A step that takes longer than 15 seconds is printed again until it finishes, so a large project does not look stalled.
+
 A finished scan prints a short summary on the terminal: the severity counts, up to five top fixes (the same as the report's Summary), and the report path. It is plain text in CI logs. The report file and exit codes are unchanged; it is not a TUI, so read findings in the report. See [docs/REFERENCE.md](docs/REFERENCE.md#terminal-summary).
 
 The IaC source is detected automatically. `--iac cdk|cloudformation|terraform` forces one. V1 and V2 both scan Terraform; in V2, CloudFormation needs `--templates`. `--tf-plan plan.json` fills Terraform values from `terraform show -json`, in the root module and in local child modules at any depth.

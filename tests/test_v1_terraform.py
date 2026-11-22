@@ -124,6 +124,7 @@ def test_cli_sarif_has_hcl_location(tmp_path: Path) -> None:
         app, ["--repo", str(tmp_path), "--no-llm", "--format", "sarif", "--out", str(out)]
     )
     assert result.exit_code == 0, result.output
+    assert "Terraform infra (1/1)" in result.output
     results = json.loads(out.read_text(encoding="utf-8"))["runs"][0]["results"]
     s3 = next(r for r in results if r["ruleId"] == "CF-S3-001")
     loc = s3["locations"][0]["physicalLocation"]

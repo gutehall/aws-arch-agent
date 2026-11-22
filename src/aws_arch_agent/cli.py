@@ -32,6 +32,7 @@ from aws_arch_agent.config import (
     load_config,
 )
 from aws_arch_agent.models import Finding, IacSource, RepoContext
+from aws_arch_agent.progress import ScanProgress, use_progress
 from aws_arch_agent.pricing import usage as usage_profile
 from aws_arch_agent.rules import account, cost_diff, stack_cost
 from aws_arch_agent.rules.themes import THEMES
@@ -422,179 +423,186 @@ def analyze(
         except BaselineError as exc:
             _fail(str(exc))
 
-    source: IacSource | None = None
-    if mode_value == "auto":
-        if not cfg.templates:
+    progress = ScanProgress(console)
+    with progress, use_progress(progress):
+        source: IacSource | None = None
+        if mode_value == "auto":
+            if not cfg.templates:
+                try:
+                    progress("Detecting source")
+                    source = resolve_source(repo_path, iac_value, iter_files(repo_path, max_files=max_files))
+                except IacError as exc:
+                    _fail(str(exc))
+            mode_value, note = _auto_mode(source, bool(cfg.templates), cfg.no_synth, (repo_path / "cdk.json").is_file())
+            if note:
+                console.print(note, style="yellow", markup=False, soft_wrap=True)
+
+        if mode_value == "v2":
             try:
-                source = resolve_source(repo_path, iac_value, iter_files(repo_path, max_files=max_files))
-            except IacError as exc:
-                _fail(str(exc))
-        mode_value, note = _auto_mode(source, bool(cfg.templates), cfg.no_synth, (repo_path / "cdk.json").is_file())
-        if note:
-            console.print(note, style="yellow", markup=False, soft_wrap=True)
+                from aws_arch_agent.agent.v2_graph import analyze_v2  # noqa: F401 - fail early without the v2 extra
+            except ImportError as exc:
+                _fail(
+                    "V2 mode requires the v2 extra: pip install 'aws-arch-agent[v2]'. "
+                    f"({exc})"
+                )
 
-    if mode_value == "v2":
+        if mode_value == "v2":
+            # V2 synth is the CDK path. Raw CloudFormation passed with --templates and Terraform
+            # (--iac terraform) are the other two.
+            if iac_value == "cloudformation" and not cfg.templates:
+                _fail(
+                    "--iac cloudformation in V2 needs --templates: V2 synth is the CDK path. "
+                    "Use --mode v1, or pass --templates."
+                )
+
         try:
-            from aws_arch_agent.agent.v2_graph import analyze_v2  # noqa: F401 - fail early without the v2 extra
-        except ImportError as exc:
-            _fail(
-                "V2 mode requires the v2 extra: pip install 'aws-arch-agent[v2]'. "
-                f"({exc})"
+            if mode_value == "v2" and iac_value == "cloudformation" and cfg.templates:
+                # The templates path may sit outside --repo; synth warns when it is missing or empty.
+                source = "cloudformation"
+            elif source is None:
+                progress("Detecting source")
+                source = resolve_source(
+                    repo_path, iac_value, iter_files(repo_path, max_files=max_files)
+                )
+        except IacError as exc:
+            _fail(str(exc))
+
+        progress(f"Source: {source}")
+        
+        if mode_value == "v2" and iac_value == "auto" and source != "cdk" and not cfg.templates:
+            console.print(
+                f"Detected {source}, but V2 scans CDK only and will not read these files. "
+                "Use --mode v1 to scan them, --templates for CloudFormation, or --iac terraform.",
+                style="yellow",
+                markup=False,
             )
 
-    if mode_value == "v2":
-        # V2 synth is the CDK path. Raw CloudFormation passed with --templates and Terraform
-        # (--iac terraform) are the other two.
-        if iac_value == "cloudformation" and not cfg.templates:
-            _fail(
-                "--iac cloudformation in V2 needs --templates: V2 synth is the CDK path. "
-                "Use --mode v1, or pass --templates."
+        console.print(Panel.fit(
+            f"[bold]Analyzing[/bold] {repo_path}\nMode: {mode_value} | Source: {source} | Format: {cfg.format}",
+            title="aws-arch-agent",
+        ))
+
+        use_llm = not cfg.no_llm
+        account_facts = account.read_live(cfg.region) if live_account else None
+        with pricing.use_provider(price_provider):
+            report_md, ctx_report, findings, warnings = _run(
+                mode_value, repo_path, max_files, use_llm, cfg, iac_value, tf_plan_path, account_facts, finops,
             )
 
-    try:
-        if mode_value == "v2" and iac_value == "cloudformation" and cfg.templates:
-            # The templates path may sit outside --repo; synth warns when it is missing or empty.
-            source = "cloudformation"
-        elif source is None:
-            source = resolve_source(
-                repo_path, iac_value, iter_files(repo_path, max_files=max_files)
-            )
-    except IacError as exc:
-        _fail(str(exc))
-
-    if mode_value == "v2" and iac_value == "auto" and source != "cdk" and not cfg.templates:
+        # What happened, not what was configured. soft_wrap keeps the line whole for anyone grepping it.
         console.print(
-            f"Detected {source}, but V2 scans CDK only and will not read these files. "
-            "Use --mode v1 to scan them, --templates for CloudFormation, or --iac terraform.",
-            style="yellow",
-            markup=False,
-        )
-
-    console.print(Panel.fit(
-        f"[bold]Analyzing[/bold] {repo_path}\nMode: {mode_value} | Source: {source} | Format: {cfg.format}",
-        title="aws-arch-agent",
-    ))
-
-    use_llm = not cfg.no_llm
-    account_facts = account.read_live(cfg.region) if live_account else None
-    with pricing.use_provider(price_provider):
-        report_md, ctx_report, findings, warnings = _run(
-            mode_value, repo_path, max_files, use_llm, cfg, iac_value, tf_plan_path, account_facts, finops,
-        )
-
-    # What happened, not what was configured. soft_wrap keeps the line whole for anyone grepping it.
-    console.print(
-        ctx_report.llm.line,
-        style=None if ctx_report.llm.status in ("ok", "skipped") else "yellow",
-        markup=False,
-        soft_wrap=True,
-    )
-    llm_lines = [ctx_report.llm.line]
-    verdict_line = _verdict_line(findings)
-    if verdict_line:
-        llm_lines.append(verdict_line)
-        console.print(verdict_line, markup=False, soft_wrap=True)
-    hypothesis_line = _hypothesis_line(ctx_report)
-    if hypothesis_line:
-        llm_lines.append(hypothesis_line)
-        console.print(
-            hypothesis_line,
-            style=None if ctx_report.hypothesis_llm.status == "ok" else "yellow",
+            ctx_report.llm.line,
+            style=None if ctx_report.llm.status in ("ok", "skipped") else "yellow",
             markup=False,
             soft_wrap=True,
         )
+        llm_lines = [ctx_report.llm.line]
+        verdict_line = _verdict_line(findings)
+        if verdict_line:
+            llm_lines.append(verdict_line)
+            console.print(verdict_line, markup=False, soft_wrap=True)
+        hypothesis_line = _hypothesis_line(ctx_report)
+        if hypothesis_line:
+            llm_lines.append(hypothesis_line)
+            console.print(
+                hypothesis_line,
+                style=None if ctx_report.hypothesis_llm.status == "ok" else "yellow",
+                markup=False,
+                soft_wrap=True,
+            )
 
-    truncated = truncation_message(ctx_report.notes)
-    if truncated:
-        console.print(truncated, style="yellow", markup=False, soft_wrap=True)
-    if ctx_report.notes.get("tag_policy") == "not checked":
-        console.print(
-            "tags.required is checked on templates, and this scan read none "
-            "(CDK source is not a template: run --mode v2 to synth it).",
-            style="yellow",
-            markup=False,
-        )
-    for warning in ctx_report.notes.get("prices", {}).get("warnings", []):
-        console.print(warning, style="yellow", markup=False, soft_wrap=True)
-    cost_note = ctx_report.notes.get("cost") if isinstance(ctx_report.notes.get("cost"), dict) else None
-    if ctx_report.notes.get("cost_hint"):
-        console.print(ctx_report.notes["cost_hint"], style="yellow", markup=False, soft_wrap=True)
-    if cost_note is None and (finops.budget is not None or finops.previous is not None):
-        console.print(
-            "No stack was priced, so the cost comparison and budget were not checked.",
-            style="yellow", markup=False, soft_wrap=True,
-        )
-    change = (cost_note or {}).get("diff")
-    if change:
-        pct = f", {change['delta_percent']:+g}%" if change.get("delta_percent") is not None else ""
-        console.print(
-            f"Cost vs {change['source']}: ${change['previous_monthly_usd']:,.2f} -> "
-            f"${change['current_monthly_usd']:,.2f}/month ({change['delta_monthly_usd']:+,.2f}{pct}); "
-            f"{len(change['added'])} added, {len(change['removed'])} removed, {len(change['changed'])} changed",
-            markup=False, soft_wrap=True,
-        )
-    budget_note = (cost_note or {}).get("budget")
-    budget_breached = isinstance(budget_note, dict) and not budget_note["passed"]
-    if isinstance(budget_note, dict):
-        for line in budget_note["breaches"]:
-            console.print(f"Budget breached: {line}", style="red", markup=False, soft_wrap=True)
-        for line in budget_note["not_checked"]:
-            console.print(f"Budget not checked: {line}", style="yellow", markup=False, soft_wrap=True)
-        if budget_note["passed"]:
-            console.print("Budget: within limits", markup=False)
+        truncated = truncation_message(ctx_report.notes)
+        if truncated:
+            console.print(truncated, style="yellow", markup=False, soft_wrap=True)
+        if ctx_report.notes.get("tag_policy") == "not checked":
+            console.print(
+                "tags.required is checked on templates, and this scan read none "
+                "(CDK source is not a template: run --mode v2 to synth it).",
+                style="yellow",
+                markup=False,
+            )
+        for warning in ctx_report.notes.get("prices", {}).get("warnings", []):
+            console.print(warning, style="yellow", markup=False, soft_wrap=True)
+        cost_note = ctx_report.notes.get("cost") if isinstance(ctx_report.notes.get("cost"), dict) else None
+        if ctx_report.notes.get("cost_hint"):
+            console.print(ctx_report.notes["cost_hint"], style="yellow", markup=False, soft_wrap=True)
+        if cost_note is None and (finops.budget is not None or finops.previous is not None):
+            console.print(
+                "No stack was priced, so the cost comparison and budget were not checked.",
+                style="yellow", markup=False, soft_wrap=True,
+            )
+        change = (cost_note or {}).get("diff")
+        if change:
+            pct = f", {change['delta_percent']:+g}%" if change.get("delta_percent") is not None else ""
+            console.print(
+                f"Cost vs {change['source']}: ${change['previous_monthly_usd']:,.2f} -> "
+                f"${change['current_monthly_usd']:,.2f}/month ({change['delta_monthly_usd']:+,.2f}{pct}); "
+                f"{len(change['added'])} added, {len(change['removed'])} removed, {len(change['changed'])} changed",
+                markup=False, soft_wrap=True,
+            )
+        budget_note = (cost_note or {}).get("budget")
+        budget_breached = isinstance(budget_note, dict) and not budget_note["passed"]
+        if isinstance(budget_note, dict):
+            for line in budget_note["breaches"]:
+                console.print(f"Budget breached: {line}", style="red", markup=False, soft_wrap=True)
+            for line in budget_note["not_checked"]:
+                console.print(f"Budget not checked: {line}", style="yellow", markup=False, soft_wrap=True)
+            if budget_note["passed"]:
+                console.print("Budget: within limits", markup=False)
 
-    if update_baseline:
-        merged = merge_into_baseline(accepted_before or set(), findings)
-        try:
-            save_baseline(baseline_path, merged, cost_diff.snapshot(cost_note) if cost_note else None)
-        except OSError as exc:
-            _fail(f"Failed to write baseline {baseline_path}: {exc}")
-        console.print(f"Updated baseline: [bold]{baseline_path}[/bold] ({len(merged)} entries)")
+        if update_baseline:
+            merged = merge_into_baseline(accepted_before or set(), findings)
+            try:
+                save_baseline(baseline_path, merged, cost_diff.snapshot(cost_note) if cost_note else None)
+            except OSError as exc:
+                _fail(f"Failed to write baseline {baseline_path}: {exc}")
+            console.print(f"Updated baseline: [bold]{baseline_path}[/bold] ({len(merged)} entries)")
 
-    # An active inline or Metadata suppression keeps the finding out of --fail-on; an expired
-    # one does not.
-    findings_for_fail = suppressions.active(findings)
-    if enforce_baseline:
-        findings_for_fail = filter_new_findings(findings_for_fail, accepted_before or set())
+        # An active inline or Metadata suppression keeps the finding out of --fail-on; an expired
+        # one does not.
+        findings_for_fail = suppressions.active(findings)
+        if enforce_baseline:
+            findings_for_fail = filter_new_findings(findings_for_fail, accepted_before or set())
 
-    if cfg.format == "json":
-        content = render_json(ctx_report, findings, warnings=warnings)
-    elif cfg.format == "sarif":
-        content = render_sarif(ctx_report, findings, warnings=warnings)
-    elif cfg.format == "html":
-        # The page labels accepted findings itself, so it skips _mark_baselined.
-        baselined = (
-            [is_baselined(f, accepted_before or set()) for f in findings]
-            if enforce_baseline else None
-        )
-        content = render_html(ctx_report, findings, warnings=warnings, baselined=baselined)
-    else:
-        content = "\n".join(llm_lines) + f"\n\n{report_md}"
+        progress("Writing report")
+        if cfg.format == "json":
+            content = render_json(ctx_report, findings, warnings=warnings)
+        elif cfg.format == "sarif":
+            content = render_sarif(ctx_report, findings, warnings=warnings)
+        elif cfg.format == "html":
+            # The page labels accepted findings itself, so it skips _mark_baselined.
+            baselined = (
+                [is_baselined(f, accepted_before or set()) for f in findings]
+                if enforce_baseline else None
+            )
+            content = render_html(ctx_report, findings, warnings=warnings, baselined=baselined)
+        else:
+            content = "\n".join(llm_lines) + f"\n\n{report_md}"
 
-    if enforce_baseline and cfg.format != "html":
-        content = _mark_baselined(content, cfg.format, findings, accepted_before or set())
+        if enforce_baseline and cfg.format != "html":
+            content = _mark_baselined(content, cfg.format, findings, accepted_before or set())
 
-    out_path.write_text(content, encoding="utf-8")
-    console.print(f"Wrote report to: [bold]{escape(str(out_path))}[/bold]")
-    # Before any exit, so a failing run still shows what it found.
-    for line in terminal_lines(build_summary(findings), str(out_path)):
-        console.print(line, markup=False, highlight=False, emoji=False, soft_wrap=True)
+        out_path.write_text(content, encoding="utf-8")
+        console.print(f"Wrote report to: [bold]{escape(str(out_path))}[/bold]")
+        # Before any exit, so a failing run still shows what it found.
+        for line in terminal_lines(build_summary(findings), str(out_path)):
+            console.print(line, markup=False, highlight=False, emoji=False, soft_wrap=True)
 
-    if suggestions:
-        suggestions_path = Path(suggestions).expanduser().resolve()
-        suggestions_path.write_text(render_json(ctx_report, findings, warnings=warnings), encoding="utf-8")
-        console.print(f"Wrote suggestions to: [bold]{suggestions_path}[/bold]")
+        if suggestions:
+            suggestions_path = Path(suggestions).expanduser().resolve()
+            suggestions_path.write_text(render_json(ctx_report, findings, warnings=warnings), encoding="utf-8")
+            console.print(f"Wrote suggestions to: [bold]{suggestions_path}[/bold]")
 
-    if warnings:
-        console.print(f"[yellow]{len(warnings)} check(s) failed during analysis (see report warnings)[/yellow]")
+        if warnings:
+            console.print(f"[yellow]{len(warnings)} check(s) failed during analysis (see report warnings)[/yellow]")
 
-    severity_hit = _should_fail(cfg.fail_on, findings_for_fail)
-    if severity_hit:
-        console.print(f"[red]fail-on={cfg.fail_on}: findings at or above threshold[/red]")
-    if warnings:
-        raise typer.Exit(code=2)
-    if severity_hit or budget_breached:
-        raise typer.Exit(code=1)
+        severity_hit = _should_fail(cfg.fail_on, findings_for_fail)
+        if severity_hit:
+            console.print(f"[red]fail-on={cfg.fail_on}: findings at or above threshold[/red]")
+        if warnings:
+            raise typer.Exit(code=2)
+        if severity_hit or budget_breached:
+            raise typer.Exit(code=1)
 
 
 if __name__ == "__main__":

@@ -31,6 +31,12 @@ def test_analyze_creates_report(tmp_path: Path) -> None:
     assert result.exit_code == 0, result.output or result.stderr
     assert out_file.exists()
     assert "AWS Architecture Review Report" in out_file.read_text(encoding="utf-8")
+    assert "Detecting source" in result.output
+    assert "Reading files" in result.output
+    assert "Source: cdk" in result.output
+    assert "(1/" in result.output
+    assert ", typescript)" in result.output
+    assert "Writing report" in result.output
 
 
 def test_analyze_json_format(tmp_path: Path) -> None:
@@ -171,6 +177,8 @@ def test_analyze_templates_only_no_repo(tmp_path: Path) -> None:
     assert result.exit_code == 0, result.output or result.stderr
     assert out_file.exists()
     assert "CF-S3-001" in out_file.read_text(encoding="utf-8")
+    assert "Reading CloudFormation templates" in result.output
+    assert "Template stack.yaml (1/1)" in result.output
 
 
 def _high_finding_repo(root: Path) -> None:
