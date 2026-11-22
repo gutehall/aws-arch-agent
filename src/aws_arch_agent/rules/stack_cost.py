@@ -1,9 +1,11 @@
 """Estimated monthly cost per template or Terraform root module.
 
-Every resource the price snapshot covers is priced, not only those with findings. This is
-an approximation in the style of Infracost: on-demand prices only, 730 hours a month, and
-no usage-based charges (data, requests, storage growth). Resource types that cost money
-but cannot be priced are listed so the reader knows what the total leaves out.
+Every resource live pricing covers is priced, not only those with findings. This is
+an approximation in the style of Infracost: on-demand prices only, 730 hours a month.
+Usage-based charges (data, requests, storage) are priced only where a usage profile
+(pricing.usage) states the usage; they are kept apart from the fixed cost and flagged
+usage_assumed. Resource types that cost money but cannot be priced are listed so the
+reader knows what the total leaves out.
 """
 from __future__ import annotations
 
@@ -16,7 +18,8 @@ from typing import Any, Iterator, List
 
 from aws_arch_agent.models import Finding
 from aws_arch_agent.pricing import current_region, snapshot_date
-from aws_arch_agent.rules import estimates
+from aws_arch_agent.pricing.usage import UsageProfile
+from aws_arch_agent.rules import cost_diff, estimates
 from aws_arch_agent.rules.resource_model import TF_MODULE_CALL, Resource
 from aws_arch_agent.tools.paths import to_repo_relative
 
@@ -33,6 +36,7 @@ _FREE_CF = re.compile(
     r"Lambda::Permission|Lambda::EventSourceMapping|Lambda::Version|Lambda::Alias|Events::Rule|"
     r"Logs::SubscriptionFilter|Logs::MetricFilter|Logs::QueryDefinition|ECR::RegistryPolicy|"
     r"CE::AnomalyMonitor|CE::AnomalySubscription|EC2::VolumeAttachment|"
+    r"ECS::(?:Cluster|TaskDefinition)|AutoScaling::(?:LaunchConfiguration|ScalingPolicy|ScheduledAction)|"
     r"SecretsManager::RotationSchedule|SecretsManager::ResourcePolicy|"
     r"ElasticLoadBalancingV2::(?:Listener|ListenerRule|TargetGroup)|"
     r"ApiGateway::(?:Resource|Method|Deployment|Account)|WAFv2::WebACLAssociation|"
@@ -48,7 +52,8 @@ _FREE_TF = re.compile(
     r"eip_association|lb_listener\w*|lb_target_group\w*|wafv2_web_acl_association|"
     r"api_gateway_(?:resource|method|integration|deployment)\w*|cloudwatch_log_subscription_filter|"
     r"cloudwatch_log_metric_filter|cloudwatch_query_definition|ce_anomaly_\w+|volume_attachment|"
-    r"backup_plan|backup_selection|backup_vault_lock_configuration)$"
+    r"backup_plan|backup_selection|backup_vault_lock_configuration|ecs_cluster|ecs_task_definition|"
+    r"launch_configuration|autoscaling_policy|autoscaling_schedule)$"
 )
 
 
@@ -57,21 +62,36 @@ class _Stack:
     path: str
     region: str = ""
     priced: list[tuple[Resource, estimates.Estimate]] = field(default_factory=list)
+    usage: list[tuple[Resource, estimates.Estimate]] = field(default_factory=list)
     not_priced: Counter = field(default_factory=Counter)
 
 
+@dataclass(frozen=True)
+class FinOps:
+    """A scan's cost options: usage profile, earlier cost to diff against, budget."""
+
+    usage: UsageProfile | None = None
+    previous: dict[str, Any] | None = None  # a cost_diff.snapshot
+    previous_source: str = ""
+    budget: cost_diff.Budget | None = None
+
+
 _stacks: dict[str, _Stack] | None = None
+_options = FinOps()
+_profile: UsageProfile | None = None
 
 
 @contextmanager
-def collect() -> Iterator[None]:
+def collect(options: FinOps | None = None) -> Iterator[None]:
     """Collect per-stack costs for the duration of a scan."""
-    global _stacks
-    previous, _stacks = _stacks, {}
+    global _stacks, _options, _profile
+    saved = _stacks, _options, _profile
+    _stacks, _options = {}, options or FinOps()
+    _profile = _options.usage
     try:
         yield
     finally:
-        _stacks = previous
+        _stacks, _options, _profile = saved
 
 
 def is_free(source_type: str) -> bool:
@@ -84,14 +104,19 @@ def record(template_path: Path, resources: List[Resource]) -> None:
         return
     # One entry per file however the scan reached it (relative, absolute, listed twice).
     stack = _Stack(path=str(Path(template_path).resolve()), region=current_region())
+    index = {res.name: res for res in resources}
     for res in resources:
         if res.malformed:
             stack.not_priced[res.source_type] += 1
             continue
-        cost = estimates.resource_cost(res)
+        cost = estimates.resource_cost(res, index)
+        stated = _profile.for_resource(res.type, res.name) if _profile else None
+        used = estimates.usage_cost(res, stated) if stated else None
         if cost is not None:
             stack.priced.append((res, cost))
-        elif not is_free(res.source_type):
+        if used is not None:
+            stack.usage.append((res, used))
+        if cost is None and used is None and not is_free(res.source_type):
             stack.not_priced[res.source_type] += 1
     _stacks[stack.path] = stack
 
@@ -108,37 +133,66 @@ def summary(findings: List[Finding], repo_path: Path | None = None) -> dict[str,
         return to_repo_relative(path, repo_path) if repo_path else path
 
     stacks: list[dict[str, Any]] = []
-    everything: list[tuple[str, Resource, estimates.Estimate]] = []
+    everything: list[tuple[str, Resource, estimates.Estimate, bool]] = []
     not_priced: Counter = Counter()
     for path, stack in sorted(_stacks.items()):
-        total = round(sum(c.monthly_cost_usd or 0.0 for _, c in stack.priced), 2)
-        stacks.append({
+        fixed = round(sum(c.monthly_cost_usd or 0.0 for _, c in stack.priced), 2)
+        used = round(sum(c.monthly_cost_usd or 0.0 for _, c in stack.usage), 2)
+        entry: dict[str, Any] = {
             "name": where(path), "region": stack.region, "snapshot_date": snapshot_date(stack.region),
-            "resources_priced": len(stack.priced), "monthly_usd": total,
-        })
-        everything.extend((where(path), res, cost) for res, cost in stack.priced)
+            "resources_priced": len({id(r) for r, _ in stack.priced + stack.usage}),
+            "monthly_usd": round(fixed + used, 2),
+        }
+        if stack.usage:
+            entry.update(fixed_monthly_usd=fixed, usage_monthly_usd=used)
+        stacks.append(entry)
+        everything.extend((where(path), res, cost, False) for res, cost in stack.priced)
+        everything.extend((where(path), res, cost, True) for res, cost in stack.usage)
         not_priced.update(stack.not_priced)
-    top = sorted(everything, key=lambda item: (-(item[2].monthly_cost_usd or 0.0), item[0], item[1].name))
+    top = sorted(everything, key=lambda item: (-(item[2].monthly_cost_usd or 0.0), item[0], item[1].name, item[3]))
     savings = [f.monthly_savings_usd for f in findings if f.monthly_savings_usd]
-    used = sorted({s.region for s in _stacks.values()})
-    dates = [snapshot_date(r) for r in used]
-    return {
-        "region": ", ".join(used),  # one region, or every region the stacks use
+    used_regions = sorted({s.region for s in _stacks.values()})
+    dates = [snapshot_date(r) for r in used_regions]
+    fixed_total = round(sum(s.get("fixed_monthly_usd", s["monthly_usd"]) for s in stacks), 2)
+    usage_total = round(sum(s.get("usage_monthly_usd", 0.0) for s in stacks), 2)
+    basis = ("On-demand prices, 730 hours a month. Usage-based charges (data processed and "
+             "transferred, requests, storage growth) are not included.")
+    if _profile is not None:
+        basis = ("On-demand prices, 730 hours a month. Usage-based charges are included only where "
+                 f"the usage profile ({_profile.path or 'usage file'}) states the usage, and are "
+                 "shown apart as usage-assumed cost.")
+    out: dict[str, Any] = {
+        "region": ", ".join(used_regions),  # one region, or every region the stacks use
         # One region: its price list date. Several: each stack carries its own.
-        "snapshot_date": dates[0] if len(used) == 1 else None,
-        "basis": "On-demand prices, 730 hours a month. Usage-based charges (data processed and "
-                 "transferred, requests, storage growth) are not included.",
+        "snapshot_date": dates[0] if len(used_regions) == 1 else None,
+        "basis": basis,
         "stacks": stacks,
-        "total_monthly_usd": round(sum(s["monthly_usd"] for s in stacks), 2),
+        "total_monthly_usd": round(fixed_total + usage_total, 2),
+        "fixed_monthly_usd": fixed_total,
+        "usage_monthly_usd": usage_total,
         "top_resources": [
             {
                 "name": res.name, "type": res.source_type, "stack": stack,
                 "file": where(res.file) if res.file else stack, "line": res.line,
                 "monthly_usd": cost.monthly_cost_usd, "basis": cost.basis,
+                **({"usage_assumed": True} if usage else {}),
             }
-            for stack, res, cost in top[:TOP_N] if (cost.monthly_cost_usd or 0) > 0
+            for stack, res, cost, usage in top[:TOP_N] if (cost.monthly_cost_usd or 0) > 0
         ],
         "savings_monthly_usd": round(sum(savings), 2),
         "savings_findings": len(savings),
         "not_priced": dict(sorted(not_priced.items())),
+        # Every priced resource, for --compare-cost against this report and baseline snapshots.
+        "resources": [
+            {"stack": stack, "name": res.name, "type": res.source_type, "monthly_usd": cost.monthly_cost_usd,
+             **({"usage_assumed": True} if usage else {})}
+            for stack, res, cost, usage in sorted(everything, key=lambda i: (i[0], i[1].name, i[3]))
+        ],
     }
+    if _profile is not None:
+        out["usage_file"] = _profile.path
+    if _options.previous is not None:
+        out["diff"] = cost_diff.diff(_options.previous, out, _options.previous_source)
+    if _options.budget is not None and _options.budget.is_set():
+        out["budget"] = cost_diff.evaluate(_options.budget, out)
+    return out

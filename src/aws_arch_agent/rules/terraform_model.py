@@ -364,6 +364,8 @@ class _Block:
         self.references: frozenset[str] = frozenset()
         # The resource a `for_each = aws_s3_bucket.b` iterates over, or None.
         self.iterates: str | None = None
+        # One planned instance of a `count` block (see _expand_instances): it stands for itself.
+        self.expanded = False
 
     @property
     def address(self) -> str:
@@ -835,6 +837,7 @@ def _db(body: dict) -> dict:
         ("db_cluster_parameter_group_name", "DBClusterParameterGroupName"),
         ("allocated_storage", "AllocatedStorage"),
         ("max_allocated_storage", "MaxAllocatedStorage"),  # CF-RDS-015
+        ("storage_type", "StorageType"),
     ):
         _set(props, cf_key, body.get(tf_key))
     if "for_each" in body or "count" in body:  # how many Aurora members a block makes (CF-RDS-003)
@@ -973,6 +976,7 @@ def _vpc_endpoint(body: dict) -> dict:
     props: dict = {}
     _set(props, "ServiceName", _ref(body, "service_name"))
     _set(props, "VpcEndpointType", _v(body, "vpc_endpoint_type"))
+    _set(props, "SubnetIds", _ref(body, "subnet_ids"))  # one interface endpoint ENI per subnet
     return props
 
 
@@ -988,6 +992,8 @@ def _ebs_volume(body: dict) -> dict:
     _set(props, "SnapshotId", _ref(body, "snapshot_id"))
     _set(props, "VolumeType", _v(body, "type"))
     _set(props, "Size", _v(body, "size"))
+    _set(props, "Iops", _v(body, "iops"))
+    _set(props, "Throughput", _v(body, "throughput"))
     return props
 
 
@@ -1044,6 +1050,12 @@ def _kinesis_stream(body: dict) -> dict:
     elif type(encryption) is str and encryption.upper() == "KMS":
         props["StreamEncryption"] = {"EncryptionType": "KMS", "KeyId": _ref(body, "kms_key_id")}
     _set(props, "RetentionPeriodHours", _v(body, "retention_period"))
+    _set(props, "ShardCount", _v(body, "shard_count"))
+    if "stream_mode_details" in _dynamic_names(body):
+        props["StreamModeDetails"] = UNRESOLVED
+    elif _first_block(body, "stream_mode_details"):
+        props["StreamModeDetails"] = {
+            "StreamMode": _v(_first_block(body, "stream_mode_details"), "stream_mode")}
     return props
 
 
@@ -1064,7 +1076,18 @@ def _opensearch_domain(body: dict) -> dict:
         _set(config, "DedicatedMasterType", _v(cluster, "dedicated_master_type"))
         _set(config, "InstanceCount", _known(_v(cluster, "instance_count")))
         _set(config, "ZoneAwarenessEnabled", _known(_v(cluster, "zone_awareness_enabled")))
+        _set(config, "DedicatedMasterEnabled", _known(_v(cluster, "dedicated_master_enabled")))
+        _set(config, "DedicatedMasterCount", _known(_v(cluster, "dedicated_master_count")))
         props["ClusterConfig"] = config
+    ebs = _first_block(body, "ebs_options")
+    if "ebs_options" in dynamic:
+        props["EBSOptions"] = UNRESOLVED
+    elif ebs:
+        volume: dict = {}
+        _set(volume, "EBSEnabled", _v(ebs, "ebs_enabled"))
+        _set(volume, "VolumeSize", _v(ebs, "volume_size"))
+        _set(volume, "VolumeType", _v(ebs, "volume_type"))
+        props["EBSOptions"] = volume
     if "vpc_options" in dynamic:
         props["VPCOptions"] = UNRESOLVED
     elif _first_block(body, "vpc_options"):
@@ -1107,6 +1130,8 @@ def _redshift_cluster(body: dict) -> dict:
     _set(props, "ClusterParameterGroupName", _ref(body, "cluster_parameter_group_name"))
     _set(props, "MasterUsername", _v(body, "master_username"))
     _set(props, "DBName", _v(body, "database_name", "dev"))  # Redshift's default database
+    _set(props, "NodeType", _v(body, "node_type"))
+    _set(props, "NumberOfNodes", _v(body, "number_of_nodes"))
     # Older providers log from this block; aws_redshift_logging is read by _warehouse_findings.
     logging = _first_block(body, "logging")
     if "logging" in _dynamic_names(body) or _v(logging, "enable") is UNRESOLVED:
@@ -1176,6 +1201,9 @@ def _elasticache_replication_group(body: dict) -> dict:
     _set(props, "AutoMinorVersionUpgrade", _v(body, "auto_minor_version_upgrade"))
     _set(props, "EngineVersion", _v(body, "engine_version"))
     _set(props, "CacheSubnetGroupName", _ref(body, "subnet_group_name"))
+    _set(props, "NumCacheClusters", _v(body, "num_cache_clusters"))
+    _set(props, "NumNodeGroups", _v(body, "num_node_groups"))
+    _set(props, "ReplicasPerNodeGroup", _v(body, "replicas_per_node_group"))
     if body.get("auth_token") is not None:
         props["AuthToken"] = _OPAQUE  # only checked for presence: keep the secret out of the model
     return props
@@ -2246,6 +2274,7 @@ def _lambda(body: dict) -> dict:
     _set(props, "PackageType", _v(body, "package_type"))
     # Provider defaults: 3 second timeout, -1 (no reserved concurrency).
     _set(props, "Timeout", _v(body, "timeout", 3))
+    _set(props, "MemorySize", _v(body, "memory_size"))
     reserved = _v(body, "reserved_concurrent_executions", -1)
     if reserved not in (-1, "-1"):
         props["ReservedConcurrentExecutions"] = reserved
@@ -2655,11 +2684,21 @@ def _asg(body: dict) -> dict:
     _set(props, "HealthCheckType", _v(body, "health_check_type"))
     _set(props, "MinSize", _v(body, "min_size"))
     _set(props, "MaxSize", _v(body, "max_size"))
+    _set(props, "DesiredCapacity", _v(body, "desired_capacity"))
     _set(props, "TargetGroupARNs", _entries(_ref(body, "target_group_arns")))
     _set(props, "LoadBalancerNames", _entries(_ref(body, "load_balancers")))
     _set(props, "AvailabilityZones", _entries(_ref(body, "availability_zones")))
     _set(props, "VPCZoneIdentifier", _entries(_ref(body, "vpc_zone_identifier")))
     _set(props, "LaunchConfigurationName", _ref(body, "launch_configuration"))
+    if "launch_template" in _dynamic_names(body):
+        props["LaunchTemplate"] = UNRESOLVED
+    elif _first_block(body, "launch_template"):
+        template = _first_block(body, "launch_template")
+        launch: dict = {}
+        _set(launch, "LaunchTemplateId", _known(_ref(template, "id")))
+        _set(launch, "LaunchTemplateName", _known(_ref(template, "name")))
+        _set(launch, "Version", _known(_ref(template, "version")))
+        props["LaunchTemplate"] = launch
     mixed = _first_block(body, "mixed_instances_policy")
     if not mixed:
         return props
@@ -2857,6 +2896,7 @@ def _asg_link(body: dict) -> dict:
 def _elasticache_cluster(body: dict) -> dict:
     props: dict = {}
     _set(props, "CacheNodeType", _v(body, "node_type"))
+    _set(props, "NumCacheNodes", _v(body, "num_cache_nodes"))
     _set(props, "Engine", _v(body, "engine"))
     _set(props, "SnapshotRetentionLimit", _v(body, "snapshot_retention_limit"))
     _set(props, "AutoMinorVersionUpgrade", _v(body, "auto_minor_version_upgrade"))
@@ -2886,6 +2926,8 @@ def _ecs_service(body: dict) -> dict:
     props: dict = {}
     _set(props, "LaunchType", _v(body, "launch_type"))
     _set(props, "PlatformVersion", _v(body, "platform_version"))
+    _set(props, "DesiredCount", _v(body, "desired_count"))
+    _set(props, "TaskDefinition", _ref(body, "task_definition"))
     if "network_configuration" in _dynamic_names(body):
         props["NetworkConfiguration"] = UNRESOLVED
     else:
@@ -3418,6 +3460,8 @@ def _to_resource(block: _Block) -> Resource:
             key = "AccessLogSettings" if block.type == "aws_apigatewayv2_stage" else "AccessLogSetting"
             props[key] = UNRESOLVED
     clean, unresolved = _split_unresolved(props)
+    # A literal `count = 3` makes three; var/local, expressions and planned instances stay 1.
+    count = block.body.get("count")
     return Resource(
         type=canonical,
         name=block.address,
@@ -3428,6 +3472,7 @@ def _to_resource(block: _Block) -> Resource:
         unresolved=unresolved,
         policies=_lifecycle_policies(block.body),
         references=block.references,
+        count=count if type(count) is int and not block.expanded else 1,
     )
 
 
@@ -3727,6 +3772,7 @@ def _expand_instances(
                            block.file, block.line, block.data)
             clone.references = block.references
             clone.iterates = block.iterates
+            clone.expanded = True
             out.append(clone)
     return out
 

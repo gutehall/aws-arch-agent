@@ -243,6 +243,9 @@ class Resource:
     # Tags set for the whole stack that apply to this resource (Terraform provider
     # default_tags). None means they exist but cannot be read (from a variable).
     inherited_tags: dict[str, Any] | None = field(default_factory=dict)
+    # Terraform only: instances a literal `count = N` makes. A count from var/local or an
+    # expression, and each instance a plan expanded, stay 1. CloudFormation is always 1.
+    count: int = 1
 
 
 def resources_from_cf_template(

@@ -714,3 +714,244 @@ resource "aws_ecr_lifecycle_policy" "web" {
     ])
     found = _bucket_findings(tmp_path, load_plan_values(plan))
     assert found["CF-ECR-003"] == {'aws_ecr_repository.r["jobs"]'}
+
+
+COST_TF = """\
+resource "aws_db_instance" "db" {
+  allocated_storage = 100
+  storage_type      = "gp3"
+}
+resource "aws_ecs_service" "svc" {
+  desired_count   = 3
+  task_definition = aws_ecs_task_definition.task.arn
+}
+resource "aws_ecs_task_definition" "task" {
+  cpu                      = "512"
+  memory                   = "1024"
+  requires_compatibilities = ["FARGATE"]
+  runtime_platform {
+    cpu_architecture        = "ARM64"
+    operating_system_family = "LINUX"
+  }
+}
+resource "aws_opensearch_domain" "search" {
+  cluster_config {
+    instance_type            = "r6g.large.search"
+    instance_count           = 3
+    dedicated_master_enabled = true
+    dedicated_master_type    = "m6g.large.search"
+    dedicated_master_count   = 3
+  }
+  ebs_options {
+    ebs_enabled = true
+    volume_size = 100
+    volume_type = "gp3"
+  }
+}
+resource "aws_elasticache_cluster" "cache" {
+  node_type       = "cache.t4g.small"
+  num_cache_nodes = 2
+}
+resource "aws_elasticache_replication_group" "rg" {
+  node_type               = "cache.r7g.large"
+  num_cache_clusters      = 2
+  num_node_groups         = 3
+  replicas_per_node_group = 1
+}
+resource "aws_redshift_cluster" "dw" {
+  node_type       = "ra3.xlplus"
+  number_of_nodes = 2
+}
+resource "aws_kinesis_stream" "stream" {
+  shard_count = 4
+  stream_mode_details {
+    stream_mode = "PROVISIONED"
+  }
+}
+resource "aws_vpc_endpoint" "ep" {
+  service_name      = "com.amazonaws.eu-west-1.ecr.api"
+  vpc_endpoint_type = "Interface"
+  subnet_ids        = [aws_subnet.a.id, aws_subnet.b.id]
+}
+resource "aws_autoscaling_group" "asg" {
+  min_size             = 1
+  max_size             = 4
+  desired_capacity     = 2
+  launch_configuration = "legacy-lc"
+  launch_template {
+    id      = aws_launch_template.lt.id
+    version = "$Latest"
+  }
+}
+resource "aws_lambda_function" "fn" {
+  memory_size   = 1024
+  architectures = ["arm64"]
+}
+resource "aws_ebs_volume" "vol" {
+  type       = "gp3"
+  size       = 200
+  iops       = 6000
+  throughput = 250
+}
+"""
+
+
+def test_cost_attributes_map_to_cloudformation_shapes(tmp_path: Path) -> None:
+    (tmp_path / "main.tf").write_text(COST_TF, encoding="utf-8")
+    by_name = {r.name: r for r in resources_from_terraform(tmp_path)}
+
+    def props(name: str) -> dict:
+        assert by_name[name].unresolved == frozenset(), name
+        return by_name[name].properties
+
+    db = props("aws_db_instance.db")
+    assert (db["AllocatedStorage"], db["StorageType"]) == (100, "gp3")
+    svc = props("aws_ecs_service.svc")
+    assert svc["DesiredCount"] == 3
+    assert svc["TaskDefinition"] == "aws_ecs_task_definition.task.arn"
+    task = props("aws_ecs_task_definition.task")
+    assert (task["Cpu"], task["Memory"], task["RequiresCompatibilities"]) == ("512", "1024", ["FARGATE"])
+    assert task["RuntimePlatform"] == {"CpuArchitecture": "ARM64", "OperatingSystemFamily": "LINUX"}
+    search = props("aws_opensearch_domain.search")
+    assert search["ClusterConfig"] == {
+        "InstanceType": "r6g.large.search", "InstanceCount": 3, "DedicatedMasterEnabled": True,
+        "DedicatedMasterType": "m6g.large.search", "DedicatedMasterCount": 3,
+    }
+    assert search["EBSOptions"] == {"EBSEnabled": True, "VolumeSize": 100, "VolumeType": "gp3"}
+    cache = props("aws_elasticache_cluster.cache")
+    assert (cache["CacheNodeType"], cache["NumCacheNodes"]) == ("cache.t4g.small", 2)
+    rg = props("aws_elasticache_replication_group.rg")
+    assert rg["CacheNodeType"] == "cache.r7g.large"
+    assert (rg["NumCacheClusters"], rg["NumNodeGroups"], rg["ReplicasPerNodeGroup"]) == (2, 3, 1)
+    dw = props("aws_redshift_cluster.dw")
+    assert (dw["NodeType"], dw["NumberOfNodes"]) == ("ra3.xlplus", 2)
+    stream = props("aws_kinesis_stream.stream")
+    assert stream["ShardCount"] == 4
+    assert stream["StreamModeDetails"] == {"StreamMode": "PROVISIONED"}
+    ep = props("aws_vpc_endpoint.ep")
+    assert ep["ServiceName"] == "com.amazonaws.eu-west-1.ecr.api"
+    assert ep["VpcEndpointType"] == "Interface"
+    assert ep["SubnetIds"] == ["aws_subnet.a.id", "aws_subnet.b.id"]
+    asg = props("aws_autoscaling_group.asg")
+    assert (asg["MinSize"], asg["MaxSize"], asg["DesiredCapacity"]) == (1, 4, 2)
+    assert asg["LaunchConfigurationName"] == "legacy-lc"
+    assert asg["LaunchTemplate"] == {"LaunchTemplateId": "aws_launch_template.lt.id", "Version": "$Latest"}
+    fn = props("aws_lambda_function.fn")
+    assert (fn["MemorySize"], fn["Architectures"]) == (1024, ["arm64"])
+    vol = props("aws_ebs_volume.vol")
+    assert (vol["VolumeType"], vol["Size"], vol["Iops"], vol["Throughput"]) == ("gp3", 200, 6000, 250)
+
+
+def test_cost_attributes_from_var_or_dynamic_blocks_are_unresolved(tmp_path: Path) -> None:
+    (tmp_path / "main.tf").write_text(
+        """resource "aws_ecs_service" "svc" {
+  desired_count = var.tasks
+}
+resource "aws_kinesis_stream" "stream" {
+  shard_count = local.shards
+  dynamic "stream_mode_details" {
+    for_each = [1]
+    content {
+      stream_mode = "ON_DEMAND"
+    }
+  }
+}
+resource "aws_opensearch_domain" "search" {
+  cluster_config {
+    instance_type          = "r6g.large.search"
+    dedicated_master_count = var.masters
+  }
+  dynamic "ebs_options" {
+    for_each = [1]
+    content {
+      volume_size = 10
+    }
+  }
+}
+resource "aws_autoscaling_group" "asg" {
+  min_size = 1
+  max_size = 2
+  launch_template {
+    name    = "web"
+    version = var.lt_version
+  }
+}
+""",
+        encoding="utf-8",
+    )
+    by_name = {r.name: r for r in resources_from_terraform(tmp_path)}
+    assert "DesiredCount" in by_name["aws_ecs_service.svc"].unresolved
+    assert {"ShardCount", "StreamModeDetails"} <= by_name["aws_kinesis_stream.stream"].unresolved
+    search = by_name["aws_opensearch_domain.search"]
+    assert "EBSOptions" in search.unresolved
+    # One unknown cluster setting does not hide the instance type.
+    assert search.properties["ClusterConfig"]["InstanceType"] == "r6g.large.search"
+    assert search.properties["ClusterConfig"]["DedicatedMasterCount"] == {"Fn::Unresolved": "terraform"}
+    asg = by_name["aws_autoscaling_group.asg"]
+    assert asg.properties["LaunchTemplate"] == {
+        "LaunchTemplateName": "web", "Version": {"Fn::Unresolved": "terraform"}}
+
+
+def test_literal_count_sets_resource_count(tmp_path: Path) -> None:
+    (tmp_path / "main.tf").write_text(
+        """resource "aws_instance" "literal" {
+  count         = 3
+  instance_type = "t3.micro"
+}
+resource "aws_instance" "zero" {
+  count = 0
+}
+resource "aws_instance" "single" {
+  instance_type = "t3.micro"
+}
+resource "aws_instance" "from_var" {
+  count = var.n
+}
+resource "aws_instance" "from_local" {
+  count = local.n
+}
+resource "aws_instance" "from_length" {
+  count = length(aws_subnet.private)
+}
+resource "aws_instance" "conditional" {
+  count = true ? 2 : 0
+}
+resource "aws_instance" "each" {
+  for_each = toset(["a", "b"])
+}
+""",
+        encoding="utf-8",
+    )
+    counts = {r.name: r.count for r in resources_from_terraform(tmp_path)}
+    assert counts == {
+        "aws_instance.literal": 3, "aws_instance.zero": 0, "aws_instance.single": 1,
+        "aws_instance.from_var": 1, "aws_instance.from_local": 1, "aws_instance.from_length": 1,
+        "aws_instance.conditional": 1, "aws_instance.each": 1,
+    }
+
+
+def test_literal_count_in_tf_json(tmp_path: Path) -> None:
+    (tmp_path / "main.tf.json").write_text(json.dumps({"resource": {"aws_instance": {
+        "fleet": {"count": 4, "instance_type": "t3.micro"},
+        "dynamic": {"count": "${var.n}"},
+    }}}), encoding="utf-8")
+    counts = {r.name: r.count for r in resources_from_terraform(tmp_path)}
+    assert counts == {"aws_instance.fleet": 4, "aws_instance.dynamic": 1}
+
+
+def test_planned_count_instances_each_count_once(tmp_path: Path) -> None:
+    (tmp_path / "main.tf").write_text(
+        """resource "aws_instance" "web" {
+  count         = 2
+  instance_type = "t3.micro"
+}
+""",
+        encoding="utf-8",
+    )
+    plan = _plan(tmp_path, [
+        _res("aws_instance.web[0]", {"instance_type": "t3.micro"}, index=0),
+        _res("aws_instance.web[1]", {"instance_type": "t3.micro"}, index=1),
+    ])
+    resources = resources_from_terraform(tmp_path, plan_values=load_plan_values(plan))
+    counts = {r.name: r.count for r in resources}
+    assert counts == {"aws_instance.web[0]": 1, "aws_instance.web[1]": 1}

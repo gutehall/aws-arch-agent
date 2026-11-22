@@ -93,3 +93,52 @@ def test_synth_fixture_findings_are_stable() -> None:
         assert f.file == "cdk.out/MinimalStack.template.json"
         if f.evidence and f.evidence.endswith(")"):
             assert f.evidence.rsplit("(", 1)[1].rstrip(")") in cf_types
+
+
+def test_cf_cost_properties_pass_through_and_count_is_one(tmp_path: Path) -> None:
+    """The cost properties Terraform maps arrive from CloudFormation as written."""
+    path = tmp_path / "cost.template.json"
+    props = {
+        "AWS::RDS::DBInstance": {"AllocatedStorage": "100", "StorageType": "gp3"},
+        "AWS::ECS::Service": {"DesiredCount": 3, "TaskDefinition": {"Ref": "Task"}},
+        "AWS::ECS::TaskDefinition": {
+            "Cpu": "512", "Memory": "1024", "RequiresCompatibilities": ["FARGATE"],
+            "RuntimePlatform": {"CpuArchitecture": "ARM64", "OperatingSystemFamily": "LINUX"},
+        },
+        "AWS::OpenSearchService::Domain": {
+            "ClusterConfig": {
+                "InstanceType": "r6g.large.search", "InstanceCount": 3,
+                "DedicatedMasterEnabled": True, "DedicatedMasterType": "m6g.large.search",
+                "DedicatedMasterCount": 3,
+            },
+            "EBSOptions": {"EBSEnabled": True, "VolumeSize": 100, "VolumeType": "gp3"},
+        },
+        "AWS::ElastiCache::CacheCluster": {"CacheNodeType": "cache.t4g.small", "NumCacheNodes": 2},
+        "AWS::ElastiCache::ReplicationGroup": {
+            "CacheNodeType": "cache.r7g.large", "NumCacheClusters": 2,
+            "NumNodeGroups": 3, "ReplicasPerNodeGroup": 1,
+        },
+        "AWS::Redshift::Cluster": {"NodeType": "ra3.xlplus", "NumberOfNodes": 2},
+        "AWS::Kinesis::Stream": {"ShardCount": 4, "StreamModeDetails": {"StreamMode": "PROVISIONED"}},
+        "AWS::EC2::VPCEndpoint": {
+            "ServiceName": "com.amazonaws.eu-west-1.ecr.api", "VpcEndpointType": "Interface",
+            "SubnetIds": [{"Ref": "A"}, {"Ref": "B"}],
+        },
+        "AWS::AutoScaling::AutoScalingGroup": {
+            "MinSize": "1", "MaxSize": "4", "DesiredCapacity": "2",
+            "LaunchTemplate": {"LaunchTemplateId": {"Ref": "Lt"}, "Version": "1"},
+            "LaunchConfigurationName": "legacy-lc",
+        },
+        "AWS::Lambda::Function": {"MemorySize": 1024, "Architectures": ["arm64"]},
+        "AWS::EC2::Volume": {"VolumeType": "gp3", "Size": 200, "Iops": 6000, "Throughput": 250},
+    }
+    doc = {"Resources": {
+        f"R{i}": {"Type": rtype, "Properties": body} for i, rtype, body in
+        ((i, t, b) for i, (t, b) in enumerate(props.items()))
+    }}
+    resources = resources_from_cf_template(path, doc)
+    assert len(resources) == len(props)
+    for res in resources:
+        assert res.type == CF_TYPE_TO_CANONICAL[res.source_type]
+        assert res.properties == props[res.source_type]
+        assert res.count == 1

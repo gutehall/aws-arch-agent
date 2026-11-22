@@ -89,6 +89,7 @@ def render_html(
         files_scanned=ctx.files_scanned,
         prices=price_line(ctx),
         cost=ctx.notes.get("cost") if isinstance(ctx.notes.get("cost"), dict) else None,
+        cost_hint=ctx.notes.get("cost_hint"),
         generated=(generated or datetime.now()).strftime("%Y-%m-%d %H:%M"),
         severities=SEVERITIES,
         counts=counts,

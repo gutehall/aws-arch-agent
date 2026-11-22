@@ -1,0 +1,434 @@
+{
+ "note": "Offline test prices: a few AWS on-demand prices the tests use (AWS Price List, 2026-11). Not shipped.",
+ "regions": {
+  "eu-central-1": {
+   "prices": {
+    "ebs:gp2": [
+     0.119,
+     "GB-Mo"
+    ],
+    "ebs:gp3": [
+     0.0952,
+     "GB-Mo"
+    ]
+   },
+   "published": {
+    "AmazonEC2": "2026-11-14"
+   }
+  },
+  "eu-north-1": {
+   "prices": {
+    "dynamodb:rcu-hour": [
+     0.00014,
+     "ReadCapacityUnit-Hrs"
+    ],
+    "dynamodb:wcu-hour": [
+     0.000698,
+     "WriteCapacityUnit-Hrs"
+    ],
+    "ebs:gp2": [
+     0.1045,
+     "GB-Mo"
+    ],
+    "ebs:gp3": [
+     0.0836,
+     "GB-Mo"
+    ],
+    "ec2:m5.large": [
+     0.102,
+     "Hrs"
+    ],
+    "ec2:m7g.large": [
+     0.0867,
+     "Hrs"
+    ],
+    "ec2:m7g.medium": [
+     0.0434,
+     "Hrs"
+    ],
+    "eip:in-use-hour": [
+     0.005,
+     "Hrs"
+    ],
+    "nat:gb": [
+     0.046,
+     "GB"
+    ],
+    "nat:hour": [
+     0.046,
+     "Hrs"
+    ],
+    "rds:postgres:multi-az:db.m5.large": [
+     0.374,
+     "Hrs"
+    ]
+   },
+   "published": {
+    "AmazonDynamoDB": "2026-11-11",
+    "AmazonEC2": "2026-11-14",
+    "AmazonRDS": "2026-11-13",
+    "AmazonVPC": "2026-11-05"
+   }
+  },
+  "eu-west-1": {
+   "prices": {
+    "ebs:gp2": [
+     0.11,
+     "GB-Mo"
+    ],
+    "ebs:gp3": [
+     0.088,
+     "GB-Mo"
+    ]
+   },
+   "published": {
+    "AmazonEC2": "2026-11-14"
+   }
+  },
+  "us-east-1": {
+   "prices": {
+    "dynamodb:rcu-hour": [
+     0.00013,
+     "ReadCapacityUnit-Hrs"
+    ],
+    "dynamodb:wcu-hour": [
+     0.00065,
+     "WriteCapacityUnit-Hrs"
+    ],
+    "ebs:gp2": [
+     0.1,
+     "GB-Mo"
+    ],
+    "ebs:gp3": [
+     0.08,
+     "GB-Mo"
+    ],
+    "ec2:c4.2xlarge": [
+     0.398,
+     "Hrs"
+    ],
+    "ec2:c4.4xlarge": [
+     0.796,
+     "Hrs"
+    ],
+    "ec2:c7g.2xlarge": [
+     0.29,
+     "Hrs"
+    ],
+    "ec2:c7g.4xlarge": [
+     0.58,
+     "Hrs"
+    ],
+    "ec2:c7g.large": [
+     0.0725,
+     "Hrs"
+    ],
+    "ec2:c7g.xlarge": [
+     0.145,
+     "Hrs"
+    ],
+    "ec2:c7i.2xlarge": [
+     0.357,
+     "Hrs"
+    ],
+    "ec2:c7i.4xlarge": [
+     0.714,
+     "Hrs"
+    ],
+    "ec2:g4dn.xlarge": [
+     0.526,
+     "Hrs"
+    ],
+    "ec2:g5.xlarge": [
+     1.006,
+     "Hrs"
+    ],
+    "ec2:i3.large": [
+     0.156,
+     "Hrs"
+    ],
+    "ec2:inf2.xlarge": [
+     0.7582,
+     "Hrs"
+    ],
+    "ec2:m4.2xlarge": [
+     0.4,
+     "Hrs"
+    ],
+    "ec2:m4.4xlarge": [
+     0.8,
+     "Hrs"
+    ],
+    "ec2:m4.large": [
+     0.1,
+     "Hrs"
+    ],
+    "ec2:m5.2xlarge": [
+     0.384,
+     "Hrs"
+    ],
+    "ec2:m5.4xlarge": [
+     0.768,
+     "Hrs"
+    ],
+    "ec2:m5.large": [
+     0.096,
+     "Hrs"
+    ],
+    "ec2:m5.xlarge": [
+     0.192,
+     "Hrs"
+    ],
+    "ec2:m5d.large": [
+     0.113,
+     "Hrs"
+    ],
+    "ec2:m5d.xlarge": [
+     0.226,
+     "Hrs"
+    ],
+    "ec2:m6g.large": [
+     0.077,
+     "Hrs"
+    ],
+    "ec2:m6g.medium": [
+     0.0385,
+     "Hrs"
+    ],
+    "ec2:m7g.2xlarge": [
+     0.3264,
+     "Hrs"
+    ],
+    "ec2:m7g.4xlarge": [
+     0.6528,
+     "Hrs"
+    ],
+    "ec2:m7g.large": [
+     0.0816,
+     "Hrs"
+    ],
+    "ec2:m7g.medium": [
+     0.0408,
+     "Hrs"
+    ],
+    "ec2:m7gd.large": [
+     0.1068,
+     "Hrs"
+    ],
+    "ec2:m7gd.xlarge": [
+     0.2136,
+     "Hrs"
+    ],
+    "ec2:m7i.2xlarge": [
+     0.4032,
+     "Hrs"
+    ],
+    "ec2:m7i.4xlarge": [
+     0.8064,
+     "Hrs"
+    ],
+    "ec2:m7i.large": [
+     0.1008,
+     "Hrs"
+    ],
+    "ec2:p4d.24xlarge": [
+     21.957642,
+     "Hrs"
+    ],
+    "ec2:p5.48xlarge": [
+     55.04,
+     "Hrs"
+    ],
+    "ec2:p5.4xlarge": [
+     6.88,
+     "Hrs"
+    ],
+    "ec2:r6i.large": [
+     0.126,
+     "Hrs"
+    ],
+    "ec2:r7g.large": [
+     0.1071,
+     "Hrs"
+    ],
+    "ec2:r7g.medium": [
+     0.0536,
+     "Hrs"
+    ],
+    "ec2:t2.micro": [
+     0.0116,
+     "Hrs"
+    ],
+    "ec2:t2.nano": [
+     0.0058,
+     "Hrs"
+    ],
+    "ec2:t3.large": [
+     0.0832,
+     "Hrs"
+    ],
+    "ec2:t3.medium": [
+     0.0416,
+     "Hrs"
+    ],
+    "ec2:t3.micro": [
+     0.0104,
+     "Hrs"
+    ],
+    "ec2:t3.nano": [
+     0.0052,
+     "Hrs"
+    ],
+    "ec2:t4g.large": [
+     0.0672,
+     "Hrs"
+    ],
+    "ec2:t4g.medium": [
+     0.0336,
+     "Hrs"
+    ],
+    "ec2:t4g.micro": [
+     0.0084,
+     "Hrs"
+    ],
+    "ec2:t4g.nano": [
+     0.0042,
+     "Hrs"
+    ],
+    "ec2:trn1.2xlarge": [
+     1.34375,
+     "Hrs"
+    ],
+    "ec2:trn1.32xlarge": [
+     21.5,
+     "Hrs"
+    ],
+    "eip:idle-hour": [
+     0.005,
+     "Hrs"
+    ],
+    "eip:in-use-hour": [
+     0.005,
+     "Hrs"
+    ],
+    "nat:gb": [
+     0.045,
+     "GB"
+    ],
+    "nat:hour": [
+     0.045,
+     "Hrs"
+    ],
+    "rds:aurora-postgresql:single-az:db.r6g.2xlarge": [
+     1.038,
+     "Hrs"
+    ],
+    "rds:aurora-postgresql:single-az:db.r6g.large": [
+     0.26,
+     "Hrs"
+    ],
+    "rds:aurora-postgresql:single-az:db.r6g.xlarge": [
+     0.519,
+     "Hrs"
+    ],
+    "rds:mysql:single-az:db.m5.2xlarge": [
+     0.684,
+     "Hrs"
+    ],
+    "rds:mysql:single-az:db.m5.4xlarge": [
+     1.368,
+     "Hrs"
+    ],
+    "rds:mysql:single-az:db.m5.large": [
+     0.171,
+     "Hrs"
+    ],
+    "rds:mysql:single-az:db.t2.micro": [
+     0.017,
+     "Hrs"
+    ],
+    "rds:mysql:single-az:db.t3.micro": [
+     0.017,
+     "Hrs"
+    ],
+    "rds:mysql:single-az:db.t4g.micro": [
+     0.016,
+     "Hrs"
+    ],
+    "rds:postgres:multi-az:db.m5.2xlarge": [
+     1.424,
+     "Hrs"
+    ],
+    "rds:postgres:multi-az:db.m5.large": [
+     0.356,
+     "Hrs"
+    ],
+    "rds:postgres:multi-az:db.m5.xlarge": [
+     0.712,
+     "Hrs"
+    ],
+    "rds:postgres:multi-az:db.r6g.2xlarge": [
+     1.798,
+     "Hrs"
+    ],
+    "rds:postgres:multi-az:db.r6g.4xlarge": [
+     3.597,
+     "Hrs"
+    ],
+    "rds:postgres:single-az:db.m4.large": [
+     0.182,
+     "Hrs"
+    ],
+    "rds:postgres:single-az:db.m5.2xlarge": [
+     0.712,
+     "Hrs"
+    ],
+    "rds:postgres:single-az:db.m5.xlarge": [
+     0.356,
+     "Hrs"
+    ],
+    "rds:postgres:single-az:db.m6i.large": [
+     0.178,
+     "Hrs"
+    ],
+    "rds:postgres:single-az:db.m7g.large": [
+     0.168,
+     "Hrs"
+    ],
+    "rds:postgres:single-az:db.r5.large": [
+     0.25,
+     "Hrs"
+    ],
+    "rds:postgres:single-az:db.r5.xlarge": [
+     0.5,
+     "Hrs"
+    ],
+    "rds:postgres:single-az:db.t3.micro": [
+     0.018,
+     "Hrs"
+    ]
+   },
+   "published": {
+    "AmazonDynamoDB": "2026-11-11",
+    "AmazonEC2": "2026-11-14",
+    "AmazonRDS": "2026-11-13",
+    "AmazonVPC": "2026-11-05"
+   }
+  },
+  "us-west-2": {
+   "prices": {
+    "ebs:gp2": [
+     0.1,
+     "GB-Mo"
+    ],
+    "ebs:gp3": [
+     0.08,
+     "GB-Mo"
+    ]
+   },
+   "published": {
+    "AmazonEC2": "2026-11-14"
+   }
+  }
+ }
+}
