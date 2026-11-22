@@ -1,6 +1,7 @@
 """Read CloudFormation templates: short-tag YAML, JSON, and real-template detection."""
 from __future__ import annotations
 
+import bisect
 import json
 import re
 from pathlib import Path
@@ -61,6 +62,100 @@ def parse_template_text(path: Path, text: str) -> Any:
         except ValueError:
             pass
     return load_cfn_yaml(text)
+
+
+_JSON_WS = re.compile(r"[ \t\n\r]*")
+
+
+def _resource_lines_json(text: str) -> dict[str, int]:
+    """1-based line of each logical ID under the top-level "Resources" object of JSON text.
+
+    Walks only the top-level object and the Resources object; every other value is
+    skipped with raw_decode. Returns {} when the text is not shaped as expected.
+    """
+    decoder = json.JSONDecoder()
+    newlines = [i for i, ch in enumerate(text) if ch == "\n"]
+
+    def line_at(pos: int) -> int:
+        return bisect.bisect_right(newlines, pos) + 1
+
+    def skip(pos: int) -> int:
+        return _JSON_WS.match(text, pos).end()  # type: ignore[union-attr]
+
+    def keys(pos: int, on_key: Any) -> int:
+        """Walk the object starting at pos; call on_key(key, key_pos, value_pos); return its end."""
+        pos = skip(pos)
+        if text[pos:pos + 1] != "{":
+            raise ValueError("not an object")
+        pos = skip(pos + 1)
+        if text[pos:pos + 1] == "}":
+            return pos + 1
+        while True:
+            if text[pos:pos + 1] != '"':
+                raise ValueError("expected a key")
+            key, end = json.decoder.scanstring(text, pos + 1)  # type: ignore[attr-defined]
+            end = skip(end)
+            if text[end:end + 1] != ":":
+                raise ValueError("expected ':'")
+            value_pos = skip(end + 1)
+            pos = skip(on_key(key, pos, value_pos))
+            if text[pos:pos + 1] == ",":
+                pos = skip(pos + 1)
+                continue
+            if text[pos:pos + 1] == "}":
+                return pos + 1
+            raise ValueError("expected ',' or '}'")
+
+    lines: dict[str, int] = {}
+
+    def resource(key: str, key_pos: int, value_pos: int) -> int:
+        lines[key] = line_at(key_pos)
+        return decoder.raw_decode(text, value_pos)[1]
+
+    def top(key: str, key_pos: int, value_pos: int) -> int:
+        if key == "Resources" and text[value_pos:value_pos + 1] == "{":
+            lines.clear()  # a duplicate key wins, as json.loads keeps the last one
+            return keys(value_pos, resource)
+        return decoder.raw_decode(text, value_pos)[1]
+
+    try:
+        keys(0, top)
+    except (ValueError, IndexError):
+        return {}
+    return lines
+
+
+def _load_yaml_with_lines(text: str) -> tuple[Any, dict[str, int]]:
+    """Compose CloudFormation YAML once: the document, and each Resources key's 1-based line."""
+    loader = CfnLoader(text)
+    try:
+        node = loader.get_single_node()
+        doc = loader.construct_document(node) if node is not None else None
+    finally:
+        loader.dispose()
+    lines: dict[str, int] = {}
+    if isinstance(node, yaml.MappingNode):
+        for key_node, value_node in node.value:
+            if getattr(key_node, "value", None) == "Resources" and isinstance(value_node, yaml.MappingNode):
+                lines = {
+                    str(k.value): k.start_mark.line + 1
+                    for k, _ in value_node.value
+                    if isinstance(k, yaml.ScalarNode)
+                }
+    return doc, lines
+
+
+def parse_template_with_lines(path: Path, text: str) -> tuple[Any, dict[str, int]]:
+    """Parse template text like parse_template_text, plus the 1-based line of each logical ID
+    under Resources. Lines are best effort: a resource the scan cannot place is left out."""
+    if path.suffix.lower() == ".json":
+        return json.loads(text), _resource_lines_json(text)
+    if text.lstrip().startswith("{"):
+        try:
+            return json.loads(text), _resource_lines_json(text)
+        except ValueError:
+            pass
+    return _load_yaml_with_lines(text)
 
 
 def is_cf_template(path: Path) -> bool:

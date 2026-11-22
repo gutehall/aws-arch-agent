@@ -3,119 +3,119 @@
     "id": "CF-ALARM-001",
     "severity": "Low",
     "file": "stack.yaml",
-    "line": null,
+    "line": 17,
     "evidence": "Database (AWS::RDS::DBInstance)"
   },
   {
     "id": "CF-BAK-005",
     "severity": "Low",
     "file": "stack.yaml",
-    "line": null,
+    "line": 17,
     "evidence": "Database (AWS::RDS::DBInstance)"
   },
   {
     "id": "CF-DEL-001",
     "severity": "Medium",
     "file": "stack.yaml",
-    "line": null,
+    "line": 13,
     "evidence": "DataBucket (AWS::S3::Bucket)"
   },
   {
     "id": "CF-DEL-001",
     "severity": "Medium",
     "file": "stack.yaml",
-    "line": null,
+    "line": 17,
     "evidence": "Database (AWS::RDS::DBInstance)"
   },
   {
     "id": "CF-FL-001",
     "severity": "Low",
     "file": "stack.yaml",
-    "line": null,
+    "line": 42,
     "evidence": "Template has 1 VPC(s) and 0 FlowLog(s)"
   },
   {
     "id": "CF-LAM-006",
     "severity": "Low",
     "file": "stack.yaml",
-    "line": null,
+    "line": 34,
     "evidence": "Worker (AWS::Lambda::Function)"
   },
   {
     "id": "CF-NACL-001",
     "severity": "Low",
     "file": "stack.yaml",
-    "line": null,
+    "line": 42,
     "evidence": "Network (AWS::EC2::VPC)"
   },
   {
     "id": "CF-RDS-003",
     "severity": "Medium",
     "file": "stack.yaml",
-    "line": null,
+    "line": 17,
     "evidence": "Database (AWS::RDS::DBInstance)"
   },
   {
     "id": "CF-RDS-007",
     "severity": "Low",
     "file": "stack.yaml",
-    "line": null,
+    "line": 17,
     "evidence": "Database (AWS::RDS::DBInstance)"
   },
   {
     "id": "CF-RDS-010",
     "severity": "Low",
     "file": "stack.yaml",
-    "line": null,
+    "line": 17,
     "evidence": "Database (AWS::RDS::DBInstance)"
   },
   {
     "id": "CF-S3-001",
     "severity": "High",
     "file": "stack.yaml",
-    "line": null,
+    "line": 13,
     "evidence": "DataBucket (AWS::S3::Bucket)"
   },
   {
     "id": "CF-S3-003",
     "severity": "Low",
     "file": "stack.yaml",
-    "line": null,
+    "line": 13,
     "evidence": "DataBucket (AWS::S3::Bucket)"
   },
   {
     "id": "CF-S3-004",
     "severity": "Low",
     "file": "stack.yaml",
-    "line": null,
+    "line": 13,
     "evidence": "DataBucket (AWS::S3::Bucket)"
   },
   {
     "id": "CF-S3-005",
     "severity": "Medium",
     "file": "stack.yaml",
-    "line": null,
+    "line": 13,
     "evidence": "DataBucket (AWS::S3::Bucket)"
   },
   {
     "id": "CF-S3-006",
     "severity": "Low",
     "file": "stack.yaml",
-    "line": null,
+    "line": 13,
     "evidence": "DataBucket (AWS::S3::Bucket)"
   },
   {
     "id": "CF-SQS-002",
     "severity": "Low",
     "file": "stack.yaml",
-    "line": null,
+    "line": 25,
     "evidence": "DeadLetters (AWS::SQS::Queue)"
   },
   {
     "id": "CF-VPC-001",
     "severity": "Low",
     "file": "stack.yaml",
-    "line": null,
+    "line": 42,
     "evidence": "Template has 1 VPC(s) and 0 VPCEndpoint(s)"
   },
   {

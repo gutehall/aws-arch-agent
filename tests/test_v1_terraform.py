@@ -300,3 +300,123 @@ def test_tf_plan_data_source_value_reaches_the_check(tmp_path: Path) -> None:
     }), encoding="utf-8")
     _r, _c, findings, _w = analyze_v1(tmp_path, use_llm=False, tf_plan=plan)
     assert any(f.id == "CF-RDS-001" for f in findings)
+
+
+def _module_repo(tmp_path: Path) -> None:
+    """Root calls ./modules/db twice; the child calls ./inner. Encryption comes from var.enc."""
+    (tmp_path / "main.tf").write_text(
+        'module "a" {\n  source = "./modules/db"\n  enc    = false\n}\n'
+        'module "b" {\n  source = "./modules/db"\n  enc    = var.b_enc\n}\n',
+        encoding="utf-8",
+    )
+    db = tmp_path / "modules" / "db"
+    (db / "inner").mkdir(parents=True)
+    (db / "main.tf").write_text(
+        'variable "enc" {}\n'
+        'resource "aws_db_instance" "db" {\n  storage_encrypted = var.enc\n}\n'
+        'module "inner" {\n  source = "./inner"\n  enc    = var.enc\n}\n',
+        encoding="utf-8",
+    )
+    (db / "inner" / "main.tf").write_text(
+        'variable "enc" {}\n'
+        'resource "aws_db_instance" "inner" {\n  storage_encrypted = var.enc\n}\n',
+        encoding="utf-8",
+    )
+
+
+def _module_plan(path: Path, a_enc: bool, b_enc: bool) -> Path:
+    def module(address: str, enc: bool) -> dict:
+        db = lambda module, name: {  # noqa: E731
+            "address": f"{module}.aws_db_instance.{name}", "mode": "managed",
+            "values": {"storage_encrypted": enc},
+        }
+        inner = f"{address}.module.inner"
+        return {"address": address, "resources": [db(address, "db")], "child_modules": [
+            {"address": inner, "resources": [db(inner, "inner")]}
+        ]}
+    path.write_text(json.dumps({"planned_values": {"root_module": {
+        "resources": [], "child_modules": [module("module.a", a_enc), module("module.b", b_enc)],
+    }}}), encoding="utf-8")
+    return path
+
+
+def _rds(findings: list) -> list[tuple[str, int]]:
+    return sorted((f.file, f.line) for f in findings if f.id == "CF-RDS-001")
+
+
+def test_tf_plan_fills_var_in_nested_child_modules(tmp_path: Path) -> None:
+    _module_repo(tmp_path)
+    _r, _c, findings, warnings = analyze_v1(tmp_path, use_llm=False)
+    assert _rds(findings) == []  # var.enc is unknown from HCL alone
+    plan = _module_plan(tmp_path / "plan.json", a_enc=False, b_enc=True)
+    _r, ctx, findings, warnings = analyze_v1(tmp_path, use_llm=False, tf_plan=plan)
+    assert warnings == []
+    assert ctx.notes["terraform_child_modules"] == ["modules/db", "modules/db/inner"]
+    # module.a (and module.a.module.inner) is unencrypted; module.b is fine.
+    assert _rds(findings) == [("modules/db/inner/main.tf", 2), ("modules/db/main.tf", 2)]
+
+
+def test_tf_plan_child_called_twice_reports_a_shared_finding_once(tmp_path: Path) -> None:
+    _module_repo(tmp_path)
+    plan = _module_plan(tmp_path / "plan.json", a_enc=False, b_enc=False)
+    _r, _c, findings, _w = analyze_v1(tmp_path, use_llm=False, tf_plan=plan)
+    assert _rds(findings) == [("modules/db/inner/main.tf", 2), ("modules/db/main.tf", 2)]
+    plan = _module_plan(tmp_path / "plan.json", a_enc=True, b_enc=True)
+    _r, _c, findings, _w = analyze_v1(tmp_path, use_llm=False, tf_plan=plan)
+    assert _rds(findings) == []
+
+
+def test_tf_plan_child_modules_on_the_v2_terraform_path(tmp_path: Path) -> None:
+    from aws_arch_agent.agent.v2_graph import analyze_v2
+
+    _module_repo(tmp_path)
+    plan = _module_plan(tmp_path / "plan.json", a_enc=True, b_enc=False)
+    _r, _c, findings, _w = analyze_v2(
+        tmp_path, use_llm=False, skip_synth=True, iac="terraform", tf_plan=plan
+    )
+    assert _rds(findings) == [("modules/db/inner/main.tf", 2), ("modules/db/main.tf", 2)]
+
+
+def test_tf_plan_expands_looped_module_call(tmp_path: Path) -> None:
+    (tmp_path / "main.tf").write_text(
+        'module "db" {\n  source = "./db"\n  count  = 2\n  enc    = count.index == 0\n}\n',
+        encoding="utf-8",
+    )
+    (tmp_path / "db").mkdir()
+    (tmp_path / "db" / "main.tf").write_text(
+        'variable "enc" {}\nresource "aws_db_instance" "db" {\n  storage_encrypted = var.enc\n}\n',
+        encoding="utf-8",
+    )
+    _r, _c, findings, warnings = analyze_v1(tmp_path, use_llm=False)
+    assert any("module.db uses count or for_each" in w for w in warnings)
+    assert _rds(findings) == []
+    plan = tmp_path / "plan.json"
+    plan.write_text(json.dumps({"planned_values": {"root_module": {"child_modules": [
+        {"address": f"module.db[{i}]", "resources": [{
+            "address": f"module.db[{i}].aws_db_instance.db", "mode": "managed",
+            "values": {"storage_encrypted": i == 0},
+        }]} for i in (0, 1)
+    ]}}}), encoding="utf-8")
+    _r, _c, findings, warnings = analyze_v1(tmp_path, use_llm=False, tf_plan=plan)
+    assert warnings == []
+    assert _rds(findings) == [("db/main.tf", 2)]
+
+
+def test_tf_plan_for_each_buckets_with_split_parts(tmp_path: Path) -> None:
+    (tmp_path / "main.tf").write_text(
+        'resource "aws_s3_bucket" "b" {\n  for_each = var.names\n  bucket   = each.value\n}\n'
+        'resource "aws_s3_bucket_public_access_block" "p" {\n  for_each = aws_s3_bucket.b\n'
+        '  bucket                  = each.value.id\n  block_public_acls       = true\n'
+        '  block_public_policy     = true\n  ignore_public_acls      = true\n'
+        '  restrict_public_buckets = true\n}\n',
+        encoding="utf-8",
+    )
+    res = lambda address, values: {"address": address, "mode": "managed", "values": values}  # noqa: E731
+    plan = _write_plan(tmp_path / "plan.json", [
+        res('aws_s3_bucket.b["logs"]', {"bucket": "logs"}),
+        res('aws_s3_bucket.b["data"]', {"bucket": "data"}),
+        res('aws_s3_bucket_public_access_block.p["logs"]', {}),
+    ])
+    _r, _c, findings, _w = analyze_v1(tmp_path, use_llm=False, tf_plan=plan)
+    hits = {f.evidence.split(" ")[0] for f in findings if f.id == "CF-S3-001"}
+    assert hits == {'aws_s3_bucket.b["data"]'}

@@ -127,8 +127,13 @@ TF_TYPE_TO_CANONICAL: dict[str, str] = {
     "aws_sagemaker_endpoint_configuration": "sagemaker_endpoint_config",
     "aws_sagemaker_endpoint": "sagemaker_endpoint",
     "aws_sagemaker_monitoring_schedule": "sagemaker_monitoring_schedule",
+    "aws_sagemaker_domain": "sagemaker_domain",
+    "aws_sagemaker_feature_group": "sagemaker_feature_group",
+    "aws_sagemaker_model": "sagemaker_model",
+    "aws_sagemaker_model_package_group": "sagemaker_model_package_group",
     "aws_bedrock_model_invocation_logging_configuration": "bedrock_model_invocation_logging",
     "aws_bedrockagent_agent": "bedrock_agent",
+    "aws_bedrockagent_agent_alias": "bedrock_agent_alias",
     "aws_bedrock_guardrail": "bedrock_guardrail",
     "aws_bedrockagent_knowledge_base": "bedrock_knowledge_base",
     "aws_bedrockagent_prompt": "bedrock_prompt",
@@ -231,10 +236,13 @@ _S3_PARTS: dict[str, str] = {
 
 # var/local are module inputs; each/count/self differ per instance. None is known statically.
 _UNRESOLVED_REF = re.compile(r"\b(?:var|local|each|count|self)\.[A-Za-z_]")
-_BUCKET_REF = re.compile(r"\baws_s3_bucket\.([A-Za-z0-9_-]+)\.")
-_ECR_REF = re.compile(r"\baws_ecr_repository\.([A-Za-z0-9_-]+)\.")
+# aws_s3_bucket.b.id, or one instance of it: aws_s3_bucket.b["logs"].id, aws_s3_bucket.b[0].id
+_BUCKET_REF = re.compile(r'\baws_s3_bucket\.([A-Za-z0-9_-]+)(\[\s*(?:\d+|"[^"]*")\s*\])?\.')
+_ECR_REF = re.compile(r'\baws_ecr_repository\.([A-Za-z0-9_-]+)(\[\s*(?:\d+|"[^"]*")\s*\])?\.')
 # A reference to another managed resource: aws_eip.nat.id -> aws_eip.nat.
 _ADDRESS_REF = re.compile(r"(?<![\w.])(aws_[a-z0-9_]+\.[A-Za-z0-9_-]+)(?=\[|\.)")
+# `for_each = aws_s3_bucket.b`, raw: "${aws_s3_bucket.b}".
+_FOR_EACH_REF = re.compile(r"\$\{\s*(aws_[a-z0-9_]+\.[A-Za-z0-9_-]+)\s*\}")
 _META_KEYS = {"__is_block__", "__start_line__", "__end_line__"}
 
 
@@ -354,6 +362,8 @@ class _Block:
         # Addresses the block refers to, read from its raw arguments: normalizing turns an
         # expression with var/count/each into UNRESOLVED and would drop the reference.
         self.references: frozenset[str] = frozenset()
+        # The resource a `for_each = aws_s3_bucket.b` iterates over, or None.
+        self.iterates: str | None = None
 
     @property
     def address(self) -> str:
@@ -521,6 +531,8 @@ def parse_tf_file(path: Path) -> tuple[list[_Block], list[str]]:
                     norm = normalize(body)
                     block = _Block(rtype, name, norm, path, _find_line(text, rtype, name, is_json))
                     block.references = frozenset(_ADDRESS_REF.findall(json.dumps(body, default=str)))
+                    iterates = _FOR_EACH_REF.fullmatch(str(body.get("for_each", "")).strip())
+                    block.iterates = iterates.group(1) if iterates else None
                     blocks.append(block)
 
     # Data sources the checks read: policy documents and managed policy lookups, so
@@ -1495,6 +1507,7 @@ def _sagemaker_notebook(body: dict) -> dict:
     _set(props, "RootAccess", _v(body, "root_access"))
     _set(props, "SubnetId", _ref(body, "subnet_id"))
     _set(props, "KmsKeyId", _ref(body, "kms_key_id"))
+    _set(props, "LifecycleConfigName", _ref(body, "lifecycle_config_name"))
     return props
 
 
@@ -1520,6 +1533,71 @@ def _sagemaker_endpoint_config(body: dict) -> dict:
     _set(props, "KmsKeyId", _ref(body, "kms_key_arn"))
     _set(props, "ProductionVariants", _sagemaker_variants(body, "production_variants"))
     _set(props, "ShadowProductionVariants", _sagemaker_variants(body, "shadow_production_variants"))
+    if "data_capture_config" in _dynamic_names(body):
+        props["DataCaptureConfig"] = UNRESOLVED
+    elif _blocks(body, "data_capture_config"):
+        capture: dict = {}
+        _set(capture, "EnableCapture", _known(_v(_first_block(body, "data_capture_config"), "enable_capture")))
+        props["DataCaptureConfig"] = capture
+    return props
+
+
+def _sagemaker_endpoint(body: dict) -> dict:
+    """aws_sagemaker_endpoint: its name and the endpoint config it runs."""
+    props: dict = {}
+    _set(props, "EndpointName", _known(_v(body, "name")))
+    _set(props, "EndpointConfigName", _known(_ref(body, "endpoint_config_name")))
+    return props
+
+
+def _sagemaker_domain(body: dict) -> dict:
+    """aws_sagemaker_domain: app_network_access_type is compared, kms_key_id is the key."""
+    props: dict = {}
+    _set(props, "AppNetworkAccessType", _v(body, "app_network_access_type"))
+    _set(props, "KmsKeyId", _ref(body, "kms_key_id"))
+    return props
+
+
+def _sagemaker_feature_group(body: dict) -> dict:
+    """aws_sagemaker_feature_group: the KMS key of the online and the offline store."""
+    props: dict = {}
+    stores = (("online_store_config", "OnlineStoreConfig", "security_config", "SecurityConfig"),
+              ("offline_store_config", "OfflineStoreConfig", "s3_storage_config", "S3StorageConfig"))
+    for tf_key, cf_key, tf_inner, cf_inner in stores:
+        if tf_key in _dynamic_names(body):
+            props[cf_key] = UNRESOLVED
+            continue
+        if not _blocks(body, tf_key):
+            continue
+        block = _first_block(body, tf_key)
+        config: dict = {}
+        if tf_key == "online_store_config":
+            _set(config, "EnableOnlineStore", _known(_v(block, "enable_online_store")))
+        if tf_inner in _dynamic_names(block):
+            config[cf_inner] = _OPAQUE
+        elif _blocks(block, tf_inner):
+            inner: dict = {}
+            _set(inner, "KmsKeyId", _known(_ref(_first_block(block, tf_inner), "kms_key_id")))
+            config[cf_inner] = inner
+        props[cf_key] = config
+    return props
+
+
+def _sagemaker_model(body: dict) -> dict:
+    """aws_sagemaker_model: per container, the model package it deploys, if any."""
+    props: dict = {}
+    for tf_key, cf_key in (("primary_container", "PrimaryContainer"), ("container", "Containers")):
+        if tf_key in _dynamic_names(body):
+            props[cf_key] = UNRESOLVED
+            continue
+        items = []
+        for block in _blocks(body, tf_key):
+            item: dict = {}
+            _set(item, "ModelPackageName", _known(_ref(block, "model_package_name")))
+            _set(item, "Image", _known(_ref(block, "image")))
+            items.append(item)
+        if items:
+            props[cf_key] = items[0] if tf_key == "primary_container" else items
     return props
 
 
@@ -1527,11 +1605,107 @@ def _bedrock_agent(body: dict) -> dict:
     """aws_bedrockagent_agent. A guardrail_configuration block is the guardrail."""
     props: dict = {}
     _set(props, "IdleSessionTTLInSeconds", _ref(body, "idle_session_ttl_in_seconds"))
+    _set(props, "CustomerEncryptionKeyArn", _ref(body, "customer_encryption_key_arn"))
     guard = _first_block(body, "guardrail_configuration")
     if guard:
         props["GuardrailConfiguration"] = {
             "GuardrailIdentifier": _known(_ref(guard, "guardrail_identifier")),
         }
+    return props
+
+
+def _bedrock_agent_alias(body: dict) -> dict:
+    """aws_bedrockagent_agent_alias. agent_id ties it to the agent."""
+    props: dict = {}
+    _set(props, "AgentId", _ref(body, "agent_id"))
+    return props
+
+
+def _bedrock_filter_lists(body: dict, block: str, lists: dict[str, str]) -> Any:
+    """A guardrail policy block with its filter lists, one _OPAQUE entry per filter.
+    UNRESOLVED when the block is dynamic; a dynamic list is _OPAQUE."""
+    if block in _dynamic_names(body):
+        return UNRESOLVED
+    found = _first_block(body, block)
+    if not found:
+        return None
+    config: dict = {}
+    for tf_key, cf_key in lists.items():
+        if tf_key in _dynamic_names(found):
+            config[cf_key] = _OPAQUE
+        else:
+            config[cf_key] = [_OPAQUE for _ in _blocks(found, tf_key)]
+    return config
+
+
+def _bedrock_guardrail(body: dict) -> dict:
+    """aws_bedrock_guardrail: the content, sensitive-information, topic and contextual grounding
+    policy blocks."""
+    props: dict = {}
+    _set(props, "ContentPolicyConfig", _bedrock_filter_lists(
+        body, "content_policy_config", {"filters_config": "FiltersConfig"}))
+    _set(props, "SensitiveInformationPolicyConfig", _bedrock_filter_lists(
+        body, "sensitive_information_policy_config",
+        {"pii_entities_config": "PiiEntitiesConfig", "regexes_config": "RegexesConfig"}))
+    _set(props, "TopicPolicyConfig", _bedrock_filter_lists(
+        body, "topic_policy_config", {"topics_config": "TopicsConfig"}))
+    _set(props, "ContextualGroundingPolicyConfig", _bedrock_filter_lists(
+        body, "contextual_grounding_policy_config", {"filters_config": "FiltersConfig"}))
+    return props
+
+
+def _bedrock_prompt(body: dict) -> dict:
+    """aws_bedrockagent_prompt: its key and, per variant, the max_tokens inference bound."""
+    props: dict = {}
+    _set(props, "CustomerEncryptionKeyArn", _ref(body, "customer_encryption_key_arn"))
+    if "variant" in _dynamic_names(body):
+        props["Variants"] = UNRESOLVED
+        return props
+    variants = []
+    for block in _blocks(body, "variant"):
+        item: dict = {}
+        _set(item, "Name", _known(_v(block, "name")))
+        if "gen_ai_resource" in _dynamic_names(block) or _first_block(block, "gen_ai_resource"):
+            item["GenAiResource"] = _OPAQUE
+        if "inference_configuration" in _dynamic_names(block):
+            item["InferenceConfiguration"] = _OPAQUE
+        else:
+            inference = _first_block(block, "inference_configuration")
+            if inference:
+                if "text" in _dynamic_names(inference):
+                    item["InferenceConfiguration"] = {"Text": _OPAQUE}
+                else:
+                    text: dict = {}
+                    _set(text, "MaxTokens", _known(_v(_first_block(inference, "text"), "max_tokens")))
+                    item["InferenceConfiguration"] = {"Text": text}
+        variants.append(item)
+    _set(props, "Variants", variants or None)
+    return props
+
+
+def _agentcore_runtime(body: dict) -> dict:
+    """aws_bedrockagentcore_agent_runtime: the network_configuration block's network_mode."""
+    props: dict = {}
+    if "network_configuration" in _dynamic_names(body):
+        props["NetworkConfiguration"] = UNRESOLVED
+        return props
+    network = _first_block(body, "network_configuration")
+    if network:
+        props["NetworkConfiguration"] = {"NetworkMode": _known(_v(network, "network_mode"))}
+    return props
+
+
+def _agentcore_gateway(body: dict) -> dict:
+    """aws_bedrockagentcore_gateway: authorizer_type is compared."""
+    props: dict = {}
+    _set(props, "AuthorizerType", _v(body, "authorizer_type"))
+    return props
+
+
+def _agentcore_memory(body: dict) -> dict:
+    """aws_bedrockagentcore_memory: encryption_key_arn is the customer managed key."""
+    props: dict = {}
+    _set(props, "EncryptionKeyArn", _ref(body, "encryption_key_arn"))
     return props
 
 
@@ -2949,7 +3123,17 @@ _ADAPTERS: dict[str, Callable[[dict], dict]] = {
     "aws_cloudwatch_log_delivery_source": _log_delivery_source,
     "aws_sagemaker_notebook_instance": _sagemaker_notebook,
     "aws_sagemaker_endpoint_configuration": _sagemaker_endpoint_config,
+    "aws_sagemaker_endpoint": _sagemaker_endpoint,
+    "aws_sagemaker_domain": _sagemaker_domain,
+    "aws_sagemaker_feature_group": _sagemaker_feature_group,
+    "aws_sagemaker_model": _sagemaker_model,
     "aws_bedrockagent_agent": _bedrock_agent,
+    "aws_bedrockagent_agent_alias": _bedrock_agent_alias,
+    "aws_bedrock_guardrail": _bedrock_guardrail,
+    "aws_bedrockagent_prompt": _bedrock_prompt,
+    "aws_bedrockagentcore_agent_runtime": _agentcore_runtime,
+    "aws_bedrockagentcore_gateway": _agentcore_gateway,
+    "aws_bedrockagentcore_memory": _agentcore_memory,
     "aws_fsx_lustre_file_system": _fsx_file_system("LUSTRE", "LustreConfiguration"),
     "aws_fsx_windows_file_system": _fsx_file_system("WINDOWS", "WindowsConfiguration"),
     "aws_fsx_ontap_file_system": _fsx_file_system("ONTAP", "OntapConfiguration"),
@@ -3262,6 +3446,28 @@ def _lifecycle_policies(body: dict) -> dict:
     return {"DeletionPolicy": value, "UpdateReplacePolicy": value}
 
 
+def _ref_target(match: re.Match[str], targets: dict[str, Resource]) -> Resource | None:
+    """The resource a _BUCKET_REF/_ECR_REF match names; an index names a planned instance."""
+    index = match.group(2)
+    return targets.get(match.group(1) + (f"[{index[1:-1].strip()}]" if index else ""))
+
+
+def _instance_target(block: _Block, targets: dict[str, Resource], rtype: str) -> Resource | None:
+    """The instance of the same key for a split resource the plan expanded.
+
+    `aws_s3_bucket_versioning.v["logs"]` whose arguments refer to `aws_s3_bucket.b`
+    (`aws_s3_bucket.b[each.key].id`, `each.value.id` over `for_each = aws_s3_bucket.b`) goes to
+    `aws_s3_bucket.b["logs"]`. Only when it refers to exactly one block the plan expanded.
+    """
+    if "[" not in block.name:
+        return None
+    suffix = block.name[block.name.index("["):]
+    refs = block.references | ({block.iterates} if block.iterates else set())
+    bases = {ref.split(".", 1)[1] for ref in refs if ref.startswith(rtype + ".")}
+    expanded = [b for b in bases if any(k.startswith(b + "[") for k in targets)]
+    return targets.get(expanded[0] + suffix) if len(expanded) == 1 else None
+
+
 def _merge_s3_parts(blocks: list[_Block], resources: dict[str, Resource]) -> None:
     """Attach split S3 settings resources to their aws_s3_bucket."""
     buckets = {r.name.split(".", 1)[1]: r for r in resources.values() if r.source_type == "aws_s3_bucket"}
@@ -3279,7 +3485,9 @@ def _merge_s3_parts(blocks: list[_Block], resources: dict[str, Resource]) -> Non
         target = None
         if isinstance(ref, str):
             match = _BUCKET_REF.search(ref)
-            target = buckets.get(match.group(1)) if match else by_literal.get(ref)
+            target = _ref_target(match, buckets) if match else by_literal.get(ref)
+        if target is None:
+            target = _instance_target(block, buckets, "aws_s3_bucket")
         if target is None:
             unlinked.add(cf_key)
             continue
@@ -3320,7 +3528,9 @@ def _merge_ecr_lifecycle(blocks: list[_Block], resources: dict[str, Resource]) -
         target = None
         if isinstance(ref, str):
             match = _ECR_REF.search(ref)
-            target = repos.get(match.group(1)) if match else by_literal.get(ref)
+            target = _ref_target(match, repos) if match else by_literal.get(ref)
+        if target is None:
+            target = _instance_target(block, repos, "aws_ecr_repository")
         if target is None:
             unlinked = True
             continue
@@ -3375,7 +3585,18 @@ def load_plan_values(path: Path) -> dict[str, dict]:
     Reads a plan (`planned_values`, with data sources from `prior_state`) or a state
     (`values`). An instance of a `count` or `for_each` resource has its own address
     (`aws_s3_bucket.b[0]`, `aws_s3_bucket.b["logs"]`). Data sources are keyed `data.<type>.<name>`.
-    Child modules are left out, as they are when parsing HCL.
+    Child modules are left out, as they are when parsing HCL: see load_plan_modules.
+    """
+    return load_plan_modules(path).get("", {})
+
+
+def load_plan_modules(path: Path) -> dict[str, dict[str, dict]]:
+    """Resource values of every module in `terraform show -json`, keyed by module address.
+
+    The root module is `""`, a child `module.vpc`, a nested child `module.vpc.module.subnets`
+    (an instance of a module call with count/for_each: `module.vpc[0]`). Inside each module the
+    resource addresses have the module prefix stripped, as load_plan_values gives them, so they
+    match the addresses of the child module's own HCL blocks.
     """
     try:
         doc = json.loads(path.read_text(encoding="utf-8"))
@@ -3387,23 +3608,38 @@ def load_plan_values(path: Path) -> dict[str, dict]:
     root = section.get("root_module") if isinstance(section, dict) else None
     if not isinstance(root, dict):
         raise TerraformError(f"Terraform plan {path} has no planned_values.root_module")
-    out: dict[str, dict] = {}
+    out: dict[str, dict[str, dict]] = {"": {}}
     prior = doc.get("prior_state") if isinstance(doc, dict) else None
     prior_values = prior.get("values") if isinstance(prior, dict) else None
     prior_root = prior_values.get("root_module") if isinstance(prior_values, dict) else None
-    for module in (prior_root, root):  # planned values win over the prior state
-        if not isinstance(module, dict):
-            continue
-        for item in module.get("resources") or []:
-            if not isinstance(item, dict):
-                continue
-            mode = item.get("mode", "managed")
-            if mode == "managed" and module is prior_root:
-                continue
-            address, values = item.get("address"), item.get("values")
-            if isinstance(address, str) and isinstance(values, dict) and mode in ("managed", "data"):
-                out[address] = values
+    # Planned values win over the prior state, which only gives data sources.
+    _read_plan_module(prior_root, "", out, data_only=True)
+    _read_plan_module(root, "", out, data_only=False)
     return out
+
+
+def _read_plan_module(
+    module: Any, address: str, out: dict[str, dict[str, dict]], data_only: bool
+) -> None:
+    if not isinstance(module, dict):
+        return
+    values_by_address = out.setdefault(address, {})
+    prefix = address + "." if address else ""
+    for item in module.get("resources") or []:
+        if not isinstance(item, dict):
+            continue
+        mode = item.get("mode", "managed")
+        if mode == "managed" and data_only:
+            continue
+        item_address, values = item.get("address"), item.get("values")
+        if not (isinstance(item_address, str) and isinstance(values, dict)):
+            continue
+        if mode in ("managed", "data") and item_address.startswith(prefix):
+            values_by_address[item_address[len(prefix):]] = values
+    for child in module.get("child_modules") or []:
+        child_address = child.get("address") if isinstance(child, dict) else None
+        if isinstance(child_address, str) and child_address.startswith(prefix + "module."):
+            _read_plan_module(child, child_address, out, data_only)
 
 
 def _needs_plan(value: Any) -> bool:
@@ -3455,8 +3691,9 @@ def _fill_from_plan(body: dict, planned: dict, keep: frozenset[str] = frozenset(
 
 def _plan_keep(block: _Block) -> frozenset[str]:
     """Arguments the plan must not replace. A split S3 resource links to its bucket
-    through `aws_s3_bucket.<name>` in `bucket`; the planned bucket name would lose that.
-    A `bucket` set from var/local is filled, and then links by the planned name."""
+    through `aws_s3_bucket.<name>` (or an instance, `aws_s3_bucket.<name>["key"]`) in `bucket`;
+    the planned bucket name would lose that. A `bucket` set from var/local/each is filled, and
+    then links by the planned name or by its instance key."""
     ref = block.body.get("bucket")
     if block.type in _S3_PARTS and isinstance(ref, str) and _BUCKET_REF.search(ref):
         return frozenset({"bucket"})
@@ -3489,6 +3726,7 @@ def _expand_instances(
             clone = _Block(block.type, block.name + address[len(base):], dict(block.body),
                            block.file, block.line, block.data)
             clone.references = block.references
+            clone.iterates = block.iterates
             out.append(clone)
     return out
 
@@ -3605,3 +3843,50 @@ def module_call_notes(modules: list[Path]) -> tuple[list[str], list[tuple[Path, 
                 if "count" in body or "for_each" in body:
                     looped.append((path, f"module.{label}"))
     return sorted(set(remote)), looped
+
+
+_MODULE_INSTANCE = re.compile(r'\[(?:\d+|"(?:[^"\\]|\\.)*")\]')
+
+
+def plan_module_calls(
+    root: Path, plan_modules: dict[str, dict[str, dict]]
+) -> tuple[dict[Path, list[tuple[str, dict[str, dict]]]], set[tuple[Path, str]]]:
+    """The local module calls reached from a root module, with the plan values of each call.
+
+    Returns (child dir -> [(call address, planned values)], looped calls the plan expanded).
+    Nested calls get nested addresses (`module.vpc.module.subnets`). A child called twice has
+    one entry per call address; a call with count/for_each one entry per planned instance
+    (`module.vpc[0]`). A call the plan has no module for gets empty values. The looped calls
+    are (file, `module.<label>`), as module_call_notes names them.
+    """
+    calls: dict[Path, list[tuple[str, dict[str, dict]]]] = {}
+    expanded: set[tuple[Path, str]] = set()
+
+    def walk(module_dir: Path, address: str, ancestors: frozenset[Path]) -> None:
+        for path in _module_files(module_dir):
+            try:
+                bodies = _module_call_bodies(path)
+            except (TerraformError, OSError, UnicodeError):
+                continue  # reported when the module itself is scanned
+            for label, body in bodies:
+                source = body.get("source")
+                if type(source) is not str or not source.startswith(("./", "../")):
+                    continue
+                child = (module_dir / source).resolve()
+                if child in ancestors or not child.is_dir():
+                    continue
+                call = f"{address}.module.{label}" if address else f"module.{label}"
+                found = sorted(
+                    a for a in plan_modules
+                    if a.startswith(call + "[") and _MODULE_INSTANCE.fullmatch(a[len(call):])
+                )
+                if found:
+                    expanded.add((path, f"module.{label}"))
+                else:
+                    found = [call]
+                for instance in found:
+                    calls.setdefault(child, []).append((instance, plan_modules.get(instance, {})))
+                    walk(child, instance, ancestors | {child})
+
+    walk(root.resolve(), "", frozenset({root.resolve()}))
+    return calls, expanded

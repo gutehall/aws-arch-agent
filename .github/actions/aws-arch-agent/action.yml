@@ -10,7 +10,7 @@ inputs:
     required: false
     default: v1
   iac:
-    description: IaC source (auto, cdk, cloudformation, or terraform). auto detects from the repo. With mode v2, terraform exits 1, and cloudformation needs a templates path in the repo config file.
+    description: IaC source (auto, cdk, cloudformation, or terraform). auto detects from the repo. Mode v2 scans terraform too; with mode v2, cloudformation needs the templates input or a templates path in the repo config file.
     required: false
     default: auto
   format:
@@ -49,6 +49,38 @@ inputs:
     description: Upload report as workflow artifact (true/false)
     required: false
     default: "true"
+  tf-plan:
+    description: Path to `terraform show -json` output (a plan or a state) for Terraform scans. Empty passes no flag
+    required: false
+    default: ""
+  live-account:
+    description: Read the AWS account with read-only describe and list calls (true/false). true also installs the account extra (boto3); the job needs AWS credentials and a Region (region input or AWS_REGION)
+    required: false
+    default: "false"
+  region:
+    description: AWS Region for price estimates and live-account reads. Empty passes no flag
+    required: false
+    default: ""
+  theme:
+    description: Only report rules in these themes, comma-separated (e.g. security-baseline,finops). Empty passes no flag
+    required: false
+    default: ""
+  group-by:
+    description: Group Markdown findings by severity or theme. Empty passes no flag
+    required: false
+    default: ""
+  config:
+    description: Path to a config file (JSON or YAML). Empty auto-detects one in the repo root
+    required: false
+    default: ""
+  templates:
+    description: Path to CloudFormation templates (dir or file); V2 only, skips cdk synth. Empty passes no flag
+    required: false
+    default: ""
+  job-summary:
+    description: Append a Markdown report to the job summary (true/false). With a format other than markdown, a second rules-only run (no LLM, fail-on none) renders it. The step still exits with the scan's exit code
+    required: false
+    default: "false"
 runs:
   using: composite
   steps:
@@ -90,12 +122,18 @@ runs:
 
     - name: Install aws-arch-agent
       shell: bash
+      env:
+        LIVE_ACCOUNT: ${{ inputs.live-account }}
       run: |
         python -m pip install -U pip
         # Install from the action's own checkout, not the caller's working directory.
         # Python resolves the path so it is native on every runner OS (Git Bash on Windows).
         ACTION_ROOT="$(python -c 'import os, sys; print(os.path.abspath(sys.argv[1]))' "$GITHUB_ACTION_PATH/../../..")"
-        python -m pip install "${ACTION_ROOT}[v2]"
+        if [ "$LIVE_ACCOUNT" = "true" ]; then
+          python -m pip install "${ACTION_ROOT}[v2,account]"
+        else
+          python -m pip install "${ACTION_ROOT}[v2]"
+        fi
 
     - name: Run AWS Arch Agent
       shell: bash
@@ -111,6 +149,14 @@ runs:
         LLM_MODE: ${{ inputs.llm-mode }}
         BASELINE: ${{ inputs.baseline }}
         ENFORCE_BASELINE: ${{ inputs.enforce-baseline }}
+        TF_PLAN: ${{ inputs.tf-plan }}
+        LIVE_ACCOUNT: ${{ inputs.live-account }}
+        REGION: ${{ inputs.region }}
+        THEME: ${{ inputs.theme }}
+        GROUP_BY: ${{ inputs.group-by }}
+        CONFIG: ${{ inputs.config }}
+        TEMPLATES: ${{ inputs.templates }}
+        JOB_SUMMARY: ${{ inputs.job-summary }}
       run: |
         ARGS=(
           --repo "$REPO"
@@ -133,10 +179,70 @@ runs:
         if [ "$ENFORCE_BASELINE" = "true" ]; then
           ARGS+=(--enforce-baseline)
         fi
-        aws-arch-agent "${ARGS[@]}"
+        if [ -n "$TF_PLAN" ]; then
+          ARGS+=(--tf-plan "$TF_PLAN")
+        fi
+        if [ "$LIVE_ACCOUNT" = "true" ]; then
+          ARGS+=(--live-account)
+        fi
+        if [ -n "$REGION" ]; then
+          ARGS+=(--region "$REGION")
+        fi
+        if [ -n "$THEME" ]; then
+          ARGS+=(--theme "$THEME")
+        fi
+        if [ -n "$GROUP_BY" ]; then
+          ARGS+=(--group-by "$GROUP_BY")
+        fi
+        if [ -n "$CONFIG" ]; then
+          ARGS+=(--config "$CONFIG")
+        fi
+        if [ -n "$TEMPLATES" ]; then
+          ARGS+=(--templates "$TEMPLATES")
+        fi
+
+        # Keep the scan's exit code (1 for --fail-on, 2 for report warnings) so the
+        # summary is still written, then exit with it.
+        rc=0
+        aws-arch-agent "${ARGS[@]}" || rc=$?
+
+        if [ "$JOB_SUMMARY" = "true" ] && [ -n "${GITHUB_STEP_SUMMARY:-}" ]; then
+          SUMMARY_MD="$OUT"
+          if [ "$FORMAT" != "markdown" ]; then
+            # Render Markdown with a second run that cannot fail the build or call an LLM.
+            SUMMARY_MD="${RUNNER_TEMP:-.}/aws-arch-agent-summary.md"
+            SUMMARY_ARGS=()
+            skip=0
+            for arg in "${ARGS[@]}"; do
+              if [ "$skip" = 1 ]; then
+                skip=0
+                continue
+              fi
+              case "$arg" in
+                --format|--out|--fail-on) skip=1 ;;
+                *) SUMMARY_ARGS+=("$arg") ;;
+              esac
+            done
+            aws-arch-agent "${SUMMARY_ARGS[@]}" --no-llm --format markdown \
+              --out "$SUMMARY_MD" --fail-on none || true
+          fi
+          if [ -s "$SUMMARY_MD" ]; then
+            # GitHub keeps at most 1 MiB of summary per step.
+            limit=1000000
+            if [ "$(wc -c < "$SUMMARY_MD")" -gt "$limit" ]; then
+              head -c "$limit" "$SUMMARY_MD" >> "$GITHUB_STEP_SUMMARY"
+              printf '\n\n_Report truncated for the job summary; see the report artifact._\n' >> "$GITHUB_STEP_SUMMARY"
+            else
+              cat "$SUMMARY_MD" >> "$GITHUB_STEP_SUMMARY"
+            fi
+          else
+            printf '## AWS Arch Agent\n\nNo Markdown report was written (exit code %s).\n' "$rc" >> "$GITHUB_STEP_SUMMARY"
+          fi
+        fi
+        exit "$rc"
 
     - name: Upload report artifact
-      if: inputs.upload-artifact == 'true'
+      if: always() && inputs.upload-artifact == 'true'
       uses: actions/upload-artifact@v4
       with:
         name: aws-arch-agent-report

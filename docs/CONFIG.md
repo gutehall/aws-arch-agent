@@ -1,6 +1,6 @@
 # Config file
 
-The IaC source is a CLI flag, not a config key: `--iac auto|cdk|cloudformation|terraform` (see [REFERENCE.md](REFERENCE.md)). V1 scans CDK source, raw CloudFormation templates, and root-module Terraform. V2 synth stays the CDK path.
+The IaC source is a CLI flag, not a config key: `--iac auto|cdk|cloudformation|terraform` (see [REFERENCE.md](REFERENCE.md)). V1 scans CDK source, raw CloudFormation templates, and Terraform (root modules and local child modules). V2 synth stays the CDK path; V2 also scans CloudFormation with `--templates` and Terraform with `--iac terraform`.
 
 Optional config file in the repo root. A same-named file in the current directory is not used. A missing `--config` path, or a config file that is not valid JSON or YAML, fails the run.
 
@@ -28,6 +28,7 @@ Example (JSON):
   "rules": {
     "include": null,
     "exclude": ["BP-001"],
+    "exclude_paths": {"examples/**": ["SEC-005"]},
     "org": false
   },
   "rag": {
@@ -100,6 +101,14 @@ rules:
 - **no_synth**: if `true`, do not run cdk synth (V2 only). Use with **templates** for raw CF, or alone for static analysis only.
 - **rules.include**: list of rule IDs to run (e.g. `["SEC-001", "SEC-002"]`); if set, only these run
 - **rules.exclude**: list of rule IDs to skip
+- **rules.exclude_paths**: mapping of a repo-relative path glob to the rule IDs to skip in files that match it. `*` and `?` stay inside one path segment, `**` spans segments (the same globs as **environments**). A leading `./` is dropped. An empty or absolute glob, a value that is not a list, or an ID that is not a non-empty string is a config error. V1 and V2 both apply it. The findings are dropped, as with **rules.exclude**, not labelled:
+
+  ```yaml
+  rules:
+    exclude_paths:
+      "examples/**": [SEC-005]
+      "infra/sandbox/*.tf": [CF-S3-001, CF-S3-003]
+  ```
 - **rules.org**: if `true`, also run the account-level rules `SEC-026`, `SEC-027`, `OPS-001`, `OPS-014`, `COST-014`, `REPO-004`, `REPO-007`, `REPO-008`, `REPO-012`, `REPO-032`, `REPO-069`, `REPO-080`, `REPO-133`, `REPO-134`, `REPO-136`, `REPO-137`, `REPO-141`, `REPO-145`, `REPO-162`, `REPO-163`, and the AI template check `CF-BEDROCK-004` (model invocation logging, which has no CloudFormation resource type). Default is `false` because an app stack does not own those controls. Listing an id in **rules.include** runs that rule even when this is false. **rules.exclude** still skips it.
 - **lenses.ai**: the four AI Well-Architected lenses (Machine Learning, Generative AI, Responsible AI, Agentic AI) and the findings written for them. Omitted means auto: they run when the scan sees a Bedrock, SageMaker, or AgentCore resource, and only then. `true` turns them on with no AI resource. `false` turns them off even when one exists. When they are off, `lens_answers` in the JSON report is `[]` and the reports show no lens section. The 57 core questions do not depend on this key. A CDK scan with no synth has no resources to see, so it needs `true`. V1 and V2 both read it:
 
@@ -130,6 +139,43 @@ CLI flags override config file values only when that flag is passed. A quoted YA
 
 A corrupt baseline with `--enforce-baseline` or `--update-baseline` fails the run and does not change the file. Using both flags still fails on findings that were not accepted before the run. The report lists every finding and marks which ones are accepted.
 
-CloudFormation findings have no source line. Their baseline key is the rule id, the template path relative to the repo, and `logical_id` (the finding evidence, such as `BucketA (AWS::S3::Bucket)`). Two resources of the same rule in one template stay distinct. A baseline written before `logical_id` was stored does not suppress those findings; regenerate it with `--update-baseline`. An older entry that already has `logical_id` and an absolute path still matches when that path ends with the repo-relative path.
+### Inline suppressions
+
+To accept one finding where it is, write a comment directive on the finding's line or on the line just above it. Comments start with `#` (Python, Terraform, CloudFormation YAML) or `//` (TypeScript, JavaScript, Terraform):
+
+```text
+aws-arch-agent: ignore <RULE_ID>[, <RULE_ID>...] [reason="..."] [expires=YYYY-MM-DD]
+```
+
+```typescript
+// aws-arch-agent: ignore SEC-005 reason="public website bucket" expires=2027-06-30
+new s3.Bucket(this, "Site", { publicReadAccess: true });
+```
+
+```yaml
+Resources:
+  # aws-arch-agent: ignore CF-S3-001, CF-S3-005 reason="static site"
+  SiteBucket:
+    Type: AWS::S3::Bucket
+```
+
+A CloudFormation finding is on the line of its resource's logical ID, so the comment goes on or above that line. In any template (JSON included, and `cdk synth` output from CDK `addMetadata`), the resource's `Metadata` can carry the same thing. Each entry is a rule ID or a mapping with `id`, and optional `reason` and `expires`:
+
+```json
+"SiteBucket": {
+  "Type": "AWS::S3::Bucket",
+  "Metadata": {
+    "aws-arch-agent": {
+      "ignore": ["CF-S3-001", {"id": "CF-S3-005", "reason": "static site", "expires": "2027-06-30"}]
+    }
+  }
+}
+```
+
+A suppressed finding stays in the report, labelled suppressed with its reason and expiry (Markdown, HTML, and the `suppression` field of each JSON finding). It does not count for `--fail-on`. With `--enforce-baseline`, the build fails only on findings that are neither suppressed nor in the baseline.
+
+A suppression is active through its `expires` day. After that the finding is reported and counts for `--fail-on` again, and the report warnings say `Suppression of <RULE_ID> at <file>:<line> expired on <date>; the finding is reported again.` A directive or Metadata entry that cannot be read (a bad date, no rule IDs, other text) is a warning and suppresses nothing. Like every report warning, these make the run exit 2. A rule ID that matches no finding is ignored. Rule IDs are matched without regard to case.
+
+CloudFormation findings carry the line of their resource's logical ID, but no line is part of a baseline key. Their baseline key is the rule id, the template path relative to the repo, and `logical_id` (the finding evidence, such as `BucketA (AWS::S3::Bucket)`). Two resources of the same rule in one template stay distinct. A baseline written before `logical_id` was stored does not suppress those findings; regenerate it with `--update-baseline`. An older entry that already has `logical_id` and an absolute path still matches when that path ends with the repo-relative path.
 
 A rule exception, a CloudFormation resource that cannot be checked, a missing or empty template path, or a failed or timed-out `cdk synth` is listed in the report warnings (JSON, SARIF, HTML, and the markdown "Analysis Warnings" section). The process exits 2. That exit is separate from `--fail-on`.

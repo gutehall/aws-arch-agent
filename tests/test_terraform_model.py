@@ -10,7 +10,9 @@ from aws_arch_agent.rules.terraform_model import (
     TF_TYPE_TO_CANONICAL,
     TerraformError,
     find_root_modules,
+    load_plan_modules,
     load_plan_values,
+    plan_module_calls,
     resources_from_terraform,
 )
 from aws_arch_agent.tools.files import iter_files
@@ -528,3 +530,187 @@ resource "aws_s3_bucket_versioning" "data" {
     bucket = next(r for r in resources if r.name == "aws_s3_bucket.data")
     assert bucket.properties["VersioningConfiguration"] == {"Status": "Enabled"}
     assert "VersioningConfiguration" not in bucket.unresolved
+
+
+def test_plan_modules_walks_child_modules_in_planned_values_and_prior_state(tmp_path: Path) -> None:
+    path = tmp_path / "plan.json"
+    data = lambda addr: {"address": addr, "mode": "data", "values": {"enabled": False}}  # noqa: E731
+    path.write_text(json.dumps({
+        "planned_values": {"root_module": {
+            "resources": [_res("aws_s3_bucket.root", {"bucket": "r"})],
+            "child_modules": [{
+                "address": "module.vpc",
+                "resources": [_res("module.vpc.aws_s3_bucket.b", {"bucket": "v"})],
+                "child_modules": [{
+                    "address": "module.vpc.module.subnets",
+                    "resources": [_res('module.vpc.module.subnets.aws_s3_bucket.b["x"]', {"bucket": "s"})],
+                }],
+            }],
+        }},
+        "prior_state": {"values": {"root_module": {"child_modules": [{
+            "address": "module.vpc",
+            "resources": [data("module.vpc.data.aws_kms_key.k"), _res("module.vpc.aws_s3_bucket.b", {})],
+        }]}}},
+    }), encoding="utf-8")
+    assert load_plan_modules(path) == {
+        "": {"aws_s3_bucket.root": {"bucket": "r"}},
+        "module.vpc": {"aws_s3_bucket.b": {"bucket": "v"}, "data.aws_kms_key.k": {"enabled": False}},
+        "module.vpc.module.subnets": {'aws_s3_bucket.b["x"]': {"bucket": "s"}},
+    }
+    assert load_plan_values(path) == {"aws_s3_bucket.root": {"bucket": "r"}}
+
+
+def test_plan_module_calls_gives_each_call_address_its_values(tmp_path: Path) -> None:
+    (tmp_path / "main.tf").write_text(
+        'module "a" {\n  source = "./mod"\n}\nmodule "b" {\n  source = "./mod"\n}\n'
+        'module "many" {\n  source = "./mod"\n  count = 2\n}\n'
+        'module "remote" {\n  source = "terraform-aws-modules/vpc/aws"\n}\n',
+        encoding="utf-8",
+    )
+    (tmp_path / "mod").mkdir()
+    (tmp_path / "mod" / "main.tf").write_text('module "inner" {\n  source = "./inner"\n}\n', encoding="utf-8")
+    (tmp_path / "mod" / "inner").mkdir()
+    (tmp_path / "mod" / "inner" / "main.tf").write_text('resource "aws_sqs_queue" "q" {}\n', encoding="utf-8")
+    plan = {
+        "": {}, "module.a": {"x": {}}, "module.a.module.inner": {"q": {}},
+        "module.many[0]": {"y": {}}, "module.many[1]": {"z": {}},
+    }
+    calls, expanded = plan_module_calls(tmp_path, plan)
+    mod, inner = (tmp_path / "mod").resolve(), (tmp_path / "mod" / "inner").resolve()
+    assert calls[mod] == [
+        ("module.a", {"x": {}}), ("module.b", {}), ("module.many[0]", {"y": {}}), ("module.many[1]", {"z": {}}),
+    ]
+    assert [address for address, _v in calls[inner]] == [
+        "module.a.module.inner", "module.b.module.inner",
+        "module.many[0].module.inner", "module.many[1].module.inner",
+    ]
+    assert calls[inner][0][1] == {"q": {}}
+    assert expanded == {(tmp_path / "main.tf", "module.many")}
+
+
+FOR_EACH_BUCKETS = """resource "aws_s3_bucket" "b" {
+  for_each = var.buckets
+  bucket   = "${each.key}-bucket"
+}
+resource "aws_s3_bucket_versioning" "v" {
+  for_each = aws_s3_bucket.b
+  bucket   = aws_s3_bucket.b[each.key].id
+  versioning_configuration {
+    status = each.key == "logs" ? "Enabled" : "Suspended"
+  }
+}
+resource "aws_s3_bucket_public_access_block" "pab" {
+  bucket                  = aws_s3_bucket.b["logs"].id
+  block_public_acls       = true
+  block_public_policy     = true
+  ignore_public_acls      = true
+  restrict_public_buckets = true
+}
+"""
+
+
+def _bucket_findings(tmp_path: Path, plan_values: dict[str, dict] | None) -> dict[str, set[str]]:
+    resources = resources_from_terraform(tmp_path, plan_values=plan_values)
+    out: dict[str, set[str]] = {}
+    for f in run_resource_checks(resources, tmp_path / "main.tf"):
+        out.setdefault(f.id, set()).add((f.evidence or "").split(" ")[0])
+    return out
+
+
+def test_plan_links_split_s3_parts_to_for_each_instances(tmp_path: Path) -> None:
+    (tmp_path / "main.tf").write_text(FOR_EACH_BUCKETS, encoding="utf-8")
+    # Without a plan the buckets are not expanded and no split part can be tied to one.
+    without = _bucket_findings(tmp_path, None)
+    assert "CF-S3-003" not in without and "CF-S3-001" not in without
+    plan = _plan(tmp_path, [
+        _res('aws_s3_bucket.b["logs"]', {"bucket": "logs-bucket"}, index="logs"),
+        _res('aws_s3_bucket.b["data"]', {"bucket": "data-bucket"}, index="data"),
+        # The bucket id is unknown until apply, so terraform leaves `bucket` out.
+        _res('aws_s3_bucket_versioning.v["logs"]', {"versioning_configuration": [{"status": "Enabled"}]}),
+        _res('aws_s3_bucket_versioning.v["data"]', {"versioning_configuration": [{"status": "Suspended"}]}),
+        _res("aws_s3_bucket_public_access_block.pab", {}),
+    ])
+    found = _bucket_findings(tmp_path, load_plan_values(plan))
+    # Versioning linked by instance key, the public access block by the indexed reference.
+    assert found["CF-S3-003"] == {'aws_s3_bucket.b["data"]'}
+    assert found["CF-S3-001"] == {'aws_s3_bucket.b["data"]'}
+
+
+def test_plan_links_split_s3_parts_to_count_instances(tmp_path: Path) -> None:
+    (tmp_path / "main.tf").write_text(
+        """resource "aws_s3_bucket" "b" {
+  count  = 2
+  bucket = "b-${count.index}"
+}
+resource "aws_s3_bucket_versioning" "zero" {
+  bucket = aws_s3_bucket.b[0].id
+  versioning_configuration {
+    status = "Enabled"
+  }
+}
+resource "aws_s3_bucket_versioning" "one" {
+  bucket = var.second
+  versioning_configuration {
+    status = "Enabled"
+  }
+}
+""",
+        encoding="utf-8",
+    )
+    plan = _plan(tmp_path, [
+        _res("aws_s3_bucket.b[0]", {"bucket": "b-0"}, index=0),
+        _res("aws_s3_bucket.b[1]", {"bucket": "b-1"}, index=1),
+        _res("aws_s3_bucket_versioning.zero", {}),
+        _res("aws_s3_bucket_versioning.one", {"bucket": "b-1"}),
+    ])
+    resources = resources_from_terraform(tmp_path, plan_values=load_plan_values(plan))
+    by_name = {r.name: r for r in resources}
+    for name in ("aws_s3_bucket.b[0]", "aws_s3_bucket.b[1]"):
+        assert by_name[name].properties["VersioningConfiguration"] == {"Status": "Enabled"}
+        assert "VersioningConfiguration" not in by_name[name].unresolved
+    # Remove the fix for b[1]: only that instance is reported.
+    plan = _plan(tmp_path, [
+        _res("aws_s3_bucket.b[0]", {"bucket": "b-0"}, index=0),
+        _res("aws_s3_bucket.b[1]", {"bucket": "b-1"}, index=1),
+        _res("aws_s3_bucket_versioning.zero", {}),
+        _res("aws_s3_bucket_versioning.one", {"bucket": "other"}),
+    ])
+    assert "CF-S3-003" not in _bucket_findings(tmp_path, load_plan_values(plan))  # unlinked: unknown
+    (tmp_path / "main.tf").write_text(
+        (tmp_path / "main.tf").read_text(encoding="utf-8").split('resource "aws_s3_bucket_versioning" "one"')[0],
+        encoding="utf-8",
+    )
+    assert _bucket_findings(tmp_path, load_plan_values(plan))["CF-S3-003"] == {"aws_s3_bucket.b[1]"}
+
+
+def test_plan_links_ecr_lifecycle_to_for_each_instances(tmp_path: Path) -> None:
+    (tmp_path / "main.tf").write_text(
+        """resource "aws_ecr_repository" "r" {
+  for_each             = toset(["api", "web", "jobs"])
+  name                 = each.key
+  image_tag_mutability = "IMMUTABLE"
+  image_scanning_configuration {
+    scan_on_push = true
+  }
+}
+resource "aws_ecr_lifecycle_policy" "keyed" {
+  for_each   = aws_ecr_repository.r
+  repository = each.value.name
+  policy     = "{}"
+}
+resource "aws_ecr_lifecycle_policy" "web" {
+  repository = aws_ecr_repository.r["web"].name
+  policy     = "{}"
+}
+""",
+        encoding="utf-8",
+    )
+    plan = _plan(tmp_path, [
+        _res('aws_ecr_repository.r["api"]', {"name": "api"}, index="api"),
+        _res('aws_ecr_repository.r["web"]', {"name": "web"}, index="web"),
+        _res('aws_ecr_repository.r["jobs"]', {"name": "jobs"}, index="jobs"),
+        # The keyed policy only covers api (by key); web is covered by the indexed reference.
+        _res('aws_ecr_lifecycle_policy.keyed["api"]', {}),
+    ])
+    found = _bucket_findings(tmp_path, load_plan_values(plan))
+    assert found["CF-ECR-003"] == {'aws_ecr_repository.r["jobs"]'}
