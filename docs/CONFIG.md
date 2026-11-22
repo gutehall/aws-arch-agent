@@ -101,7 +101,7 @@ rules:
 - **no_synth**: if `true`, do not run cdk synth (V2 only). Use with **templates** for raw CF, or alone for static analysis only.
 - **rules.include**: list of rule IDs to run (e.g. `["SEC-001", "SEC-002"]`); if set, only these run
 - **rules.exclude**: list of rule IDs to skip
-- **rules.exclude_paths**: mapping of a repo-relative path glob to the rule IDs to skip in files that match it. `*` and `?` stay inside one path segment, `**` spans segments (the same globs as **environments**). A leading `./` is dropped. An empty or absolute glob, a value that is not a list, or an ID that is not a non-empty string is a config error. V1 and V2 both apply it. The findings are dropped, as with **rules.exclude**, not labelled:
+- **rules.exclude_paths**: mapping of a repo-relative path glob to the rule IDs to skip in files that match it. `*` and `?` stay inside one path segment, `**` spans segments (the same globs as **environments**). A leading `./` is dropped, and rule IDs match without regard to case. An empty or absolute glob, a value that is not a list, or an ID that is not a non-empty string is a config error. V1 and V2 both apply it. The findings are dropped, as with **rules.exclude**, not labelled:
 
   ```yaml
   rules:

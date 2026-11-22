@@ -430,20 +430,22 @@ def _scan_terraform(
         notes["terraform_remote_modules_skipped"] = remote
     for module in [*modules, *(children or [])]:
         is_root = module in modules
+        # Each run is (call label, planned values); the label names the call in the finding.
         if is_root:
-            runs: list[dict[str, dict] | None] = [
-                plan_modules.get("") if module == plan_target else None
+            runs: list[tuple[str, dict[str, dict] | None]] = [
+                ("", plan_modules.get("") if module == plan_target else None)
             ]
         else:
-            planned = [values for _address, values in plan_calls.get(module, [])]
-            runs = [values for values in planned if values]
+            planned = plan_calls.get(module, [])
+            runs = [(address, values) for address, values in planned if values]
             if len(runs) < len(planned) or not runs or module in plain_children:
-                runs.append(None)
+                runs.append(("a call without plan values", None))
         # A child called more than once is scanned once per call: a finding the calls share
-        # (same rule, file, line and evidence) is reported once.
-        seen: set[tuple] = set()
+        # (same rule, file, line and evidence) is reported once, naming every call it came from.
+        seen: dict[tuple, Finding] = {}
+        calls_of: dict[tuple, list[str]] = {}
         module_warnings: list[str] = []
-        for plan_values in runs:
+        for call, plan_values in runs:
             resources = resources_from_terraform(module, module_warnings, plan_values)
             module_findings = run_resource_checks(resources, module, module_warnings)
             if is_root:
@@ -452,10 +454,21 @@ def _scan_terraform(
             for finding in module_findings:
                 if finding.file:
                     finding.file = to_repo_relative(finding.file, repo_path)
-                key = (finding.id, finding.file, finding.line, finding.evidence)
-                if len(runs) == 1 or key not in seen:
-                    seen.add(key)
+                if len(runs) == 1:
                     findings.append(finding)
+                    continue
+                key = (finding.id, finding.file, finding.line, finding.evidence)
+                if key not in seen:
+                    seen[key] = finding
+                    findings.append(finding)
+                calls_of.setdefault(key, []).append(call)
+        for key, calls in calls_of.items():
+            # Not in the evidence: that is part of the baseline key, and a call list would
+            # change it whenever a call is added.
+            unique = list(dict.fromkeys(calls))
+            names = ", ".join(unique[:5]) + (f" and {len(unique) - 5} more" if len(unique) > 5 else "")
+            label = "Module call" if len(unique) == 1 else "Module calls"
+            seen[key].recommendation = f"{seen[key].recommendation} {label} with this finding: {names}."
         warnings.extend(module_warnings if len(runs) == 1 else dict.fromkeys(module_warnings))
     attach_fixes(findings, "terraform")
     return _filter_ids(findings, rules_include, rules_exclude), warnings

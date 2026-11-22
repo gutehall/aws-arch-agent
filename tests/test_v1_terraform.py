@@ -420,3 +420,17 @@ def test_tf_plan_for_each_buckets_with_split_parts(tmp_path: Path) -> None:
     _r, _c, findings, _w = analyze_v1(tmp_path, use_llm=False, tf_plan=plan)
     hits = {f.evidence.split(" ")[0] for f in findings if f.id == "CF-S3-001"}
     assert hits == {'aws_s3_bucket.b["data"]'}
+
+
+def test_tf_plan_child_module_finding_names_its_calls(tmp_path: Path) -> None:
+    _module_repo(tmp_path)
+    plan = _module_plan(tmp_path / "plan.json", a_enc=False, b_enc=True)
+    _r, _c, findings, _w = analyze_v1(tmp_path, use_llm=False, tf_plan=plan)
+    db = next(f for f in findings if f.id == "CF-RDS-001" and f.file == "modules/db/main.tf")
+    assert db.recommendation.endswith("Module call with this finding: module.a.")
+    plan = _module_plan(tmp_path / "plan.json", a_enc=False, b_enc=False)
+    _r, _c, findings, _w = analyze_v1(tmp_path, use_llm=False, tf_plan=plan)
+    inner = next(f for f in findings if f.id == "CF-RDS-001" and f.file == "modules/db/inner/main.tf")
+    assert inner.recommendation.endswith(
+        "Module calls with this finding: module.a.module.inner, module.b.module.inner."
+    )
