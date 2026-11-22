@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import json
+import shutil
 from pathlib import Path
 from typing import NoReturn, cast
 
@@ -49,7 +50,7 @@ app = typer.Typer(
 console = Console()
 
 SEVERITY_ORDER = ("Low", "Medium", "High")
-_MODES = ("v1", "v2")
+_MODES = ("auto", "v1", "v2")
 _FORMATS = ("markdown", "json", "sarif", "html")
 _FAIL_ON = ("high", "medium", "low", "none")
 _LLM_MODES = ("full", "compact")
@@ -160,6 +161,47 @@ def _print_version(value: bool) -> None:
         raise typer.Exit()
 
 
+def _v2_installed() -> bool:
+    """Whether the v2 extra (LangGraph) can be imported."""
+    try:
+        import aws_arch_agent.agent.v2_graph  # noqa: F401
+    except ImportError:
+        return False
+    return True
+
+
+def _synth_available() -> bool:
+    """Whether `npx cdk synth` can run (Node.js on PATH)."""
+    return shutil.which("npx") is not None
+
+
+def _auto_mode(
+    source: str | None, templates: bool, no_synth: bool = False, cdk_app: bool = True,
+) -> tuple[str, str | None]:
+    """--mode auto: V2 where it adds something (CDK synth and its cost, --templates), else V1.
+
+    Returns (mode, note): the note says why a CDK repo stayed on V1."""
+    if templates:
+        if _v2_installed():
+            return "v2", None
+        return "v1", ("--templates needs V2, and the v2 extra is not installed "
+                      "(pip install 'aws-arch-agent[v2]'): scanning with V1, which ignores --templates.")
+    if source != "cdk":
+        return "v1", None
+    if no_synth:
+        return "v1", "CDK detected, but --no-synth is set: scanning with V1, which does not synthesise or price the stacks."
+    if not cdk_app:
+        return "v1", ("CDK detected, but there is no cdk.json at the repo root to synth: scanning with V1, "
+                      "which does not synthesise or price the stacks. Pass --mode v2 with --templates cdk.out "
+                      "to price synthesised stacks.")
+    missing = [what for ok, what in ((_v2_installed(), "the v2 extra (pip install 'aws-arch-agent[v2]')"),
+                                     (_synth_available(), "Node.js (npx)")) if not ok]
+    if not missing:
+        return "v2", None
+    return "v1", (f"CDK detected, but synth needs {' and '.join(missing)}: scanning with V1, "
+                  "which does not synthesise or price the stacks.")
+
+
 def _run(
     mode_value: str, repo_path: Path, max_files: int, use_llm: bool, cfg: RunConfig, iac_value: str,
     tf_plan_path: Path | None, account_facts: account.AccountFacts | None, finops: stack_cost.FinOps,
@@ -225,8 +267,16 @@ def _run(
 def analyze(
     ctx: typer.Context,
     repo: str | None = typer.Option(None, "--repo", "-r", help="Path to repo (required unless --templates is set; then defaults to templates path)"),
-    out: str = typer.Option("report.md", "--out", "-o", help="Output report path"),
-    mode: str = typer.Option("v1", "--mode", help="v1 (rules) or v2 (LangGraph multi-agent)"),
+    out: str = typer.Option(
+        "report.html", "--out", "-o",
+        help="Output report path (default report.<format extension>). Without --format, its suffix "
+             "(.md, .json, .sarif, .html) picks the format",
+    ),
+    mode: str = typer.Option(
+        "auto", "--mode",
+        help="auto (default: v2 for CDK when the v2 extra and npx are installed, so CDK stacks are "
+             "synthesised and priced; v1 otherwise), v1 (rules), or v2 (LangGraph multi-agent)",
+    ),
     iac: str = typer.Option(
         "auto", "--iac", help="IaC source: auto | cdk | cloudformation | terraform"
     ),
@@ -246,7 +296,10 @@ def analyze(
         400, "--max-files", help="Max files to scan. Rules search only these files."
     ),
     config: str | None = typer.Option(None, "--config", help="Path to config file (JSON or YAML)"),
-    format: str = typer.Option("markdown", "--format", "-f", help="Output format: markdown | json | sarif | html"),
+    format: str = typer.Option(
+        "html", "--format", "-f",
+        help="Output format: html (default) | markdown | json | sarif. Default: from --out's suffix, else html",
+    ),
     fail_on: str = typer.Option(
         "none", "--fail-on", help="Exit non-zero if any finding has this severity or higher (high|medium|low|none)"
     ),
@@ -369,6 +422,17 @@ def analyze(
         except BaselineError as exc:
             _fail(str(exc))
 
+    source: IacSource | None = None
+    if mode_value == "auto":
+        if not cfg.templates:
+            try:
+                source = resolve_source(repo_path, iac_value, iter_files(repo_path, max_files=max_files))
+            except IacError as exc:
+                _fail(str(exc))
+        mode_value, note = _auto_mode(source, bool(cfg.templates), cfg.no_synth, (repo_path / "cdk.json").is_file())
+        if note:
+            console.print(note, style="yellow", markup=False, soft_wrap=True)
+
     if mode_value == "v2":
         try:
             from aws_arch_agent.agent.v2_graph import analyze_v2  # noqa: F401 - fail early without the v2 extra
@@ -390,8 +454,8 @@ def analyze(
     try:
         if mode_value == "v2" and iac_value == "cloudformation" and cfg.templates:
             # The templates path may sit outside --repo; synth warns when it is missing or empty.
-            source: IacSource = "cloudformation"
-        else:
+            source = "cloudformation"
+        elif source is None:
             source = resolve_source(
                 repo_path, iac_value, iter_files(repo_path, max_files=max_files)
             )
