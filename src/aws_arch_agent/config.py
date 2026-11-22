@@ -20,6 +20,9 @@ OutputFormat = Literal["markdown", "json", "sarif", "html"]
 LLMMode = Literal["full", "compact"]
 
 _FORMATS = ("markdown", "json", "sarif", "html")
+_FORMAT_SUFFIXES = {"markdown": "md", "json": "json", "sarif": "sarif", "html": "html"}
+_SUFFIX_FORMATS = {".md": "markdown", ".markdown": "markdown", ".json": "json", ".sarif": "sarif",
+                   ".html": "html", ".htm": "html"}
 _FAIL_ON = ("high", "medium", "low", "none")
 _LLM_MODES = ("full", "compact")
 _SEVERITY = {"high": "High", "medium": "Medium", "low": "Low"}
@@ -424,11 +427,15 @@ def load_config(
     else:
         severity_threshold = None
 
-    resolved_out = out if out is not None else file_cfg.get("out", "report.md")
-    if resolved_out is None:
-        resolved_out = "report.md"
-    if not isinstance(resolved_out, str) or not resolved_out:
-        raise ConfigError(f"out must be a string, got {resolved_out!r}")
+    named_out = out if out is not None else file_cfg.get("out")
+    if named_out is not None and (not isinstance(named_out, str) or not named_out):
+        raise ConfigError(f"out must be a string, got {named_out!r}")
+    # The format: the flag, else config, else the --out file's suffix, else HTML.
+    if format is not None or "format" in file_cfg:
+        resolved_format = _pick_choice(file_cfg, "format", format, "html", _FORMATS)
+    else:
+        resolved_format = _SUFFIX_FORMATS.get(Path(named_out).suffix.lower(), "html") if named_out else "html"
+    resolved_out = named_out or f"report.{_FORMAT_SUFFIXES[resolved_format]}"
 
     file_pricing = pricing_from(file_cfg.get("pricing"))
     file_budget = budget_from(file_cfg.get("budget"))
@@ -443,7 +450,7 @@ def load_config(
     else:
         resolved_usage = None
     return RunConfig(
-        format=cast(OutputFormat, _pick_choice(file_cfg, "format", format, "markdown", _FORMATS)),
+        format=cast(OutputFormat, resolved_format),
         fail_on=cast(SeverityThreshold, _pick_choice(file_cfg, "fail_on", fail_on, "none", _FAIL_ON)),
         no_llm=_pick_bool(file_cfg, "no_llm", no_llm, False),
         out=resolved_out,
@@ -533,10 +540,10 @@ class RunConfig:
     def __init__(
         self,
         *,
-        format: OutputFormat = "markdown",
+        format: OutputFormat = "html",
         fail_on: SeverityThreshold = "none",
         no_llm: bool = False,
-        out: str = "report.md",
+        out: str = "report.html",
         rules_include: list[str] | None = None,
         rules_exclude: list[str] | None = None,
         rules_exclude_paths: dict[str, list[str]] | None = None,

@@ -2,7 +2,7 @@
 
 Local-first AWS architecture review for infrastructure code. It scans **CDK** (TypeScript and Python), **CloudFormation**, and **Terraform**, and reports security, reliability, operational excellence, performance, cost, and sustainability issues mapped to the AWS Well-Architected Framework. For workloads that use Bedrock, SageMaker, or AgentCore it also answers the four AI Well-Architected lenses (Machine Learning, Generative AI, Responsible AI, Agentic AI).
 
-No AWS credentials needed. The only cloud calls are AWS price lookups for cost estimates (the public Price List bulk API, or the Price List Query API when credentials exist; `--pricing-source off` turns them off), and the read-only account checks you opt in to with `--live-account`. LLM output is optional and self-hosted only. With `OLLAMA_HOST` or `LLM_BASE_URL` set, it calls that server; with neither set it makes no call. `--no-llm` skips it either way. If the model does not answer, the findings stay as the rules wrote them.
+No AWS credentials needed. The only cloud calls are AWS price lookups for cost estimates (the public Price List bulk API, or the Price List Query API when credentials exist; `--pricing-source off` turns them off), and the read-only account checks you opt in to with `--live-account`. LLM output is optional and self-hosted only. With `OLLAMA_HOST` or `LLM_BASE_URL` set, it calls that server; with neither set it uses an Ollama running on `localhost:11434` if one answers (with `llama3:8b`, else the first model pulled), and otherwise makes no call. `--no-llm` skips it either way. If the model does not answer, the findings stay as the rules wrote them.
 
 > 368 static rules and 317 template checks are implemented and tested. 141 of the 368 CDK rules (38%) have a template check. Those checks run on CloudFormation, Terraform, and synthesised CDK. [docs/COVERAGE.md](docs/COVERAGE.md) gives the reason for each of the others. Expect some false positives and negatives, and API changes.
 
@@ -53,11 +53,13 @@ To work on the scanner, clone `main` and `pip install -e ".[dev]"` (see [CONTRIB
 ## Usage
 
 ```bash
-aws-arch-agent --repo ./my-project --no-llm                          # report.md
-aws-arch-agent --repo . --no-llm --format html --out report.html     # browser report
+aws-arch-agent --repo ./my-project                                   # everything: report.html, cost, LLM
+aws-arch-agent --repo . --out report.md                              # Markdown (format from the suffix)
 aws-arch-agent --repo . --no-llm --format sarif --out results.sarif  # GitHub Code Scanning
 aws-arch-agent --repo . --no-llm --fail-on high                      # fail CI on High findings
 ```
+
+A plain `--repo` scan does everything it can on its own. It writes an HTML report to `report.html`, with estimated monthly cost for every stack it can price. It uses a local Ollama for the LLM review when one is running. For CDK it synthesises the stacks (V2) when the `v2` extra and Node.js are installed, so they are priced too. Otherwise it says why and scans with V1. Flags override each of these: `--format` or an `--out` suffix (`.md`, `.json`, `.sarif`) picks the format, `--mode v1|v2` the mode, and `--no-llm` turns the LLM off.
 
 A finished scan prints a short summary on the terminal: the severity counts, up to five top fixes (the same as the report's Summary), and the report path. It is plain text in CI logs. The report file and exit codes are unchanged; it is not a TUI, so read findings in the report. See [docs/REFERENCE.md](docs/REFERENCE.md#terminal-summary).
 
@@ -159,7 +161,9 @@ Releases and notes: [GitHub releases](https://github.com/gutehall/aws-arch-agent
 
 ## Modes
 
-- **V1** (default): static rules. No synth. Finishes in seconds.
+`--mode auto` (the default) picks V2 for a CDK repo when the `v2` extra and Node.js (`npx`) are installed, or when `--templates` is passed, and V1 otherwise.
+
+- **V1** (`--mode v1`): static rules. No synth. Finishes in seconds.
 - **V2** (`--mode v2`): runs `cdk synth`, then six LangGraph reviewers judge the static findings and the synthesised template. A release install needs the `v2` extra. A checkout installed with `.[dev]` already has it.
 
 ```bash

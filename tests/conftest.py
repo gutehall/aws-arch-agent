@@ -30,6 +30,21 @@ def _offline_prices(monkeypatch: pytest.MonkeyPatch):
 
 
 @pytest.fixture(autouse=True)
+def _no_local_tools(monkeypatch: pytest.MonkeyPatch) -> None:
+    """A plain scan probes for a local Ollama and for npx (--mode auto). Tests must not see
+    the developer's machine: no local model, no synth unless a test turns them on."""
+    from aws_arch_agent import cli
+    from aws_arch_agent.tools import llm
+
+    def no_local_ollama() -> tuple[str, ...]:
+        return ()
+
+    no_local_ollama.real = llm.local_ollama_models  # type: ignore[attr-defined]  # for the probe's own test
+    monkeypatch.setattr(llm, "local_ollama_models", no_local_ollama)
+    monkeypatch.setattr(cli, "_synth_available", lambda: False)
+
+
+@pytest.fixture(autouse=True)
 def _no_aws_region_from_the_shell(monkeypatch: pytest.MonkeyPatch) -> None:
     """A scan falls back to AWS_REGION / AWS_DEFAULT_REGION; tests must not see the developer's."""
     monkeypatch.delenv("AWS_REGION", raising=False)

@@ -1,6 +1,7 @@
 """LLM client for self-hosted models only: Ollama or an OpenAI-compatible server."""
 from __future__ import annotations
 
+import functools
 from dataclasses import dataclass, replace
 import logging
 import os
@@ -51,15 +52,42 @@ class LLMResult:
 
 NO_LLM = LLMResult("", "skipped", reason="--no-llm")
 NO_CALL = LLMResult("", "skipped", reason="no LLM call made")
-NOT_CONFIGURED = "no LLM configured: set OLLAMA_HOST or LLM_BASE_URL"
-# Any of these means the user chose a model server. With none set there is nothing to ask,
-# and the default localhost Ollama is not assumed to be running.
+NOT_CONFIGURED = "no LLM configured: set OLLAMA_HOST or LLM_BASE_URL, or run Ollama on localhost:11434"
+# Any of these means the user chose a model server. With none set, a local Ollama is used
+# when one answers on its default port with at least one model pulled.
 CONFIG_VARS = ("OLLAMA_HOST", "OLLAMA_MODEL", "LLM_BASE_URL", "LLM_MODEL", "LLM_PROVIDER")
+LOCAL_OLLAMA = "http://localhost:11434"
+DEFAULT_OLLAMA_MODEL = "llama3:8b"
+LOCAL_PROBE_TIMEOUT_S = 1.0
+
+
+@functools.lru_cache(maxsize=1)
+def local_ollama_models() -> tuple[str, ...]:
+    """The models a local Ollama has pulled; empty when none answers (asked once per process)."""
+    try:
+        r = requests.get(f"{LOCAL_OLLAMA}/api/tags", timeout=LOCAL_PROBE_TIMEOUT_S)
+        r.raise_for_status()
+        models = r.json().get("models") or []
+    except Exception:  # not running, refused, not Ollama: no LLM
+        return ()
+    return tuple(str(m.get("name")) for m in models if isinstance(m, dict) and m.get("name"))
 
 
 def llm_configured() -> bool:
-    """True when the environment names a model server."""
-    return any(os.getenv(name, "").strip() for name in CONFIG_VARS)
+    """True when the environment names a model server, or a local Ollama answers with a model."""
+    return any(os.getenv(name, "").strip() for name in CONFIG_VARS) or bool(local_ollama_models())
+
+
+def _default_ollama_model() -> str:
+    """OLLAMA_MODEL, else llama3:8b when a local Ollama has it (or is not asked), else its first model."""
+    if os.getenv("OLLAMA_MODEL", "").strip() or os.getenv("OLLAMA_HOST", "").strip():
+        return os.getenv("OLLAMA_MODEL", DEFAULT_OLLAMA_MODEL)
+    local = local_ollama_models()
+    if not local or DEFAULT_OLLAMA_MODEL in local:
+        return DEFAULT_OLLAMA_MODEL
+    # An embedding model cannot answer a chat request.
+    chat = [name for name in local if "embed" not in name.lower()]
+    return chat[0] if chat else DEFAULT_OLLAMA_MODEL
 
 
 def aggregate_results(results: Iterable[LLMResult]) -> LLMResult:
@@ -78,11 +106,21 @@ class LLMClient:
 
     def __init__(self) -> None:
         self.provider = os.getenv("LLM_PROVIDER", "ollama").lower()
-        self.ollama_host = os.getenv("OLLAMA_HOST", "http://localhost:11434")
-        self.ollama_model = os.getenv("OLLAMA_MODEL", "llama3:8b")
+        self.ollama_host = os.getenv("OLLAMA_HOST", LOCAL_OLLAMA)
+        self._ollama_model: str | None = None  # resolved on first use: building a client probes nothing
         self.ollama_num_ctx = _ollama_num_ctx()
         self.selfhosted_url = os.getenv("LLM_BASE_URL", "")
         self.selfhosted_model = os.getenv("LLM_MODEL", "")
+
+    @property
+    def ollama_model(self) -> str:
+        if self._ollama_model is None:
+            self._ollama_model = _default_ollama_model()
+        return self._ollama_model
+
+    @ollama_model.setter
+    def ollama_model(self, value: str) -> None:
+        self._ollama_model = value
 
     def polish(self, markdown: str, system: str) -> LLMResult:
         """Send content to LLM with system prompt; a failure returns the original as its text.
