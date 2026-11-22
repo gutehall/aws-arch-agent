@@ -10,15 +10,15 @@ No AWS credentials needed. The only cloud calls are AWS price lookups for cost e
 
 Requires Python 3.11+, git, and [ripgrep](https://github.com/BurntSushi/ripgrep#installation): `brew install ripgrep` (macOS), `sudo apt install ripgrep` (Debian/Ubuntu), or `winget install BurntSushi.ripgrep.MSVC` (Windows).
 
-Install a release (latest: [v0.5.0](https://github.com/gutehall/aws-arch-agent/releases/tag/v0.5.0)). Pin the tag. [CI](#ci) says what a newer tag can change.
+Install a release (latest: [v1.0.0](https://github.com/gutehall/aws-arch-agent/releases/tag/v1.0.0)). Pin the tag. [CI](#ci) says what a newer tag can change.
 
 macOS and Linux:
 
 ```bash
 python3 -m venv .venv
 source .venv/bin/activate
-pip install "aws-arch-agent==0.5.0"
-aws-arch-agent --version   # 0.5.0
+pip install "aws-arch-agent==1.0.0"
+aws-arch-agent --version   # 1.0.0
 ```
 
 Windows (PowerShell):
@@ -26,8 +26,8 @@ Windows (PowerShell):
 ```powershell
 py -m venv .venv
 .venv\Scripts\Activate.ps1
-pip install "aws-arch-agent==0.5.0"
-aws-arch-agent --version   # 0.5.0
+pip install "aws-arch-agent==1.0.0"
+aws-arch-agent --version   # 1.0.0
 ```
 
 The package is on [PyPI](https://pypi.org/project/aws-arch-agent/).
@@ -38,12 +38,12 @@ To install the command on its own, without managing a virtual environment, use [
 pipx install aws-arch-agent
 ```
 
-Optional extras: `aws` (boto3, for prices from the Price List Query API with your credentials), `account` (boto3, for `--live-account`), `v2` (LangGraph mode, see [Modes](#modes)), `rag` (embedding RAG). For example `pip install "aws-arch-agent[aws]==0.5.0"`.
+Optional extras: `aws` (boto3, for prices from the Price List Query API with your credentials), `account` (boto3, for `--live-account`), `v2` (LangGraph mode, see [Modes](#modes)), `rag` (embedding RAG). For example `pip install "aws-arch-agent[aws]==1.0.0"`.
 
 To install a tag straight from GitHub instead:
 
 ```bash
-pip install "git+https://github.com/gutehall/aws-arch-agent@v0.5.0"
+pip install "git+https://github.com/gutehall/aws-arch-agent@v1.0.0"
 ```
 
 CI tests on Linux (Python 3.11 and 3.12) and Windows, and runs the GitHub Action on Linux, macOS, and Windows. V2 synth also needs Node.js for `npx cdk synth`.
@@ -139,7 +139,7 @@ SARIF results carry `partialFingerprints`, a `helpUri` per rule, and `suppressio
 Or use the composite GitHub Action, pinned to a release:
 
 ```yaml
-- uses: gutehall/aws-arch-agent/.github/actions/aws-arch-agent@v0.5.0
+- uses: gutehall/aws-arch-agent/.github/actions/aws-arch-agent@v1.0.0
   with:
     repo: .
     fail-on: high
@@ -167,7 +167,7 @@ Releases and notes: [GitHub releases](https://github.com/gutehall/aws-arch-agent
 - **V2** (`--mode v2`): runs `cdk synth`, then six LangGraph reviewers judge the static findings and the synthesised template. A release install needs the `v2` extra. A checkout installed with `.[dev]` already has it.
 
 ```bash
-pip install "aws-arch-agent[v2]==0.5.0"
+pip install "aws-arch-agent[v2]==1.0.0"
 aws-arch-agent --repo . --mode v2 --no-llm --rag ./docs/waf-snippets.md
 ```
 

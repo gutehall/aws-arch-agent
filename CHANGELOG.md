@@ -2,6 +2,24 @@
 
 New releases go at the top. See [CONTRIBUTING.md](CONTRIBUTING.md#releases) for when to cut one and how the version is bumped.
 
+## v1.0.0 - 2026-11-22
+
+### Breaking
+
+- A plain `aws-arch-agent --repo <path>` now writes an HTML report to `report.html` (was Markdown in `report.md`). Without `--format`, the `--out` suffix (`.md`, `.json`, `.sarif`, `.html`) picks the format, so `--out report.md` still writes Markdown. The GitHub Action passes these flags and is unaffected (#119)
+- `--mode` defaults to `auto`: V2 for a CDK app (a `cdk.json` at the repo root) when the `v2` extra and Node.js are installed, or with `--templates`; V1 otherwise, with a console note when a CDK repo stays on V1. `--mode v1` restores the old default (#119)
+- The bundled offline price snapshot (`prices.json.gz`) and `scripts/refresh_prices.py` are removed; prices are fetched live (#117)
+
+### Changes
+
+- Live AWS pricing for any region: the Price List Query API when boto3 and credentials are available (`pip install 'aws-arch-agent[aws]'`), else the public bulk API, with a 24-hour SQLite cache and an expired-cache fallback. A scan never fails because pricing failed. New flags `--pricing-source auto|api|bulk|off`, `--price-cache-ttl`, `--refresh-prices`; config `pricing.*` (#117)
+- The stack cost covers load balancers, EKS, Fargate services, ElastiCache, OpenSearch, Redshift, interface endpoints, KMS keys, Secrets Manager, Kinesis, RDS storage, EBS IOPS and throughput, and Auto Scaling groups. A Terraform literal `count = N` multiplies a resource's cost; Terraform adapters keep the cost attributes these need (#117)
+- Optional usage profile (`.aws-arch-agent-usage.yaml`, `--usage-file`, config `usage_file`) prices usage-billed resources, reported apart from fixed cost and tagged "usage assumed" (#117)
+- `--compare-cost` diffs the cost against a baseline `cost_snapshot` (now written by `--update-baseline`) or an earlier JSON report; `--max-monthly-cost` and `--max-cost-increase` (USD or %), or config `budget.*`, exit 1 on a breach. CDK source in V1 gets a hint to use V2 for cost (#117)
+- Reports: an HTML cost tab and monthly-cost card; Markdown budget, price source, fixed vs usage and cost-change lines; `context.notes.cost` and `context.notes.prices` gain new fields in the JSON schema (#117)
+- After a scan the terminal prints the severity counts, up to five top fixes and the report path; the report file and exit codes are unchanged. The "Wrote report to" line no longer breaks on paths with brackets (#118)
+- With no LLM environment variables set, a local Ollama on `localhost:11434` is used when it answers (`llama3:8b` if pulled, else the first chat model); otherwise the LLM is skipped with a note (#119)
+
 ## v0.5.0 - 2026-11-22
 
 ### Changes
