@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
 """Check that every page in report/doc_topics.py still exists.
 
-Run by hand after editing the map, or now and then because AWS moves pages; a scan never
-calls the network.
+CI runs it (.github/workflows/doc-links.yml) when the map changes and weekly, because AWS
+moves pages; run it by hand after editing the map. A scan never calls the network.
 
     python scripts/check_doc_links.py      # after pip install -e . (or PYTHONPATH=src)
 

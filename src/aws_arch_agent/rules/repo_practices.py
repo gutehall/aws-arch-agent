@@ -862,7 +862,7 @@ import ipaddress
 import json
 import os
 import re
-from collections.abc import Iterator
+from collections.abc import Iterable, Iterator
 from pathlib import Path
 from typing import ClassVar, List
 
@@ -13446,6 +13446,116 @@ def bedrock_call_files(repo_path: Path) -> Iterator[tuple[str, str]]:
             yield rel, text
 
 
+# Local imports, to follow a model call into the helpers it uses and the callers that use it.
+_PY_FROM_IMPORT = re.compile(r"^\s*from\s+(\.*)([\w.]*)\s+import\s+\(?([\w\s,*]+)", re.MULTILINE)
+_PY_IMPORT = re.compile(r"^\s*import\s+([\w.]+(?:\s*,\s*[\w.]+)*)", re.MULTILINE)
+_JS_IMPORT = re.compile(r"""(?:\bfrom|\brequire\s*\(|\bimport\s*\(?)\s*["'](\.{1,2}/[^"']+)["']""")
+_JS_SUFFIXES = (
+    "", ".ts", ".tsx", ".mts", ".cts", ".js", ".jsx", ".mjs", ".cjs",
+    "/index.ts", "/index.tsx", "/index.js", "/index.jsx",
+)
+
+
+def _norm(parts: list[str]) -> str | None:
+    out: list[str] = []
+    for part in parts:
+        if part in ("", "."):
+            continue
+        if part == "..":
+            if not out:
+                return None  # outside the repo
+            out.pop()
+        else:
+            out.append(part)
+    return "/".join(out)
+
+
+def _python_imports(rel: str, text: str, known: set[str]) -> set[str]:
+    """Repo files a Python file imports: relative imports from its package, absolute ones from
+    the repo root or any folder above the file (a src/ layout)."""
+    folder = rel.split("/")[:-1]
+    roots = [folder[:i] for i in range(len(folder), -1, -1)]
+    found: set[str] = set()
+
+    def add(base: list[str], module: str, names: list[str]) -> bool:
+        """Add what base/module resolves to; True when anything did."""
+        mod = [m for m in module.split(".") if m]
+        hit = False
+        for name in [""] + names:
+            path = _norm(base + mod + ([name] if name else []))
+            if path is None:
+                continue
+            for candidate in (f"{path}.py", f"{path}/__init__.py"):
+                if candidate in known:
+                    found.add(candidate)
+                    hit = True
+        return hit
+
+    for match in _PY_FROM_IMPORT.finditer(text):
+        dots, module = match.group(1), match.group(2)
+        names = [n.strip() for n in match.group(3).replace("(", " ").split(",")]
+        names = [n.split()[0] for n in names if n and n.split()[0] != "*"]
+        if dots:
+            base = folder[: len(folder) - (len(dots) - 1)] if len(dots) - 1 <= len(folder) else None
+            if base is not None:
+                add(base, module, names)
+        else:
+            # The nearest folder that holds the module, so a generic name (config, utils)
+            # does not also link the same name higher up the tree.
+            any(add(root, module, names) for root in roots)
+    for match in _PY_IMPORT.finditer(text):
+        for module in match.group(1).split(","):
+            any(add(root, module.strip(), []) for root in roots)
+    found.discard(rel)
+    return found
+
+
+def _js_imports(rel: str, text: str, known: set[str]) -> set[str]:
+    """Repo files a TypeScript or JavaScript file imports by a relative path."""
+    folder = rel.split("/")[:-1]
+    found: set[str] = set()
+    for match in _JS_IMPORT.finditer(text):
+        spec = match.group(1)
+        stems = [spec]
+        if spec.endswith((".js", ".mjs", ".cjs")):
+            stems.append(spec.rsplit(".", 1)[0])  # TypeScript ESM imports name the .js output
+        for stem in stems:
+            path = _norm(folder + stem.split("/"))
+            if path is None:
+                continue
+            hit = next((path + suffix for suffix in _JS_SUFFIXES if path + suffix in known), None)
+            if hit and hit != rel:
+                found.add(hit)
+                break
+    return found
+
+
+def related_code(files: dict[str, str], starts: Iterable[str]) -> dict[str, set[str]]:
+    """For each start file, itself, the local modules it imports (all the way down), and the
+    files that import it directly: where a model call's settings can live."""
+    known = set(files)
+    imports = {
+        rel: _python_imports(rel, text, known) if rel.endswith(".py") else _js_imports(rel, text, known)
+        for rel, text in files.items()
+    }
+    importers: dict[str, set[str]] = {}
+    for rel, targets in imports.items():
+        for target in targets:
+            importers.setdefault(target, set()).add(rel)
+    related: dict[str, set[str]] = {}
+    for rel in starts:
+        if rel not in imports:
+            continue
+        reach, todo = {rel}, [rel]
+        while todo:
+            for target in imports[todo.pop()]:
+                if target not in reach:
+                    reach.add(target)
+                    todo.append(target)
+        related[rel] = reach | importers.get(rel, set())
+    return related
+
+
 class _AiCodeRule(_RepoRule):
     """A code rule that fires only on an AI workload: per file, a Bedrock model call whose file
     has no match for `answer`."""
@@ -13456,7 +13566,16 @@ class _AiCodeRule(_RepoRule):
     def run(self, repo_path: Path, language: str = "typescript") -> List[Finding]:
         if not ai_gate.active():
             return []
-        bare = [rel for rel, text in bedrock_call_files(repo_path) if not self.answer.search(text)]
+        calls = list(bedrock_call_files(repo_path))
+        if not calls:
+            return []
+        # A setting in a helper the file imports, or passed in by a caller that imports it, counts.
+        files = dict(http_client_files(repo_path))
+        related = related_code(files, [rel for rel, _text in calls])
+        bare = [
+            rel for rel, _text in calls
+            if not any(self.answer.search(files[other]) for other in related.get(rel, {rel}))
+        ]
         if not bare:
             return []
         listed = ", ".join(bare[:5]) + (f" and {len(bare) - 5} more" if len(bare) > 5 else "")
@@ -13473,7 +13592,10 @@ class BedrockCallWithoutGuardrail(_AiCodeRule):
     severity = "Medium"
     themes = ("security-baseline",)
     answer = _GUARDRAIL_IN_CALL
-    lacking = "no guardrailConfig, guardrailIdentifier or ApplyGuardrail call in the file"
+    lacking = (
+        "no guardrailConfig, guardrailIdentifier or ApplyGuardrail call in the file, the local "
+        "modules it imports, or the files that import it"
+    )
     recommendation = (
         "Pass a guardrail on every model call: guardrailConfig (guardrailIdentifier and "
         "guardrailVersion) on Converse, or guardrailIdentifier and guardrailVersion on "
@@ -13489,7 +13611,10 @@ class BedrockCallWithoutTokenBound(_AiCodeRule):
     severity = "Low"
     themes = ("finops",)
     answer = _TOKEN_BOUND
-    lacking = "no maxTokens or model max_tokens setting in the file"
+    lacking = (
+        "no maxTokens or model max_tokens setting in the file, the local modules it imports, "
+        "or the files that import it"
+    )
     recommendation = (
         "Bound each response: set inferenceConfig.maxTokens on Converse, or the model's own "
         "limit in the InvokeModel body (max_tokens, maxTokenCount, max_gen_len), to the longest "

@@ -795,3 +795,45 @@ def test_bias_rule_needs_a_sagemaker_workload_and_a_build(tmp_path: Path) -> Non
 def test_governance_rules_stay_off_for_a_non_ai_repo(tmp_path: Path) -> None:
     assert _governance_ids(tmp_path / "a", _CI, resources={"B": S3}) == set()
     assert _governance_ids(tmp_path / "b", _CI, lenses_ai=False) == set()
+
+
+_PY_HELPER_CALL = (
+    "import boto3\n\nclient = boto3.client(\"bedrock-runtime\")\n\n\n"
+    "def ask(text, **settings):\n    return client.converse(modelId=\"m\", messages=[], **settings)\n"
+)
+
+
+def test_settings_in_a_local_helper_or_caller_count(tmp_path: Path) -> None:
+    # The call file imports its settings from a helper module.
+    settings = "GUARD = {'guardrailIdentifier': 'g'}\nBOUND = {'maxTokens': 512}\n"
+    call = "from .settings import GUARD, BOUND\n" + _PY_CALL % ""
+    assert _code_ids(tmp_path / "a", {"app/__init__.py": "", "app/settings.py": settings,
+                                      "app/handler.py": call}) == set()
+    # A caller passes the settings to the helper that makes the call.
+    caller = ("from app.bedrock import ask\n\n"
+              "ask('hi', guardrailConfig={'guardrailIdentifier': 'g'}, inferenceConfig={'maxTokens': 9})\n")
+    assert _code_ids(tmp_path / "b", {"app/bedrock.py": _PY_HELPER_CALL, "app/main.py": caller}) == set()
+    # TypeScript: a relative import (ESM .js spelling) of a helper that holds the guardrail.
+    helper = 'export const guard = { guardrailIdentifier: "g", guardrailVersion: "1" };\n'
+    call_ts = 'import { guard } from "./guard.js";\n' + _TS_CALL % "  guardrailConfig: guard,\n"
+    assert _code_ids(tmp_path / "c", {"src/guard.ts": helper, "src/ask.ts": call_ts}) == {"REPO-200"}
+    # An unrelated file with a guardrail does not clear a call that never reaches it.
+    assert _code_ids(tmp_path / "d", {"app/handler.py": _PY_CALL % "",
+                                      "other/guarded.py": _PY_CALL % _GUARD_ARG}) == {"REPO-199", "REPO-200"}
+
+
+def test_import_resolution_prefers_nearest_and_reads_all_suffixes() -> None:
+    from aws_arch_agent.rules.repo_practices import related_code
+
+    files = {
+        "app/handler.py": "import config\n",
+        "app/config.py": "",
+        "config.py": "guardrailIdentifier = 'g'\n",
+        "src/ask.ts": 'import { g } from "./guard.mjs";\nimport { h } from "./h";\n',
+        "src/guard.mts": "",
+        "src/h.jsx": "",
+    }
+    related = related_code(files, ["app/handler.py", "src/ask.ts"])
+    assert related["app/handler.py"] == {"app/handler.py", "app/config.py"}
+    assert related["src/ask.ts"] == {"src/ask.ts", "src/guard.mts", "src/h.jsx"}
+    assert set(related) == {"app/handler.py", "src/ask.ts"}

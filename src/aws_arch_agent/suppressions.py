@@ -153,7 +153,10 @@ class _FileIndex:
     """Directives and Metadata of one file, read once."""
 
     def __init__(self, path: Path):
-        self.lines = read_text_safe(path).splitlines()
+        # Split on "\n" only: finding lines count "\n", and splitlines() also breaks on \f,
+        # \x1c and others, which would put a directive on the wrong line.
+        self._text = read_text_safe(path)
+        self.lines = [line.rstrip("\r") for line in self._text.split("\n")]
         self._directives: dict[int, _Rule | str | None] = {}
         self._metadata: dict[int, tuple[str, list[_Rule], list[str]]] | None = None
         self._path = path
@@ -169,9 +172,9 @@ class _FileIndex:
         """(logical ID, rules, errors) of the resource whose logical ID is on this line."""
         if self._metadata is None:
             self._metadata = {}
-            if self._path.suffix.lower() in _TEMPLATE_SUFFIXES and _METADATA_KEY in "\n".join(self.lines):
+            if self._path.suffix.lower() in _TEMPLATE_SUFFIXES and _METADATA_KEY in self._text:
                 try:
-                    doc, lines = parse_template_with_lines(self._path, "\n".join(self.lines))
+                    doc, lines = parse_template_with_lines(self._path, self._text)
                 except Exception:
                     doc, lines = None, {}
                 resources = doc.get("Resources") if isinstance(doc, Mapping) else None
@@ -249,11 +252,11 @@ def exclude_by_path(
     """Drop findings of the rules config `rules.exclude_paths` lists for the finding's file."""
     if not exclude_paths:
         return findings
-    patterns = [(_glob(pattern), set(ids)) for pattern, ids in exclude_paths.items()]
+    patterns = [(_glob(pattern), {i.upper() for i in ids}) for pattern, ids in exclude_paths.items()]
     kept: list[Finding] = []
     for finding in findings:
         path = normalize_rel_path(finding.file)
-        if path and any(finding.id in ids and glob.match(path) for glob, ids in patterns):
+        if path and any(finding.id.upper() in ids and glob.match(path) for glob, ids in patterns):
             continue
         kept.append(finding)
     return kept
