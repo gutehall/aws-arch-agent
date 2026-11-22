@@ -6,6 +6,7 @@ import sys
 from pathlib import Path
 from unittest.mock import MagicMock
 
+import pytest
 from typer.testing import CliRunner
 
 from aws_arch_agent.cli import app
@@ -922,3 +923,94 @@ def test_v2_no_llm_is_skipped_with_no_call(tmp_path: Path, monkeypatch) -> None:
     line = "LLM: skipped (--no-llm)"
     assert line in result.output.splitlines()
     assert out_file.read_text(encoding="utf-8").splitlines()[0] == line
+
+
+# --- Terminal summary: printed on stdout, report file and exit codes unchanged ----
+
+
+def _summary_args(root: Path, mode: str, out: Path, *extra: str) -> list[str]:
+    return ["--repo", str(root), "--mode", mode, "--no-llm", "--format", "json", "--out", str(out), *extra]
+
+
+def _top_fix_ids(out: Path) -> list[str]:
+    from aws_arch_agent.report.summary import build_summary
+    from aws_arch_agent.models import Finding
+
+    data = json.loads(out.read_text(encoding="utf-8"))
+    findings = [Finding(**{k: v for k, v in f.items() if k in Finding.model_fields}) for f in data["findings"]]
+    return [fix["id"] for fix in build_summary(findings)["top_fixes"]]
+
+
+@pytest.mark.parametrize("mode", ["v1", "v2"])
+def test_summary_prints_counts_top_fixes_and_path(tmp_path: Path, mode: str, monkeypatch) -> None:
+    monkeypatch.setattr("aws_arch_agent.agent.v2_graph.run_cdk_synth", lambda *a, **k: (0, "", ""))
+    _high_finding_repo(tmp_path)
+    out = tmp_path / "report.json"
+    result = runner.invoke(app, _summary_args(tmp_path, mode, out, "--no-synth"))
+    assert result.exit_code == 0, result.output
+    data = json.loads(out.read_text(encoding="utf-8"))
+    sev = data["summary"]["by_severity"]
+    assert (f"{len(data['findings'])} findings: {sev['High']} High, {sev['Medium']} Medium, "
+            f"{sev['Low']} Low") in result.output
+    ids = _top_fix_ids(out)
+    assert 0 < len(ids) <= 5 and "Top fixes:" in result.output
+    printed = [line.split("[", 1)[1].split("]", 1)[0] for line in result.output.splitlines()
+               if line.lstrip()[:2].rstrip(".").isdigit() and "[" in line]
+    assert printed == ids  # the same rules, in the same order, as build_summary
+    assert f"Report: {out}" in result.output.replace("\n", "")
+    assert "\x1b[" not in result.output  # plain text when stdout is not a terminal
+
+
+def test_summary_without_findings_has_no_fix_list(tmp_path: Path, monkeypatch) -> None:
+    from aws_arch_agent import cli
+    from aws_arch_agent.models import RepoContext
+    from aws_arch_agent.report.summary import terminal_lines
+
+    assert terminal_lines({"findings": 0, "by_severity": {"High": 0, "Medium": 0, "Low": 0}, "top_fixes": []},
+                          "/r/report.md") == ["0 findings: 0 High, 0 Medium, 0 Low", "Report: /r/report.md"]
+    _make_repo(tmp_path)
+    monkeypatch.setattr(cli, "_run", lambda *a, **k: ("# Report", RepoContext(repo_path=str(tmp_path),
+                                                                                  language="unknown"), [], []))
+    out = tmp_path / "report.md"
+    result = runner.invoke(app, ["--repo", str(tmp_path), "--no-llm", "--out", str(out)])
+    assert result.exit_code == 0, result.output
+    assert "0 findings: 0 High, 0 Medium, 0 Low" in result.output and "Top fixes:" not in result.output
+    assert f"Report: {out}" in result.output.replace("\n", "")
+
+
+@pytest.mark.parametrize("fail_on, warn, code", [
+    ("none", False, 0),
+    ("high", False, 1),
+    ("none", True, 2),
+    ("high", True, 2),  # a warning wins over --fail-on
+])
+def test_exit_codes_and_report_are_unchanged_by_the_summary(
+    tmp_path: Path, monkeypatch, fail_on: str, warn: bool, code: int
+) -> None:
+    monkeypatch.setattr("aws_arch_agent.agent.v2_graph.run_cdk_synth",
+                        lambda *a, **k: (1, "", "synth blew up") if warn else (0, "", ""))
+    _high_finding_repo(tmp_path)
+    out = tmp_path / "report.json"
+    args = _summary_args(tmp_path, "v2", out, "--fail-on", fail_on, *([] if warn else ["--no-synth"]))
+    result = runner.invoke(app, args)
+    assert result.exit_code == code, result.output
+    data = json.loads(out.read_text(encoding="utf-8"))  # still written, in the requested format
+    assert data["findings"] and any(f["severity"] == "High" for f in data["findings"])
+    assert "Top fixes:" in result.output and f"Report: {out}" in result.output.replace("\n", "")
+
+
+def test_summary_adds_no_dependency() -> None:
+    text = (Path(__file__).resolve().parents[1] / "pyproject.toml").read_text(encoding="utf-8")
+    deps = text.split("dependencies = [", 1)[1].split("]", 1)[0]
+    assert "rich" in deps and "textual" not in text
+
+
+def test_summary_and_report_line_keep_brackets_in_the_path(tmp_path: Path) -> None:
+    _high_finding_repo(tmp_path)
+    out_dir = tmp_path / "reports[v2]" / "[/bold]"
+    out_dir.mkdir(parents=True)
+    out = out_dir / "report.md"
+    result = runner.invoke(app, ["--repo", str(tmp_path), "--no-llm", "--out", str(out)])
+    assert result.exit_code == 0, result.output
+    flat = result.output.replace("\n", "")
+    assert f"Wrote report to: {out}" in flat and f"Report: {out}" in flat
