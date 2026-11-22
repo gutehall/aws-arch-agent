@@ -477,6 +477,24 @@ Markdown reports open with a **Summary** built from the findings alone, so it is
 - **By theme**: one line per theme that has findings. A finding in two themes is counted in both, so these lines do not add up to the total.
 - **Quick wins**: fixes with suggested code and low effort.
 
+### Terminal summary
+
+When a scan finishes, after `Wrote report to: ...`, the terminal prints three things, in every output format and in V1 and V2:
+
+```text
+12 findings: 2 High, 6 Medium, 4 Low
+Top fixes:
+  1. [CF-S3-001] S3 bucket allows public access (High, 1 resource, low effort), e.g. `template.yaml:14`
+  2. ...
+Report: /path/to/report.md
+```
+
+- **Counts**: the finding total and the High, Medium and Low counts, over the same findings as the report file. Suppressed and baseline-accepted findings are counted, as they are listed in the report; they still do not count for `--fail-on`.
+- **Top fixes**: up to five, from `build_summary`: the same rules, in the same order, as the report's Summary. A scan with no findings prints the zero counts and no fix list.
+- **Report**: the path of the report file.
+
+The lines are plain text when stdout is not a terminal, so CI logs show them as written. They are printed before the process exits, so a run that fails still shows them. They do not replace the report file: the file is written as before, in the requested format, and the exit codes are unchanged (0; 1 for `--fail-on` or a breached budget; 2 when a check warned, which wins over both). This is not a TUI; read findings in the report (the HTML report for browsing). There is no flag to turn it off and no new dependency.
+
 ## Well-Architected answers
 
 After the summary, every report answers all 57 questions of the current Well-Architected Framework: one line per question, **met** or **not met**, with the findings under it. It appears in Markdown and HTML, and as `answers` in JSON. The answer is computed from the findings alone. Nobody is asked anything, and in V2 the LLM does not change it.

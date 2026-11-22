@@ -160,3 +160,19 @@ def markdown_lines(summary: dict[str, Any]) -> List[str]:
         out += [f"- {fix_line(fix)}" for fix in summary["quick_wins"]]
     out.append("")
     return out
+
+
+def terminal_lines(summary: dict[str, Any], report_path: str) -> List[str]:
+    """What the CLI prints after a scan: severity counts, the top fixes, the report path.
+
+    Plain text from build_summary, so it names the same rules in the same order as the
+    report's summary. No findings: the zero counts and the path, and no fix list.
+    """
+    sev = summary["by_severity"]
+    total = summary["findings"]
+    out = [f"{total} finding{'s' if total != 1 else ''}: {sev['High']} High, {sev['Medium']} Medium, {sev['Low']} Low"]
+    if summary["top_fixes"]:
+        out.append("Top fixes:")
+        out += [f"  {i}. {fix_line(fix)}" for i, fix in enumerate(summary["top_fixes"], 1)]
+    out.append(f"Report: {report_path}")
+    return out
