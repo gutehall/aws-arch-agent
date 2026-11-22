@@ -9,10 +9,10 @@ from aws_arch_agent.config import ConfigError, load_config
 def test_load_config_no_file(tmp_path: Path) -> None:
     """With no config file, defaults are used."""
     cfg = load_config(tmp_path)
-    assert cfg.format == "markdown"
+    assert cfg.format == "html"
     assert cfg.fail_on == "none"
     assert cfg.no_llm is False
-    assert cfg.out == "report.md"
+    assert cfg.out == "report.html"
     assert cfg.rules_include is None
     assert cfg.rules_exclude is None
     assert cfg.rules_org is False
@@ -155,3 +155,21 @@ def test_cwd_config_is_not_used(tmp_path: Path, monkeypatch: pytest.MonkeyPatch)
     assert cfg.fail_on == "none"
     assert cfg.no_llm is False
     assert cfg.rules_exclude is None
+
+
+@pytest.mark.parametrize("kwargs, cfg_text, fmt, out", [
+    ({}, None, "html", "report.html"),
+    ({"out": "r.md"}, None, "markdown", "r.md"),
+    ({"out": "r.json"}, None, "json", "r.json"),
+    ({"out": "r.sarif"}, None, "sarif", "r.sarif"),
+    ({"out": "r.txt"}, None, "html", "r.txt"),
+    ({"format": "json"}, None, "json", "report.json"),
+    ({"format": "markdown", "out": "x.html"}, None, "markdown", "x.html"),  # the flag wins
+    ({}, "format: sarif\n", "sarif", "report.sarif"),
+    ({}, "out: findings.md\n", "markdown", "findings.md"),
+])
+def test_format_and_out_defaults(tmp_path: Path, kwargs: dict, cfg_text: str | None, fmt: str, out: str) -> None:
+    if cfg_text:
+        (tmp_path / ".aws-arch-agent.yaml").write_text(cfg_text, encoding="utf-8")
+    cfg = load_config(tmp_path, **kwargs)
+    assert (cfg.format, cfg.out) == (fmt, out)
