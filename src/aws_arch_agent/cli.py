@@ -175,7 +175,9 @@ def _synth_available() -> bool:
     return shutil.which("npx") is not None
 
 
-def _auto_mode(source: str | None, templates: bool, no_synth: bool = False) -> tuple[str, str | None]:
+def _auto_mode(
+    source: str | None, templates: bool, no_synth: bool = False, cdk_app: bool = True,
+) -> tuple[str, str | None]:
     """--mode auto: V2 where it adds something (CDK synth and its cost, --templates), else V1.
 
     Returns (mode, note): the note says why a CDK repo stayed on V1."""
@@ -188,6 +190,10 @@ def _auto_mode(source: str | None, templates: bool, no_synth: bool = False) -> t
         return "v1", None
     if no_synth:
         return "v1", "CDK detected, but --no-synth is set: scanning with V1, which does not synthesise or price the stacks."
+    if not cdk_app:
+        return "v1", ("CDK detected, but there is no cdk.json at the repo root to synth: scanning with V1, "
+                      "which does not synthesise or price the stacks. Pass --mode v2 with --templates cdk.out "
+                      "to price synthesised stacks.")
     missing = [what for ok, what in ((_v2_installed(), "the v2 extra (pip install 'aws-arch-agent[v2]')"),
                                      (_synth_available(), "Node.js (npx)")) if not ok]
     if not missing:
@@ -423,7 +429,7 @@ def analyze(
                 source = resolve_source(repo_path, iac_value, iter_files(repo_path, max_files=max_files))
             except IacError as exc:
                 _fail(str(exc))
-        mode_value, note = _auto_mode(source, bool(cfg.templates), cfg.no_synth)
+        mode_value, note = _auto_mode(source, bool(cfg.templates), cfg.no_synth, (repo_path / "cdk.json").is_file())
         if note:
             console.print(note, style="yellow", markup=False, soft_wrap=True)
 

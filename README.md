@@ -161,7 +161,7 @@ Releases and notes: [GitHub releases](https://github.com/gutehall/aws-arch-agent
 
 ## Modes
 
-`--mode auto` (the default) picks V2 for a CDK repo when the `v2` extra and Node.js (`npx`) are installed, or when `--templates` is passed, and V1 otherwise.
+`--mode auto` (the default) picks V2 for a CDK app (a `cdk.json` at the repo root) when the `v2` extra and Node.js (`npx`) are installed, or when `--templates` is passed, and V1 otherwise.
 
 - **V1** (`--mode v1`): static rules. No synth. Finishes in seconds.
 - **V2** (`--mode v2`): runs `cdk synth`, then six LangGraph reviewers judge the static findings and the synthesised template. A release install needs the `v2` extra. A checkout installed with `.[dev]` already has it.

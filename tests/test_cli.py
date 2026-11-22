@@ -1054,6 +1054,9 @@ def test_auto_mode_runs_v2_for_cdk(tmp_path: Path, monkeypatch) -> None:
     monkeypatch.setattr("aws_arch_agent.agent.v2_graph.run_cdk_synth", lambda *a, **k: (0, "", ""))
     _make_repo(tmp_path)
     result = runner.invoke(app, ["--repo", str(tmp_path), "--no-llm", "--out", str(tmp_path / "r.md")])
+    assert "Mode: v1" in result.output and "no cdk.json" in result.output.replace("\n", " ")
+    (tmp_path / "cdk.json").write_text('{"app": "npx ts-node bin/app.ts"}', encoding="utf-8")
+    result = runner.invoke(app, ["--repo", str(tmp_path), "--no-llm", "--out", str(tmp_path / "r.md")])
     assert "Mode: v2" in result.output, result.output  # the stub synth writes no templates: exit 2
     result = runner.invoke(app, ["--repo", str(tmp_path), "--no-llm", "--mode", "v1", "--out", str(tmp_path / "r.md")])
     assert "Mode: v1" in result.output  # an explicit mode wins
@@ -1061,6 +1064,7 @@ def test_auto_mode_runs_v2_for_cdk(tmp_path: Path, monkeypatch) -> None:
 
 def test_cdk_without_synth_says_why_it_stays_on_v1(tmp_path: Path) -> None:
     _make_repo(tmp_path)
+    (tmp_path / "cdk.json").write_text('{"app": "npx ts-node bin/app.ts"}', encoding="utf-8")
     result = runner.invoke(app, ["--repo", str(tmp_path), "--no-llm", "--out", str(tmp_path / "r.md")])
     assert result.exit_code == 0, result.output
     assert "Mode: v1" in result.output
