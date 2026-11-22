@@ -22,6 +22,17 @@ Thanks for your interest in contributing. This document covers local setup, runn
    - [ripgrep](https://github.com/BurntSushi/ripgrep): `brew install ripgrep` (macOS), `sudo apt install ripgrep` (Debian/Ubuntu), or `winget install BurntSushi.ripgrep.MSVC` (Windows).
    - For V2 CDK synth: Node.js and a CDK project with dependencies installed.
 
+4. **Windows (optional bootstrap)**
+
+   From an elevated PowerShell in the repo:
+
+   ```powershell
+   Set-ExecutionPolicy -Scope Process Bypass
+   .\scripts\windows-dev-setup.ps1
+   ```
+
+   That installs Git, Python 3.12, ripgrep, and Node.js LTS via winget, plus AWS CLI, Terraform, Windows Terminal, VS Code, and GitHub CLI. Use `-SkipOptional` for the core tools only. Open a new terminal afterward, then create the venv as in step 1.
+
 ## Running tests and linting
 
 - **Tests:** `pytest tests/ -v` (includes coverage gate at 70%)

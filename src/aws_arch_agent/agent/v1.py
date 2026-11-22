@@ -40,6 +40,7 @@ from aws_arch_agent.agent.verdicts import (
 )
 from aws_arch_agent.models import Verdict
 from aws_arch_agent.agent.hypotheses import find_hypotheses
+from aws_arch_agent.progress import report
 from aws_arch_agent.tools.llm import NO_LLM, LLMClient, LLMResult, aggregate_results
 from aws_arch_agent.tools.files import iter_files, read_text_safe, truncation_notes, walk_files
 from aws_arch_agent.tools.cdk_synth import list_templates_from_path
@@ -405,6 +406,7 @@ def _scan_terraform(
     plan_target: Path | None = None
     plan_modules: dict[str, dict[str, dict]] = {}
     if tf_plan is not None:
+        report("Reading Terraform plan")
         plan_target, plan_modules = _plan_module(repo_path, modules, tf_plan, warnings)
         if plan_target is not None and notes is not None:
             notes["terraform_plan_module"] = to_repo_relative(str(plan_target), repo_path)
@@ -428,7 +430,11 @@ def _scan_terraform(
         )
     if remote and notes is not None:
         notes["terraform_remote_modules_skipped"] = remote
-    for module in [*modules, *(children or [])]:
+    scanned = [*modules, *(children or [])]
+    total = len(scanned)
+    for index, module in enumerate(scanned, start=1):
+        rel = to_repo_relative(str(module), repo_path)
+        report(f"Terraform {rel} ({index}/{total})")
         is_root = module in modules
         # Each run is (call label, planned values); the label names the call in the finding.
         if is_root:
@@ -486,8 +492,10 @@ def _collect_findings(
     rules_exclude_paths: dict[str, list[str]] | None = None,
 ) -> tuple[RepoContext, list[Finding], list[str]]:
     """Scan the repo. The caller scopes the AI gate with ai_gate.use()."""
+    report("Reading files")
     files, truncated = walk_files(repo_path, max_files=max_files)
     source = resolve_source(repo_path, iac, files)
+    report(f"Read {len(files)} files ({source})")
     language = detect_language(repo_path)
     ctx = RepoContext(
         repo_path=str(repo_path),
@@ -500,6 +508,7 @@ def _collect_findings(
     if source in TEMPLATE_SOURCES or source in TERRAFORM_SOURCES:
         findings, warnings = [], []
         if source in TEMPLATE_SOURCES:
+            report("Looking for CloudFormation templates")
             templates = discover_templates(repo_path, files)
             ctx.notes["templates_scanned"] = len(templates)
             found, warned = _scan_templates(repo_path, templates, rules_include, rules_exclude)
@@ -609,6 +618,7 @@ def analyze_v1(
         ctx.notes["prices"] = regions.note()
 
     if use_llm:
+        report("Reviewing findings")
         ctx.llm = _judge(findings, repo_path)
         titles = active_titles(rules_include, rules_exclude, rules_org)
         _hypothesize(ctx, rule_findings, repo_path, max_files, titles)

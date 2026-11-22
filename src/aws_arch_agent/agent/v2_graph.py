@@ -20,6 +20,7 @@ from aws_arch_agent.agent.v1 import (
     iac_files,
     resolve_source,
 )
+from aws_arch_agent.progress import report
 from aws_arch_agent.tools.files import truncation_notes, walk_files
 from aws_arch_agent.tools.llm import NO_LLM, LLMClient, LLMResult, aggregate_results
 from aws_arch_agent.rules.fix_snippets import attach_fixes
@@ -207,12 +208,14 @@ def _in_themes(findings: List[Finding], state: State) -> List[Finding]:
 def node_collect(state: State) -> State:
     repo_path = Path(state["repo_path"])
     max_files = state.get("max_files") or 400
+    report("Reading files")
     files, truncated = walk_files(repo_path, max_files=max_files)
     iac = state.get("iac") or "auto"
     if iac == "cloudformation" and state.get("templates_path"):
         source: IacSource = "cloudformation"  # templates may sit outside the repo
     else:
         source = resolve_source(repo_path, iac, files)
+    report(f"Read {len(files)} files ({source})")
     ctx = RepoContext(
         repo_path=str(repo_path),
         language=detect_language(repo_path),
@@ -289,6 +292,7 @@ def node_synth(state: State) -> State:
         return {"synth_ok": True, "synth_stdout": "", "synth_stderr": "", "synth_summary": summary}
 
     if templates_path:
+        report("Reading CloudFormation templates")
         tpath = Path(templates_path).expanduser().resolve()
         out_findings = list(state.get("raw_findings", []))
         if not tpath.exists():
@@ -343,6 +347,7 @@ def node_synth(state: State) -> State:
         }
 
     if skip_synth:
+        report("Skipping cdk synth")
         synth_summary = "Synth skipped (--no-synth). Static analysis only."
         logger.info("Synth skipped; continuing with static analysis only")
         return {
@@ -353,6 +358,7 @@ def node_synth(state: State) -> State:
         }
 
     language = ctx.language if ctx else "typescript"
+    report("Running cdk synth")
     try:
         rc, out, err = run_cdk_synth(repo_path, language=language)
     except subprocess.TimeoutExpired as exc:
@@ -405,6 +411,7 @@ def node_synth(state: State) -> State:
         }
 
     synth_summary = summarize_templates(cdk_out)
+    report("Checking synthesized templates")
     cf_warnings = []
     cf_failed = False
     try:
@@ -437,6 +444,8 @@ def _pillar_node(role: str, state_key: str):
         rag_block = _rag_block(state, query=f"{role} AWS Well-Architected best practices")
         result: LLMResult | None = None
         verdicts: dict[str, Verdict] = {}
+        if use_llm and llm_mode != "compact":
+            report(f"Reviewing {role}")
         if llm_mode == "compact":
             categories = PILLAR_CATEGORIES.get(role, [role])
             rel = [f for f in findings if f.category.lower() in [c.lower() for c in categories]]
@@ -492,6 +501,7 @@ def node_merge(state: State) -> State:
     findings = state.get("raw_findings", [])
 
     if use_llm:
+        report("Merging review")
         out: State = {"merged_notes": _joined_notes(state)}
         if llm_mode == "compact" and findings:
             verdicts, result = judge_batch(

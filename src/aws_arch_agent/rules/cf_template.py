@@ -9,6 +9,7 @@ from pathlib import Path
 from typing import Any, Callable, Iterator, List, TypeGuard
 
 from aws_arch_agent.models import Finding, Severity
+from aws_arch_agent.progress import report
 from aws_arch_agent.rules.secret_names import is_literal_secret, is_secret_name
 from aws_arch_agent.rules import (
     ai_gate,
@@ -9122,7 +9123,9 @@ def run_cf_rules_from_paths(
     if warnings is None:
         warnings = []
     findings: List[Finding] = []
-    for p in template_paths:
+    total = len(template_paths)
+    for index, p in enumerate(template_paths, start=1):
+        report(f"Template {p.name} ({index}/{total})")
         doc, lines, error = _read_template_with_lines(p)
         if error:
             warnings.append(error)
