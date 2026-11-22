@@ -8759,7 +8759,7 @@ def _run_resource_checks(
     if stack_env in ("dev", "staging"):
         findings.extend(nonprod.findings(resources, template_path, stack_env))
 
-    # --- Stack cost: price every resource the snapshot covers (report cost section) ---
+    # --- Stack cost: price every resource live pricing covers (report cost section) ---
     stack_cost.record(template_path, resources)
 
     # --- VPC endpoints (template-level: VPC present but no endpoints) ---

@@ -325,13 +325,177 @@ def test_gp2_throughput_caveat_above_170_gib() -> None:
     assert "gp2 can reach 250 MB/s above 170 GiB" in mid.basis
 
 
-def test_one_size_smaller_is_the_next_size_only(monkeypatch: pytest.MonkeyPatch) -> None:
-    """If the region lacks the next size down, no saving, rather than one from further down."""
+def test_one_size_smaller_is_the_next_size_the_region_prices(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Only the scan's region is asked: a size it does not price is skipped (m5 has no 3xlarge)."""
     real = pricing.price
+    asked: list[tuple[str, str]] = []
 
     def without_2xlarge(key: str, region: str = "us-east-1"):
+        asked.append((key, region))
         return None if key == "ec2:m5.2xlarge" and region == "us-east-1" else real(key, region)
 
     monkeypatch.setattr(estimates, "price", without_2xlarge)
     est = estimates.ec2_instance("m5.4xlarge")
-    assert est is not None and est.monthly_cost_usd is not None and est.monthly_savings_usd is None
+    assert est is not None and est.monthly_savings_usd is not None
+    assert "one size smaller (m5.xlarge" in est.basis
+    assert {region for _, region in asked} == {"us-east-1"}
+
+
+# --- Live coverage: load balancers, containers, data stores, networking ---------
+
+LIVE = {
+    "elb:alb-hour": [0.0225, "Hrs"], "elb:nlb-hour": [0.0225, "Hrs"], "elb:gwlb-hour": [0.0125, "Hrs"],
+    "elb:clb-hour": [0.025, "Hrs"], "eks:cluster-hour": [0.10, "Hrs"],
+    "fargate:vcpu-hour": [0.04048, "Hrs"], "fargate:gb-hour": [0.004445, "Hrs"],
+    "fargate:vcpu-hour-arm": [0.03238, "Hrs"], "fargate:gb-hour-arm": [0.00356, "Hrs"],
+    "elasticache:redis:cache.r6g.large": [0.206, "Hrs"], "elasticache:valkey:cache.t4g.micro": [0.0128, "Hrs"],
+    "opensearch:r6g.large.search": [0.167, "Hrs"], "opensearch:m6g.large.search": [0.128, "Hrs"],
+    "opensearch:storage:gp3": [0.122, "GB-Mo"], "redshift:ra3.xlplus": [1.086, "Hrs"],
+    "vpce:hour": [0.01, "Hrs"], "kms:key-month": [1.0, "Keys"], "secrets:secret-month": [0.40, "Secrets"],
+    "kinesis:shard-hour": [0.015, "ShardHour"], "kinesis:on-demand-stream-hour": [0.04, "StreamHour"],
+    "ec2:m5.large": [0.096, "Hrs"], "ebs:gp3": [0.08, "GB-Mo"], "ebs:io2": [0.125, "GB-Mo"],
+    "ebs:gp3-iops": [0.005, "IOPS-Mo"], "ebs:gp3-throughput": [0.04, "MiBps-Mo"], "ebs:io2-iops": [0.065, "IOPS-Mo"],
+    "rds:postgres:multi-az:db.m5.large": [0.356, "Hrs"], "rds:postgres:single-az:db.m5.large": [0.178, "Hrs"],
+    "rds:storage:gp3": [0.115, "GB-Mo"],
+}
+
+
+@pytest.fixture
+def live() -> object:
+    with pricing.use_provider(pricing.InMemoryPriceProvider(
+            {"us-east-1": LIVE}, {"us-east-1": "2026-11-05"})) as provider:
+        yield provider
+
+
+def _res(rtype: str, props: dict, name: str = "R", count: int = 1, references: frozenset = frozenset()):
+    from aws_arch_agent.rules.resource_model import Resource
+
+    return Resource(type=rtype, name=name, properties=props, count=count, references=references)
+
+
+@pytest.mark.parametrize("rtype, props, usd, words", [
+    ("lb", {}, 730 * 0.0225, "Application Load Balancer"),
+    ("lb", {"Type": "network"}, 730 * 0.0225, "Network Load Balancer"),
+    ("lb", {"Type": "gateway"}, 730 * 0.0125, "Gateway Load Balancer"),
+    ("elb", {}, 730 * 0.025, "Classic Load Balancer"),
+    ("eks_cluster", {}, 73.0, "EKS cluster control plane"),
+    ("elasticache_cluster", {"CacheNodeType": "cache.r6g.large", "Engine": "redis", "NumCacheNodes": 2},
+     2 * 730 * 0.206, "2 cache.r6g.large redis node(s)"),
+    ("elasticache_replication_group", {"CacheNodeType": "cache.r6g.large", "NumNodeGroups": 2,
+                                       "ReplicasPerNodeGroup": 1}, 4 * 730 * 0.206, "4 cache.r6g.large"),
+    ("elasticache_replication_group", {"CacheNodeType": "cache.t4g.micro", "Engine": "valkey",
+                                       "NumCacheClusters": 3}, 3 * 730 * 0.0128, "valkey"),
+    ("redshift_cluster", {"NodeType": "ra3.xlplus", "NumberOfNodes": 2}, 2 * 730 * 1.086, "managed storage"),
+    ("redshift_cluster", {"NodeType": "ra3.xlplus", "ClusterType": "single-node"}, 730 * 1.086, "1 ra3.xlplus"),
+    ("vpc_endpoint", {"VpcEndpointType": "Interface", "SubnetIds": ["a", "b", "c"]}, 3 * 730 * 0.01, "3 interface"),
+    ("vpc_endpoint", {"ServiceName": "com.amazonaws.us-east-1.s3"}, 0.0, "Gateway endpoint"),
+    ("kms_key", {}, 1.0, "customer managed KMS key"),
+    ("secretsmanager_secret", {}, 0.4, "1 secret"),
+    ("kinesis_stream", {"ShardCount": 4}, 4 * 730 * 0.015, "4 shard(s)"),
+    ("kinesis_stream", {"StreamModeDetails": {"StreamMode": "ON_DEMAND"}}, 730 * 0.04, "on-demand stream"),
+    ("opensearch_domain", {"ClusterConfig": {"InstanceType": "r6g.large.search", "InstanceCount": 2,
+                                             "DedicatedMasterEnabled": True, "DedicatedMasterType": "m6g.large.search"},
+                           "EBSOptions": {"EBSEnabled": True, "VolumeSize": 100, "VolumeType": "gp3"}},
+     2 * 730 * 0.167 + 3 * 730 * 0.128 + 2 * 100 * 0.122, "3 m6g.large.search dedicated master(s)"),
+    ("db_instance", {"DBInstanceClass": "db.m5.large", "Engine": "postgres", "MultiAZ": True,
+                     "AllocatedStorage": 100, "StorageType": "gp3"}, 730 * 0.356 + 2 * 100 * 0.115, "× 2 (Multi-AZ"),
+    ("ebs_volume", {"VolumeType": "gp3", "Size": 100, "Iops": 6000, "Throughput": 250},
+     100 * 0.08 + 3000 * 0.005 + 125 * 0.04, "3,000 IOPS above 3,000"),
+    ("ebs_volume", {"VolumeType": "io2", "Size": 100, "Iops": 1000}, 100 * 0.125 + 1000 * 0.065, "1,000 provisioned IOPS"),
+])
+def test_new_service_estimates(live: object, rtype: str, props: dict, usd: float, words: str) -> None:
+    est = estimates.resource_cost(_res(rtype, props))
+    assert est is not None and est.monthly_cost_usd == round(usd, 2), est
+    assert words in est.basis and "us-east-1, AWS prices of 2026-11-05" in est.basis or usd == 0.0
+
+
+@pytest.mark.parametrize("rtype, props", [
+    ("lb", {"Type": {"Ref": "Kind"}}),
+    ("elasticache_cluster", {"CacheNodeType": "cache.r6g.large", "NumCacheNodes": {"Ref": "N"}}),
+    ("elasticache_cluster", {"CacheNodeType": {"Ref": "T"}}),
+    ("elasticache_replication_group", {"CacheNodeType": "cache.r6g.large"}),  # no node count given
+    ("redshift_cluster", {"NodeType": "ra3.xlplus", "NumberOfNodes": "${var.n}"}),
+    ("vpc_endpoint", {"VpcEndpointType": "Interface", "SubnetIds": {"Ref": "Subnets"}}),
+    ("kinesis_stream", {}),  # provisioned with no shard count
+    ("opensearch_domain", {"ClusterConfig": {"InstanceType": "r6g.large.search"},
+                           "EBSOptions": {"EBSEnabled": True, "VolumeSize": {"Ref": "Size"}}}),
+    ("ecs_service", {"LaunchType": "FARGATE", "DesiredCount": 2}),  # no task definition
+    ("autoscaling_group", {"DesiredCapacity": 2}),  # no launch template
+])
+def test_unresolved_properties_are_not_guessed(live: object, rtype: str, props: dict) -> None:
+    assert estimates.resource_cost(_res(rtype, props)) is None
+
+
+def test_fargate_service_resolves_its_task_definition(live: object) -> None:
+    task = _res("ecs_task_definition", {"Cpu": "512", "Memory": "1 GB", "RequiresCompatibilities": ["FARGATE"],
+                                        "RuntimePlatform": {"CpuArchitecture": "ARM64"}}, name="Task")
+    cf = _res("ecs_service", {"DesiredCount": 3, "TaskDefinition": {"Ref": "Task"}})
+    est = estimates.resource_cost(cf, {"Task": task})
+    assert est is not None and est.monthly_cost_usd == round(3 * 730 * (0.5 * 0.03238 + 1 * 0.00356), 2)
+    assert "3 Fargate task(s) (ARM64, 0.5 vCPU" in est.basis
+    tf_task = _res("ecs_task_definition", {"Cpu": "1024", "Memory": "2048", "RequiresCompatibilities": ["FARGATE"]},
+                   name="aws_ecs_task_definition.app")
+    tf = _res("ecs_service", {"LaunchType": "FARGATE", "DesiredCount": 2, "TaskDefinition": object()},
+              references=frozenset({"aws_ecs_task_definition.app", "aws_ecs_cluster.main"}))
+    est = estimates.resource_cost(tf, {"aws_ecs_task_definition.app": tf_task})
+    assert est is not None and est.monthly_cost_usd == round(2 * 730 * (1 * 0.04048 + 2 * 0.004445), 2)
+    for ref in ({"Fn::GetAtt": ["Task", "Arn"]}, {"Fn::GetAtt": "Task.Arn"}):
+        svc = _res("ecs_service", {"DesiredCount": 1, "TaskDefinition": ref})
+        assert estimates.resource_cost(svc, {"Task": task}) is not None
+    # EC2 launch type and Fargate Spot are not priced as Fargate.
+    assert estimates.resource_cost(_res("ecs_service", {"LaunchType": "EC2", "DesiredCount": 2,
+                                                        "TaskDefinition": {"Ref": "Task"}}), {"Task": task}) is None
+    spot = _res("ecs_service", {"DesiredCount": 2, "TaskDefinition": {"Ref": "Task"},
+                                "CapacityProviderStrategy": [{"CapacityProvider": "FARGATE_SPOT"}]})
+    assert estimates.resource_cost(spot, {"Task": task}) is None
+
+
+def test_autoscaling_group_resolves_its_launch_template(live: object) -> None:
+    lt = _res("launch_template", {"LaunchTemplateData": {"InstanceType": "m5.large"}}, name="Lt")
+    asg = _res("autoscaling_group", {"MinSize": "2", "MaxSize": "6", "LaunchTemplate": {
+        "LaunchTemplateId": {"Ref": "Lt"}, "Version": "1"}})
+    est = estimates.resource_cost(asg, {"Lt": lt})
+    assert est is not None and est.monthly_cost_usd == round(2 * 730 * 0.096, 2)
+    assert est.basis.startswith("2 × (1 m5.large") and "Saving if" not in est.basis
+    tf_lt = _res("launch_template", {"InstanceType": "m5.large"}, name="aws_launch_template.web")
+    tf = _res("autoscaling_group", {"DesiredCapacity": 3, "LaunchTemplate": {"LaunchTemplateId": object()}},
+              references=frozenset({"aws_launch_template.web"}))
+    est = estimates.resource_cost(tf, {"aws_launch_template.web": tf_lt})
+    assert est is not None and est.monthly_cost_usd == round(3 * 730 * 0.096, 2)
+    lc = _res("launch_configuration", {"InstanceType": "m5.large"}, name="Lc")
+    assert estimates.resource_cost(_res("autoscaling_group", {"DesiredCapacity": 1, "LaunchConfigurationName": {
+        "Ref": "Lc"}}), {"Lc": lc}) is not None
+    mixed = _res("autoscaling_group", {"DesiredCapacity": 1, "MixedInstancesPolicy": {"x": 1},
+                                       "LaunchTemplate": {"LaunchTemplateId": {"Ref": "Lt"}}})
+    assert estimates.resource_cost(mixed, {"Lt": lt}) is None
+
+
+@pytest.mark.parametrize("count, usd", [(3, 3 * 73.0), (0, 0.0)])
+def test_count_multiplies_the_cost(live: object, count: int, usd: float) -> None:
+    est = estimates.resource_cost(_res("eks_cluster", {}, count=count))
+    assert est is not None and est.monthly_cost_usd == round(usd, 2)
+    assert est.basis.startswith(f"count = {count} × (1 EKS cluster")
+
+
+def test_aurora_instances_have_no_storage_line(live: object) -> None:
+    assert estimates.rds_storage({"Engine": "aurora-postgresql", "AllocatedStorage": 100}) is None
+    assert estimates.rds_storage({"Engine": "postgres", "AllocatedStorage": {"Ref": "S"}}) is None
+
+
+@pytest.mark.parametrize("props", [
+    {"DesiredCount": 1, "TaskDefinition": {"Ref": "Task"}, "CapacityProviderStrategy": [{"CapacityProvider": {"Ref": "P"}}]},
+    {"DesiredCount": 1, "TaskDefinition": {"Ref": "Task"}, "CapacityProviderStrategy": {"Ref": "S"}},
+    {"DesiredCount": 1, "TaskDefinition": {"Ref": "Task"}, "LaunchType": {"Ref": "L"}},
+])
+def test_fargate_values_from_parameters_are_not_guessed(live: object, props: dict) -> None:
+    task = _res("ecs_task_definition", {"Cpu": "256", "Memory": "512", "RequiresCompatibilities": ["FARGATE"]})
+    assert estimates.resource_cost(_res("ecs_service", props), {"Task": task}) is None
+
+
+def test_odd_shapes_are_not_priced(live: object) -> None:
+    assert estimates.public_ipv4({"Ref": "Pool"}) is None
+    lt = _res("launch_template", {"LaunchTemplateData": {"Ref": "Data"}}, name="Lt")
+    asg = _res("autoscaling_group", {"DesiredCapacity": 1, "LaunchTemplate": {"LaunchTemplateId": {"Ref": "Lt"}}})
+    assert estimates.resource_cost(asg, {"Lt": lt}) is None
+    big = estimates.resource_cost(_res("ebs_volume", {"VolumeType": "io2", "Size": 100, "Iops": 40000}))
+    assert big is not None and "io2 IOPS above 32,000 cost less" in big.basis

@@ -1,95 +1,118 @@
-"""Offline AWS on-demand prices for cost estimates.
+"""Live AWS on-demand prices for cost estimates.
 
-The snapshot ships with the package (prices.json.gz) and is read from disk: a scan never
-calls the network. scripts/refresh_prices.py rebuilds it from the AWS Price List bulk API.
+Prices are fetched when a scan needs them (see pricing.providers): from the AWS Price
+List Query API when boto3 and AWS credentials are available, else from the public bulk
+API, and kept in a SQLite cache (pricing.cache) for 24 hours by default. Any region is
+priced. An unknown key, a region AWS does not price, or pricing that cannot be reached
+gives None: no estimate, never a guess. `--pricing-source off` turns pricing off.
 
-Price keys:
-    ec2:<instance type>                         USD per hour, Linux, shared tenancy
-    rds:<engine>:<single-az|multi-az>:<class>   USD per hour; engine mysql, postgres,
-                                                mariadb, aurora-mysql, aurora-postgresql
-    nat:hour, nat:gb                            NAT gateway hour and GB processed
-    ebs:gp2, ebs:gp3, ebs:io2                   USD per GB-month
-    eip:in-use-hour, eip:idle-hour              public IPv4 address hour
-    lambda:gb-second, lambda:gb-second-arm, lambda:request
-    dynamodb:read-request, dynamodb:write-request (on-demand, per request unit)
-    dynamodb:rcu-hour, dynamodb:wcu-hour        provisioned capacity unit hour
-    dynamodb:storage-gb                         USD per GB-month
-    s3:<standard|intelligent-tiering|standard-ia|onezone-ia|glacier-ir|glacier|deep-archive>
-                                                first-tier USD per GB-month
-    logs:ingest-gb, logs:storage-gb             CloudWatch Logs
-
-Tiered prices are the first paid tier. An unknown key or region gives None: no estimate,
-never a guess.
+The price keys are listed in pricing.catalog.
 """
 from __future__ import annotations
 
-import gzip
-import json
 from contextlib import contextmanager
-from dataclasses import dataclass
-from functools import lru_cache
 from pathlib import Path
 from typing import Any, Iterator
 
+from aws_arch_agent.pricing.cache import DEFAULT_TTL_HOURS, PriceCache
+from aws_arch_agent.pricing.providers import (
+    SOURCE_LABELS,
+    SOURCES,
+    Boto3PricingProvider,
+    BulkPricingProvider,
+    HybridPriceProvider,
+    InMemoryPriceProvider,
+    OffPriceProvider,
+    Price,
+    PriceProvider,
+)
+
+__all__ = [
+    "DEFAULT_REGION", "DEFAULT_TTL_HOURS", "SOURCES", "Boto3PricingProvider", "BulkPricingProvider",
+    "HybridPriceProvider", "InMemoryPriceProvider", "OffPriceProvider", "Price", "PriceProvider",
+    "configure", "current_region", "price", "price_info", "price_note", "provider", "set_provider",
+    "snapshot_date", "use_provider", "use_region", "warnings",
+]
+
 DEFAULT_REGION = "us-east-1"
-DATA_PATH = Path(__file__).with_name("prices.json.gz")
 
-# The offer a key's price comes from: the whole key first, then its prefix.
-_KEY_OFFER = {
-    "ec2": "AmazonEC2", "nat": "AmazonEC2", "ebs": "AmazonEC2", "eip": "AmazonVPC",
-    "rds": "AmazonRDS", "lambda": "AWSLambda", "dynamodb": "AmazonDynamoDB",
-    "s3": "AmazonS3", "s3:deep-archive": "AmazonS3GlacierDeepArchive", "logs": "AmazonCloudWatch",
-}
+_provider: PriceProvider | None = None
+# Prices handed out since the provider was set, by region: the report's source and dates.
+_seen: dict[str, dict[str, Any]] = {}
 
 
-@dataclass(frozen=True)
-class Price:
-    """One on-demand price. snapshot_date is the AWS publication date of its offer."""
-
-    usd: float
-    unit: str
-    region: str
-    snapshot_date: str | None
+def provider() -> PriceProvider:
+    """The active provider; a HybridPriceProvider with defaults until one is set."""
+    global _provider
+    if _provider is None:
+        _provider = HybridPriceProvider()
+    return _provider
 
 
-@lru_cache(maxsize=1)
-def _snapshot() -> dict[str, Any]:
-    """The snapshot, or {} when the file is missing or unreadable: then no region has prices."""
+def set_provider(new: PriceProvider) -> None:
+    global _provider
+    _provider = new
+    _seen.clear()
+
+
+@contextmanager
+def use_provider(new: PriceProvider) -> Iterator[PriceProvider]:
+    """Price with this provider for a block; the previous one (and what it saw) after."""
+    global _provider, _seen
+    previous, previous_seen = _provider, _seen
+    _provider, _seen = new, {}
     try:
-        with gzip.open(DATA_PATH, "rt", encoding="utf-8") as fh:
-            data = json.load(fh)
-    except (OSError, EOFError, ValueError):  # missing, truncated, not gzip, not JSON
-        return {}
-    return data if isinstance(data, dict) else {}
+        yield new
+    finally:
+        _provider, _seen = previous, previous_seen
 
 
-def _region(region: str) -> dict[str, Any] | None:
-    body = _snapshot().get("regions", {}).get(region)
-    return body if isinstance(body, dict) else None
-
-
-def regions() -> list[str]:
-    """Regions the snapshot has prices for."""
-    return sorted(_snapshot().get("regions", {}))
-
-
-def snapshot_date(region: str = DEFAULT_REGION) -> str | None:
-    """The newest offer publication date in the region's prices, or None for an unknown region."""
-    body = _region(region)
-    dates = list((body or {}).get("published", {}).values())
-    return max(dates) if dates else None
+def configure(
+    source: str = "auto", ttl_hours: float = DEFAULT_TTL_HOURS, refresh: bool = False,
+    cache_path: Path | None = None,
+) -> PriceProvider:
+    """The provider for --pricing-source / --price-cache-ttl / --refresh-prices (not yet set)."""
+    if source == "off":
+        return OffPriceProvider()
+    return HybridPriceProvider(source=source, cache=PriceCache(cache_path, ttl_hours), refresh=refresh)
 
 
 def price(key: str, region: str = DEFAULT_REGION) -> Price | None:
-    """The price for a key in a region, or None when the snapshot has none."""
-    body = _region(region)
-    entry = (body or {}).get("prices", {}).get(key)
-    if not entry:
-        return None
-    offer = _KEY_OFFER.get(key) or _KEY_OFFER.get(key.split(":", 1)[0], "")
-    published = (body or {}).get("published", {}).get(offer) or None
-    usd, unit = entry
-    return Price(usd=float(usd), unit=str(unit), region=region, snapshot_date=published)
+    """The price for a key in a region, or None when no source has one."""
+    found = provider().price(key, region)
+    if found is not None:
+        seen = _seen.setdefault(region, {"dates": set(), "sources": set(), "fetched": set(), "stale": False})
+        if found.snapshot_date:
+            seen["dates"].add(found.snapshot_date)
+        if found.source:
+            seen["sources"].add(found.source)
+        if found.fetched_at:
+            seen["fetched"].add(found.fetched_at)
+        seen["stale"] = seen["stale"] or found.stale
+    return found
+
+
+def snapshot_date(region: str = DEFAULT_REGION) -> str | None:
+    """The newest AWS publication date of the prices used in the region, or None if none were."""
+    dates = (_seen.get(region) or {}).get("dates")
+    return max(dates) if dates else None
+
+
+def price_info(region: str = DEFAULT_REGION) -> dict[str, Any]:
+    """Where the region's prices came from: source label, newest fetch time, stale or not."""
+    seen = _seen.get(region) or {}
+    sources = sorted(seen.get("sources") or ())
+    fetched = seen.get("fetched") or ()
+    return {
+        "pricing_source": ", ".join(SOURCE_LABELS.get(s, s) for s in sources) or None,
+        "fetched_at": max(fetched) if fetched else None,
+        "stale": bool(seen.get("stale")),
+    }
+
+
+def warnings() -> list[str]:
+    """What the active provider could not do (offline, stale prices), for the report."""
+    return list(getattr(provider(), "warnings", []) or [])
 
 
 _active_region = DEFAULT_REGION
@@ -112,5 +135,5 @@ def use_region(region: str) -> Iterator[None]:
 
 
 def price_note(region: str = DEFAULT_REGION) -> dict[str, Any]:
-    """What the report says about prices: the region and its snapshot date (None if unknown)."""
-    return {"region": region, "snapshot_date": snapshot_date(region)}
+    """What the report says about prices: the region, its newest price date, and their source."""
+    return {"region": region, "snapshot_date": snapshot_date(region), **price_info(region)}

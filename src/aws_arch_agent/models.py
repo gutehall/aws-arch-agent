@@ -54,7 +54,7 @@ class Finding(BaseModel):
     evidence: str | None = None
     recommendation: str
     suggested_code: str | None = None
-    # Estimates, from the offline price snapshot. Savings are their own number,
+    # Estimates, from live AWS on-demand prices. Savings are their own number,
     # never subtracted from the cost. None means the finding has too little to price.
     monthly_cost_usd: float | None = None
     monthly_savings_usd: float | None = None

@@ -4,7 +4,7 @@ CF-GEN-001 flags a previous-generation type on an EC2 instance, launch template,
 configuration, Auto Scaling group override, RDS instance, ElastiCache cluster or
 replication group, or OpenSearch domain. It suggests the current x86 family and the
 Graviton family from data/instance_generations.json, and prices the move when the
-snapshot covers both types (EC2 and RDS). Graviton needs an arm64 build of the workload.
+pricing covers both types (EC2 and RDS). Graviton needs an arm64 build of the workload.
 
 CF-PERF-005 flags a current x86 EC2 type that has a Graviton family of the same size,
 from data/graviton_families.json. It stays silent where CF-GEN-001 already speaks.
@@ -133,7 +133,7 @@ def _estimate(res: Resource, kind: str, current: str, x86: str | None, graviton:
         now, new, arm = (
             estimates.rds_instance({**props, "DBInstanceClass": t}) if t else None for t in (current, x86, graviton))
     else:
-        return None  # ElastiCache and OpenSearch are not in the price snapshot
+        return None  # no saving is estimated for ElastiCache and OpenSearch generations
     if now is None or new is None or now.monthly_cost_usd is None or new.monthly_cost_usd is None:
         return None
     basis = estimates._without_saving(now.basis) + f" {x86}: {estimates.money(new.monthly_cost_usd)}/month."

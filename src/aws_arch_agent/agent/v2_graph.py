@@ -675,6 +675,7 @@ def analyze_v2(
     account_facts: account.AccountFacts | None = None,
     lenses_ai: bool | None = None,
     rules_exclude_paths: dict[str, List[str]] | None = None,
+    finops: stack_cost.FinOps | None = None,
 ) -> tuple[str, RepoContext, List[Finding], List[str]]:
     """Run V2 graph; return (final_report_md, ctx, findings, warnings)."""
     graph = build_graph()
@@ -703,7 +704,7 @@ def analyze_v2(
     with (
         regions.use_regions(price_region),
         use_tag_policy(tag_policy),
-        stack_cost.collect(),
+        stack_cost.collect(finops),
         environments.use_environments(environment_map, repo_path),
         nonprod.use_max_size(nonprod_max_size),
         cf_template.use_dashboard_min_resources(dashboards_min_resources),

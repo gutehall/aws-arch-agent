@@ -172,7 +172,7 @@ def test_reports_show_the_cost_section(tmp_path: Path) -> None:
     assert f"| `stack.json` | us-east-1 | 6 | **${total:,.2f}** |".replace("**", "") in md
     assert f"| **Total** | | 6 | **${total:,.2f}** |" in md
     assert "Top 5 resources by estimated cost:" in md
-    assert "Not priced (usage-based, or not in the price snapshot): AWS::DynamoDB::Table ×1" in md
+    assert "Not priced (usage-based, or no AWS price found): AWS::DynamoDB::Table ×1" in md
     assert f"Region us-east-1, AWS prices of {pricing.snapshot_date('us-east-1')}." in md
 
     out_json = tmp_path / "r.json"
@@ -278,3 +278,123 @@ def test_v2_report_has_the_cost_section(tmp_path: Path) -> None:
         tmp_path, use_llm=False, templates_path=str(tmp_path / "templates"))
     assert ctx.notes["cost"]["total_monthly_usd"] == round(sum(_expected().values()), 2)
     assert "## Estimated Monthly Cost (estimate)" in report
+
+
+def test_terraform_count_and_linked_resources_in_the_stack_total(tmp_path: Path) -> None:
+    (tmp_path / "main.tf").write_text('''
+resource "aws_eks_cluster" "main" {
+  count    = 2
+  name     = "c${count.index}"
+  role_arn = "arn"
+  vpc_config {
+    subnet_ids = ["a"]
+  }
+}
+resource "aws_launch_template" "web" {
+  instance_type = "m5.large"
+}
+resource "aws_autoscaling_group" "web" {
+  desired_capacity = 2
+  min_size         = 1
+  max_size         = 4
+  launch_template {
+    id      = aws_launch_template.web.id
+    version = "$Latest"
+  }
+}
+resource "aws_ecs_task_definition" "app" {
+  family                   = "app"
+  cpu                      = "256"
+  memory                   = "512"
+  requires_compatibilities = ["FARGATE"]
+  network_mode             = "awsvpc"
+  container_definitions    = "[]"
+}
+resource "aws_ecs_service" "app" {
+  name            = "app"
+  launch_type     = "FARGATE"
+  desired_count   = 4
+  task_definition = aws_ecs_task_definition.app.arn
+}
+''', encoding="utf-8")
+    live = {"eks:cluster-hour": [0.10, "Hrs"], "ec2:m5.large": [0.096, "Hrs"],
+            "fargate:vcpu-hour": [0.04048, "Hrs"], "fargate:gb-hour": [0.004445, "Hrs"]}
+    with pricing.use_provider(pricing.InMemoryPriceProvider({"us-east-1": live})), stack_cost.collect():
+        stack_cost.record(tmp_path / "main.tf", resources_from_terraform(tmp_path))
+        cost = stack_cost.summary([], tmp_path)
+    assert cost is not None
+    by_name = {r["name"]: r["monthly_usd"] for r in cost["top_resources"]}
+    assert by_name["aws_eks_cluster.main"] == 146.0
+    assert by_name["aws_autoscaling_group.web"] == round(2 * 730 * 0.096, 2)
+    assert by_name["aws_ecs_service.app"] == round(4 * 730 * (0.25 * 0.04048 + 0.5 * 0.004445), 2)
+    assert "aws_ecs_task_definition" not in cost["not_priced"] and "aws_launch_template" not in cost["not_priced"]
+
+
+def _finops_ctx() -> "object":
+    from aws_arch_agent.models import RepoContext
+
+    ctx = RepoContext(repo_path="/r", language="unknown", source="cloudformation")
+    ctx.notes["prices"] = {"region": "us-east-1", "snapshot_date": "2026-11-05", "warnings": [], "regions": [
+        {"region": "us-east-1", "source": "default", "snapshot_date": "2026-11-05",
+         "pricing_source": "AWS Price List Query API", "fetched_at": "2026-11-22T10:00:00Z", "stale": True}]}
+    ctx.notes["cost"] = {
+        "region": "us-east-1", "snapshot_date": "2026-11-05", "basis": "On-demand prices.",
+        "stacks": [{"name": "t.json", "region": "us-east-1", "resources_priced": 2, "monthly_usd": 77.85,
+                    "fixed_monthly_usd": 32.85, "usage_monthly_usd": 45.0}],
+        "total_monthly_usd": 77.85, "fixed_monthly_usd": 32.85, "usage_monthly_usd": 45.0,
+        "top_resources": [
+            {"name": "Nat", "type": "AWS::EC2::NatGateway", "stack": "t.json", "file": "t.json", "line": 3,
+             "monthly_usd": 45.0, "basis": "Usage assumed.", "usage_assumed": True},
+            {"name": "Nat", "type": "AWS::EC2::NatGateway", "stack": "t.json", "file": "t.json", "line": 3,
+             "monthly_usd": 32.85, "basis": "1 NAT gateway."}],
+        "savings_monthly_usd": 0, "savings_findings": 0, "not_priced": {}, "resources": [],
+        "diff": {"source": "base.json", "previous_monthly_usd": 32.85, "current_monthly_usd": 77.85,
+                 "delta_monthly_usd": 45.0, "delta_percent": 137.0,
+                 "added": [{"stack": "t.json", "name": "Bucket", "type": "AWS::S3::Bucket", "monthly_usd": 2.0}],
+                 "removed": [{"stack": "t.json", "name": "Old", "type": "AWS::EC2::EIP", "monthly_usd": 3.65}],
+                 "changed": [{"stack": "t.json", "name": "Nat", "type": "AWS::EC2::NatGateway",
+                              "previous_monthly_usd": 32.85, "current_monthly_usd": 77.85, "delta_monthly_usd": 45.0}]},
+        "budget": {"max_monthly_usd": 50.0, "max_increase_usd": None, "max_increase_percent": None, "passed": False,
+                   "breaches": ["estimated $77.85/month is over the $50.00/month budget"], "not_checked": []},
+    }
+    return ctx
+
+
+def test_markdown_shows_budget_source_usage_and_diff() -> None:
+    from aws_arch_agent.report.markdown import render_markdown
+
+    md = render_markdown(_finops_ctx(), [])  # type: ignore[arg-type]
+    assert "**Budget: FAILED** — estimated $77.85/month is over the $50.00/month budget." in md
+    assert ("- Prices: on-demand, us-east-1 (default; AWS Price List Query API, AWS price list of 2026-11-05, "
+            "some from an expired cache)") in md
+    assert "Fixed (from the IaC): **$32.85/month**. Usage assumed (from the usage profile): **$45.00/month**." in md
+    assert "$45.00/month *(usage assumed)*" in md
+    assert "Compared with `base.json`: $32.85 → $77.85/month (**+$45.00, +137%**)." in md
+    assert "| added | `Bucket` | `t.json` |  | $2.00 | +$2.00 |" in md
+    assert "| removed | `Old` | `t.json` | $3.65 |  | -$3.65 |" in md
+
+
+def test_html_has_a_cost_tab_and_kpi_card() -> None:
+    from aws_arch_agent.report.html import render_html
+
+    page = render_html(_finops_ctx(), [])  # type: ignore[arg-type]
+    assert 'data-tab="Cost" aria-pressed="false" aria-controls="cost">Cost ($78/mo)</button>' in page
+    assert '<section id="cost" class="cost" aria-label="Estimated monthly cost" hidden>' in page
+    assert 'class="count cost-kpi over"' in page and "budget FAILED" in page
+    assert 'class="budget fail"' in page and '<span class="tag usage">usage assumed</span>' in page
+    assert "<td>changed</td>" in page and "+45.00" in page
+    assert "<script src" not in page and "<link" not in page  # still self-contained
+
+
+def test_reports_stay_quiet_without_finops_options() -> None:
+    from aws_arch_agent.report.html import render_html
+    from aws_arch_agent.report.markdown import render_markdown
+
+    ctx = _finops_ctx()
+    for key in ("diff", "budget"):
+        ctx.notes["cost"].pop(key)  # type: ignore[attr-defined]
+    ctx.notes["cost"].update(usage_monthly_usd=0.0)  # type: ignore[attr-defined]
+    md, page = render_markdown(ctx, []), render_html(ctx, [])  # type: ignore[arg-type]
+    for text in ("Budget", "Cost change", "Usage assumed (from"):
+        assert text not in md
+    assert 'class="budget' not in page and "Cost change" not in page

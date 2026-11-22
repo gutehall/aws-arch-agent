@@ -159,8 +159,8 @@ def test_detected_region_without_prices_warns_and_skips_its_estimates(tmp_path: 
     result = CliRunner().invoke(app, ["--repo", str(tmp_path), "--mode", "v2", "--no-llm",
                                       "--templates", str(tmp_path / "cdk.out"), "--out", str(out)])
     assert result.exit_code == 0, result.output
-    assert "No prices for region sa-east-1" in result.output
-    assert "sa-east-1 (CDK stack env; not in the price snapshot" in out.read_text(encoding="utf-8")
+    # The test prices have none for sa-east-1: no estimate there, and the report says so.
+    assert "sa-east-1 (CDK stack env; no prices used" in out.read_text(encoding="utf-8")
 
 
 def test_outside_a_scan_use_region_decides(tmp_path: Path) -> None:

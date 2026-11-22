@@ -539,6 +539,12 @@ def _collect_findings(
     return ctx, findings, warnings
 
 
+CDK_COST_HINT = (
+    "CDK source is not priced in V1: run --mode v2 (cdk synth), or --mode v2 --templates cdk.out, "
+    "for estimated stack cost totals."
+)
+
+
 def analyze_v1(
     repo_path: Path,
     max_files: int = 400,
@@ -559,12 +565,13 @@ def analyze_v1(
     account_facts: account.AccountFacts | None = None,
     lenses_ai: bool | None = None,
     rules_exclude_paths: dict[str, list[str]] | None = None,
+    finops: stack_cost.FinOps | None = None,
 ) -> tuple[str, RepoContext, list[Finding], list[str]]:
     """Run V1 pipeline: scan repo, run rules, optionally judge findings with the LLM; return (report_md, ctx, findings, warnings)."""
     with (
         regions.use_regions(price_region),
         use_tag_policy(tag_policy),
-        stack_cost.collect(),
+        stack_cost.collect(finops),
         environments.use_environments(environment_map, repo_path),
         nonprod.use_max_size(nonprod_max_size),
         cf_template.use_dashboard_min_resources(dashboards_min_resources),
@@ -597,6 +604,8 @@ def analyze_v1(
         cost = stack_cost.summary(findings, repo_path)
         if cost is not None:
             ctx.notes["cost"] = cost
+        elif ctx.source == "cdk":
+            ctx.notes["cost_hint"] = CDK_COST_HINT
         ctx.notes["prices"] = regions.note()
 
     if use_llm:
