@@ -164,7 +164,25 @@ jobs:
           no-llm: "true"
           out: report.md
           upload-artifact: "false"
+          group-by: theme
+          job-summary: "true"
 
       - name: Check the report was written
         shell: bash
         run: test -s report.md
+
+      - name: Run the action with SARIF and a job summary
+        uses: ./.github/actions/aws-arch-agent
+        with:
+          repo: tests/fixtures/minimal-cdk
+          no-llm: "true"
+          format: sarif
+          out: report.sarif
+          region: eu-west-1
+          theme: security-baseline,data-protection
+          upload-artifact: "false"
+          job-summary: "true"
+
+      - name: Check the SARIF report was written
+        shell: bash
+        run: test -s report.sarif

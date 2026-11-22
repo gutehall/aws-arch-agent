@@ -11,6 +11,7 @@
   "rules": {
     "include": null,
     "exclude": ["BP-001"],
+    "exclude_paths": {"examples/**": ["SEC-005"]},
     "org": false
   },
   "rag": {

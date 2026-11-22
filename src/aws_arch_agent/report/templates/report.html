@@ -43,6 +43,7 @@
               border: 1px solid var(--line); color: var(--muted); }
   .baseline.new { color: var(--fg); font-weight: 600; }
   .finding[data-baseline="accepted"] { opacity: .75; }
+  .finding[data-suppressed] { opacity: .75; }
   .id { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 13px; color: var(--muted); }
   .facts { color: var(--muted); font-size: 13px; margin: 6px 0 0; display: flex; flex-wrap: wrap; gap: 4px 16px; }
   .facts code { color: var(--fg); }
@@ -168,7 +169,7 @@
 
   <section id="findings" aria-live="polite">
     {% for f in findings %}
-    <article class="finding" data-severity="{{ f.severity }}"{% if f.themes %} data-themes="{{ f.themes | join(' ') }}"{% endif %}{% if f.baseline %} data-baseline="{{ f.baseline }}"{% endif %}>
+    <article class="finding" data-severity="{{ f.severity }}"{% if f.themes %} data-themes="{{ f.themes | join(' ') }}"{% endif %}{% if f.baseline %} data-baseline="{{ f.baseline }}"{% endif %}{% if f.suppressed %} data-suppressed="true"{% endif %}>
       <header>
         <span class="badge {{ f.severity }}">{{ f.severity }}</span>
         <span class="id">{{ f.id }}</span>
@@ -176,12 +177,16 @@
         {% if f.baseline %}
         <span class="baseline {{ f.baseline }}">{{ "Accepted" if f.baseline == "accepted" else "New" }}</span>
         {% endif %}
+        {% if f.suppressed %}
+        <span class="baseline suppressed">Suppressed</span>
+        {% endif %}
       </header>
       <div class="facts">
         <span>Pillar: <b>{{ f.pillar }}</b></span>
         {% if f.environment %}<span>Environment: <b>{{ f.environment }}</b></span>{% endif %}
         {% if f.location %}<span>File: <code>{{ f.location }}</code></span>{% endif %}
         {% if f.verdict %}<span>LLM verdict: <b>{{ f.verdict.label }}</b> — {{ f.verdict.why }}</span>{% endif %}
+        {% if f.suppressed %}<span>Status: <b>{{ f.suppressed }}</b>{% if f.suppression_reason %} — {{ f.suppression_reason }}{% endif %}</span>{% endif %}
       </div>
       {% if f.estimates %}
       <h4>Estimate</h4>

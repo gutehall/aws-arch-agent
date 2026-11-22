@@ -13415,9 +13415,255 @@ class PromptCatalogMissing(_AiNoteRule):
         return None
 
 
+# AI code and CI checks: Bedrock model calls with no guardrail (REPO-199) or no output-token
+# bound (REPO-200), and a CI with no evaluation step (REPO-201). Like the notes above, they run
+# only for an AI workload and each answers one AI lens best practice.
+# A Bedrock Runtime model call: boto3 converse/invoke_model, or the JavaScript SDK v3 commands.
+_BEDROCK_CALL = re.compile(
+    r"\.(?:converse|converse_stream|invoke_model|invoke_model_with_response_stream)\s*\("
+    r"|\b(?:Converse|ConverseStream|InvokeModel|InvokeModelWithResponseStream)Command\s*\("
+)
+# The file is a Bedrock Runtime client: the boto3 service name or the SDK v3 package.
+_BEDROCK_CLIENT = re.compile(r"[\"']bedrock-runtime[\"']|@aws-sdk/client-bedrock-runtime")
+_GUARDRAIL_IN_CALL = re.compile(
+    r"\bguardrail(?:Config|Identifier)\b|\bguardrail_?identifier\b|\bguardrailConfig\b"
+    r"|\bapply_guardrail\s*\(|\bApplyGuardrailCommand\b",
+    re.IGNORECASE,
+)
+# maxTokens (Converse), max_tokens (Anthropic, Mistral), maxTokenCount (Titan), max_gen_len
+# (Llama), max_new_tokens, max_tokens_to_sample (older Claude), max_completion_tokens.
+_TOKEN_BOUND = re.compile(
+    r"\bmax_?tokens\b|\bmaxTokenCount\b|\bmax_gen_len\b|\bmax_new_tokens\b"
+    r"|\bmax_?tokens_?to_?sample\b|\bmax_completion_tokens\b",
+    re.IGNORECASE,
+)
+
+
+def bedrock_call_files(repo_path: Path) -> Iterator[tuple[str, str]]:
+    """(repo-relative path, text) of each code file outside tests that calls a Bedrock model."""
+    for rel, text in http_client_files(repo_path):
+        if _BEDROCK_CLIENT.search(text) and _BEDROCK_CALL.search(text):
+            yield rel, text
+
+
+class _AiCodeRule(_RepoRule):
+    """A code rule that fires only on an AI workload: per file, a Bedrock model call whose file
+    has no match for `answer`."""
+
+    answer: ClassVar[re.Pattern[str]]
+    lacking: ClassVar[str]
+
+    def run(self, repo_path: Path, language: str = "typescript") -> List[Finding]:
+        if not ai_gate.active():
+            return []
+        bare = [rel for rel, text in bedrock_call_files(repo_path) if not self.answer.search(text)]
+        if not bare:
+            return []
+        listed = ", ".join(bare[:5]) + (f" and {len(bare) - 5} more" if len(bare) > 5 else "")
+        return [self._finding(
+            f"Bedrock Runtime calls (Converse or InvokeModel) with {self.lacking} in: {listed}",
+            file=bare[0],
+        )]
+
+
+class BedrockCallWithoutGuardrail(_AiCodeRule):
+    id = "REPO-199"
+    title = "Code calls a Bedrock model with no guardrail"
+    category = "Security"
+    severity = "Medium"
+    themes = ("security-baseline",)
+    answer = _GUARDRAIL_IN_CALL
+    lacking = "no guardrailConfig, guardrailIdentifier or ApplyGuardrail call in the file"
+    recommendation = (
+        "Pass a guardrail on every model call: guardrailConfig (guardrailIdentifier and "
+        "guardrailVersion) on Converse, or guardrailIdentifier and guardrailVersion on "
+        "InvokeModel, or check the input and output with ApplyGuardrail. The guardrail filters "
+        "harmful content, prompt attacks and personal data that the model would pass through."
+    )
+
+
+class BedrockCallWithoutTokenBound(_AiCodeRule):
+    id = "REPO-200"
+    title = "Code calls a Bedrock model with no maximum output tokens"
+    category = "Cost"
+    severity = "Low"
+    themes = ("finops",)
+    answer = _TOKEN_BOUND
+    lacking = "no maxTokens or model max_tokens setting in the file"
+    recommendation = (
+        "Bound each response: set inferenceConfig.maxTokens on Converse, or the model's own "
+        "limit in the InvokeModel body (max_tokens, maxTokenCount, max_gen_len), to the longest "
+        "answer the use case needs. With no bound the model writes up to its own limit, and "
+        "output tokens cost the most."
+    )
+
+
+_EVAL_TOOLS: tuple[tuple[str, re.Pattern[str]], ...] = tuple(
+    (name, re.compile(pattern, re.IGNORECASE)) for name, pattern in (
+        ("promptfoo", r"\bpromptfoo\b"),
+        ("DeepEval", r"\bdeepeval\b"),
+        ("Ragas", r"\bragas\b"),
+        ("Bedrock evaluation job", r"\bcreate-evaluation-job\b|\bcreate_evaluation_job\b"
+         r"|\bCreateEvaluationJobCommand\b"),
+        ("an eval step", r"\b(?:run|npm run|pnpm|yarn|make|pytest|python -m pytest)\s+[\w./-]*\bevals?\b"
+         r"|\bevals?/|\bevaluat(?:e|ion|ions)\b"),
+    )
+)
+
+
+class AiEvalNotInPipeline(_RepoRule):
+    id = "REPO-201"
+    title = "An AI workload's pipeline runs no evaluation"
+    severity = "Low"
+    themes = ("observability",)
+    recommendation = (
+        "Run an evaluation in the pipeline on every change to prompts, models or retrieval: "
+        "promptfoo, DeepEval or Ragas in a CI step, or a Bedrock evaluation job, against the "
+        "ground-truth set, and fail the build when the scores drop below the release bar."
+    )
+
+    def run(self, repo_path: Path, language: str = "typescript") -> List[Finding]:
+        if not ai_gate.active():
+            return []
+        builds, found = _tools_in_builds(repo_path, _EVAL_TOOLS)
+        # No build at all is REPO-002's finding, not this one.
+        if found or not builds:
+            return []
+        return [self._finding(
+            f"Searched the build configs ({_listed(builds)}) and the package.json scripts they "
+            "run for an evaluation (promptfoo, DeepEval, Ragas, a Bedrock evaluation job, or an "
+            "eval or evaluation step); found none",
+            file=builds[0],
+        )]
+
+
+# Responsible AI governance on an AI workload: a model or system card (REPO-202), a bias or
+# fairness evaluation (REPO-203, SageMaker workloads) and a note on escalating to a person who
+# can override the system (REPO-204). Like the rules above, they run only for an AI workload and
+# each answers one Responsible AI lens best practice.
+_SAGEMAKER_TYPES = frozenset(t for t in ai_gate.AI_TYPES if t.startswith("sagemaker_"))
+_MODEL_CARD_IN_IAC = re.compile(_cf_type(r"SageMaker::ModelCard") + r"|\bsagemaker\.CfnModelCard\(")
+
+
+class ModelCardMissing(_AiNoteRule):
+    id = "REPO-202"
+    title = "An AI workload has no model card or system card"
+    themes = ("observability",)
+    note_name = re.compile(r"model[-_ ]?cards?|system[-_ ]?cards?|ai[-_ ]?service[-_ ]?cards?")
+    note_heading = re.compile(r"(?i).*\b(?:model cards?|system cards?|ai service cards?)\b.*")
+    iac = _MODEL_CARD_IN_IAC
+    recommendation = (
+        "Tell the people who use the system what it is for: keep a model card (an "
+        "AWS::SageMaker::ModelCard, or MODEL_CARD.md / docs/model-card.md) or a system card that "
+        "states the intended use, the users it is for, the data it was trained or evaluated on, "
+        "its known limitations and the uses it must not be put to, and update it with each release."
+    )
+    searched = (
+        "the IaC for an AWS::SageMaker::ModelCard, and the notes for a file or heading on a model "
+        "card, a system card or an AI service card"
+    )
+
+    def present(self, repo_path: Path) -> str | None:
+        if "sagemaker_model_card" in ai_gate.seen_types():
+            return "AWS::SageMaker::ModelCard"
+        return super().present(repo_path)
+
+
+# Bias and fairness tools, in a build, in code outside tests, or in a dependency list.
+_BIAS_TOOLS: tuple[tuple[str, re.Pattern[str]], ...] = tuple(
+    (name, re.compile(pattern, re.IGNORECASE)) for name, pattern in (
+        ("SageMaker Clarify", r"\bsagemaker[._ -]clarify\b|\bSageMakerClarifyProcessor\b"
+         r"|\bClarifyCheckStep\b|\bclarify\.BiasConfig\b"),
+        ("Fairlearn", r"\bfairlearn\b"),
+        ("Aequitas", r"\baequitas\b"),
+        ("AI Fairness 360", r"\baif360\b"),
+        ("fmeval", r"\bfmeval\b"),
+    )
+)
+_BIAS_IN_IAC = re.compile(
+    _cf_type(r"SageMaker::ModelBiasJobDefinition") + r"|\bsagemaker\.CfnModelBiasJobDefinition\("
+)
+_DEPENDENCY_LISTS = re.compile(
+    r"(?i)^(?:requirements[\w.-]*\.txt|pyproject\.toml|setup\.cfg|pipfile|environment\.ya?ml|package\.json)$"
+)
+
+
+def bias_evaluation(repo_path: Path) -> str | None:
+    """Where the repo measures bias: a Model Monitor bias job in the IaC, or a bias tool in a
+    build, in code outside tests or in a dependency list. None when nowhere."""
+    found = _in_iac_text(repo_path, _BIAS_IN_IAC)
+    if found:
+        return found
+    _builds, tools = _tools_in_builds(repo_path, _BIAS_TOOLS)
+    if tools:
+        return next(iter(tools.values()))
+    for rel, text in http_client_files(repo_path):
+        if any(pattern.search(text) for _name, pattern in _BIAS_TOOLS):
+            return rel
+    for path in walk(repo_path):
+        parts = _rel_parts(path, repo_path)
+        if _DEPENDENCY_LISTS.match(path.name) and not _in_test_dir(parts):
+            text = read_text_safe(path)
+            if any(pattern.search(text) for _name, pattern in _BIAS_TOOLS):
+                return "/".join(parts)
+    return None
+
+
+class BiasEvaluationMissing(_RepoRule):
+    id = "REPO-203"
+    title = "A SageMaker workload measures no bias or fairness"
+    severity = "Low"
+    themes = ("observability",)
+    recommendation = (
+        "Measure unwanted bias across the groups the model affects before each release: run "
+        "SageMaker Clarify (a ClarifyCheckStep in the pipeline, or a bias monitoring schedule on "
+        "the endpoint), or Fairlearn, Aequitas or AI Fairness 360 in a CI step, and fail the "
+        "release when a bias metric crosses the bar you set."
+    )
+
+    def run(self, repo_path: Path, language: str = "typescript") -> List[Finding]:
+        if not ai_gate.active() or not ai_gate.seen_types() & _SAGEMAKER_TYPES:
+            return []
+        builds = build_texts(repo_path)
+        # No build at all is REPO-002's finding, not this one.
+        if not builds or bias_evaluation(repo_path):
+            return []
+        return [self._finding(
+            f"Searched the build configs ({_listed([rel for rel, _t in builds])}), the code outside "
+            "tests and the dependency lists for SageMaker Clarify, Fairlearn, Aequitas, AI "
+            "Fairness 360 or fmeval, and the IaC for an AWS::SageMaker::ModelBiasJobDefinition; "
+            "found none",
+            file=builds[0][0],
+        )]
+
+
+class HumanEscalationMissing(_AiNoteRule):
+    id = "REPO-204"
+    title = "An AI workload has no note on escalating to a person who can override it"
+    themes = ("observability",)
+    note_name = re.compile(
+        r"human[-_ ]?(?:override|escalation|hand[-_ ]?off|takeover)|kill[-_ ]?switch|escalations?"
+        r"|(?:ai|model|agent)[-_ ]?(?:incidents?|overrides?)"
+    )
+    note_heading = re.compile(
+        r"(?i).*\b(?:human (?:override|escalation|hand-?off|takeover)|kill switch|escalations?"
+        r"|escalat(?:e|ing) to a (?:human|person)|(?:ai|model|agent) incidents?)\b.*"
+    )
+    recommendation = (
+        "Write down what happens when monitoring flags the AI system: a note (docs/escalation.md) "
+        "that names the alerts that page a person, who reviews them, how that person overrides, "
+        "corrects or switches off the system, and where the decision and its reason are recorded."
+    )
+    searched = (
+        "the notes for a file or heading on human override, escalation, a kill switch or AI "
+        "incidents"
+    )
+
+
 AI_REPO_RULES: List[Rule] = [
     ResponsibleAiNoteMissing(), EvalSetMissing(), HumanOversightMissing(), AgentRoleMissing(),
-    PromptCatalogMissing(),
+    PromptCatalogMissing(), BedrockCallWithoutGuardrail(), BedrockCallWithoutTokenBound(),
+    AiEvalNotInPipeline(), ModelCardMissing(), BiasEvaluationMissing(), HumanEscalationMissing(),
 ]
 
 REPO_RULES: List[Rule] = [
@@ -13515,5 +13761,6 @@ REPO_RULES: List[Rule] = [
     UnusedRegion(),
     SustainabilityGoalsMissing(), DependencyUpdatesMissing(), BuildFleetAlwaysOn(), DeviceFarmMissing(),
     ResponsibleAiNoteMissing(), EvalSetMissing(), HumanOversightMissing(), AgentRoleMissing(),
-    PromptCatalogMissing(),
+    PromptCatalogMissing(), BedrockCallWithoutGuardrail(), BedrockCallWithoutTokenBound(),
+    AiEvalNotInPipeline(), ModelCardMissing(), BiasEvaluationMissing(), HumanEscalationMissing(),
 ]

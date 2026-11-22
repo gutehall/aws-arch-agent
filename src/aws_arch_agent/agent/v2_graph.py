@@ -7,6 +7,7 @@ import subprocess
 from pathlib import Path
 from typing import Annotated, Literal, TypedDict, List
 
+from aws_arch_agent import suppressions
 from aws_arch_agent.models import Finding, Hypothesis, IacSource, RepoContext, Verdict
 from aws_arch_agent.agent.hypotheses import find_hypotheses
 from aws_arch_agent.agent.verdicts import VerdictCache, apply_verdicts, judge_batch, make_batches
@@ -19,7 +20,7 @@ from aws_arch_agent.agent.v1 import (
     iac_files,
     resolve_source,
 )
-from aws_arch_agent.tools.files import iter_files
+from aws_arch_agent.tools.files import truncation_notes, walk_files
 from aws_arch_agent.tools.llm import NO_LLM, LLMClient, LLMResult, aggregate_results
 from aws_arch_agent.rules.fix_snippets import attach_fixes
 from aws_arch_agent.rules.registry import ALL_RULES
@@ -69,6 +70,7 @@ class State(TypedDict, total=False):
     llm_mode: str
     rules_include: List[str] | None
     rules_exclude: List[str] | None
+    rules_exclude_paths: dict[str, List[str]] | None
     rules_org: bool
     severity_threshold: str
     templates_path: str
@@ -186,7 +188,9 @@ def _parts_under(path: Path, root: Path) -> tuple[str, ...]:
 
 
 def _shown(findings: List[Finding], state: State) -> List[Finding]:
-    """The findings the report shows: at or above severity_threshold, in the --theme themes."""
+    """The findings the report shows: not skipped by rules.exclude_paths, at or above
+    severity_threshold, in the --theme themes."""
+    findings = suppressions.exclude_by_path(findings, state.get("rules_exclude_paths"))
     return _in_themes(filter_by_severity(findings, state.get("severity_threshold")), state)
 
 
@@ -203,7 +207,7 @@ def _in_themes(findings: List[Finding], state: State) -> List[Finding]:
 def node_collect(state: State) -> State:
     repo_path = Path(state["repo_path"])
     max_files = state.get("max_files") or 400
-    files = iter_files(repo_path, max_files=max_files)
+    files, truncated = walk_files(repo_path, max_files=max_files)
     iac = state.get("iac") or "auto"
     if iac == "cloudformation" and state.get("templates_path"):
         source: IacSource = "cloudformation"  # templates may sit outside the repo
@@ -218,6 +222,7 @@ def node_collect(state: State) -> State:
         notes={
             "top_level": [p.name for p in repo_path.iterdir() if p.is_dir()],
             "prices": regions.note(),  # replaced in node_report once stacks are priced
+            **truncation_notes(truncated, max_files),
         },
     )
 
@@ -227,6 +232,7 @@ def node_collect(state: State) -> State:
             repo_path, max_files, state.get("rules_include"), state.get("rules_exclude"), None,
             bool(state.get("rules_org")), "terraform",
             Path(state["tf_plan"]) if state.get("tf_plan") else None,
+            state.get("rules_exclude_paths"),
         )
         tf_ctx.notes.update(ctx.notes)
         return {
@@ -244,6 +250,8 @@ def node_collect(state: State) -> State:
         org=bool(state.get("rules_org")),
     )
     language = ctx.language
+    if ctx.source == "cdk":
+        ai_gate.observe_cdk_source(files, repo_path)
     with limit_to_files(repo_path, files):
         findings, warnings = run_all_rules(repo_path, rules, _languages_to_scan(language))
     findings = account.apply(findings, ctx.notes)
@@ -572,6 +580,7 @@ def node_report(state: State) -> State:
     # Any batch that did not answer means no labels at all, as in V1.
     if aggregate_results(state.get("llm_results") or []).status == "ok":
         apply_verdicts(findings, state.get("verdicts") or {})
+    warnings = [*warnings, *suppressions.apply(findings, Path(state["repo_path"]))]
     base_report = render_markdown(ctx, findings, warnings=warnings, group_by=state.get("group_by") or "severity")
     synth_block = state.get("synth_summary", "")
     if state.get("iac") == "terraform":
@@ -597,7 +606,8 @@ def node_report(state: State) -> State:
 
 {base_report}
 """
-    return {"final_report": final, "ctx": ctx, "raw_findings": findings}  # ctx carries the cost section
+    # ctx carries the cost section
+    return {"final_report": final, "ctx": ctx, "raw_findings": findings, "rule_warnings": warnings}
 
 
 def build_graph():
@@ -664,6 +674,7 @@ def analyze_v2(
     group_by: str = "severity",
     account_facts: account.AccountFacts | None = None,
     lenses_ai: bool | None = None,
+    rules_exclude_paths: dict[str, List[str]] | None = None,
 ) -> tuple[str, RepoContext, List[Finding], List[str]]:
     """Run V2 graph; return (final_report_md, ctx, findings, warnings)."""
     graph = build_graph()
@@ -674,6 +685,7 @@ def analyze_v2(
         "llm_mode": llm_mode,
         "rules_include": rules_include if rules_include else None,
         "rules_exclude": rules_exclude if rules_exclude else None,
+        "rules_exclude_paths": rules_exclude_paths if rules_exclude_paths else None,
         "rules_org": rules_org,
         "severity_threshold": severity_threshold or "",
         "templates_path": templates_path or "",

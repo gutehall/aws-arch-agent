@@ -30,6 +30,18 @@ class Verdict(BaseModel):
         return _VERDICT_LABELS[self.verdict]
 
 
+class Suppression(BaseModel):
+    """Why a finding is suppressed: an inline comment directive or template resource Metadata.
+
+    A suppressed finding stays in the report, labelled, and does not count for --fail-on.
+    """
+
+    kind: Literal["inline", "metadata"]
+    reason: str | None = None
+    # ISO date (YYYY-MM-DD). The suppression is active through this day.
+    expires: str | None = None
+
+
 class Finding(BaseModel):
     """A single architecture finding (rule result) with id, severity, and recommendation."""
 
@@ -60,6 +72,9 @@ class Finding(BaseModel):
     # checks (SEC08-BP02). Set from rules/wa_map.py.
     question: str | None = None
     best_practices: List[str] = Field(default_factory=list)
+    # Set when an active inline directive or resource Metadata suppresses the finding
+    # (suppressions.py). None means not suppressed, expired suppressions included.
+    suppression: Suppression | None = None
     # The model's opinion. Excluded so JSON findings, SARIF, the baseline and fail-on cannot
     # depend on it; the renderers that show it read it explicitly.
     verdict: Verdict | None = Field(default=None, exclude=True)

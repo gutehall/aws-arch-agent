@@ -4,13 +4,13 @@ This document provides a comprehensive list of all rules checked by AWS Arch Age
 
 ## Overview
 
-AWS Arch Agent checks **362 static analysis rules** and **299 template checks** across the six AWS Well-Architected pillars, plus a few CDK best-practice checks. 141 of the 362 CDK rules (39%) have a template check. Those checks run on CloudFormation, Terraform, and synthesised CDK. [COVERAGE.md](COVERAGE.md) gives the reason for each of the others.
+AWS Arch Agent checks **368 static analysis rules** and **317 template checks** across the six AWS Well-Architected pillars, plus a few CDK best-practice checks. 141 of the 368 CDK rules (38%) have a template check. Those checks run on CloudFormation, Terraform, and synthesised CDK. [COVERAGE.md](COVERAGE.md) gives the reason for each of the others.
 
 ## Static Analysis Rules (V1 & V2 Modes)
 
 CDK source rules read TypeScript and Python and run in V1 and V2. Repo-level rules (`REPO-*`) read the repository tree and run for CDK, CloudFormation, and Terraform.
 
-### Security (114 rules)
+### Security (115 rules)
 
 **Encryption & Data Protection:**
 - SEC-006: S3 bucket encryption missing
@@ -147,6 +147,7 @@ CDK source rules read TypeScript and Python and run in V1 and V2. Repo-level rul
 - REPO-146: Data classified by tag has no lifecycle or retention rule
 - REPO-151: Data stores carry no classification tag to drive retention and storage tiers
 - REPO-198: A Bedrock AI workload keeps no prompt catalog
+- REPO-199: Code calls a Bedrock model with no guardrail
 
 ### Reliability (73 rules)
 
@@ -257,7 +258,7 @@ CDK source rules read TypeScript and Python and run in V1 and V2. Repo-level rul
 - REPO-149: A lone EC2 instance has no data plane recovery
 - REPO-188: One stack declares many compute services and data stores with no stack, module or API boundary
 
-### Operational Excellence (69 rules)
+### Operational Excellence (73 rules)
 
 **Logging:**
 - OPS-001: CloudTrail not enabled
@@ -350,6 +351,10 @@ CDK source rules read TypeScript and Python and run in V1 and V2. Repo-level rul
 - REPO-195: An AI workload has no evaluation or ground-truth set
 - REPO-196: An AI workload has no note on human oversight
 - REPO-197: An agent has no note of its role and success criteria
+- REPO-201: An AI workload's pipeline runs no evaluation
+- REPO-202: An AI workload has no model card or system card
+- REPO-203: A SageMaker workload measures no bias or fairness
+- REPO-204: An AI workload has no note on escalating to a person who can override it
 
 ### Performance Efficiency (24 rules)
 
@@ -391,7 +396,7 @@ CDK source rules read TypeScript and Python and run in V1 and V2. Repo-level rul
 - REPO-186: No load test shows how the workload performs under load
 - REPO-187: No performance review note names how the team improves and reviews performance
 
-### Cost Optimization (50 rules)
+### Cost Optimization (51 rules)
 
 **Resource Right-Sizing:**
 - COST-002: Compute resources may miss autoscaling
@@ -468,6 +473,7 @@ CDK source rules read TypeScript and Python and run in V1 and V2. Repo-level rul
 - REPO-180: No cost estimate is in the repo for the components the workload declares
 - REPO-181: A Marketplace image runs on a dedicated host with no licensing note
 - REPO-182: No dated cost review or scheduled cost report is in the repo
+- REPO-200: Code calls a Bedrock model with no maximum output tokens
 
 ### Best Practices (5 rules)
 
@@ -628,10 +634,30 @@ CloudFormation template rules run when the agent has access to template files. T
   - CF-SAGE-004 (Low): notebook, or endpoint config with an instance variant, with no `KmsKeyId` (Terraform `kms_key_id`, and `kms_key_arn` on the endpoint config). An endpoint config with only serverless variants has no volume and is not judged. Training jobs are not template resources, so they are not read. An instance type with local storage cannot take a key, and the check does not know which types those are: it can report them, and the recommendation says so.
   - CF-SAGE-005 (Low, Security Hub SageMaker.4): production variant with literal `InitialInstanceCount: 1`. A serverless variant and a shadow variant are not judged, and neither is an unset count. Not reported in dev or staging.
   - CF-SAGE-006 (Low): an endpoint (`AWS::SageMaker::Endpoint`, Terraform `aws_sagemaker_endpoint`) that no `AWS::SageMaker::MonitoringSchedule` in the template names in `EndpointName`. A schedule with no readable `EndpointName` (Terraform ties it to an endpoint through a job definition) counts for every endpoint. Runs only for an AI workload (see `lenses.ai` in [CONFIG.md](CONFIG.md)). Answers the Machine Learning lens practice MLPERF06-BP04, not a core question. `CF-SAGE-005` still answers its core question.
-- **Bedrock** (`AWS::Bedrock::Agent`, `AWS::Bedrock::Guardrail`, `AWS::Bedrock::KnowledgeBase`, `AWS::Bedrock::Prompt`, `AWS::BedrockAgentCore::*`; Terraform `aws_bedrockagent_agent`, `aws_bedrock_guardrail`, `aws_bedrockagent_knowledge_base`, `aws_bedrockagent_prompt`, `aws_bedrockagentcore_*`). These checks run only for an AI workload and each answers one best practice of the Generative AI lens, never a core question. A value the scan cannot read is not judged. There is no `CF-BEDROCK-002`: a guardrail with empty policies answers the same practice as `CF-BEDROCK-001` (GENSEC02-BP01), and one rule checks one question.
+  - CF-SAGE-007 to CF-SAGE-013 run only for an AI workload, like CF-SAGE-006, and each answers one Machine Learning lens practice, never a core question. They also read `AWS::SageMaker::Domain`, `AWS::SageMaker::FeatureGroup`, `AWS::SageMaker::Model` and `AWS::ApplicationAutoScaling::ScalableTarget` (Terraform `aws_sagemaker_domain`, `aws_sagemaker_feature_group`, `aws_sagemaker_model`, `aws_appautoscaling_target`). `AWS::SageMaker::ModelPackageGroup` and `AWS::SageMaker::ModelCard` only turn the AI checks on. Root access, direct internet access, the notebook VPC and the notebook and endpoint config keys are CF-SAGE-001 to CF-SAGE-004.
+  - CF-SAGE-007 (Low): a notebook with no `LifecycleConfigName` (Terraform `lifecycle_config_name`), so nothing stops it when idle. The script in the config is not read. MLCOST04-BP08.
+  - CF-SAGE-008 (Medium): a domain with `AppNetworkAccessType` unset or literal `PublicInternetOnly` (Terraform `app_network_access_type`). MLSEC03-BP02.
+  - CF-SAGE-009 (Low): a domain with no `KmsKeyId` (Terraform `kms_key_id`) for its EFS volume. MLSEC02-BP01.
+  - CF-SAGE-010 (Low): an endpoint config with an instance variant and no `DataCaptureConfig` (Terraform `data_capture_config` block), or literal `EnableCapture: false`. An unset `EnableCapture` means enabled. A config with only serverless variants is not judged. MLOPS06-BP02.
+  - CF-SAGE-011 (Low): an endpoint whose config is in the template with an instance variant, and that no scalable target with `ServiceNamespace: sagemaker` and `ScalableDimension: sagemaker:variant:DesiredInstanceCount` names in `ResourceId` (by reference, or `endpoint/<EndpointName>/` for a literal name). A SageMaker target that cannot be tied to an endpoint, a `ResourceId` from a parameter or a variable, or a child stack or module that may hold a target, counts for every endpoint. A serverless endpoint, and one whose config the scan cannot find, are not judged. MLREL05-BP01.
+  - CF-SAGE-012 (Low): a feature group with an online store that is on (`EnableOnlineStore: true`) and no `OnlineStoreConfig.SecurityConfig.KmsKeyId`, or an offline store with no `OfflineStoreConfig.S3StorageConfig.KmsKeyId` (Terraform `security_config.kms_key_id`, `s3_storage_config.kms_key_id`). MLSEC02-BP01.
+  - CF-SAGE-013 (Low): a model none of whose readable containers (`PrimaryContainer`, `Containers`; Terraform `primary_container`, `container`) sets `ModelPackageName`, so what it runs is not a Model Registry version. A container the scan cannot read, or a model with no container, is not judged. MLREL05-BP02.
+- **Bedrock** (`AWS::Bedrock::Agent`, `AWS::Bedrock::Guardrail`, `AWS::Bedrock::KnowledgeBase`, `AWS::Bedrock::Prompt`, `AWS::BedrockAgentCore::*`; Terraform `aws_bedrockagent_agent`, `aws_bedrock_guardrail`, `aws_bedrockagent_knowledge_base`, `aws_bedrockagent_prompt`, `aws_bedrockagentcore_*`). These checks run only for an AI workload and each answers one best practice of the Generative AI or Agentic AI lens, never a core question. A value the scan cannot read is not judged. There is no `CF-BEDROCK-002`: it was dropped before release, and the guardrail filter check is `CF-BEDROCK-005`.
   - CF-BEDROCK-001 (Medium): an agent with no `GuardrailConfiguration` (Terraform `guardrail_configuration` block). GENSEC02-BP01.
   - CF-BEDROCK-003 (Low): an agent with no `IdleSessionTTLInSeconds` (Terraform `idle_session_ttl_in_seconds`). GENREL03-BP02.
   - CF-BEDROCK-004 (Low): the template builds Bedrock resources and no model invocation logging resource. CloudFormation has no resource type for it (Terraform has `aws_bedrock_model_invocation_logging_configuration`), so this is an account check: off unless `rules.org` is true or `rules.include` names it. GENSEC03-BP01.
+  - CF-BEDROCK-005 (Medium): a guardrail with no content filter (`ContentPolicyConfig.FiltersConfig`, Terraform `content_policy_config.filters_config`) and no sensitive-information filter (`SensitiveInformationPolicyConfig` `PiiEntitiesConfig` or `RegexesConfig`). A guardrail with only denied topics or word filters is reported. Agentic AI lens AGENTSEC04-BP01.
+  - CF-BEDROCK-006 (Low): an agent or a prompt (`AWS::Bedrock::Prompt`, Terraform `aws_bedrockagent_prompt`) with no `CustomerEncryptionKeyArn` (Terraform `customer_encryption_key_arn`). The agent's instruction is its system prompt, so both answer GENSEC04-BP01 (a secure prompt catalog).
+  - CF-BEDROCK-007 (Low): an agent that no `AWS::Bedrock::AgentAlias` (Terraform `aws_bedrockagent_agent_alias`) in the template points at in `AgentId`, so only its DRAFT exists. An alias with no readable `AgentId` counts for every agent. Agentic AI lens AGENTOPS02-BP03.
+  - CF-BEDROCK-008 (Low): a CloudFormation prompt that no `AWS::Bedrock::PromptVersion` in the template points at in `PromptArn`. A version with no readable `PromptArn` counts for every prompt. Not judged on Terraform: the AWS provider has no prompt version resource. GENREL04-BP01.
+  - CF-BEDROCK-009 (Low): a prompt variant with no `InferenceConfiguration.Text.MaxTokens` (Terraform `variant.inference_configuration.text.max_tokens`). A variant that runs an agent (`GenAiResource`) takes no inference settings and is not judged. GENCOST03-BP02.
+  - CF-BEDROCK-010 (Low): a guardrail with no denied topic (`TopicPolicyConfig.TopicsConfig`, Terraform `topic_policy_config.topics_config`). Responsible AI lens RAIBR04-BP01.
+  - CF-BEDROCK-011 (Low): a guardrail with a content or regex filter and no PII entity filter (`SensitiveInformationPolicyConfig.PiiEntitiesConfig`, Terraform `sensitive_information_policy_config.pii_entities_config`). A guardrail with no filter at all is CF-BEDROCK-005's finding, not this one. Which entity types are listed is not judged. Responsible AI lens RAISP03-BP01.
+  - CF-BEDROCK-012 (Low): in a template with a knowledge base, a guardrail with no contextual grounding filter (`ContextualGroundingPolicyConfig.FiltersConfig`, Terraform `contextual_grounding_policy_config.filters_config`). Responsible AI lens RAISP03-BP04.
+- **AgentCore** (`AWS::BedrockAgentCore::Runtime`, `AWS::BedrockAgentCore::Gateway`, `AWS::BedrockAgentCore::Memory`; Terraform `aws_bedrockagentcore_agent_runtime`, `aws_bedrockagentcore_gateway`, `aws_bedrockagentcore_memory`). Run only for an AI workload, like the Bedrock checks. A memory's `EventExpiryDuration` is required, so it is not checked; a runtime has no tracing property to read.
+  - CF-AGENTCORE-001 (Medium): a runtime with literal `NetworkConfiguration.NetworkMode: PUBLIC` (Terraform `network_configuration.network_mode`). GENSEC01-BP02.
+  - CF-AGENTCORE-002 (Medium): a gateway with literal `AuthorizerType: NONE` (Terraform `authorizer_type`). `AUTHENTICATE_ONLY` is not reported. Agentic AI lens AGENTSEC02-BP01.
+  - CF-AGENTCORE-003 (Low): a memory with no `EncryptionKeyArn` (Terraform `encryption_key_arn`). Agentic AI lens AGENTSEC01-BP01.
 - **FSx** (`AWS::FSx::FileSystem`; Terraform `aws_fsx_lustre_file_system`, `aws_fsx_windows_file_system`, `aws_fsx_ontap_file_system`, `aws_fsx_openzfs_file_system`). A `FileSystemType` from a parameter is not judged, nor is a per-type block or a value the scan cannot read. Scratch Lustre, including an unset `DeploymentType`, or a type the scan cannot read, is not judged at all: it takes no key and has no backups. Lustre linked to S3 (`ImportPath`, `ExportPath`, or an `AWS::FSx::DataRepositoryAssociation` / `aws_fsx_data_repository_association` the scan ties to it or cannot tie to any file system) has no backups, so CF-FSX-002 and CF-FSX-003 skip it. On a file system restored from `BackupId`, an unset value is not judged, because the template does not show what it starts with:
   - CF-FSX-001 (Low): no `KmsKeyId`. FSx still encrypts with its service key, so this asks for a customer managed key, not for encryption.
   - CF-FSX-002 (Low, Security Hub FSx.2 on Lustre, FSx.1 on OpenZFS, none on Windows): `CopyTagsToBackups` unset or false. ONTAP has no such setting. FSx.1 also asks for `CopyTagsToVolumes`, which is not read.
@@ -760,11 +786,11 @@ CloudFormation template rules run when the agent has access to template files. T
 
 | Pillar | CF rule IDs |
 |--------|-------------|
-| Operational Excellence | CF-ECS-012, CF-CFG-001, CF-ALARM-001, CF-ALARM-002, CF-ALARM-003, CF-DASH-001, CF-CT-004, CF-S3-004, CF-RDS-007, CF-RDS-010, CF-RDS-011, CF-CT-001, CF-CT-002, CF-FL-001, CF-EKS-001, CF-TGW-002, CF-CB-004, CF-CP-003, CF-OS-006, CF-RS-004, CF-DOCDB-003, CF-NEP-002, CF-SFN-002, CF-SFN-003, CF-EB-001, CF-ECS-008, CF-ECS-010, CF-ASG-005, CF-GLUE-002, CF-GLUE-003, CF-S3-011, CF-CF-005, CF-FSX-002, CF-PATCH-001, CF-SAGE-006, CF-BEDROCK-004, CF-SYN-001, CF-LOGS-001 |
-| Security | CF-GD-001, CF-SH-001, CF-MACIE-001, CF-CT-005, CF-S3-001, CF-S3-002, CF-S3-005, CF-RDS-001, CF-RDS-004, CF-APIGW-003, CF-APIGW-004, CF-APIGW-007, CF-APIGW-009, CF-APIGW-V2-003, CF-LAM-004, CF-LAM-005, CF-RDS-006, CF-RDS-008, CF-RDS-009, CF-RDS-012, CF-RDS-013, CF-CT-003, CF-KMS-001, CF-RP-001, CF-EC2-001, CF-EKS-002, CF-EKS-003, CF-IAM-001, CF-IAM-002, CF-IAM-003, CF-IAM-004, CF-IAM-005, CF-IAM-006, CF-IAM-007, CF-IAM-008, CF-IAM-009, CF-IAM-010, CF-IAM-011, CF-ALB-002, CF-ALB-003, CF-NLB-001, CF-ALB-004, CF-ALB-006, CF-CLB-001, CF-CLB-002, CF-SG-001, CF-SG-002, CF-SG-003, CF-NACL-001, CF-TGW-001, CF-CW-002, CF-SQS-001, CF-DDB-002, CF-LAM-003, CF-SNS-001, CF-EBS-001, CF-EFS-001, CF-KIN-001, CF-EC-001, CF-EC-002, CF-OS-001, CF-OS-002, CF-RS-001, CF-DOCDB-001, CF-NEP-001, CF-MSK-001, CF-CF-001, CF-CF-002, CF-CF-003, CF-CF-004, CF-WAF-001, CF-EC2-002, CF-EC2-003, CF-PAR-001, CF-PAR-002, CF-ECR-001, CF-ECR-002, CF-ECR-003, CF-ECS-001, CF-ECS-002, CF-ECS-003, CF-SM-001, CF-COG-001, CF-COG-002, CF-COG-003, CF-CB-001, CF-CB-002, CF-CB-003, CF-CB-005, CF-CP-001, CF-KMS-002, CF-SSM-001, CF-OS-003, CF-OS-004, CF-OS-005, CF-MSK-002, CF-MSK-003, CF-RS-002, CF-RS-005, CF-RS-006, CF-RS-007, CF-RS-008, CF-NEP-005, CF-BAK-001, CF-EC-005, CF-EC-006, CF-EC-007, CF-EFS-004, CF-EFS-005, CF-ECS-004, CF-ECS-005, CF-ECS-006, CF-ECS-007, CF-ECS-009, CF-EKS-004, CF-ASG-003, CF-ASG-004, CF-ATH-001, CF-ATH-002, CF-GLUE-001, CF-FH-001, CF-EMR-001, CF-EMR-002, CF-EMR-003, CF-DMS-001, CF-DMS-002, CF-DMS-003, CF-S3-008, CF-S3-009, CF-CF-008, CF-CF-010, CF-CF-011, CF-SAGE-001, CF-SAGE-002, CF-SAGE-003, CF-SAGE-004, CF-FSX-001, CF-APPSYNC-001, CF-APPSYNC-002, CF-APPSYNC-003, CF-TRANSFER-001, CF-TRANSFER-002, CF-TRANSFER-003, CF-BEANSTALK-002, CF-R53-001, CF-R53-002, CF-ACM-002, CF-ACM-003, CF-BEDROCK-001, CF-LAM-011 |
-| Reliability | CF-S3-003, CF-RDS-002, CF-RDS-003, CF-RDS-005, CF-LAM-001, CF-LAM-006, CF-LAM-007, CF-LAM-008, CF-LAM-009, CF-APIGW-005, CF-APIGW-006, CF-APIGW-V2-004, CF-DDB-001, CF-SQS-002, CF-DEL-001, CF-NAT-001, CF-ALB-005, CF-ALB-007, CF-CLB-004, CF-CLB-005, CF-CP-002, CF-KMS-003, CF-OS-007, CF-KIN-002, CF-RS-003, CF-DOCDB-002, CF-DOCDB-004, CF-NEP-003, CF-NEP-004, CF-SFN-001, CF-EB-002, CF-SQS-003, CF-BAK-002, CF-BAK-003, CF-BAK-004, CF-BAK-005, CF-DDB-004, CF-DDB-005, CF-EC-003, CF-EC-004, CF-EFS-002, CF-ASG-001, CF-ASG-002, CF-DMS-004, CF-S3-010, CF-CF-009, CF-SAGE-005, CF-FSX-003, CF-R53-003, CF-ACM-001, CF-GA-001, CF-VPC-004, CF-VPC-005, CF-VPC-006, CF-BEDROCK-003 |
+| Operational Excellence | CF-ECS-012, CF-CFG-001, CF-ALARM-001, CF-ALARM-002, CF-ALARM-003, CF-DASH-001, CF-CT-004, CF-S3-004, CF-RDS-007, CF-RDS-010, CF-RDS-011, CF-CT-001, CF-CT-002, CF-FL-001, CF-EKS-001, CF-TGW-002, CF-CB-004, CF-CP-003, CF-OS-006, CF-RS-004, CF-DOCDB-003, CF-NEP-002, CF-SFN-002, CF-SFN-003, CF-EB-001, CF-ECS-008, CF-ECS-010, CF-ASG-005, CF-GLUE-002, CF-GLUE-003, CF-S3-011, CF-CF-005, CF-FSX-002, CF-PATCH-001, CF-SAGE-006, CF-BEDROCK-004, CF-SYN-001, CF-LOGS-001, CF-SAGE-010 |
+| Security | CF-GD-001, CF-SH-001, CF-MACIE-001, CF-CT-005, CF-S3-001, CF-S3-002, CF-S3-005, CF-RDS-001, CF-RDS-004, CF-APIGW-003, CF-APIGW-004, CF-APIGW-007, CF-APIGW-009, CF-APIGW-V2-003, CF-LAM-004, CF-LAM-005, CF-RDS-006, CF-RDS-008, CF-RDS-009, CF-RDS-012, CF-RDS-013, CF-CT-003, CF-KMS-001, CF-RP-001, CF-EC2-001, CF-EKS-002, CF-EKS-003, CF-IAM-001, CF-IAM-002, CF-IAM-003, CF-IAM-004, CF-IAM-005, CF-IAM-006, CF-IAM-007, CF-IAM-008, CF-IAM-009, CF-IAM-010, CF-IAM-011, CF-ALB-002, CF-ALB-003, CF-NLB-001, CF-ALB-004, CF-ALB-006, CF-CLB-001, CF-CLB-002, CF-SG-001, CF-SG-002, CF-SG-003, CF-NACL-001, CF-TGW-001, CF-CW-002, CF-SQS-001, CF-DDB-002, CF-LAM-003, CF-SNS-001, CF-EBS-001, CF-EFS-001, CF-KIN-001, CF-EC-001, CF-EC-002, CF-OS-001, CF-OS-002, CF-RS-001, CF-DOCDB-001, CF-NEP-001, CF-MSK-001, CF-CF-001, CF-CF-002, CF-CF-003, CF-CF-004, CF-WAF-001, CF-EC2-002, CF-EC2-003, CF-PAR-001, CF-PAR-002, CF-ECR-001, CF-ECR-002, CF-ECR-003, CF-ECS-001, CF-ECS-002, CF-ECS-003, CF-SM-001, CF-COG-001, CF-COG-002, CF-COG-003, CF-CB-001, CF-CB-002, CF-CB-003, CF-CB-005, CF-CP-001, CF-KMS-002, CF-SSM-001, CF-OS-003, CF-OS-004, CF-OS-005, CF-MSK-002, CF-MSK-003, CF-RS-002, CF-RS-005, CF-RS-006, CF-RS-007, CF-RS-008, CF-NEP-005, CF-BAK-001, CF-EC-005, CF-EC-006, CF-EC-007, CF-EFS-004, CF-EFS-005, CF-ECS-004, CF-ECS-005, CF-ECS-006, CF-ECS-007, CF-ECS-009, CF-EKS-004, CF-ASG-003, CF-ASG-004, CF-ATH-001, CF-ATH-002, CF-GLUE-001, CF-FH-001, CF-EMR-001, CF-EMR-002, CF-EMR-003, CF-DMS-001, CF-DMS-002, CF-DMS-003, CF-S3-008, CF-S3-009, CF-CF-008, CF-CF-010, CF-CF-011, CF-SAGE-001, CF-SAGE-002, CF-SAGE-003, CF-SAGE-004, CF-FSX-001, CF-APPSYNC-001, CF-APPSYNC-002, CF-APPSYNC-003, CF-TRANSFER-001, CF-TRANSFER-002, CF-TRANSFER-003, CF-BEANSTALK-002, CF-R53-001, CF-R53-002, CF-ACM-002, CF-ACM-003, CF-BEDROCK-001, CF-LAM-011, CF-SAGE-008, CF-SAGE-009, CF-SAGE-012, CF-BEDROCK-010, CF-BEDROCK-011, CF-BEDROCK-012 |
+| Reliability | CF-S3-003, CF-RDS-002, CF-RDS-003, CF-RDS-005, CF-LAM-001, CF-LAM-006, CF-LAM-007, CF-LAM-008, CF-LAM-009, CF-APIGW-005, CF-APIGW-006, CF-APIGW-V2-004, CF-DDB-001, CF-SQS-002, CF-DEL-001, CF-NAT-001, CF-ALB-005, CF-ALB-007, CF-CLB-004, CF-CLB-005, CF-CP-002, CF-KMS-003, CF-OS-007, CF-KIN-002, CF-RS-003, CF-DOCDB-002, CF-DOCDB-004, CF-NEP-003, CF-NEP-004, CF-SFN-001, CF-EB-002, CF-SQS-003, CF-BAK-002, CF-BAK-003, CF-BAK-004, CF-BAK-005, CF-DDB-004, CF-DDB-005, CF-EC-003, CF-EC-004, CF-EFS-002, CF-ASG-001, CF-ASG-002, CF-DMS-004, CF-S3-010, CF-CF-009, CF-SAGE-005, CF-FSX-003, CF-R53-003, CF-ACM-001, CF-GA-001, CF-VPC-004, CF-VPC-005, CF-VPC-006, CF-BEDROCK-003, CF-SAGE-011, CF-SAGE-013 |
 | Performance Efficiency | CF-APIGW-008, CF-PERF-001, CF-PERF-002, CF-PERF-003, CF-PERF-004, CF-PERF-005, CF-PERF-006, CF-ECS-011, CF-CF-013, CF-APPSYNC-004, CF-LAM-010 |
-| Cost Optimization | CF-BUDGET-001, CF-CW-001, CF-RDS-014, CF-COST-002, CF-EBS-002, CF-EIP-001, CF-TAG-001, CF-ENV-001, CF-ENV-002, CF-ENV-003, CF-ENV-004, CF-ENV-005, CF-ENV-006, CF-GEN-001, CF-S3-006, CF-S3-007, CF-DDB-003, CF-VPC-002, CF-VPC-003, CF-SSM-002, CF-EFS-003, CF-ASG-006, CF-S3-012, CF-CF-006, CF-CF-012, CF-CE-001, CF-ECS-013 |
+| Cost Optimization | CF-BUDGET-001, CF-CW-001, CF-RDS-014, CF-COST-002, CF-EBS-002, CF-EIP-001, CF-TAG-001, CF-ENV-001, CF-ENV-002, CF-ENV-003, CF-ENV-004, CF-ENV-005, CF-ENV-006, CF-GEN-001, CF-S3-006, CF-S3-007, CF-DDB-003, CF-VPC-002, CF-VPC-003, CF-SSM-002, CF-EFS-003, CF-ASG-006, CF-S3-012, CF-CF-006, CF-CF-012, CF-CE-001, CF-ECS-013, CF-SAGE-007 |
 | Sustainability | CF-SUST-001, CF-SUST-002, CF-SUST-003, CF-CF-007, CF-EBS-003, CF-RDS-015, CF-S3-013 |
 | Observability (reported under Operational Excellence) | CF-ALB-001, CF-CLB-003, CF-LAM-002, CF-APIGW-001, CF-APIGW-002, CF-APIGW-V2-001, CF-APIGW-V2-002, CF-APPRUNNER-001, CF-BEANSTALK-001, CF-BEANSTALK-003 |
 | Best Practices | CF-VPC-001 |
@@ -812,6 +838,9 @@ Every rule has one or more themes, which cut across pillars: `finops`, `security
 | CF-ACM-001 | resilience |
 | CF-ACM-002 | data-protection |
 | CF-ACM-003 | security-baseline |
+| CF-AGENTCORE-001 | network-exposure |
+| CF-AGENTCORE-002 | identity |
+| CF-AGENTCORE-003 | data-protection |
 | CF-ALARM-001 | observability |
 | CF-ALARM-002 | observability |
 | CF-ALARM-003 | observability |
@@ -859,6 +888,14 @@ Every rule has one or more themes, which cut across pillars: `finops`, `security
 | CF-BEDROCK-001 | security-baseline |
 | CF-BEDROCK-003 | resilience |
 | CF-BEDROCK-004 | observability, security-baseline |
+| CF-BEDROCK-005 | security-baseline |
+| CF-BEDROCK-006 | data-protection |
+| CF-BEDROCK-007 | resilience |
+| CF-BEDROCK-008 | resilience |
+| CF-BEDROCK-009 | finops |
+| CF-BEDROCK-010 | security-baseline |
+| CF-BEDROCK-011 | data-protection |
+| CF-BEDROCK-012 | security-baseline |
 | CF-BUDGET-001 | finops |
 | CF-CB-001 | data-protection, identity |
 | CF-CB-002 | data-protection, identity |
@@ -1077,6 +1114,13 @@ Every rule has one or more themes, which cut across pillars: `finops`, `security
 | CF-SAGE-004 | data-protection |
 | CF-SAGE-005 | resilience |
 | CF-SAGE-006 | observability |
+| CF-SAGE-007 | finops |
+| CF-SAGE-008 | network-exposure |
+| CF-SAGE-009 | data-protection |
+| CF-SAGE-010 | observability |
+| CF-SAGE-011 | resilience |
+| CF-SAGE-012 | data-protection |
+| CF-SAGE-013 | resilience |
 | CF-SFN-001 | resilience |
 | CF-SFN-002 | observability |
 | CF-SFN-003 | observability |
@@ -1392,6 +1436,12 @@ Every rule has one or more themes, which cut across pillars: `finops`, `security
 | REPO-196 | security-baseline |
 | REPO-197 | observability |
 | REPO-198 | security-baseline |
+| REPO-199 | security-baseline |
+| REPO-200 | finops |
+| REPO-201 | observability |
+| REPO-202 | observability |
+| REPO-203 | observability |
+| REPO-204 | observability |
 | SEC-001 | identity |
 | SEC-002 | identity |
 | SEC-003 | network-exposure |

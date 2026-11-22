@@ -2,6 +2,20 @@
 
 New releases go at the top. See [CONTRIBUTING.md](CONTRIBUTING.md#releases) for when to cut one and how the version is bumped.
 
+## Unreleased
+
+### Changes
+
+- Walk files in a fixed order (sorted per directory), so the same repo gives the same files on every run and OS. A walk that hits `--max-files` prints a console note, adds a note to the Markdown metadata, and records `files_truncated` and `max_files` in `context.notes`; the exit code does not change
+- CloudFormation findings from YAML and JSON templates carry the 1-based line of the resource's logical ID
+- Suppress a finding inline with `# aws-arch-agent: ignore <RULE_ID>[, ...] [reason="..."] [expires=YYYY-MM-DD]` (or `//`) on its line or the line above, or with `Metadata: {aws-arch-agent: {ignore: [...]}}` on a template resource. Suppressed findings stay in the report, labelled, and do not count for `--fail-on`; an expired one is a warning and counts again. New config key `rules.exclude_paths` skips rule IDs in files matching a path glob
+- SARIF sets `tool.driver.version` and `informationUri`, a `helpUri` per rule, `partialFingerprints` (`awsArchAgent/v1`), and `suppressions`: `inSource` for inline and Metadata suppressions, `external` for baseline-accepted findings (which keep `properties.baselined`)
+- `--tf-plan` fills planned values in local child modules at any depth, each module call with its own values, and ties split S3 and ECR settings resources to `count` and `for_each` instances
+- A CDK source scan without synth turns on the AI lenses when Bedrock, SageMaker, or AgentCore constructs appear in TypeScript or Python source outside tests; `lenses.ai` still overrides
+- New AI lens checks: Bedrock guardrails, keys, aliases, prompt versions and token limits (CF-BEDROCK-005 to CF-BEDROCK-012), AgentCore runtime, gateway and memory (CF-AGENTCORE-001 to CF-AGENTCORE-003), SageMaker notebooks, Studio domains, data capture, endpoint scaling, feature groups and the model registry (CF-SAGE-007 to CF-SAGE-013), and repo checks for Bedrock calls, evaluation steps, model cards, bias evaluation and human escalation (REPO-199 to REPO-204)
+- GitHub Action: new inputs `tf-plan`, `live-account` (also installs the `account` extra), `region`, `theme`, `group-by`, `config`, `templates`, and `job-summary`, which appends the Markdown report to the job summary even when `fail-on` fails the scan
+- Docs and `--help` describe V2 Terraform scans and the CDK, CloudFormation, Terraform, live account and AI lens scope
+
 ## v0.4.0 - 2026-11-21
 
 ### Changes

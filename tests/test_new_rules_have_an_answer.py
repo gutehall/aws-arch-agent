@@ -20,6 +20,8 @@ _ADR = ("# Compute\n\nWe considered Lambda and Fargate. The Well-Architected gui
         "tradeoff is cold starts. A benchmark gave measured results, the data we used.\n")
 _AI = {"a.tf": 'resource "aws_bedrockagent_agent" "a" {\n  agent_name = "a"\n}\n'}
 _ALIAS = 'provider "aws" {\n  alias  = "east"\n  region = "us-east-1"\n}\n'
+_CALL = ('import boto3\nc = boto3.client("bedrock-runtime")\n'
+         'c.converse(modelId="m", %smessages=[])\n')
 _RUNNER = 'resource "aws_instance" "gh_runner" {\n  instance_type = "m5.large"\n}\n'
 
 # rule id: (the repo that lacks the control, what the repo adds or changes to have it)
@@ -68,6 +70,15 @@ CASES = {
     "REPO-196": (_AI, {"docs/human-oversight.md": "A person approves.\n"}),
     "REPO-197": (_AI, {"docs/agent-role.md": "Success criteria.\n"}),
     "REPO-198": (_AI, {"prompts/system.txt": "Be helpful.\n"}),
+    "REPO-199": ({**_AI, "app.py": _CALL % ""}, {"app.py": _CALL % 'guardrailConfig={"guardrailIdentifier": "g"}, '}),
+    "REPO-200": ({**_AI, "app.py": _CALL % ""}, {"app.py": _CALL % 'inferenceConfig={"maxTokens": 256}, '}),
+    "REPO-201": ({**_AI, "/.github/workflows/ci.yml": "jobs:\n  t:\n    steps:\n      - run: pytest\n"},
+                 {"/.github/workflows/ci.yml": "jobs:\n  t:\n    steps:\n      - run: npx promptfoo eval\n"}),
+    "REPO-202": (_AI, {"docs/model-card.md": "Intended use and limitations.\n"}),
+    "REPO-203": ({"m.tf": 'resource "aws_sagemaker_model" "m" {\n  name = "m"\n}\n',
+                  "/.github/workflows/ci.yml": "jobs:\n  t:\n    steps:\n      - run: pytest\n"},
+                 {"/requirements.txt": "fairlearn==0.10\n"}),
+    "REPO-204": (_AI, {"docs/escalation.md": "Who is paged and how to switch the model off.\n"}),
     "REPO-193": ({"/ios/Runner/Info.plist": "<plist/>"},
                  {"d.tf": 'resource "aws_devicefarm_project" "p" {\n  name = "p"\n}\n'}),
 }

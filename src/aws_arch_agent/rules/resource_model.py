@@ -134,12 +134,21 @@ CF_TYPE_TO_CANONICAL: dict[str, str] = {
     "AWS::SageMaker::EndpointConfig": "sagemaker_endpoint_config",
     "AWS::SageMaker::Endpoint": "sagemaker_endpoint",
     "AWS::SageMaker::MonitoringSchedule": "sagemaker_monitoring_schedule",
+    # The SageMaker AI checks (CF-SAGE-007 to CF-SAGE-013): Studio domains, feature groups,
+    # models and the model registry. Model cards only tell the gate and REPO-202.
+    "AWS::SageMaker::Domain": "sagemaker_domain",
+    "AWS::SageMaker::FeatureGroup": "sagemaker_feature_group",
+    "AWS::SageMaker::Model": "sagemaker_model",
+    "AWS::SageMaker::ModelPackageGroup": "sagemaker_model_package_group",
+    "AWS::SageMaker::ModelCard": "sagemaker_model_card",
     # The AI services. They tell the scan it is of an AI workload (rules/ai_gate.py) and feed the
-    # Bedrock checks (CF-BEDROCK-001, CF-BEDROCK-003).
+    # Bedrock and AgentCore checks (CF-BEDROCK-*, CF-AGENTCORE-*).
     "AWS::Bedrock::Agent": "bedrock_agent",
+    "AWS::Bedrock::AgentAlias": "bedrock_agent_alias",
     "AWS::Bedrock::Guardrail": "bedrock_guardrail",
     "AWS::Bedrock::KnowledgeBase": "bedrock_knowledge_base",
     "AWS::Bedrock::Prompt": "bedrock_prompt",
+    "AWS::Bedrock::PromptVersion": "bedrock_prompt_version",
     "AWS::BedrockAgentCore::Runtime": "bedrockagentcore_agent_runtime",
     "AWS::BedrockAgentCore::Gateway": "bedrockagentcore_gateway",
     "AWS::BedrockAgentCore::Memory": "bedrockagentcore_memory",
@@ -237,7 +246,7 @@ class Resource:
 
 
 def resources_from_cf_template(
-    path: Path, doc: dict, warnings: list[str] | None = None
+    path: Path, doc: dict, warnings: list[str] | None = None, lines: dict[str, int] | None = None
 ) -> list[Resource]:
     """Parse a CloudFormation template's Resources into Resource records.
 
@@ -271,7 +280,7 @@ def resources_from_cf_template(
                 name=name,
                 properties=props,
                 file=str(path),
-                line=None,
+                line=lines.get(name) if lines else None,
                 source_type=source_type,
                 malformed=malformed,
                 policies={
