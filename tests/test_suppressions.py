@@ -437,3 +437,49 @@ def test_metadata_timestamp_expiry_does_not_crash() -> None:
     rules, errors = _metadata_rules(resource)
     assert errors == [] and rules[0].expires == date(2027, 1, 31)
     assert rules[0].expires < date(2027, 2, 1)
+
+
+def test_exclude_paths_rule_ids_match_without_case() -> None:
+    from aws_arch_agent.models import Finding
+    from aws_arch_agent.suppressions import exclude_by_path
+
+    f = Finding(id="CF-S3-001", title="t", recommendation="r", file="examples/stack.yaml")
+    assert exclude_by_path([f], {"examples/**": ["cf-s3-001"]}) == []
+
+
+def test_form_feed_and_unicode_breaks_keep_lines_aligned(tmp_path: Path) -> None:
+    """Lines count "\\n" only, in the scan and in the suppression index alike."""
+    from aws_arch_agent.rules.cf_template import run_cf_rules_from_paths
+    from aws_arch_agent.suppressions import apply
+
+    text = (
+        "AWSTemplateFormatVersion: '2010-09-09'\n"
+        "Description: \"one\u2028two\"\n"
+        "Resources:\n"
+        "  # aws-arch-agent: ignore CF-S3-001\n"
+        "  Bucket:\n"
+        "    Type: AWS::S3::Bucket\n"
+        "    Metadata:\n"
+        "      aws-arch-agent:\n"
+        "        ignore: [CF-S3-003]\n"
+    )
+    path = tmp_path / "stack.yaml"
+    path.write_text(text, encoding="utf-8")
+    findings = run_cf_rules_from_paths([path], repo_path=tmp_path)
+    bucket = [f for f in findings if f.evidence and f.evidence.startswith("Bucket")]
+    assert bucket and all(f.line == 5 for f in bucket)
+    assert apply(findings, tmp_path) == []
+    by_id = {f.id: f for f in bucket}
+    assert by_id["CF-S3-001"].suppression.kind == "inline"
+    assert by_id["CF-S3-003"].suppression.kind == "metadata"
+
+
+def test_form_feed_in_source_does_not_shift_directives(tmp_path: Path) -> None:
+    from aws_arch_agent.models import Finding
+    from aws_arch_agent.suppressions import apply
+
+    (tmp_path / "app.py").write_text(
+        "x = 1\n\x0c\n# aws-arch-agent: ignore SEC-001\nrisky()\n", encoding="utf-8"
+    )
+    f = Finding(id="SEC-001", title="t", recommendation="r", file="app.py", line=4)
+    assert apply([f], tmp_path) == [] and f.suppression is not None

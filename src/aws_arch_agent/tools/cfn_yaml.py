@@ -137,8 +137,10 @@ def _load_yaml_with_lines(text: str) -> tuple[Any, dict[str, int]]:
     if isinstance(node, yaml.MappingNode):
         for key_node, value_node in node.value:
             if getattr(key_node, "value", None) == "Resources" and isinstance(value_node, yaml.MappingNode):
+                # Count "\n" before the key, as every other line number in a scan does. PyYAML's
+                # own mark.line also breaks on \r, \x85 and \u2028, which would shift the line.
                 lines = {
-                    str(k.value): k.start_mark.line + 1
+                    str(k.value): text.count("\n", 0, k.start_mark.index) + 1
                     for k, _ in value_node.value
                     if isinstance(k, yaml.ScalarNode)
                 }
