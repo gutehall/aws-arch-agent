@@ -258,15 +258,15 @@ def test_collect_searches_only_sampled_files(tmp_path: Path, monkeypatch: pytest
     (lib / "bad.ts").write_text('Action: "*"\n', encoding="utf-8")
     clean.write_text("export const x = 1;\n", encoding="utf-8")
 
-    def only_clean(repo: Path, max_files: int = 400) -> list[Path]:
-        return [clean]
+    def only_clean(repo: Path, max_files: int = 400) -> tuple[list[Path], bool]:
+        return [clean], True
 
-    monkeypatch.setattr("aws_arch_agent.agent.v1.iter_files", only_clean)
+    monkeypatch.setattr("aws_arch_agent.agent.v1.walk_files", only_clean)
     _ctx, findings, warnings = collect_ctx_findings(tmp_path, max_files=1)
     assert warnings == []
     assert not any(finding.id == "SEC-001" for finding in findings)
 
-    monkeypatch.setattr("aws_arch_agent.agent.v2_graph.iter_files", only_clean)
+    monkeypatch.setattr("aws_arch_agent.agent.v2_graph.walk_files", only_clean)
     _report, _ctx, v2_findings, v2_warnings = analyze_v2(
         tmp_path, max_files=1, use_llm=False, skip_synth=True
     )

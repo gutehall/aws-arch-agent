@@ -11,7 +11,7 @@ from jinja2.sandbox import SandboxedEnvironment
 
 from aws_arch_agent.models import Finding, RepoContext
 from aws_arch_agent.report.docs import doc_links
-from aws_arch_agent.report.markdown import estimate_lines, price_line
+from aws_arch_agent.report.markdown import estimate_lines, price_line, suppression_text
 from aws_arch_agent.report.summary import theme_counts
 from aws_arch_agent.rules import lenses, well_architected
 
@@ -77,6 +77,8 @@ def render_html(
             "docs": doc_links(f),
             "baseline": None if flag is None else ("accepted" if flag else "new"),
             "verdict": f.verdict,
+            "suppressed": suppression_text(f),
+            "suppression_reason": f.suppression.reason if f.suppression else None,
         }
         for f, flag in ordered
     ]

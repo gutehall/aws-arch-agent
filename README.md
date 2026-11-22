@@ -4,7 +4,7 @@ Local-first AWS architecture review for infrastructure code. It scans **CDK** (T
 
 No AWS credentials. No cloud calls, unless you opt in with `--live-account` (read-only account checks). LLM output is optional and self-hosted only. With `OLLAMA_HOST` or `LLM_BASE_URL` set, it calls that server; with neither set it makes no call. `--no-llm` skips it either way. If the model does not answer, the findings stay as the rules wrote them.
 
-> 362 static rules and 299 template checks are implemented and tested. 141 of the 362 CDK rules (39%) have a template check. Those checks run on CloudFormation, Terraform, and synthesised CDK. [docs/COVERAGE.md](docs/COVERAGE.md) gives the reason for each of the others. Expect some false positives and negatives, and API changes.
+> 368 static rules and 317 template checks are implemented and tested. 141 of the 368 CDK rules (38%) have a template check. Those checks run on CloudFormation, Terraform, and synthesised CDK. [docs/COVERAGE.md](docs/COVERAGE.md) gives the reason for each of the others. Expect some false positives and negatives, and API changes.
 
 ## Install
 
@@ -57,25 +57,25 @@ aws-arch-agent --repo . --no-llm --format sarif --out results.sarif  # GitHub Co
 aws-arch-agent --repo . --no-llm --fail-on high                      # fail CI on High findings
 ```
 
-The IaC source is detected automatically. `--iac cdk|cloudformation|terraform` forces one. In V2, `terraform` exits 1, and CloudFormation needs `--templates`.
+The IaC source is detected automatically. `--iac cdk|cloudformation|terraform` forces one. V1 and V2 both scan Terraform; in V2, CloudFormation needs `--templates`. `--tf-plan plan.json` fills Terraform values from `terraform show -json`, in the root module and in local child modules at any depth.
 
-Each finding has a severity, a pillar, a file and line, evidence, a recommendation, and often suggested code. The HTML report is one self-contained dark-theme page with severity tabs. Each finding links to the AWS docs for that control and to the Well-Architected best practice it supports.
+Each finding has a severity, a pillar, a file and line, evidence, a recommendation, and often suggested code. CloudFormation findings point at the line of the resource's logical ID. The walk reads files in a fixed order and stops at `--max-files` (400); a truncated walk is noted on the console and in the report. The HTML report is one self-contained dark-theme page with severity tabs. Each finding links to the AWS docs for that control and to the Well-Architected best practice it supports.
 
 ## What it checks
 
 | Pillar | Rules | Examples |
 |--------|------:|----------|
-| **Security** | 114 | Missing encryption, public access, wildcard IAM, hardcoded secrets, no MFA, no threat model |
+| **Security** | 115 | Missing encryption, public access, wildcard IAM, hardcoded secrets, no MFA, no threat model |
 | **Reliability** | 73 | Missing DLQs, no backups, single-AZ, no health checks, untraced requests, no quota alarms |
-| **Operational Excellence** | 69 | No logging, alarms, or tracing; no owner, runbook, test gate, or rollback |
+| **Operational Excellence** | 73 | No logging, alarms, or tracing; no owner, runbook, test gate, or rollback |
 | **Performance Efficiency** | 24 | No caching, no Graviton, oversized tasks, no load balancer, no load test |
-| **Cost Optimization** | 50 | No autoscaling, NAT data processing, no lifecycle policy, no budgets or cost owner |
+| **Cost Optimization** | 51 | No autoscaling, NAT data processing, no lifecycle policy, no budgets or cost owner |
 | **Sustainability** | 27 | No Spot, no right-sizing, idle resources, unattached volumes, no data expiry |
 | **Best Practices** | 5 | Tags, secrets in environment variables, CDK Aspects |
 
 Repo-level checks (`REPO-*`) read the IaC together with notes in the repo (README, ADRs, runbooks, `docs/`). A missing process is a finding too.
 
-AI-specific checks run only for an AI workload: a Bedrock agent with no guardrail or idle session timeout (`CF-BEDROCK-001`, `CF-BEDROCK-003`), no model invocation logging with `rules.org` (`CF-BEDROCK-004`), a SageMaker endpoint with no monitoring schedule (`CF-SAGE-006`), and AI projects with no responsible-AI, evaluation, human-oversight, agent-role, or prompt-catalog notes (`REPO-194` to `REPO-198`). `lenses.ai` forces them on or off; see [docs/CONFIG.md](docs/CONFIG.md).
+AI-specific checks run only for an AI workload: a Bedrock agent with no guardrail or idle session timeout (`CF-BEDROCK-001`, `CF-BEDROCK-003`), no model invocation logging with `rules.org` (`CF-BEDROCK-004`), a guardrail with no content or sensitive-information filter (`CF-BEDROCK-005`), an agent or prompt with no customer managed key, no alias or no prompt version (`CF-BEDROCK-006` to `CF-BEDROCK-008`), a prompt variant with no maximum tokens (`CF-BEDROCK-009`), a public AgentCore runtime, a gateway with no authorizer and a memory with no customer managed key (`CF-AGENTCORE-001` to `CF-AGENTCORE-003`), a SageMaker endpoint with no monitoring schedule (`CF-SAGE-006`), a SageMaker notebook with no idle-stop lifecycle configuration, a Studio domain open to the internet or with no customer managed key, an endpoint config with no data capture, an endpoint with no automatic scaling, a feature group with no customer managed key and a model not deployed from the model registry (`CF-SAGE-007` to `CF-SAGE-013`), a guardrail with no denied topics, no PII entity filter, or no contextual grounding check for a knowledge base (`CF-BEDROCK-010` to `CF-BEDROCK-012`), AI projects with no responsible-AI, evaluation, human-oversight, agent-role, or prompt-catalog notes (`REPO-194` to `REPO-198`), Bedrock model calls with no guardrail or token bound (`REPO-199`, `REPO-200`), a pipeline with no evaluation step (`REPO-201`), and no model card, no bias evaluation for a SageMaker workload, or no note on escalating to a person who can override the system (`REPO-202` to `REPO-204`). `lenses.ai` forces them on or off; see [docs/CONFIG.md](docs/CONFIG.md).
 
 ### Well-Architected answers
 
@@ -96,6 +96,10 @@ aws-arch-agent --repo . --no-llm --update-baseline
 aws-arch-agent --repo . --no-llm --fail-on high --enforce-baseline
 ```
 
+To accept one finding where it is, put `# aws-arch-agent: ignore <RULE_ID> reason="..." expires=YYYY-MM-DD` (or `//`) on its line or the line above, or list the rule under the template resource's `Metadata: {aws-arch-agent: {ignore: [...]}}`. A suppressed finding stays in the report, labelled, and does not count for `--fail-on` until it expires. `rules.exclude_paths` skips rules for path globs. See [docs/CONFIG.md](docs/CONFIG.md#inline-suppressions).
+
+SARIF results carry `partialFingerprints`, a `helpUri` per rule, and `suppressions` for inline (`inSource`) and baseline-accepted (`external`) findings, so Code Scanning tracks them across line moves.
+
 Or use the composite GitHub Action, pinned to a release:
 
 ```yaml
@@ -106,7 +110,10 @@ Or use the composite GitHub Action, pinned to a release:
     format: sarif
     no-llm: "true"
     enforce-baseline: "true"
+    job-summary: "true"
 ```
+
+The action also takes `tf-plan`, `live-account`, `region`, `theme`, `group-by`, `config`, and `templates`. `job-summary: "true"` adds the Markdown report to the job summary. See [docs/REFERENCE.md](docs/REFERENCE.md#github-action).
 
 `@main` moves every time a check merges, so a pipeline using `fail-on` or a baseline can start failing with no change on your side. Pin a tag and upgrade on purpose:
 

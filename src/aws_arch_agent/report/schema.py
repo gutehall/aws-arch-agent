@@ -93,6 +93,23 @@ REPORT_SCHEMA: dict = {
                             "why": {"type": "string"},
                         },
                     },
+                    "suppression": {
+                        "type": ["object", "null"],
+                        "description": "Set when an active inline comment directive "
+                        "(aws-arch-agent: ignore) or the resource's Metadata aws-arch-agent.ignore "
+                        "suppresses the finding. A suppressed finding stays in the report and does "
+                        "not count for --fail-on. Null when not suppressed; an expired suppression "
+                        "is null and the scan warns.",
+                        "required": ["kind"],
+                        "properties": {
+                            "kind": {"type": "string", "enum": ["inline", "metadata"]},
+                            "reason": {"type": ["string", "null"]},
+                            "expires": {
+                                "type": ["string", "null"],
+                                "description": "ISO date (YYYY-MM-DD); active through this day.",
+                            },
+                        },
+                    },
                 },
             },
         },

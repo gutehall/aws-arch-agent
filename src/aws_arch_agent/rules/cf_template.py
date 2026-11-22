@@ -26,7 +26,7 @@ from aws_arch_agent.rules import (
 from aws_arch_agent.rules.resource_model import TF_MODULE_CALL, Resource, resources_from_cf_template
 from aws_arch_agent.rules.terraform_model import TfVariable
 from aws_arch_agent.tools.cdk_synth import list_cf_templates
-from aws_arch_agent.tools.cfn_yaml import parse_template_text
+from aws_arch_agent.tools.cfn_yaml import parse_template_with_lines
 from aws_arch_agent.tools.paths import to_repo_relative
 
 # Sensitive ports for security group checks (SSH, RDP, Postgres, MySQL, Mongo)
@@ -304,18 +304,25 @@ def _port_in_sensitive(from_port: Any, to_port: Any) -> bool:
         return True
 
 
-def _read_template(path: Path) -> tuple[dict, str | None]:
-    """Parse one template. A bad file is an error string, not an empty template."""
+def _read_template_with_lines(path: Path) -> tuple[dict, dict[str, int], str | None]:
+    """Parse one template with each logical ID's line. A bad file is an error string, not an empty template."""
     if not path.is_file():
-        return {}, f"Template file not found: {path}"
+        return {}, {}, f"Template file not found: {path}"
     try:
         text = path.read_text(encoding="utf-8")
-        doc = parse_template_text(path, text) or {}
+        doc, lines = parse_template_with_lines(path, text)
     except Exception as exc:
-        return {}, f"Failed to parse template {path.name}: {exc}"
+        return {}, {}, f"Failed to parse template {path.name}: {exc}"
+    doc = doc or {}
     if not isinstance(doc, dict):
-        return {}, f"Template {path.name} is not an object"
-    return doc, None
+        return {}, {}, f"Template {path.name} is not an object"
+    return doc, lines, None
+
+
+def _read_template(path: Path) -> tuple[dict, str | None]:
+    """Parse one template. A bad file is an error string, not an empty template."""
+    doc, _, error = _read_template_with_lines(path)
+    return doc, error
 
 
 # Canonical types with per-resource checks (the rest only feed template-level counts).
@@ -508,7 +515,12 @@ CHECK_PROPERTIES: dict[str, frozenset[str]] = {
         **{c: set() for c in ("CF-SAGE-001", "CF-SAGE-002", "CF-SAGE-003", "CF-SAGE-004", "CF-SAGE-005",
                               "CF-FSX-001", "CF-FSX-002", "CF-FSX-003")},
         # Template-level: _ai_findings skips what it cannot read.
-        **{c: set() for c in ("CF-BEDROCK-001", "CF-BEDROCK-003", "CF-BEDROCK-004", "CF-SAGE-006")},
+        **{c: set() for c in ("CF-BEDROCK-001", "CF-BEDROCK-003", "CF-BEDROCK-004", "CF-BEDROCK-005",
+                              "CF-BEDROCK-006", "CF-BEDROCK-007", "CF-BEDROCK-008", "CF-BEDROCK-009",
+                              "CF-BEDROCK-010", "CF-BEDROCK-011", "CF-BEDROCK-012",
+                              "CF-AGENTCORE-001", "CF-AGENTCORE-002", "CF-AGENTCORE-003", "CF-SAGE-006",
+                              "CF-SAGE-007", "CF-SAGE-008", "CF-SAGE-009", "CF-SAGE-010", "CF-SAGE-011",
+                              "CF-SAGE-012", "CF-SAGE-013")},
         # Template-level: _app_services_findings skips what it cannot read.
         **{c: set() for c in ("CF-APPSYNC-001", "CF-APPSYNC-002", "CF-APPSYNC-003", "CF-APPSYNC-004",
                               "CF-TRANSFER-001", "CF-TRANSFER-002", "CF-TRANSFER-003", "CF-APPRUNNER-001",
@@ -580,8 +592,13 @@ CF_THEMES: dict[str, tuple[str, ...]] = {
     "CF-APPRUNNER-001": (_OBS,),
     "CF-BEANSTALK-001": (_OBS,), "CF-BEANSTALK-002": (_SB,), "CF-BEANSTALK-003": (_OBS,),
     "CF-SAGE-001": (_NET,), "CF-SAGE-002": (_NET,), "CF-SAGE-003": (_SB, _ID), "CF-SAGE-004": (_DP,),
-    "CF-SAGE-005": (_RES,), "CF-SAGE-006": (_OBS,),
+    "CF-SAGE-005": (_RES,), "CF-SAGE-006": (_OBS,), "CF-SAGE-007": (_F,), "CF-SAGE-008": (_NET,),
+    "CF-SAGE-009": (_DP,), "CF-SAGE-010": (_OBS,), "CF-SAGE-011": (_RES,), "CF-SAGE-012": (_DP,),
+    "CF-SAGE-013": (_RES,),
     "CF-BEDROCK-001": (_SB,), "CF-BEDROCK-003": (_RES,), "CF-BEDROCK-004": (_OBS, _SB),
+    "CF-BEDROCK-005": (_SB,), "CF-BEDROCK-006": (_DP,), "CF-BEDROCK-007": (_RES,), "CF-BEDROCK-008": (_RES,),
+    "CF-BEDROCK-009": (_F,), "CF-BEDROCK-010": (_SB,), "CF-BEDROCK-011": (_DP,), "CF-BEDROCK-012": (_SB,),
+    "CF-AGENTCORE-001": (_NET,), "CF-AGENTCORE-002": (_ID,), "CF-AGENTCORE-003": (_DP,),
     "CF-FSX-001": (_DP,), "CF-FSX-002": (_F,), "CF-FSX-003": (_RES,),
     "CF-S3-008": (_DP,), "CF-S3-009": (_NET, _DP), "CF-S3-010": (_RES, _DP), "CF-S3-011": (_OBS, _DP),
     "CF-S3-012": (_F,),
@@ -929,9 +946,27 @@ CF_TITLES: dict[str, str] = {
     "CF-SAGE-004": "SageMaker volume has no customer managed key",
     "CF-SAGE-005": "SageMaker endpoint variant runs on one instance",
     "CF-SAGE-006": "SageMaker endpoint has no monitoring schedule",
+    "CF-SAGE-007": "SageMaker notebook has no lifecycle configuration to stop it when idle",
+    "CF-SAGE-008": "SageMaker domain apps reach the internet outside the VPC",
+    "CF-SAGE-009": "SageMaker domain storage has no customer managed key",
+    "CF-SAGE-010": "SageMaker endpoint config captures no inference data",
+    "CF-SAGE-011": "SageMaker endpoint has no automatic scaling",
+    "CF-SAGE-012": "SageMaker feature group store has no customer managed key",
+    "CF-SAGE-013": "SageMaker model is not deployed from the model registry",
     "CF-BEDROCK-001": "Bedrock agent has no guardrail",
     "CF-BEDROCK-003": "Bedrock agent sets no idle session timeout",
     "CF-BEDROCK-004": "Bedrock model invocation logging is not set up",
+    "CF-BEDROCK-005": "Bedrock guardrail has no content or sensitive-information filter",
+    "CF-BEDROCK-006": "Bedrock agent or prompt has no customer managed key",
+    "CF-BEDROCK-007": "Bedrock agent has no alias, so only its DRAFT version exists",
+    "CF-BEDROCK-008": "Bedrock prompt has no prompt version",
+    "CF-BEDROCK-009": "Bedrock prompt variant sets no maximum tokens",
+    "CF-BEDROCK-010": "Bedrock guardrail denies no topics",
+    "CF-BEDROCK-011": "Bedrock guardrail filters no PII entities",
+    "CF-BEDROCK-012": "Bedrock guardrail has no contextual grounding check for a knowledge base",
+    "CF-AGENTCORE-001": "AgentCore runtime uses the public network mode",
+    "CF-AGENTCORE-002": "AgentCore gateway has no inbound authorizer",
+    "CF-AGENTCORE-003": "AgentCore memory has no customer managed key",
     "CF-SFN-001": "Step Functions tasks have no retry or catch",
     "CF-SFN-002": "Step Functions state machine has no X-Ray tracing",
     "CF-SFN-003": "Step Functions state machine has no logging",
@@ -3288,11 +3323,153 @@ _BEDROCK_LOGGED_TYPES = frozenset({
 })
 
 
+def _guardrail_filters(guard: Resource) -> bool | None:
+    """Whether a guardrail has a content filter, a PII entity or a regex. None when unknown."""
+    lists = {"ContentPolicyConfig": ("FiltersConfig",),
+             "SensitiveInformationPolicyConfig": ("PiiEntitiesConfig", "RegexesConfig")}
+    for key, names in lists.items():
+        if key in guard.unresolved:
+            return None
+        block = guard.properties.get(key)
+        if block is None:
+            continue
+        if not _readable(block):
+            return None
+        for name in names:
+            value = block.get(name)
+            if value is None:
+                continue
+            if not isinstance(value, list):
+                return None
+            if value:
+                return True
+    return False
+
+
+def _variants_without_max_tokens(prompt: Resource) -> list[str]:
+    """Names of a prompt's model variants with no InferenceConfiguration.Text.MaxTokens. A variant
+    that runs an agent (GenAiResource) takes no inference settings; an unreadable one is skipped."""
+    variants = None if "Variants" in prompt.unresolved else prompt.properties.get("Variants")
+    if not isinstance(variants, list):
+        return []
+    out: list[str] = []
+    for variant in variants:
+        if not _readable(variant) or variant.get("GenAiResource") is not None:
+            continue
+        inference = variant.get("InferenceConfiguration")
+        text = inference.get("Text") if _readable(inference) else None
+        if inference is not None and (not _readable(inference) or (text is not None and not _readable(text))):
+            continue
+        if text is None or text.get("MaxTokens") is None:
+            out.append(variant["Name"] if type(variant.get("Name")) is str else "unnamed")
+    return out
+
+
+def _guardrail_list(guard: Resource, key: str, name: str) -> bool | None:
+    """Whether a guardrail policy block has entries in this list. None when unknown."""
+    if key in guard.unresolved:
+        return None
+    block = guard.properties.get(key)
+    if block is None:
+        return False
+    if not _readable(block):
+        return None
+    value = block.get(name)
+    if value is None:
+        return False
+    return bool(value) if isinstance(value, list) else None
+
+
+def _feature_stores_without_key(group: Resource) -> list[str]:
+    """The stores of a feature group with no KMS key: an enabled online store with no
+    SecurityConfig.KmsKeyId, an offline store with no S3StorageConfig.KmsKeyId. What the scan
+    cannot read is left out."""
+    out: list[str] = []
+    for key, inner, label in (("OnlineStoreConfig", "SecurityConfig", "online"),
+                              ("OfflineStoreConfig", "S3StorageConfig", "offline")):
+        config = None if key in group.unresolved else group.properties.get(key)
+        if not _readable(config):
+            continue
+        if key == "OnlineStoreConfig" and _flag(config.get("EnableOnlineStore")) is not True:
+            continue  # the online store is off unless EnableOnlineStore is true
+        block = config.get(inner)
+        if block is None or (_readable(block) and block.get("KmsKeyId") is None):
+            out.append(label)
+    return out
+
+
+def _model_from_package(model: Resource) -> bool | None:
+    """Whether a SageMaker model deploys a model package (a model registry version) in any
+    container. None when a container cannot be read or the model names none."""
+    containers: list[Any] = []
+    for key in ("PrimaryContainer", "Containers"):
+        if key in model.unresolved:
+            return None
+        value = model.properties.get(key)
+        if value is None:
+            continue
+        if key == "Containers" and not isinstance(value, list):
+            return None
+        containers += value if isinstance(value, list) else [value]
+    if not containers or not all(_readable(c) for c in containers):
+        return None
+    return any(c.get("ModelPackageName") is not None for c in containers)
+
+
+def _scaled_sagemaker_endpoints(resources: List[Resource], endpoints: List[Resource]) -> tuple[set[str], bool]:
+    """SageMaker endpoints an Application Auto Scaling target in this template scales by
+    sagemaker:variant:DesiredInstanceCount, and whether a SageMaker target names something the
+    scan cannot tie to an endpoint (it may scale any of them)."""
+    covered: set[str] = set()
+    unlinked = False
+    for r in resources:
+        if r.type != "scalable_target":
+            continue
+        if r.malformed or {"ServiceNamespace", "ScalableDimension", "ResourceId"} & r.unresolved:
+            unlinked = True
+            continue
+        namespace = r.properties.get("ServiceNamespace")
+        dimension = r.properties.get("ScalableDimension")
+        if (type(namespace) is str and namespace != "sagemaker") or (
+                type(dimension) is str and dimension != "sagemaker:variant:DesiredInstanceCount"):
+            continue
+        target = r.properties.get("ResourceId")
+        text = target if type(target) is str else json.dumps(target, default=str)
+
+        def names(endpoint: Resource, target: Any = target, text: str = text) -> bool:
+            literal = endpoint.properties.get("EndpointName")
+            return (endpoint.name in r.references or _value_mentions(target, endpoint.name)
+                    or (type(literal) is str and f"endpoint/{literal}/" in text))
+
+        hits = {e.name for e in endpoints if names(e)}
+        covered |= hits
+        unlinked = unlinked or not hits
+    return covered, unlinked
+
+
+def _runs_on_instances(endpoint: Resource, configs: List[Resource]) -> bool:
+    """True when the endpoint's config is in the template and has an instance variant. A
+    serverless endpoint scales by itself, and an endpoint whose config the scan cannot find is
+    not judged."""
+    if "EndpointConfigName" in endpoint.unresolved:
+        return False
+    name = endpoint.properties.get("EndpointConfigName")
+    for config in configs:
+        literal = config.properties.get("EndpointConfigName")
+        if _refers_to(endpoint, config) or (type(name) is str and name == literal):
+            return bool(_instance_variants(config, "ProductionVariants"))
+    return False
+
+
 def _ai_findings(resources: List[Resource], template_path: Path) -> List[Finding]:
     """The AI template checks, which run only for an AI workload (rules/ai_gate.py): Bedrock
-    agents (CF-BEDROCK-001, 003), model invocation logging (CF-BEDROCK-004, an account control,
-    off unless rules.org) and SageMaker endpoint monitoring (CF-SAGE-006). A value the scan cannot
-    read is not judged. Each id answers one best practice of an AI lens (rules/lens_map.py)."""
+    agents (CF-BEDROCK-001, 003, 006, 007), model invocation logging (CF-BEDROCK-004, an account
+    control, off unless rules.org), guardrails (CF-BEDROCK-005), prompts (CF-BEDROCK-006, 008,
+    009), guardrail topics, PII and grounding (CF-BEDROCK-010..012), AgentCore runtimes, gateways
+    and memory (CF-AGENTCORE-001..003), SageMaker endpoint monitoring (CF-SAGE-006) and the
+    SageMaker notebooks, domains, endpoints, feature groups and models of CF-SAGE-007..013. A
+    value the scan cannot read is not judged. Each id answers one best practice of an AI lens
+    (rules/lens_map.py)."""
     usable = [r for r in resources if not r.malformed]
     out: List[Finding] = []
 
@@ -3317,6 +3494,116 @@ def _ai_findings(resources: List[Resource], template_path: Path) -> List[Finding
                 "service default and you did not choose how long. Set a timeout that fits the use case "
                 "(60 to 3600 seconds), so an abandoned session ends and its data is deleted. In CDK: "
                 "idleSessionTtlInSeconds on the CfnAgent.")
+
+    def unset(res: Resource, key: str) -> bool:
+        return key not in res.unresolved and not res.properties.get(key)
+
+    def tied(links: List[Resource], key: str, target: Resource) -> bool:
+        # A link (alias, version) that names no readable target may belong to any of them.
+        return any(
+            link.malformed or key in link.unresolved or link.properties.get(key) is None
+            or _refers_to(link, target)
+            for link in links
+        )
+
+    aliases = [r for r in resources if r.type == "bedrock_agent_alias"]
+    for agent in (r for r in usable if r.type == "bedrock_agent"):
+        if unset(agent, "CustomerEncryptionKeyArn"):
+            add(agent, "CF-BEDROCK-006", "Low", "Security",
+                "The agent sets no CustomerEncryptionKeyArn, so Bedrock encrypts its instructions and "
+                "session data with an AWS owned key whose policy you do not control. Set a customer "
+                "managed KMS key and grant the agent's role kms:Decrypt and kms:GenerateDataKey on it. "
+                "In CDK: customerEncryptionKeyArn on the CfnAgent.")
+        if not tied(aliases, "AgentId", agent):
+            add(agent, "CF-BEDROCK-007", "Low", "Reliability",
+                "No AWS::Bedrock::AgentAlias in the template points at this agent, so callers use its "
+                "working DRAFT and every change to it is live at once, with nothing to roll back to. "
+                "Add an alias with AgentId set to the agent: it creates a numbered version, and callers "
+                "invoke the alias, which you move to a new version or back. In CDK: CfnAgentAlias.")
+
+    for guard in (r for r in usable if r.type == "bedrock_guardrail"):
+        if _guardrail_filters(guard) is False:
+            add(guard, "CF-BEDROCK-005", "Medium", "Security",
+                "The guardrail has no content filter and no sensitive-information filter, so it does "
+                "not block harmful content, prompt attacks or personal data in prompts and responses. "
+                "Set ContentPolicyConfig.FiltersConfig (HATE, INSULTS, SEXUAL, VIOLENCE, MISCONDUCT, "
+                "PROMPT_ATTACK) and SensitiveInformationPolicyConfig (PiiEntitiesConfig or "
+                "RegexesConfig). In CDK: contentPolicyConfig and sensitiveInformationPolicyConfig on "
+                "the CfnGuardrail.")
+
+    knowledge_bases = [r for r in usable if r.type == "bedrock_knowledge_base"]
+    for guard in (r for r in usable if r.type == "bedrock_guardrail"):
+        if _guardrail_list(guard, "TopicPolicyConfig", "TopicsConfig") is False:
+            add(guard, "CF-BEDROCK-010", "Low", "Security",
+                "The guardrail denies no topics, so the model answers about anything a user asks, "
+                "well outside the use case. Add TopicPolicyConfig.TopicsConfig entries of Type DENY, "
+                "each with a Name, a Definition and Examples, for the subjects the application must "
+                "not discuss (advice it is not allowed to give, competitors, unrelated domains). In "
+                "CDK: topicPolicyConfig on the CfnGuardrail.")
+        # A guardrail with no filter at all is CF-BEDROCK-005's finding, which asks for PII too.
+        if (_guardrail_list(guard, "SensitiveInformationPolicyConfig", "PiiEntitiesConfig") is False
+                and _guardrail_filters(guard) is True):
+            add(guard, "CF-BEDROCK-011", "Low", "Security",
+                "The guardrail has no PII entity filter, so names, emails, phone numbers, account "
+                "numbers and other personal data pass through prompts and responses. Add "
+                "SensitiveInformationPolicyConfig.PiiEntitiesConfig with the entity types the use "
+                "case must protect and an Action of BLOCK or ANONYMIZE. In CDK: "
+                "sensitiveInformationPolicyConfig.piiEntitiesConfig on the CfnGuardrail.")
+        if knowledge_bases and _guardrail_list(guard, "ContextualGroundingPolicyConfig", "FiltersConfig") is False:
+            add(guard, "CF-BEDROCK-012", "Low", "Security",
+                "The template has a knowledge base, and this guardrail has no contextual grounding "
+                "check, so an answer the retrieved sources do not support reaches the user. Add "
+                "ContextualGroundingPolicyConfig.FiltersConfig with a GROUNDING and a RELEVANCE "
+                "filter and a Threshold for each. In CDK: contextualGroundingPolicyConfig on the "
+                "CfnGuardrail.")
+
+    versions = [r for r in resources if r.type == "bedrock_prompt_version"]
+    for prompt in (r for r in usable if r.type == "bedrock_prompt"):
+        if unset(prompt, "CustomerEncryptionKeyArn"):
+            add(prompt, "CF-BEDROCK-006", "Low", "Security",
+                "The prompt sets no CustomerEncryptionKeyArn, so Bedrock encrypts the prompt text "
+                "with an AWS owned key whose policy you do not control. Set a customer managed KMS key "
+                "for the prompts in the catalog. In CDK: customerEncryptionKeyArn on the CfnPrompt.")
+        # Only a CloudFormation prompt: the Terraform AWS provider has no prompt version resource.
+        if prompt.source_type == "AWS::Bedrock::Prompt" and not tied(versions, "PromptArn", prompt):
+            add(prompt, "CF-BEDROCK-008", "Low", "Reliability",
+                "No AWS::Bedrock::PromptVersion in the template points at this prompt, so the app can "
+                "only call its working draft and a change to the text is live at once. Add a prompt "
+                "version with PromptArn set to the prompt, and call the version ARN, so each change is "
+                "a new version you can compare and roll back. In CDK: CfnPromptVersion.")
+        unbounded = _variants_without_max_tokens(prompt)
+        if unbounded:
+            add(prompt, "CF-BEDROCK-009", "Low", "Cost Optimization",
+                f"These prompt variants set no maximum tokens: {', '.join(unbounded)}. With no bound "
+                "the model writes up to its own limit, and output tokens are the costly ones. Set "
+                "InferenceConfiguration.Text.MaxTokens on each variant to the longest answer the use "
+                "case needs. In CDK: inferenceConfiguration.text.maxTokens on the variant.")
+
+    for runtime in (r for r in usable if r.type == "bedrockagentcore_agent_runtime"):
+        network = None if "NetworkConfiguration" in runtime.unresolved else runtime.properties.get("NetworkConfiguration")
+        mode = network.get("NetworkMode") if _readable(network) else None
+        if type(mode) is str and mode.upper() == "PUBLIC":
+            add(runtime, "CF-AGENTCORE-001", "Medium", "Security",
+                "NetworkMode is PUBLIC, so the agent runtime reaches the models, tools and data it "
+                "calls over the internet and not through your VPC. Set NetworkConfiguration.NetworkMode "
+                "to VPC with NetworkModeConfig (Subnets and SecurityGroups), and reach Bedrock and the "
+                "other services through VPC endpoints. In CDK: networkConfiguration on the CfnRuntime.")
+
+    for gateway in (r for r in usable if r.type == "bedrockagentcore_gateway"):
+        if _literal_upper(gateway, "AuthorizerType") == "NONE":
+            add(gateway, "CF-AGENTCORE-002", "Medium", "Security",
+                "AuthorizerType is NONE, so anyone who reaches the gateway can list and call the tools "
+                "behind it. Set AuthorizerType to CUSTOM_JWT (with AuthorizerConfiguration naming your "
+                "identity provider) or AWS_IAM, so every tool call is made by an authorised caller. In "
+                "CDK: authorizerType on the CfnGateway.")
+
+    for memory in (r for r in usable if r.type == "bedrockagentcore_memory"):
+        if unset(memory, "EncryptionKeyArn"):
+            add(memory, "CF-AGENTCORE-003", "Low", "Security",
+                "The memory sets no EncryptionKeyArn, so AgentCore encrypts the conversations and "
+                "long-term memories it keeps with an AWS owned key whose policy you do not control. Set "
+                "a customer managed KMS key, so its policy decides who can read the agent's memory. "
+                "In CDK: encryptionKeyArn on the CfnMemory.")
 
     bedrock = [r for r in usable if r.type in _BEDROCK_LOGGED_TYPES]
     if bedrock and ai_gate.account_checks_on() and not any(
@@ -3346,6 +3633,73 @@ def _ai_findings(resources: List[Resource], template_path: Path) -> List[Finding
                 "its data or predictions goes unseen. Add a monitoring schedule (Model Monitor data "
                 "quality, model quality, bias or explainability) with EndpointName set to the endpoint. "
                 "In CDK: CfnMonitoringSchedule.")
+
+    for notebook in (r for r in usable if r.type == "sagemaker_notebook_instance"):
+        if unset(notebook, "LifecycleConfigName"):
+            add(notebook, "CF-SAGE-007", "Low", "Cost Optimization",
+                "The notebook has no LifecycleConfigName, so nothing stops it when it sits idle and it "
+                "bills for every hour it runs. Attach an AWS::SageMaker::NotebookInstanceLifecycleConfig "
+                "whose OnStart script runs the idle auto-stop check. In CDK: lifecycleConfigName on the "
+                "CfnNotebookInstance.")
+
+    for domain in (r for r in usable if r.type == "sagemaker_domain"):
+        if _unset_or_is(domain, "AppNetworkAccessType", "PublicInternetOnly"):
+            add(domain, "CF-SAGE-008", "Medium", "Security",
+                "AppNetworkAccessType is PublicInternetOnly (the default), so Studio apps reach the "
+                "internet through a SageMaker managed network and not your VPC, and data can leave "
+                "outside your controls. Set AppNetworkAccessType: VpcOnly, with SubnetIds and the "
+                "VPC endpoints the apps need. This replaces the domain. In CDK: appNetworkAccessType "
+                "on the CfnDomain.")
+        if unset(domain, "KmsKeyId"):
+            add(domain, "CF-SAGE-009", "Low", "Security",
+                "The domain sets no KmsKeyId, so the Amazon EFS volume that holds the users' "
+                "notebooks and data is encrypted with an AWS managed key whose policy you do not "
+                "control. Set a customer managed KMS key. This replaces the domain. In CDK: kmsKeyId "
+                "on the CfnDomain.")
+
+    configs = [r for r in usable if r.type == "sagemaker_endpoint_config"]
+    for config in configs:
+        if not _instance_variants(config, "ProductionVariants") or "DataCaptureConfig" in config.unresolved:
+            continue
+        capture = config.properties.get("DataCaptureConfig")
+        enable = capture.get("EnableCapture") if _readable(capture) else None
+        if capture is None or (enable is not None and _flag(enable) is False):
+            add(config, "CF-SAGE-010", "Low", "Operational Excellence",
+                "The endpoint config captures no requests and responses, so you cannot see what the "
+                "model receives and predicts, and Model Monitor has no data to check. Set "
+                "DataCaptureConfig with EnableCapture: true, a DestinationS3Uri, CaptureOptions "
+                "(Input and Output) and an InitialSamplingPercentage. In CDK: dataCaptureConfig on "
+                "the CfnEndpointConfig.")
+
+    scaled, unlinked = _scaled_sagemaker_endpoints(resources, endpoints)
+    if not unlinked and not _may_be_out_of_sight(resources, ("aws_appautoscaling_target",)):
+        for endpoint in endpoints:
+            if endpoint.name not in scaled and _runs_on_instances(endpoint, configs):
+                add(endpoint, "CF-SAGE-011", "Low", "Reliability",
+                    "No Application Auto Scaling target in the template scales this endpoint, so it "
+                    "keeps its initial instance count when traffic rises or falls. Add an "
+                    "AWS::ApplicationAutoScaling::ScalableTarget with ServiceNamespace sagemaker, "
+                    "ScalableDimension sagemaker:variant:DesiredInstanceCount and ResourceId "
+                    "endpoint/<name>/variant/<variant>, and a target tracking policy on "
+                    "SageMakerVariantInvocationsPerInstance. In CDK: CfnScalableTarget.")
+
+    for group in (r for r in usable if r.type == "sagemaker_feature_group"):
+        stores = _feature_stores_without_key(group)
+        if stores:
+            add(group, "CF-SAGE-012", "Low", "Security",
+                f"These stores of the feature group have no customer managed key: {', '.join(stores)}. "
+                "Set OnlineStoreConfig.SecurityConfig.KmsKeyId and OfflineStoreConfig.S3StorageConfig."
+                "KmsKeyId, so the key's policy decides who can read the features. This replaces the "
+                "feature group. In CDK: securityConfig and s3StorageConfig on the CfnFeatureGroup.")
+
+    for model in (r for r in usable if r.type == "sagemaker_model"):
+        if _model_from_package(model) is False:
+            add(model, "CF-SAGE-013", "Low", "Reliability",
+                "The model's containers name an image and model artifacts but no ModelPackageName, "
+                "so what runs is not a version in the SageMaker Model Registry, and there is no "
+                "approved earlier version to roll back to. Register each trained model as a version "
+                "of an AWS::SageMaker::ModelPackageGroup and deploy it with ModelPackageName on the "
+                "container. In CDK: modelPackageName on the CfnModel container.")
     return out
 
 
@@ -8727,11 +9081,12 @@ def _run_cf_rules_on_template(
     template_path: Path,
     doc: dict,
     warnings: list[str] | None = None,
+    lines: dict[str, int] | None = None,
 ) -> List[Finding]:
     """Parse one CloudFormation template into resources and run the CF-* checks on them."""
     if warnings is None:
         warnings = []
-    resources = resources_from_cf_template(template_path, doc, warnings)
+    resources = resources_from_cf_template(template_path, doc, warnings, lines)
     parameters = environments.apply(_parameter_findings(template_path, doc), template_path, resources)
     return run_resource_checks(resources, template_path, warnings) + parameters
 
@@ -8768,12 +9123,12 @@ def run_cf_rules_from_paths(
         warnings = []
     findings: List[Finding] = []
     for p in template_paths:
-        doc, error = _read_template(p)
+        doc, lines, error = _read_template_with_lines(p)
         if error:
             warnings.append(error)
             continue
         try:
-            findings.extend(_run_cf_rules_on_template(p, doc, warnings))
+            findings.extend(_run_cf_rules_on_template(p, doc, warnings, lines))
         except Exception as exc:
             warnings.append(f"CF rules failed on {p.name}: {exc}")
     dedup = {}

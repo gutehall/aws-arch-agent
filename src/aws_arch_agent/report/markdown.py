@@ -6,6 +6,7 @@ from typing import List, Dict
 from aws_arch_agent.models import Finding, RepoContext
 from aws_arch_agent.report.summary import _span_text, build_summary, markdown_lines
 from aws_arch_agent.rules import lenses, well_architected
+from aws_arch_agent.tools.files import truncation_message
 
 
 def _fence(text: str) -> str:
@@ -52,6 +53,16 @@ def estimate_lines(f: Finding) -> List[str]:
     if out and f.estimate_basis:
         out.append(f"Estimate basis: {f.estimate_basis}")
     return out
+
+
+def suppression_text(f: Finding) -> str | None:
+    """How a suppressed finding is labelled, without the reason; None when not suppressed."""
+    s = f.suppression
+    if s is None:
+        return None
+    where = "inline comment" if s.kind == "inline" else "template Metadata"
+    expiry = f", expires {s.expires}" if s.expires else ""
+    return f"suppressed ({where}{expiry})"
 
 
 def _usd(value: float) -> str:
@@ -114,10 +125,18 @@ def render_markdown(
     lines.append(f"- Source: **{ctx.source}**")
     lines.append(f"- Language: **{ctx.language}**")
     lines.append(f"- Files scanned: **{ctx.files_scanned}**")
+    truncated = truncation_message(ctx.notes)
+    if truncated:
+        lines.append(f"- Note: {truncated}")
     prices = price_line(ctx)
     if prices:
         lines.append(f"- Prices: {prices}")
     lines.append(f"- Generated: {now}")
+    suppressed = sum(1 for f in findings if f.suppression is not None)
+    if suppressed:
+        lines.append(
+            f"- Suppressed: **{suppressed}** finding(s), labelled below; they do not count for --fail-on"
+        )
     lines.append("")
     lines.extend(markdown_lines(build_summary(findings)))
     answers = well_architected.answers(findings, ctx.rules_run)
@@ -159,6 +178,11 @@ def render_markdown(
                 if f.line:
                     loc += f" (line {f.line})"
             lines.append(f"### [{f.id}] {f.title}")
+            label = suppression_text(f)
+            if label and f.suppression is not None:
+                # A code span: the reason is text from the scanned repo.
+                reason = f" — `{_span_text(f.suppression.reason)}`" if f.suppression.reason else ""
+                lines.append(f"- Status: **{label}**{reason}")
             lines.append(f"- Category: **{f.category}**")
             lines.append(f"- Severity: **{f.severity}**")
             if loc:

@@ -9,7 +9,7 @@ import typer
 from rich.console import Console
 from rich.panel import Panel
 
-from aws_arch_agent import __version__
+from aws_arch_agent import __version__, suppressions
 from aws_arch_agent.agent.v1 import IAC_CHOICES, IacError, analyze_v1, resolve_source
 from aws_arch_agent.baseline import (
     DEFAULT_BASELINE_NAME,
@@ -34,10 +34,15 @@ from aws_arch_agent.rules.themes import THEMES
 from aws_arch_agent.report.json_report import render_json
 from aws_arch_agent.report.html import render_html
 from aws_arch_agent.report.summary import _span_text
-from aws_arch_agent.report.sarif import render_sarif
-from aws_arch_agent.tools.files import iter_files
+from aws_arch_agent.report.sarif import BASELINE_SUPPRESSION, render_sarif
+from aws_arch_agent.tools.files import iter_files, truncation_message
 
-app = typer.Typer(add_completion=False, help="AWS CDK architecture reviewer (agentic).")
+app = typer.Typer(
+    add_completion=False,
+    help="AWS Well-Architected reviewer for CDK, CloudFormation, and Terraform repos, "
+    "with optional read-only live account checks and AI lens answers for Bedrock, "
+    "SageMaker, and AgentCore workloads.",
+)
 console = Console()
 
 SEVERITY_ORDER = ("Low", "Medium", "High")
@@ -122,6 +127,8 @@ def _mark_baselined(
         for result, finding in zip(results, findings):
             props = result.setdefault("properties", {})
             props["baselined"] = is_baselined(finding, accepted)
+            if props["baselined"]:
+                result.setdefault("suppressions", []).append(dict(BASELINE_SUPPRESSION))
         return json.dumps(data, indent=2)
 
     lines = [
@@ -205,7 +212,10 @@ def analyze(
         help="Print the version and exit",
     ),
 ):
-    """Run architecture review on a CDK repo (V1 or V2 mode) and write report."""
+    """Review a CDK, CloudFormation, or Terraform repo against AWS Well-Architected and write a report.
+
+    V1 runs the static rules. V2 adds cdk synth (or reads --templates or Terraform) and LangGraph pillar reviewers. --live-account reads the AWS account (read-only) for org-level controls. A Bedrock, SageMaker, or AgentCore workload also gets the AI lens rules and answers.
+    """
     resolved_repo = repo if repo is not None else templates
     if resolved_repo is None:
         raise typer.BadParameter("Either --repo or --templates is required.")
@@ -328,6 +338,7 @@ def analyze(
             group_by=cfg.group_by,
             account_facts=account_facts,
             lenses_ai=cfg.lenses_ai,
+            rules_exclude_paths=cfg.rules_exclude_paths,
         )
     else:
         report_md, ctx_report, findings, warnings = analyze_v1(
@@ -349,6 +360,7 @@ def analyze(
             group_by=cfg.group_by,
             account_facts=account_facts,
             lenses_ai=cfg.lenses_ai,
+            rules_exclude_paths=cfg.rules_exclude_paths,
         )
 
     # What happened, not what was configured. soft_wrap keeps the line whole for anyone grepping it.
@@ -373,6 +385,9 @@ def analyze(
             soft_wrap=True,
         )
 
+    truncated = truncation_message(ctx_report.notes)
+    if truncated:
+        console.print(truncated, style="yellow", markup=False, soft_wrap=True)
     if ctx_report.notes.get("tag_policy") == "not checked":
         console.print(
             "tags.required is checked on templates, and this scan read none "
@@ -397,9 +412,11 @@ def analyze(
             _fail(f"Failed to write baseline {baseline_path}: {exc}")
         console.print(f"Updated baseline: [bold]{baseline_path}[/bold] ({len(merged)} entries)")
 
-    findings_for_fail = findings
+    # An active inline or Metadata suppression keeps the finding out of --fail-on; an expired
+    # one does not.
+    findings_for_fail = suppressions.active(findings)
     if enforce_baseline:
-        findings_for_fail = filter_new_findings(findings, accepted_before or set())
+        findings_for_fail = filter_new_findings(findings_for_fail, accepted_before or set())
 
     if cfg.format == "json":
         content = render_json(ctx_report, findings, warnings=warnings)

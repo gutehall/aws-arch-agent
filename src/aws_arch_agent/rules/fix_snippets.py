@@ -1776,6 +1776,179 @@ _CLOUDFORMATION["CF-BEDROCK-003"] = """$name:
     # keep the other properties as they are
     IdleSessionTTLInSeconds: 900"""
 
+_CLOUDFORMATION["CF-BEDROCK-005"] = """$name:
+  Type: AWS::Bedrock::Guardrail
+  Properties:
+    # keep the other properties as they are
+    ContentPolicyConfig:
+      FiltersConfig:
+        - Type: HATE
+          InputStrength: HIGH
+          OutputStrength: HIGH
+        - Type: PROMPT_ATTACK
+          InputStrength: HIGH
+          OutputStrength: NONE
+    SensitiveInformationPolicyConfig:
+      PiiEntitiesConfig:
+        - Type: EMAIL
+          Action: ANONYMIZE"""
+
+_CLOUDFORMATION["CF-BEDROCK-006"] = """$name:
+  Type: AWS::Bedrock::Agent
+  Properties:
+    # keep the other properties as they are; the agent's role needs kms:Decrypt on the key
+    CustomerEncryptionKeyArn: !GetAtt BedrockKey.Arn"""
+
+_CLOUDFORMATION["CF-BEDROCK-006:AWS::Bedrock::Prompt"] = """$name:
+  Type: AWS::Bedrock::Prompt
+  Properties:
+    # keep the other properties as they are
+    CustomerEncryptionKeyArn: !GetAtt BedrockKey.Arn"""
+
+_CLOUDFORMATION["CF-BEDROCK-007"] = """${name}Live:
+  Type: AWS::Bedrock::AgentAlias
+  Properties:
+    AgentAliasName: live
+    AgentId: !GetAtt $name.AgentId  # creates a numbered version; callers invoke the alias"""
+
+_CLOUDFORMATION["CF-BEDROCK-008"] = """${name}Version:
+  Type: AWS::Bedrock::PromptVersion
+  Properties:
+    PromptArn: !GetAtt $name.Arn  # the app calls this version's ARN, not the draft"""
+
+_CLOUDFORMATION["CF-BEDROCK-009"] = """$name:
+  Type: AWS::Bedrock::Prompt
+  Properties:
+    # keep the other properties as they are; set this on each variant
+    Variants:
+      - Name: main
+        TemplateType: TEXT
+        InferenceConfiguration:
+          Text:
+            MaxTokens: 512"""
+
+_CLOUDFORMATION["CF-AGENTCORE-001"] = """$name:
+  Type: AWS::BedrockAgentCore::Runtime
+  Properties:
+    # keep the other properties as they are
+    NetworkConfiguration:
+      NetworkMode: VPC
+      NetworkModeConfig:
+        Subnets: [!Ref PrivateSubnetA, !Ref PrivateSubnetB]
+        SecurityGroups: [!Ref RuntimeSecurityGroup]"""
+
+_CLOUDFORMATION["CF-AGENTCORE-002"] = """$name:
+  Type: AWS::BedrockAgentCore::Gateway
+  Properties:
+    # keep the other properties as they are
+    AuthorizerType: CUSTOM_JWT
+    AuthorizerConfiguration:
+      CustomJWTAuthorizer:
+        DiscoveryUrl: https://cognito-idp.us-east-1.amazonaws.com/us-east-1_example/.well-known/openid-configuration
+        AllowedClients: [my-client-id]"""
+
+_CLOUDFORMATION["CF-AGENTCORE-003"] = """$name:
+  Type: AWS::BedrockAgentCore::Memory
+  Properties:
+    # keep the other properties as they are
+    EncryptionKeyArn: !GetAtt MemoryKey.Arn"""
+
+_CLOUDFORMATION["CF-BEDROCK-010"] = """$name:
+  Type: AWS::Bedrock::Guardrail
+  Properties:
+    # keep the other properties as they are; one entry per subject the app must not discuss
+    TopicPolicyConfig:
+      TopicsConfig:
+        - Name: InvestmentAdvice
+          Type: DENY
+          Definition: Recommendations on which stocks, funds or other investments to buy or sell.
+          Examples:
+            - Which stocks should I buy this year?"""
+
+_CLOUDFORMATION["CF-BEDROCK-011"] = """$name:
+  Type: AWS::Bedrock::Guardrail
+  Properties:
+    # keep the other properties as they are; list the entity types the use case must protect
+    SensitiveInformationPolicyConfig:
+      PiiEntitiesConfig:
+        - Type: EMAIL
+          Action: ANONYMIZE
+        - Type: PHONE
+          Action: ANONYMIZE
+        - Type: CREDIT_DEBIT_CARD_NUMBER
+          Action: BLOCK"""
+
+_CLOUDFORMATION["CF-BEDROCK-012"] = """$name:
+  Type: AWS::Bedrock::Guardrail
+  Properties:
+    # keep the other properties as they are
+    ContextualGroundingPolicyConfig:
+      FiltersConfig:
+        - Type: GROUNDING
+          Threshold: 0.75
+        - Type: RELEVANCE
+          Threshold: 0.75"""
+
+_CLOUDFORMATION["CF-SAGE-007"] = """$name:
+  Type: AWS::SageMaker::NotebookInstance
+  Properties:
+    # keep the other properties as they are; the config's OnStart script runs the idle auto-stop check
+    LifecycleConfigName: !GetAtt IdleStopConfig.NotebookInstanceLifecycleConfigName"""
+
+_CLOUDFORMATION["CF-SAGE-008"] = """$name:
+  Type: AWS::SageMaker::Domain
+  Properties:
+    # keep the other properties as they are; this replaces the domain
+    AppNetworkAccessType: VpcOnly
+    SubnetIds: [!Ref PrivateSubnetA, !Ref PrivateSubnetB]"""
+
+_CLOUDFORMATION["CF-SAGE-009"] = """$name:
+  Type: AWS::SageMaker::Domain
+  Properties:
+    # keep the other properties as they are; this replaces the domain
+    KmsKeyId: !GetAtt StudioKey.Arn"""
+
+_CLOUDFORMATION["CF-SAGE-010"] = """$name:
+  Type: AWS::SageMaker::EndpointConfig
+  Properties:
+    # keep the other properties as they are
+    DataCaptureConfig:
+      EnableCapture: true
+      InitialSamplingPercentage: 20
+      DestinationS3Uri: !Sub s3://$${CaptureBucket}/capture
+      CaptureOptions:
+        - CaptureMode: Input
+        - CaptureMode: Output"""
+
+_CLOUDFORMATION["CF-SAGE-011"] = """${name}Scaling:
+  Type: AWS::ApplicationAutoScaling::ScalableTarget
+  Properties:
+    ServiceNamespace: sagemaker
+    ScalableDimension: sagemaker:variant:DesiredInstanceCount
+    ResourceId: !Sub endpoint/$${$name.EndpointName}/variant/AllTraffic
+    MinCapacity: 2
+    MaxCapacity: 6  # add a target tracking policy on SageMakerVariantInvocationsPerInstance"""
+
+_CLOUDFORMATION["CF-SAGE-012"] = """$name:
+  Type: AWS::SageMaker::FeatureGroup
+  Properties:
+    # keep the other properties as they are; this replaces the feature group
+    OnlineStoreConfig:
+      EnableOnlineStore: true
+      SecurityConfig:
+        KmsKeyId: !GetAtt FeatureKey.Arn
+    OfflineStoreConfig:
+      S3StorageConfig:
+        S3Uri: !Sub s3://$${FeatureBucket}/offline
+        KmsKeyId: !GetAtt FeatureKey.Arn"""
+
+_CLOUDFORMATION["CF-SAGE-013"] = """$name:
+  Type: AWS::SageMaker::Model
+  Properties:
+    # keep the other properties as they are; deploy an approved version from the registry
+    PrimaryContainer:
+      ModelPackageName: !Sub arn:aws:sagemaker:$${AWS::Region}:$${AWS::AccountId}:model-package/my-model-group/3"""
+
 _CLOUDFORMATION["CF-FSX-001"] = """$name:
   Type: AWS::FSx::FileSystem
   Properties:
@@ -2613,6 +2786,185 @@ _TERRAFORM["CF-BEDROCK-001"] = """resource "aws_bedrockagent_agent" "$tf_name" {
 _TERRAFORM["CF-BEDROCK-003"] = """resource "aws_bedrockagent_agent" "$tf_name" {
   # keep the other arguments as they are
   idle_session_ttl_in_seconds = 900
+}"""
+
+_TERRAFORM["CF-BEDROCK-005"] = """resource "aws_bedrock_guardrail" "$tf_name" {
+  # keep the other arguments as they are
+  content_policy_config {
+    filters_config {
+      type            = "HATE"
+      input_strength  = "HIGH"
+      output_strength = "HIGH"
+    }
+    filters_config {
+      type            = "PROMPT_ATTACK"
+      input_strength  = "HIGH"
+      output_strength = "NONE"
+    }
+  }
+  sensitive_information_policy_config {
+    pii_entities_config {
+      type   = "EMAIL"
+      action = "ANONYMIZE"
+    }
+  }
+}"""
+
+_TERRAFORM["CF-BEDROCK-006"] = """resource "aws_bedrockagent_agent" "$tf_name" {
+  # keep the other arguments as they are; the agent's role needs kms:Decrypt on the key
+  customer_encryption_key_arn = aws_kms_key.bedrock.arn
+}"""
+
+_TERRAFORM["CF-BEDROCK-006:aws_bedrockagent_prompt"] = """resource "aws_bedrockagent_prompt" "$tf_name" {
+  # keep the other arguments as they are
+  customer_encryption_key_arn = aws_kms_key.bedrock.arn
+}"""
+
+_TERRAFORM["CF-BEDROCK-007"] = """resource "aws_bedrockagent_agent_alias" "${tf_name}_live" {
+  agent_alias_name = "live"
+  agent_id         = aws_bedrockagent_agent.$tf_name.agent_id  # callers invoke the alias
+}"""
+
+_TERRAFORM["CF-BEDROCK-009"] = """resource "aws_bedrockagent_prompt" "$tf_name" {
+  # keep the other arguments as they are; set this on each variant
+  variant {
+    name          = "main"
+    template_type = "TEXT"
+    inference_configuration {
+      text {
+        max_tokens = 512
+      }
+    }
+  }
+}"""
+
+_TERRAFORM["CF-AGENTCORE-001"] = """resource "aws_bedrockagentcore_agent_runtime" "$tf_name" {
+  # keep the other arguments as they are
+  network_configuration {
+    network_mode = "VPC"
+    network_mode_config {
+      subnets         = [aws_subnet.private_a.id, aws_subnet.private_b.id]
+      security_groups = [aws_security_group.runtime.id]
+    }
+  }
+}"""
+
+_TERRAFORM["CF-AGENTCORE-002"] = """resource "aws_bedrockagentcore_gateway" "$tf_name" {
+  # keep the other arguments as they are
+  authorizer_type = "CUSTOM_JWT"
+  authorizer_configuration {
+    custom_jwt_authorizer {
+      discovery_url    = "https://cognito-idp.us-east-1.amazonaws.com/us-east-1_example/.well-known/openid-configuration"
+      allowed_clients  = ["my-client-id"]
+    }
+  }
+}"""
+
+_TERRAFORM["CF-AGENTCORE-003"] = """resource "aws_bedrockagentcore_memory" "$tf_name" {
+  # keep the other arguments as they are
+  encryption_key_arn = aws_kms_key.memory.arn
+}"""
+
+_TERRAFORM["CF-BEDROCK-010"] = """resource "aws_bedrock_guardrail" "$tf_name" {
+  # keep the other arguments as they are; one block per subject the app must not discuss
+  topic_policy_config {
+    topics_config {
+      name       = "InvestmentAdvice"
+      type       = "DENY"
+      definition = "Recommendations on which stocks, funds or other investments to buy or sell."
+      examples   = ["Which stocks should I buy this year?"]
+    }
+  }
+}"""
+
+_TERRAFORM["CF-BEDROCK-011"] = """resource "aws_bedrock_guardrail" "$tf_name" {
+  # keep the other arguments as they are; list the entity types the use case must protect
+  sensitive_information_policy_config {
+    pii_entities_config {
+      type   = "EMAIL"
+      action = "ANONYMIZE"
+    }
+    pii_entities_config {
+      type   = "CREDIT_DEBIT_CARD_NUMBER"
+      action = "BLOCK"
+    }
+  }
+}"""
+
+_TERRAFORM["CF-BEDROCK-012"] = """resource "aws_bedrock_guardrail" "$tf_name" {
+  # keep the other arguments as they are
+  contextual_grounding_policy_config {
+    filters_config {
+      type      = "GROUNDING"
+      threshold = 0.75
+    }
+    filters_config {
+      type      = "RELEVANCE"
+      threshold = 0.75
+    }
+  }
+}"""
+
+_TERRAFORM["CF-SAGE-007"] = """resource "aws_sagemaker_notebook_instance" "$tf_name" {
+  # keep the other arguments as they are; the config's on_start script runs the idle auto-stop check
+  lifecycle_config_name = aws_sagemaker_notebook_instance_lifecycle_configuration.idle_stop.name
+}"""
+
+_TERRAFORM["CF-SAGE-008"] = """resource "aws_sagemaker_domain" "$tf_name" {
+  # keep the other arguments as they are; this replaces the domain
+  app_network_access_type = "VpcOnly"
+  subnet_ids              = [aws_subnet.private_a.id, aws_subnet.private_b.id]
+}"""
+
+_TERRAFORM["CF-SAGE-009"] = """resource "aws_sagemaker_domain" "$tf_name" {
+  # keep the other arguments as they are; this replaces the domain
+  kms_key_id = aws_kms_key.studio.arn
+}"""
+
+_TERRAFORM["CF-SAGE-010"] = """resource "aws_sagemaker_endpoint_configuration" "$tf_name" {
+  # keep the other arguments as they are
+  data_capture_config {
+    enable_capture              = true
+    initial_sampling_percentage = 20
+    destination_s3_uri          = "s3://$${aws_s3_bucket.capture.bucket}/capture"
+    capture_options {
+      capture_mode = "Input"
+    }
+    capture_options {
+      capture_mode = "Output"
+    }
+  }
+}"""
+
+_TERRAFORM["CF-SAGE-011"] = """resource "aws_appautoscaling_target" "${tf_name}_scaling" {
+  service_namespace  = "sagemaker"
+  scalable_dimension = "sagemaker:variant:DesiredInstanceCount"
+  resource_id        = "endpoint/$${aws_sagemaker_endpoint.$tf_name.name}/variant/AllTraffic"
+  min_capacity       = 2
+  max_capacity       = 6  # add a target tracking policy on SageMakerVariantInvocationsPerInstance
+}"""
+
+_TERRAFORM["CF-SAGE-012"] = """resource "aws_sagemaker_feature_group" "$tf_name" {
+  # keep the other arguments as they are; this replaces the feature group
+  online_store_config {
+    enable_online_store = true
+    security_config {
+      kms_key_id = aws_kms_key.features.arn
+    }
+  }
+  offline_store_config {
+    s3_storage_config {
+      s3_uri     = "s3://$${aws_s3_bucket.features.bucket}/offline"
+      kms_key_id = aws_kms_key.features.arn
+    }
+  }
+}"""
+
+_TERRAFORM["CF-SAGE-013"] = """resource "aws_sagemaker_model" "$tf_name" {
+  # keep the other arguments as they are; deploy an approved version from the registry
+  primary_container {
+    model_package_name = "arn:aws:sagemaker:us-east-1:111122223333:model-package/my-model-group/3"
+  }
 }"""
 
 _TERRAFORM["CF-BEDROCK-004"] = """resource "aws_bedrock_model_invocation_logging_configuration" "main" {

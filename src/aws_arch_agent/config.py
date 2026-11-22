@@ -123,6 +123,34 @@ def environments_from(value: Any) -> dict[str, str] | None:
 
 
 
+_DRIVE = re.compile(r"[A-Za-z]:[\\/]")
+
+
+def exclude_paths_from(value: Any) -> dict[str, list[str]] | None:
+    """Config `rules.exclude_paths`: {repo-relative glob: [rule IDs]} to skip in matching files."""
+    if value is None:
+        return None
+    if not isinstance(value, dict):
+        raise ConfigError(
+            f"rules.exclude_paths must be a mapping of path glob to a list of rule IDs, got {value!r}"
+        )
+    out: dict[str, list[str]] = {}
+    for key, ids in value.items():
+        if not isinstance(key, str) or not key.strip():
+            raise ConfigError(f"rules.exclude_paths keys must be non-empty path globs, got {key!r}")
+        match = key.strip().replace("\\", "/")
+        if match.startswith("/") or _DRIVE.match(match):
+            raise ConfigError(f"rules.exclude_paths keys must be repo-relative globs, got {key!r}")
+        while match.startswith("./"):
+            match = match[2:]
+        if not match:
+            raise ConfigError(f"rules.exclude_paths keys must be non-empty path globs, got {key!r}")
+        if not isinstance(ids, list) or not all(isinstance(i, str) and i.strip() for i in ids):
+            raise ConfigError(f"rules.exclude_paths.{key} must be a list of rule IDs, got {ids!r}")
+        out.setdefault(match, []).extend(i.strip() for i in ids)
+    return out
+
+
 def nonprod_max_size(value: Any) -> str | None:
     """Config `nonprod.max_instance_size`: the largest size not flagged in dev and staging."""
     if value is None:
@@ -332,6 +360,7 @@ def load_config(
         _as_string_list(file_rules["exclude"], "rules.exclude") if "exclude" in file_rules else None
     )
     rules_org = _as_bool(file_rules["org"], "rules.org") if "org" in file_rules else False
+    rules_exclude_paths = exclude_paths_from(file_rules.get("exclude_paths"))
 
     lenses_ai = lenses_ai_setting(file_cfg.get("lenses"))
 
@@ -353,6 +382,7 @@ def load_config(
         out=resolved_out,
         rules_include=rules_include,
         rules_exclude=rules_exclude,
+        rules_exclude_paths=rules_exclude_paths,
         rules_org=rules_org,
         lenses_ai=lenses_ai,
         severity_threshold=severity_threshold,
@@ -390,6 +420,7 @@ class RunConfig:
         "out",
         "rules_include",
         "rules_exclude",
+        "rules_exclude_paths",
         "rules_org",
         "lenses_ai",
         "severity_threshold",
@@ -418,6 +449,7 @@ class RunConfig:
         out: str = "report.md",
         rules_include: list[str] | None = None,
         rules_exclude: list[str] | None = None,
+        rules_exclude_paths: dict[str, list[str]] | None = None,
         rules_org: bool = False,
         lenses_ai: bool | None = None,
         severity_threshold: str | None = None,
@@ -442,6 +474,7 @@ class RunConfig:
         self.out = out
         self.rules_include = rules_include
         self.rules_exclude = rules_exclude
+        self.rules_exclude_paths = rules_exclude_paths  # config rules.exclude_paths: glob -> rule IDs
         self.rules_org = rules_org
         self.lenses_ai = lenses_ai  # config lenses.ai: true/false forces the AI lenses; None is auto
         self.severity_threshold = severity_threshold

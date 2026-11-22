@@ -20,14 +20,16 @@ from aws_arch_agent.rules.fix_snippets import attach_fixes
 from aws_arch_agent.rules.terraform_model import (
     TerraformError,
     find_modules,
-    load_plan_values,
+    load_plan_modules,
     module_call_notes,
+    plan_module_calls,
     resources_from_terraform,
     variables_from_terraform,
 )
 from aws_arch_agent.rules.runner import filter_by_severity, run_all_rules
 from aws_arch_agent.rules import account, cf_template, effort, environments, nonprod, regions, stack_cost, themes
 from aws_arch_agent.rules import ai_gate, well_architected
+from aws_arch_agent import suppressions
 from aws_arch_agent.rules.tag_policy import TagPolicy, policy_checked, use_tag_policy
 from aws_arch_agent.report.markdown import render_markdown
 from aws_arch_agent.agent.verdicts import (
@@ -39,7 +41,7 @@ from aws_arch_agent.agent.verdicts import (
 from aws_arch_agent.models import Verdict
 from aws_arch_agent.agent.hypotheses import find_hypotheses
 from aws_arch_agent.tools.llm import NO_LLM, LLMClient, LLMResult, aggregate_results
-from aws_arch_agent.tools.files import iter_files, read_text_safe
+from aws_arch_agent.tools.files import iter_files, read_text_safe, truncation_notes, walk_files
 from aws_arch_agent.tools.cdk_synth import list_templates_from_path
 from aws_arch_agent.tools.cfn_yaml import is_cf_template
 from aws_arch_agent.tools.paths import to_repo_relative
@@ -362,10 +364,11 @@ def _filter_ids(
 
 def _plan_module(
     repo_path: Path, modules: list[Path], tf_plan: Path, warnings: list[str]
-) -> tuple[Path | None, dict[str, dict]]:
-    """Load --tf-plan and pick the root module it belongs to. Problems are warnings."""
+) -> tuple[Path | None, dict[str, dict[str, dict]]]:
+    """Load --tf-plan (values per module address) and pick the root module it belongs to.
+    Problems are warnings."""
     try:
-        values = load_plan_values(tf_plan)
+        values = load_plan_modules(tf_plan)
     except TerraformError as exc:
         warnings.append(str(exc))
         return None, {}
@@ -391,23 +394,34 @@ def _scan_terraform(
     children: list[Path] | None = None,
 ) -> tuple[list[Finding], list[str]]:
     """Run the CF-* checks on each Terraform root module and local child module. Findings point
-    at the HCL file and line. Variable checks and the plan apply to root modules only.
+    at the HCL file and line. Variable checks apply to root modules only.
 
-    tf_plan (`terraform show -json` output) fills unresolved values in its root module.
+    tf_plan (`terraform show -json` output) fills unresolved values in its root module and in
+    the local child modules that root calls: each call address (`module.vpc`,
+    `module.vpc.module.subnets`, `module.vpc[0]`) gets its own planned values.
     """
     warnings: list[str] = []
     findings: list[Finding] = []
     plan_target: Path | None = None
-    plan_values: dict[str, dict] = {}
+    plan_modules: dict[str, dict[str, dict]] = {}
     if tf_plan is not None:
-        plan_target, plan_values = _plan_module(repo_path, modules, tf_plan, warnings)
+        plan_target, plan_modules = _plan_module(repo_path, modules, tf_plan, warnings)
         if plan_target is not None and notes is not None:
             notes["terraform_plan_module"] = to_repo_relative(str(plan_target), repo_path)
         plan_region = regions.terraform_plan_region(tf_plan) if plan_target is not None else None
         if plan_target is not None and plan_region:
             regions.remember(plan_target, plan_region, "Terraform plan")
+    plan_calls, expanded = (
+        plan_module_calls(plan_target, plan_modules) if plan_target is not None else ({}, set())
+    )
+    # A child also called from a root without the plan is scanned without plan values too.
+    plain_children = {
+        child for root in modules if root != plan_target for child in plan_module_calls(root, {})[0]
+    }
     remote, looped = module_call_notes([*modules, *(children or [])])
     for path, label in looped:
+        if (path, label) in expanded:
+            continue  # the plan expanded its instances
         warnings.append(
             f"{to_repo_relative(str(path), repo_path)}: {label} uses count or for_each; "
             "scanned once, instances not expanded"
@@ -416,17 +430,33 @@ def _scan_terraform(
         notes["terraform_remote_modules_skipped"] = remote
     for module in [*modules, *(children or [])]:
         is_root = module in modules
-        resources = resources_from_terraform(
-            module, warnings, plan_values if module == plan_target else None
-        )
-        module_findings = run_resource_checks(resources, module, warnings)
         if is_root:
-            module_findings += environments.apply(
-                terraform_variable_findings(variables_from_terraform(module)), module, resources)
-        for finding in module_findings:
-            if finding.file:
-                finding.file = to_repo_relative(finding.file, repo_path)
-        findings.extend(module_findings)
+            runs: list[dict[str, dict] | None] = [
+                plan_modules.get("") if module == plan_target else None
+            ]
+        else:
+            planned = [values for _address, values in plan_calls.get(module, [])]
+            runs = [values for values in planned if values]
+            if len(runs) < len(planned) or not runs or module in plain_children:
+                runs.append(None)
+        # A child called more than once is scanned once per call: a finding the calls share
+        # (same rule, file, line and evidence) is reported once.
+        seen: set[tuple] = set()
+        module_warnings: list[str] = []
+        for plan_values in runs:
+            resources = resources_from_terraform(module, module_warnings, plan_values)
+            module_findings = run_resource_checks(resources, module, module_warnings)
+            if is_root:
+                module_findings += environments.apply(
+                    terraform_variable_findings(variables_from_terraform(module)), module, resources)
+            for finding in module_findings:
+                if finding.file:
+                    finding.file = to_repo_relative(finding.file, repo_path)
+                key = (finding.id, finding.file, finding.line, finding.evidence)
+                if len(runs) == 1 or key not in seen:
+                    seen.add(key)
+                    findings.append(finding)
+        warnings.extend(module_warnings if len(runs) == 1 else dict.fromkeys(module_warnings))
     attach_fixes(findings, "terraform")
     return _filter_ids(findings, rules_include, rules_exclude), warnings
 
@@ -440,9 +470,10 @@ def _collect_findings(
     rules_org: bool = False,
     iac: str = "auto",
     tf_plan: Path | None = None,
+    rules_exclude_paths: dict[str, list[str]] | None = None,
 ) -> tuple[RepoContext, list[Finding], list[str]]:
     """Scan the repo. The caller scopes the AI gate with ai_gate.use()."""
-    files = iter_files(repo_path, max_files=max_files)
+    files, truncated = walk_files(repo_path, max_files=max_files)
     source = resolve_source(repo_path, iac, files)
     language = detect_language(repo_path)
     ctx = RepoContext(
@@ -451,6 +482,7 @@ def _collect_findings(
         source=source,
         files_scanned=len(files),
         key_files=[p.name for p in files if p.name in {"cdk.json", "package.json", "requirements.txt"}],
+        notes=truncation_notes(truncated, max_files),
     )
     if source in TEMPLATE_SOURCES or source in TERRAFORM_SOURCES:
         findings, warnings = [], []
@@ -479,11 +511,13 @@ def _collect_findings(
         warnings.extend(warned)
     else:
         rules = _filter_rules(ALL_RULES, rules_include, rules_exclude, org=rules_org)
+        ai_gate.observe_cdk_source(files, repo_path)
         with limit_to_files(repo_path, files):
             findings, warnings = run_all_rules(repo_path, rules, _languages_to_scan(language))
     if tf_plan is not None and source not in TERRAFORM_SOURCES:
         warnings.append(f"--tf-plan applies only to a Terraform scan (source is {source}); ignored")
     findings = account.apply(findings, ctx.notes)
+    findings = suppressions.exclude_by_path(findings, rules_exclude_paths)
     findings = filter_by_severity(findings, severity_threshold)
     effort.annotate(findings)
     themes.annotate(findings)
@@ -511,6 +545,7 @@ def analyze_v1(
     group_by: str = "severity",
     account_facts: account.AccountFacts | None = None,
     lenses_ai: bool | None = None,
+    rules_exclude_paths: dict[str, list[str]] | None = None,
 ) -> tuple[str, RepoContext, list[Finding], list[str]]:
     """Run V1 pipeline: scan repo, run rules, optionally judge findings with the LLM; return (report_md, ctx, findings, warnings)."""
     with (
@@ -525,7 +560,7 @@ def analyze_v1(
     ):
         ctx, findings, warnings = _collect_findings(
             repo_path, max_files, rules_include, rules_exclude, None, rules_org, iac,
-            tf_plan,
+            tf_plan, rules_exclude_paths,
         )
         if account_facts is not None:
             warnings = [*warnings, *account_facts.warnings]
@@ -557,6 +592,7 @@ def analyze_v1(
         _hypothesize(ctx, rule_findings, repo_path, max_files, titles)
     else:
         ctx.llm = NO_LLM
+    warnings = [*warnings, *suppressions.apply(findings, repo_path)]
     return render_markdown(ctx, findings, warnings=warnings, group_by=group_by), ctx, findings, warnings
 
 
@@ -603,10 +639,11 @@ def collect_ctx_findings(
     iac: str = "auto",
     tf_plan: Path | None = None,
     lenses_ai: bool | None = None,
+    rules_exclude_paths: dict[str, list[str]] | None = None,
 ) -> tuple[RepoContext, list[Finding], list[str]]:
     """Run rules only and return context, findings, and warnings."""
     with ai_gate.use(lenses_ai, account_checks=ai_gate.account_checks_flag(rules_org, rules_include)):
         return _collect_findings(
             repo_path, max_files, rules_include, rules_exclude, severity_threshold, rules_org,
-            iac, tf_plan,
+            iac, tf_plan, rules_exclude_paths,
         )
