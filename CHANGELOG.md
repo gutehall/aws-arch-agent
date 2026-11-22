@@ -2,6 +2,13 @@
 
 New releases go at the top. See [CONTRIBUTING.md](CONTRIBUTING.md#releases) for when to cut one and how the version is bumped.
 
+## v1.1.0 - 2026-11-22
+
+### Changes
+
+- A scan prints each step as it runs: detecting the source, reading files, every rule (`SEC-001 (12/174, typescript)`), each CloudFormation template, each Terraform module, CDK synth, and any LLM call. A step still running after 15 seconds is printed again, so a long scan does not look stalled. The report file and exit codes are unchanged
+- The README is shorter
+
 ## v1.0.0 - 2026-11-22
 
 ### Breaking
