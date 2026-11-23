@@ -37,7 +37,7 @@ The agent covers all six AWS Well-Architected pillars. Static and CloudFormation
 | `--group-by` | `severity` | Group Markdown findings by `severity` or `theme` |
 | `--version` | — | Print the version and exit. The version is the release tag the rules come from |
 
-A scan prints each step as it goes: detecting the source, reading files, every rule (`SEC-001 (12/174, typescript)`), each CloudFormation template, each Terraform module, CDK synth, and an LLM review when one is running. A step that is still going after 15 seconds is printed again, so a long rule or synth does not look stalled.
+A scan prints a line when its step changes: detecting the source, reading files, checking rules (`Checking rules (1/174, typescript)`, one line for all of them), each CloudFormation template, each Terraform module, CDK synth, and each LLM review as its call starts. When no line has been printed for 15 seconds, the current step is printed again with its latest count and `(still running)`, so a long rule run or synth does not look stalled.
 
 ## IaC sources
 
@@ -73,6 +73,7 @@ LLM output is optional and self-hosted only. The default calls Ollama on localho
 |----------|---------|
 | `LLM_PROVIDER` | `ollama` (default) or `selfhosted`. Any other value makes no call and reports `fallback` |
 | `OLLAMA_HOST`, `OLLAMA_MODEL` | Ollama server and model (e.g. `llama3:8b`). With none of `OLLAMA_HOST`, `OLLAMA_MODEL`, `LLM_BASE_URL`, `LLM_MODEL` or `LLM_PROVIDER` set, the scan asks `http://localhost:11434/api/tags` once (1 s timeout). If a local Ollama answers with a model pulled, it uses `llama3:8b` when present, else the first model listed. Otherwise it makes no LLM call and the report says `LLM: skipped (no LLM configured: ...)` |
+| `LLM_TIMEOUT_S` | Seconds one LLM request may take. Default `300`. A local model answering a full verdict batch can take minutes |
 | `OLLAMA_NUM_CTX` | Ollama context size in tokens. Default `24576`, which fits the largest verdict and hypothesis prompts. Ollama silently cuts a longer prompt, so a smaller value uses less memory and can lose part of the prompt. An OpenAI-compatible server sets its own context |
 | `LLM_BASE_URL`, `LLM_MODEL` | OpenAI-compatible server (vLLM, llama.cpp, LM Studio, LocalAI) and model. The URL ends before `/chat/completions`, e.g. `http://localhost:8000/v1` |
 
@@ -92,7 +93,7 @@ Rules decide the findings. The model adds two things, and neither is a finding:
 
 Neither changes the severity, the findings list, the summary, the exit code, `--fail-on`, the baseline, or SARIF. A finding labelled `likely false positive` still fails the build.
 
-**Verdicts.** A label appears only when `llm.status` is `ok`. That needs every verdict batch to answer, so a connection failure (`fallback`) or a reply that is not JSON (`invalid`) labels nothing, and the findings match a `--no-llm` run. A verdict for an unknown finding id is dropped. V1 judges at most 100 findings, highest severity first. A verdict prompt holds at most 48,000 characters. When a batch is long, each finding gets less evidence and a narrower source window around its line, down to none.
+**Verdicts.** In V1 a label appears only when `llm.status` is `ok`. That needs every verdict batch to answer, so a connection failure (`fallback`) or a reply that is not JSON (`invalid`) labels nothing, and the findings match a `--no-llm` run. In V2 each pillar is its own call: when some pillars answer and another fails, the verdicts that parsed are kept, `llm.status` is `partial`, and the console prints `LLM: partial (...)`. The hypothesis call runs only when every pillar answered. Calls to Ollama take turns, one at a time, and are asked for a JSON reply. A verdict for an unknown finding id is dropped. V1 judges at most 100 findings, highest severity first. A verdict prompt holds at most 48,000 characters. When a batch is long, each finding gets less evidence and a narrower source window around its line, down to none.
 
 **Hypotheses.** One call after the rules, when the LLM is on and the verdict calls did not fail. The prompt has the rule catalog (ids and titles), the rule ids already reported, and up to 24,000 characters of IaC files with no finding. V2 adds the synth summary. A hypothesis must give `rule_id`, `file`, `line`, and `why`. It is dropped when the rule id is not in the catalog, the file or line was not in the prompt, or a finding is on that file and line. At most 20 are kept. The catalog leaves out what `rules.include`, `rules.exclude`, and `rules.org` turned off, so a hypothesis cannot name those rules. It is not limited by source, so it can name a rule that this kind of scan does not run: a CDK scan can cite a `CF-*` rule. A hypothesis is also dropped when its rule fired in `cdk.out`, because such a finding cannot be tied to one source file.
 
@@ -100,7 +101,7 @@ A failed hypothesis call has its own status and console line. It keeps the verdi
 
 ## HTML report
 
-`--format html` writes one file to open in a browser. CSS and script are inline and nothing external loads, so it works offline and as a CI artifact. The page has a dark theme, severity counts, All/High/Medium/Low tabs, and each finding's file and line, evidence, recommendation, and suggested code. Each finding links to the AWS docs page for its control (for example S3 default bucket encryption, not the S3 start page) and to the Well-Architected best practice it supports (for example SEC08-BP02 Enforce encryption at rest). The map is `aws_arch_agent/report/doc_topics.py`; `python scripts/check_doc_links.py` checks that every page still exists; the Doc links workflow runs it when the map changes and every Monday. A finding with no entry there gets a service start page when its title names a service, and always the pillar overview. The HTML report has no summary section; the summary is in Markdown and JSON. It does list the [Well-Architected answers](#well-architected-answers). These links are the only external URLs on the page, and they load only when clicked. Evidence and code from the scanned repo are escaped. With `--enforce-baseline`, each finding is labeled Accepted or New.
+`--format html` writes one file to open in a browser. CSS and script are inline and nothing external loads, so it works offline and as a CI artifact. The page has a dark theme, severity counts, the [report summary](#report-summary), All/High/Medium/Low tabs, and one card per rule and severity: its recommendation and suggested code, how many resources it covers, and each finding's file and line and evidence in a collapsed list of locations. A recommendation that differs between locations is shown with each one. Each finding links to the AWS docs page for its control (for example S3 default bucket encryption, not the S3 start page) and to the Well-Architected best practice it supports (for example SEC08-BP02 Enforce encryption at rest). The map is `aws_arch_agent/report/doc_topics.py`; `python scripts/check_doc_links.py` checks that every page still exists; the Doc links workflow runs it when the map changes and every Monday. A finding with no entry there gets a service start page when its title names a service, and always the pillar overview. The page also lists the [Well-Architected answers](#well-architected-answers). These links are the only external URLs on the page, and they load only when clicked. Evidence and code from the scanned repo are escaped. With `--enforce-baseline`, each finding is labeled Accepted or New; a card is New when any of its locations is.
 
 ## Config file (JSON or YAML)
 
@@ -412,11 +413,21 @@ Besides EC2 instances, RDS instances, NAT gateways, EBS gp2/gp3 volumes, public 
 - EBS io1, st1, sc1 and standard volumes, gp3 IOPS above 3,000 and throughput above 125 MiB/s, and io1/io2 provisioned IOPS.
 - Auto Scaling groups: `DesiredCapacity`, else `MinSize`, × the launch template or launch configuration instance type. A `MixedInstancesPolicy` is not priced.
 
+Flat AWS list prices, the same in every Region this tool prices: a standard CloudWatch alarm $0.10 a month (high resolution, a period under 60 seconds, $0.30), a CloudWatch dashboard $3 after the three free ones in an account, and a WAFv2 web ACL $5 plus $1 per rule. Requests are not included.
+
+Free, so neither priced nor counted: API Gateway authorizers, gateway responses and stages (a stage with a cache cluster is counted as not priced), CloudFront origin access controls, WAFv2 logging configurations, standard-tier SSM parameters, the first two AWS Budgets, and Cognito app clients. CloudFront traffic, Cognito monthly active users and CloudTrail data events have no cost model yet; the reports say so in one line. Other resources with no price are counted in JSON `not_priced`.
+
+When no AWS price could be used and a resource needed one (`--pricing-source off`, or the price list unreachable with no cache), the reports say so instead of showing $0. JSON has the reason as `prices_unavailable`.
+
 A Terraform literal `count = N` multiplies a resource's cost. A value from `var`, `local` or another unresolved input is never guessed: the resource is listed as not priced. A V1 scan of CDK source is not priced; the report and console say to use `--mode v2` (cdk synth) or `--mode v2 --templates cdk.out`.
 
 ### Usage profile
 
-Usage-based resources (S3, Lambda, on-demand DynamoDB, ...) stay in "not priced" unless a usage profile says how much they are used. The profile is `.aws-arch-agent-usage.yaml` in the repo when present, or the file `--usage-file` or config `usage_file` names:
+Usage-based resources (S3, Lambda, on-demand DynamoDB, ...) are priced from a usage profile that says how much they are used.
+
+Without one, the stack cost assumes a low-traffic profile and labels the result an **illustration**: 100,000 requests of 100 ms per Lambda function, 5 GB per S3 bucket, 1M reads, 100,000 writes and 1 GB per DynamoDB table (reads and writes on on-demand tables only), 1 GB ingested per log group, and 100,000 requests per API, queue and topic. An illustration is not a budget: it is JSON `illustrated_monthly_usd`, it raises the headline (`headline_monthly_usd`) but not `total_monthly_usd`, and `--max-monthly-cost`, `--max-cost-increase` and `--compare-cost` never read it. A usage file replaces the illustration entirely; types it leaves out are not priced.
+
+The profile is `.aws-arch-agent-usage.yaml` in the repo when present, or the file `--usage-file` or config `usage_file` names:
 
 ```yaml
 defaults:                       # every resource of a type
@@ -500,12 +511,12 @@ budget:
 ### Cost in the reports
 
 - **Markdown**: the **Estimated Monthly Cost** section shows the budget result, the price source and date, the fixed and usage totals, the "usage assumed" tags, and a **Cost change** table with `--compare-cost`.
-- **HTML**: a **Cost ($X/mo)** tab next to the severity tabs, which hides the findings and the theme filter while it is open, and an **Est. monthly cost** card in the summary strip.
-- **JSON**: `context.notes.cost` has `fixed_monthly_usd`, `usage_monthly_usd`, `usage_file`, `resources`, `diff` and `budget`. `context.notes.cost_hint` says why nothing was priced (CDK source in V1). See [report-schema.json](report-schema.json).
+- **HTML**: a **Cost ($X/mo)** tab next to the severity tabs, which hides the findings and the theme filter while it is open, and an **Est. monthly cost** card in the summary strip. Without a usage file the card reads **Illustrated monthly cost**.
+- **JSON**: `context.notes.cost` has `fixed_monthly_usd`, `usage_monthly_usd`, `illustrated_monthly_usd`, `headline_monthly_usd`, `usage_file`, `resources`, `not_priced`, `not_modelled`, `prices_unavailable`, `diff` and `budget`. `context.notes.cost_hint` says why nothing was priced (CDK source in V1). See [report-schema.json](report-schema.json).
 
 ## Report summary
 
-Markdown reports open with a **Summary** built from the findings alone, so it is the same with `--no-llm` and the same on every run. It appears in Markdown, and as `summary` in JSON. The HTML report leaves it out:
+Reports open with a **Summary** built from the findings alone, so it is the same with `--no-llm` and the same on every run. It appears in Markdown and HTML, and as `summary` in JSON:
 
 - **Top fixes**: the five most important fixes. A fix is one rule, covering every resource it reported. They are ranked by severity, then estimated monthly saving, then how many resources the fix covers, then rule id.
 - **By pillar**: one line per finding category with its count by severity and possible savings, for example "Cost Optimization: 7 findings (7 Low), about $120.00/month possible savings (estimate)". The lines add up to the findings below, counts and savings alike. CDK source cost rules use the category `Cost`; template checks use `Cost Optimization`.

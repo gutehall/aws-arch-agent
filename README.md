@@ -91,7 +91,7 @@ aws-arch-agent --repo . --no-llm --max-monthly-cost 500
 aws-arch-agent --repo . --no-llm --pricing-source off
 ```
 
-Usage-based resources (S3, Lambda, NAT data, and similar) are priced only from `.aws-arch-agent-usage.yaml` or `--usage-file`. The same file can state usage signals (read/write ratio, CPU, Parameter Store rate, a daily traffic pattern, user and upload Regions); REL-011, OPS-023, SUST-002, SUST-003, PERF-011 and PERF-014 report only when it does. Prices, budgets, and the usage file: [docs/REFERENCE.md](docs/REFERENCE.md#prices).
+Usage-based resources (S3, Lambda, NAT data, and similar) are priced from `.aws-arch-agent-usage.yaml` or `--usage-file`. Without one, the report shows an illustrated cost at an assumed low traffic; an illustration is not a budget, and budget checks ignore it. The same file can state usage signals (read/write ratio, CPU, Parameter Store rate, a daily traffic pattern, user and upload Regions); REL-011, OPS-023, SUST-002, SUST-003, PERF-011 and PERF-014 report only when it does. Prices, budgets, and the usage file: [docs/REFERENCE.md](docs/REFERENCE.md#prices).
 
 ## CI
 

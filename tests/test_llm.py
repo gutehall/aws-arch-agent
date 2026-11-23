@@ -142,7 +142,7 @@ def test_selfhosted_success_reports_provider_and_model(monkeypatch: pytest.Monke
     assert (result.text, result.status) == ("answer", "ok")
     assert result.line == "LLM: selfhosted/qwen responded"
     assert post.call_args.args[0] == "http://models.internal:8000/v1/chat/completions"
-    assert post.call_args.kwargs["timeout"] == 120
+    assert post.call_args.kwargs["timeout"] == 300
     payload = post.call_args.kwargs["json"]
     assert payload["model"] == "qwen"
     assert payload["max_tokens"] == 4096
@@ -234,3 +234,77 @@ def test_ollama_context_can_be_set(monkeypatch: pytest.MonkeyPatch) -> None:
 def test_a_bad_ollama_context_falls_back_to_the_default(monkeypatch: pytest.MonkeyPatch, value: str) -> None:
     monkeypatch.setenv("OLLAMA_NUM_CTX", value)
     assert _sent_num_ctx(_client(monkeypatch, "ollama")) == DEFAULT_OLLAMA_NUM_CTX
+
+
+def test_ollama_calls_take_turns(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Six pillars in parallel never have two HTTP calls open against one Ollama."""
+    import threading
+    import time
+
+    client = _client(monkeypatch, "ollama")
+    open_calls, most = 0, 0
+    guard = threading.Lock()
+
+    def post(*_a: object, **_k: object) -> MagicMock:
+        nonlocal open_calls, most
+        with guard:
+            open_calls += 1
+            most = max(most, open_calls)
+        time.sleep(0.02)
+        with guard:
+            open_calls -= 1
+        return _ollama_reply({"message": {"content": "ok"}})
+
+    with patch("aws_arch_agent.tools.llm.requests.post", side_effect=post):
+        threads = [threading.Thread(target=client.polish, args=("p", "s")) for _ in range(6)]
+        for t in threads:
+            t.start()
+        for t in threads:
+            t.join()
+    assert most == 1
+
+
+def test_the_progress_line_names_the_call_in_flight(monkeypatch: pytest.MonkeyPatch) -> None:
+    from aws_arch_agent.tools import llm
+
+    client = _client(monkeypatch, "ollama")
+    seen: list[str] = []
+    monkeypatch.setattr(llm, "report", lambda line: seen.append(line))
+    with patch("aws_arch_agent.tools.llm.requests.post", return_value=_ollama_reply({"message": {"content": "ok"}})):
+        with llm.activity("Reviewing Security"):
+            client.polish("p", "s")
+        client.polish("p", "s")  # no activity: nothing printed
+    assert seen == ["Reviewing Security"]
+
+
+@pytest.mark.parametrize("value, expected", [(None, 300), ("45", 45), ("0", 300), ("soon", 300), ("inf", 300)])
+def test_timeout_defaults_to_300_and_can_be_set(
+    monkeypatch: pytest.MonkeyPatch, value: str | None, expected: float
+) -> None:
+    client = _client(monkeypatch, "ollama")
+    if value is None:
+        monkeypatch.delenv("LLM_TIMEOUT_S", raising=False)
+    else:
+        monkeypatch.setenv("LLM_TIMEOUT_S", value)
+    with patch("aws_arch_agent.tools.llm.requests.post", return_value=_ollama_reply({"message": {"content": "ok"}})) as post:
+        client.polish("p", "s")
+    assert post.call_args.kwargs["timeout"] == expected
+
+
+def test_json_reply_asks_ollama_for_json(monkeypatch: pytest.MonkeyPatch) -> None:
+    client = _client(monkeypatch, "ollama")
+    with patch("aws_arch_agent.tools.llm.requests.post", return_value=_ollama_reply({"message": {"content": "{}"}})) as post:
+        client.polish("p", "s", json_reply=True)
+        assert post.call_args.kwargs["json"]["format"] == "json"
+        client.polish("p", "s")
+        assert "format" not in post.call_args.kwargs["json"]
+
+
+def test_aggregate_partial_keeps_what_answered() -> None:
+    ok = LLMResult("a", "ok", "ollama", "llama3:8b")
+    bad = LLMResult("p", "invalid", "ollama", "llama3:8b", "reply is not JSON")
+    assert aggregate_results([ok, bad]).status == "invalid"  # default unchanged
+    run = aggregate_results([ok, ok, bad], allow_partial=True)
+    assert run.status == "partial" and run.line == "LLM: partial (2 of 3 calls answered; reply is not JSON)"
+    assert aggregate_results([ok, ok], allow_partial=True).status == "ok"
+    assert aggregate_results([bad], allow_partial=True).status == "invalid"

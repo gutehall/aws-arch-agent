@@ -134,3 +134,50 @@ def test_findings_link_to_service_and_pillar_docs() -> None:
             'sec_protect_data_rest_access_control.html"' in page)
     assert 'href="https://docs.aws.amazon.com/AmazonS3/latest/userguide/"' not in page
     assert 'target="_blank" rel="noopener noreferrer"' in page
+
+
+def _one_rule_ten_times() -> list[Finding]:
+    return [
+        Finding(id="CF-S3-001", title="Bucket is public", severity="High", category="Security",
+                file="infra/main.tf", line=i, evidence=f"aws_s3_bucket.b{i}", themes=["Data protection"],
+                recommendation="Block public access.")
+        for i in range(1, 11)
+    ] + [Finding(id="LOW-1", title="Low one", severity="Low", category="Cost Optimization",
+                 recommendation="Tune it.")]
+
+
+def test_one_rule_is_one_card_with_its_locations_collapsed() -> None:
+    page = render_html(CTX, _one_rule_ten_times())
+    assert page.count('<article class="finding"') == 2
+    cards = page.split('<section id="findings"')[1].split("</section>")[0]
+    assert cards.count('<span class="id">CF-S3-001</span>') == 1
+    assert "Resources: <b>10</b>" in page and "<summary>10 locations</summary>" in page
+    assert '<details class="locations">' in page and "<details class=\"locations\" open" not in page
+    for i in range(1, 11):
+        assert f"infra/main.tf:{i}" in page and f"aws_s3_bucket.b{i}" in page
+    assert page.count("Block public access.") == 1  # shared by every location, shown once
+    # The tabs still count findings; the filters read the card's severity and themes.
+    assert "High (10)" in page and "All (11)" in page
+    assert '<article class="finding" data-severity="High" data-themes="Data protection">' in page
+    assert '<article class="finding" data-severity="Low">' in page
+
+
+def test_a_rule_with_two_severities_is_two_cards() -> None:
+    findings = _one_rule_ten_times()[:2]
+    findings[1].severity = "Medium"
+    page = render_html(CTX, findings)
+    assert page.count('<article class="finding"') == 2
+    assert 'data-severity="High"' in page and 'data-severity="Medium"' in page
+
+
+def test_different_recommendations_stay_with_their_location() -> None:
+    findings = _one_rule_ten_times()[:2]
+    findings[1].recommendation = "Block it on b2."
+    page = render_html(CTX, findings)
+    assert "Block public access." in page and "Block it on b2." in page
+    assert page.index("<summary>2 locations</summary>") < page.index("Block it on b2.")
+
+
+def test_a_card_is_new_when_any_location_is_new() -> None:
+    page = render_html(CTX, _one_rule_ten_times()[:3], baselined=[True, False, True])
+    assert '<article class="finding" data-severity="High" data-themes="Data protection" data-baseline="new">' in page

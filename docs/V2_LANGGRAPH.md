@@ -4,7 +4,7 @@ V2 uses a LangGraph StateGraph. Synth is the CDK path. Raw CloudFormation and Te
 
 - **collect**: walks the repo up to `--max-files`, resolves `--iac` (from the CLI, an explicit source with no matching files exits 1), runs the CDK static rules on those files, and loads RAG once when `--rag` or `rag.path` is set.
 - **synth**: runs `npx cdk synth` and then the CloudFormation rules on `cdk.out/*.template.json`. `--templates` skips synth and reads the JSON or YAML templates you pass. `--no-synth` stays on the static rules.
-- **Six pillar reviewers** in parallel: Operational Excellence (observability), Security, Reliability, Performance Efficiency, Cost Optimization, Sustainability. With the LLM on, each judges its pillar's findings, with up to three RAG chunks for that pillar.
+- **Six pillar reviewers** in parallel: Operational Excellence (observability), Security, Reliability, Performance Efficiency, Cost Optimization, Sustainability. With the LLM on, each judges its pillar's findings, with up to three RAG chunks for that pillar. Their Ollama calls take turns; `Reviewing <pillar>` prints when that pillar's call starts.
 - **merge**: joins the six pillars' notes. With the LLM on it makes no call, except that `--llm-mode compact` judges one batch here with a broader RAG query.
 - **hypotheses**: with the LLM on, one call that may name catalog rules the scanner missed in files with no finding. It also gets the synth summary.
 - **report**: writes the final report.

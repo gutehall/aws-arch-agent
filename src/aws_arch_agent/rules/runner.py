@@ -46,7 +46,7 @@ def run_all_rules(
     for lang in languages:
         for rule in rules:
             done += 1
-            report(f"{rule.id} ({done}/{total}, {lang})")
+            report(f"Checking rules ({done}/{total}, {lang})")
             try:
                 produced = rule.run(repo_path, lang)
             except Exception as e:

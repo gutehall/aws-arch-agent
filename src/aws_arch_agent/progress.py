@@ -1,10 +1,12 @@
 """Progress lines for a long scan.
 
 Library calls stay quiet until a caller installs a reporter. The CLI installs one
-that prints each step, and prints it again when a step stays quiet.
+that prints a line when the step changes, and prints the step again, with its latest
+count, when no line has been printed for a while.
 """
 from __future__ import annotations
 
+import re
 import threading
 import time
 from collections.abc import Callable, Iterator
@@ -20,6 +22,13 @@ _reporter: ContextVar[Reporter | None] = ContextVar("aws_arch_agent_progress", d
 # A single ripgrep or cdk synth can sit still for well over this. Repeat the
 # current step so a log does not look frozen.
 IDLE_AFTER_S = 15.0
+# "Checking rules (12/348, typescript)" is the step "Checking rules" with a count.
+_COUNT = re.compile(r"\s*\([^()]*\)$")
+
+
+def step_title(message: str) -> str:
+    """The step a progress line names, without its trailing (count)."""
+    return _COUNT.sub("", message)
 
 
 def report(message: str) -> None:
@@ -40,7 +49,10 @@ def use_progress(reporter: Reporter | None) -> Iterator[None]:
 
 
 class _StepLog:
-    """Print each step, and repeat the latest one while it stays quiet."""
+    """Print a line when the step changes; repeat the latest line while none is printed.
+
+    An update within the same step (a new count) is kept, not printed, and the repeat
+    shows it."""
 
     def __init__(self, write: Reporter, *, idle_after: float) -> None:
         self._write = write
@@ -64,9 +76,12 @@ class _StepLog:
 
     def __call__(self, message: str) -> None:
         with self._lock:
+            new_step = step_title(message) != step_title(self._message)
             self._message = message
-            self._last = time.monotonic()
-        self._write(message)
+            if new_step:
+                self._last = time.monotonic()
+        if new_step:
+            self._write(message)
 
     def _beat(self) -> None:
         while not self._stop.wait(self._idle_after):
