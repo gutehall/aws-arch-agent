@@ -2,6 +2,16 @@
 
 New releases go at the top. See [CONTRIBUTING.md](CONTRIBUTING.md#releases) for when to cut one and how the version is bumped.
 
+## v1.3.0 - 2026-11-23
+
+### Changes
+
+- Stack cost without a usage file: usage-billed resources (Lambda, S3, on-demand DynamoDB, log groups, APIs, queues, topics) are priced at a documented low-traffic profile and shown as an illustration, not a bill. It raises the headline (`headline_monthly_usd`, `illustrated_monthly_usd`) but never `total_monthly_usd`, budgets or `--compare-cost`. A usage file replaces it (#125)
+- Flat prices for CloudWatch alarms ($0.10, high resolution $0.30), dashboards after the three free ones ($3) and WAFv2 web ACLs ($5 + $1 per rule). API Gateway authorizers, gateway responses and uncached stages, CloudFront OAC, WAFv2 logging, standard SSM parameters, the first two budgets and Cognito app clients count as free. One line names what has no cost model yet; `prices_unavailable` says when no price could be used instead of showing $0 (#125)
+- Ollama: calls take turns, `Reviewing <pillar>` prints when that call starts, `LLM_TIMEOUT_S` (default 300), JSON replies requested. In V2 the pillars that answered keep their verdicts when another fails (`llm.status` `partial`); hypotheses run only when every pillar answered (#125)
+- Progress prints one line per phase; rules report `Checking rules (n/total, lang)` (#125)
+- The HTML report opens with the summary and shows one card per rule and severity, with locations collapsed (#125)
+
 ## v1.2.0 - 2026-11-23
 
 ### Changes
