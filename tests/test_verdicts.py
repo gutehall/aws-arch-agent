@@ -83,7 +83,7 @@ class FakeLLM:
         self.prompts: list[str] = []
         self.systems: list[str] = []
 
-    def polish(self, prompt: str, system: str = "") -> LLMResult:
+    def polish(self, prompt: str, system: str = "", json_reply: bool = False) -> LLMResult:
         self.prompts.append(prompt)
         self.systems.append(system)
         return self.reply(prompt)
@@ -451,7 +451,7 @@ def test_unknown_id_is_absent(tmp_path: Path, monkeypatch) -> None:
 
 
 def _cli(args: list[str], monkeypatch, reply: Callable[[str], LLMResult]):
-    def polish(self, prompt: str, system: str) -> LLMResult:
+    def polish(self, prompt: str, system: str, json_reply: bool = False) -> LLMResult:
         return reply(prompt)
 
     monkeypatch.setattr("aws_arch_agent.tools.llm.LLMClient.polish", polish)
@@ -591,15 +591,19 @@ def test_v2_merge_reducer_dedupes_first_wins() -> None:
     assert merged == {"k": first, "x": first, "y": second}
 
 
-def test_v2_any_failed_pillar_means_no_labels(tmp_path: Path, monkeypatch) -> None:
+def test_v2_a_failed_pillar_keeps_the_other_pillars_verdicts(tmp_path: Path, monkeypatch) -> None:
     def reply(prompt: str) -> LLMResult:
         return _ok("nope") if "SEC-001" in prompt else _all("confirm")(prompt)
 
-    _use(monkeypatch, reply)
+    fake = _use(monkeypatch, reply)
     report, ctx, findings, _w = analyze_v2(_repo(tmp_path), skip_synth=True)
-    assert (ctx.llm.status, ctx.llm.reason) == ("invalid", "model reply was not JSON")
-    assert not any(f.verdict for f in findings)
-    assert "LLM verdict" not in report
+    assert ctx.llm.status == "partial"
+    assert ctx.llm.line == "LLM: partial (5 of 6 calls answered; model reply was not JSON)"
+    assert not any(f.verdict for f in findings if f.category == "Security")
+    assert any(f.verdict for f in findings if f.category != "Security")
+    assert "LLM verdict" in report
+    # A partial review gets no hypothesis call.
+    assert set(fake.systems) == {VERDICT_SYSTEM} and ctx.hypothesis_llm.status == "skipped"
 
 
 def test_v2_use_llm_false_keeps_pillar_snippets_and_makes_no_call(tmp_path: Path, monkeypatch) -> None:

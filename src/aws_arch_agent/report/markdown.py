@@ -139,6 +139,16 @@ def cost_section(ctx: RepoContext) -> List[str]:
         f"{cost['basis']} {'Regions' if ',' in cost['region'] else 'Region'} {cost['region']}{when}.",
         "",
     ]
+    if cost.get("prices_unavailable"):
+        out += [f"**{cost['prices_unavailable']}** The totals below are not the stack's cost.", ""]
+    if cost.get("illustrated_monthly_usd"):
+        out += [
+            f"**{_usd(cost['headline_monthly_usd'])}/month**, an illustration, not a bill: "
+            f"{_usd(cost['total_monthly_usd'])} the IaC states plus assumed low-traffic usage of "
+            f"{_usd(cost['illustrated_monthly_usd'])}. A real `.aws-arch-agent-usage.yaml` replaces it. "
+            "Budgets and cost comparisons ignore it.",
+            "",
+        ]
     usage = cost.get("usage_monthly_usd") or 0
     if usage:
         out += [
@@ -161,7 +171,7 @@ def cost_section(ctx: RepoContext) -> List[str]:
         out.append(f"Top {len(cost['top_resources'])} resources by estimated cost:")
         for i, r in enumerate(cost["top_resources"], 1):
             where = f"`{_span_text(r['file'])}`" + (f" (line {r['line']})" if r.get("line") else "")
-            tag = " *(usage assumed)*" if r.get("usage_assumed") else ""
+            tag = " *(assumed)*" if r.get("illustrated") else " *(usage assumed)*" if r.get("usage_assumed") else ""
             out.append(f"{i}. `{_span_text(r['name'])}` ({r['type']}) in {where}: {_usd(r['monthly_usd'])}/month{tag}. {r['basis']}")
         out.append("")
     out.extend(diff_lines(cost))
@@ -171,7 +181,11 @@ def cost_section(ctx: RepoContext) -> List[str]:
             f"**{_usd(cost['savings_monthly_usd'])}/month** (estimate; not subtracted from the total)."
         )
         out.append("")
-    if cost.get("not_priced"):
+    if cost.get("not_modelled"):
+        unpriced = sum((cost.get("not_priced") or {}).values())
+        more = f" {unpriced} resource(s) not priced; the JSON report lists them." if unpriced else ""
+        out += [f"No cost model yet: {cost['not_modelled']}.{more}", ""]
+    elif cost.get("not_priced"):
         listed = ", ".join(f"{t} ×{n}" for t, n in cost["not_priced"].items())
         out.append(f"Not priced (usage-based, or no AWS price found): {listed}.")
         out.append("")

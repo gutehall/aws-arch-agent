@@ -145,11 +145,53 @@ def _summary(tmp_path: Path, profile: object) -> dict:
     return cost
 
 
-def test_without_a_profile_usage_resources_stay_not_priced(tmp_path: Path) -> None:
+def test_without_a_profile_the_illustration_prices_usage_apart(tmp_path: Path) -> None:
     cost = _summary(tmp_path, None)
+    # What the IaC states is unchanged; budgets and --compare-cost read only that.
     assert cost["usage_monthly_usd"] == 0.0 and cost["fixed_monthly_usd"] == cost["total_monthly_usd"] == 32.85
-    assert cost["not_priced"] == {"AWS::Lambda::Function": 1, "AWS::S3::Bucket": 1, "AWS::SQS::Queue": 1}
-    assert all("usage_assumed" not in r for r in cost["top_resources"]) and "usage_file" not in cost
+    assert cost["not_priced"] == {} and "usage_file" not in cost
+    illustrated = cost["illustrated_monthly_usd"]
+    assert illustrated > 0 and cost["headline_monthly_usd"] == round(32.85 + illustrated, 2)
+    assert "illustration, not a bill" in cost["basis"]
+    assert cost["stacks"][0]["monthly_usd"] == 32.85 and cost["stacks"][0]["illustrated_monthly_usd"] == illustrated
+    tagged = [r for r in cost["top_resources"] if r.get("illustrated")]
+    assert tagged and all(r["usage_assumed"] and r["basis"].startswith("Illustration (") for r in tagged)
+    assert [r["name"] for r in cost["resources"]] == ["Nat"]
+
+
+def test_a_usage_file_replaces_the_illustration(tmp_path: Path) -> None:
+    cost = _summary(tmp_path, parse({"resources": {"Uploads": {"storage_gb": 10}}}, "usage.yaml"))
+    assert "illustrated_monthly_usd" not in cost and cost["headline_monthly_usd"] == cost["total_monthly_usd"]
+    # The file states no Lambda or SQS usage, and the illustration does not fill it in.
+    assert cost["not_priced"] == {"AWS::Lambda::Function": 1, "AWS::SQS::Queue": 1}
+
+
+def test_a_budget_ignores_the_illustration(tmp_path: Path) -> None:
+    path = tmp_path / "t.json"
+    path.write_text(json.dumps(TEMPLATE), encoding="utf-8")
+    budget = stack_cost.cost_diff.Budget(max_monthly_usd=32.85)
+    with stack_cost.collect(stack_cost.FinOps(budget=budget)):
+        stack_cost.record(path, resources_from_cf_template(path, TEMPLATE))
+        cost = stack_cost.summary([], tmp_path)
+    assert cost is not None and cost["headline_monthly_usd"] > 32.85 and cost["budget"]["passed"]
+
+
+def test_no_prices_is_said_not_shown_as_free(tmp_path: Path) -> None:
+    with pricing.use_provider(pricing.OffPriceProvider()):
+        cost = _summary(tmp_path, None)
+    assert cost["total_monthly_usd"] == 0.0 and "Pricing is off" in cost["prices_unavailable"]
+    assert "prices_unavailable" not in _summary(tmp_path, None)
+
+
+def test_an_unreachable_price_list_is_named(tmp_path: Path) -> None:
+    down = pricing.InMemoryPriceProvider({}, {})
+    down.warnings.append("Prices could not be fetched (offline?); resources without a cached price are not estimated.")
+    with pricing.use_provider(down):
+        cost = _summary(tmp_path, None)
+    assert cost["prices_unavailable"].startswith("The AWS price list could not be reached")
+    assert "offline?" in cost["prices_unavailable"]
+    with pricing.use_provider(pricing.InMemoryPriceProvider({}, {})):  # nothing failed
+        assert "prices_unavailable" not in _summary(tmp_path, None)
 
 
 def test_fixed_and_usage_cost_are_kept_apart(tmp_path: Path) -> None:

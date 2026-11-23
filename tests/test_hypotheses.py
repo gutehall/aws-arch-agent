@@ -64,7 +64,7 @@ class FakeLLM:
         self.reply = reply
         self.calls: list[tuple[str, str]] = []
 
-    def polish(self, prompt: str, system: str = "") -> LLMResult:
+    def polish(self, prompt: str, system: str = "", json_reply: bool = False) -> LLMResult:
         self.calls.append((prompt, system))
         return self.reply(prompt, system)
 

@@ -11,7 +11,7 @@ from aws_arch_agent.report.html import render_html
 from aws_arch_agent.report.json_report import render_json
 from aws_arch_agent.report.markdown import render_markdown
 from aws_arch_agent.report.schema import REPORT_SCHEMA
-from aws_arch_agent.report.summary import build_summary
+from aws_arch_agent.report.summary import build_summary, pillar_line
 from aws_arch_agent.rules.effort import effort_of
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -77,13 +77,21 @@ def test_no_findings_no_summary() -> None:
     assert build_summary([])["top_fixes"] == []
 
 
-def test_json_carries_the_summary_and_html_does_not() -> None:
+def test_json_and_html_carry_the_summary() -> None:
     ctx = RepoContext(repo_path="/r")
     data = json.loads(render_json(ctx, FINDINGS))
-    assert data["summary"] == build_summary(FINDINGS)
+    summary = build_summary(FINDINGS)
+    assert data["summary"] == summary
     assert data["findings"][0]["effort"] == "medium"
     html = render_html(ctx, FINDINGS)
-    assert "<h2>Summary</h2>" not in html and "Quick wins" not in html
+    assert "<h2>Summary</h2>" in html and "Top fixes" in html and "By pillar" in html
+    # The summary opens the findings view, before the first card.
+    assert html.index("<h2>Summary</h2>") < html.index('<article class="finding"')
+    for fix in summary["top_fixes"]:
+        assert f'<span class="rule">{fix["id"]}</span>' in html
+    for row in summary["pillars"]:
+        assert pillar_line(row) in html
+    assert ("Quick wins" in html) == bool(summary["quick_wins"])
 
 
 def test_effort_map() -> None:
@@ -154,7 +162,7 @@ def test_garbage_llm_reply_cannot_alter_summary_or_findings(tmp_path: Path, monk
     from aws_arch_agent.tools.llm import LLMResult
 
     class FakeLLM:
-        def polish(self, text: str, system: str = "") -> LLMResult:
+        def polish(self, text: str, system: str = "", json_reply: bool = False) -> LLMResult:
             return LLMResult("## Summary\n0 findings. All clear!", "ok", "ollama", "llama3:8b")
 
     (tmp_path / "stack.json").write_text(json.dumps({"AWSTemplateFormatVersion": "2010-09-09",

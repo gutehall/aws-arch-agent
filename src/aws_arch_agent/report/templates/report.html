@@ -1,4 +1,34 @@
 <!DOCTYPE html>
+{% macro location(f, loc) %}
+<div class="facts">
+  {% if loc.location %}<span>File: <code>{{ loc.location }}</code></span>{% endif %}
+  {% if loc.environment %}<span>Environment: <b>{{ loc.environment }}</b></span>{% endif %}
+  {% if loc.verdict %}<span>LLM verdict: <b>{{ loc.verdict.label }}</b> — {{ loc.verdict.why }}</span>{% endif %}
+  {% if loc.baseline and f.locations | length > 1 %}<span class="baseline {{ loc.baseline }}">{{ "Accepted" if loc.baseline == "accepted" else "New" }}</span>{% endif %}
+  {% if loc.suppressed %}<span>Status: <b>{{ loc.suppressed }}</b>{% if loc.suppression_reason %} — {{ loc.suppression_reason }}{% endif %}</span>{% endif %}
+</div>
+{% if loc.estimates %}
+<h4>Estimate</h4>
+<ul class="estimate">
+  {% for line in loc.estimates %}<li>{{ line | replace("**", "") }}</li>{% endfor %}
+</ul>
+{% endif %}
+{% if loc.evidence %}
+<h4>Evidence</h4>
+<pre>{{ loc.evidence }}</pre>
+{% endif %}
+{% if not f.recommendation and loc.recommendation %}
+<h4>Recommendation</h4>
+<p>{{ loc.recommendation }}</p>
+{% endif %}
+{% if loc.suggested_code and not f.suggested_code %}
+<h4>Suggested code</h4>
+<pre>{{ loc.suggested_code }}</pre>
+{% endif %}
+{% endmacro %}
+{% macro fix_item(x) %}
+<li><span class="rule">{{ x.id }}</span> {{ x.title }} ({{ x.severity }}, {{ x.findings }} resource{{ "s" if x.findings != 1 else "" }}{% if x.monthly_savings_usd %}, saves about ${{ "{:,.2f}".format(x.monthly_savings_usd) }}/month (estimate){% endif %}, {{ x.effort }} effort){% if x.first_location %}, e.g. <code>{{ x.first_location }}</code>{% endif %}</li>
+{% endmacro %}
 <html lang="en">
 <head>
 <meta charset="utf-8">
@@ -84,6 +114,15 @@
   .answer ul { margin: 8px 0 0; padding-left: 20px; font-size: 14px; }
   .answer-filter { margin-bottom: 12px; color: var(--muted); font-size: 0.9em; }
   .answer-filter select { margin-left: 6px; background: transparent; color: var(--fg); border: 1px solid var(--line); }
+  .summary { border: 1px solid var(--line); border-radius: 8px; padding: 12px 16px; margin-bottom: 20px; background: var(--panel); }
+  .summary h2 { font-size: 16px; margin: 0 0 6px; }
+  .summary h3 { font-size: 13px; margin: 12px 0 4px; color: var(--muted); text-transform: uppercase; letter-spacing: .04em; }
+  .summary p { margin: 0; }
+  .summary ol, .summary ul { margin: 0; padding-left: 20px; }
+  .summary .rule { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 13px; color: var(--muted); }
+  details.locations { margin-top: 12px; }
+  details.locations summary { cursor: pointer; color: var(--muted); }
+  .location { border-top: 1px solid var(--line); margin-top: 10px; padding-top: 6px; }
   [hidden] { display: none !important; }
 </style>
 </head>
@@ -110,7 +149,8 @@
     {% endfor %}
     <div class="count warnings"><div class="n">{{ warnings | length }}</div><div class="label">Warnings</div></div>
     {% if cost and cost.stacks %}
-    <div class="count cost-kpi{% if cost.budget and not cost.budget.passed %} over{% endif %}"><div class="n">${{ "{:,.0f}".format(cost.total_monthly_usd) }}</div><div class="label">Est. monthly cost{% if cost.budget %} · budget {{ "passed" if cost.budget.passed else "FAILED" }}{% endif %}</div></div>
+    {% set headline = cost.headline_monthly_usd if cost.headline_monthly_usd is defined else cost.total_monthly_usd %}
+    <div class="count cost-kpi{% if cost.budget and not cost.budget.passed %} over{% endif %}"><div class="n">{% if cost.prices_unavailable %}n/a{% else %}${{ "{:,.0f}".format(headline) }}{% endif %}</div><div class="label">{% if cost.prices_unavailable %}No prices{% elif cost.illustrated_monthly_usd %}Illustrated monthly cost{% else %}Est. monthly cost{% endif %}{% if cost.budget %} · budget {{ "passed" if cost.budget.passed else "FAILED" }}{% endif %}</div></div>
     {% endif %}
   </section>
 
@@ -131,13 +171,41 @@
   </nav>
 
   <div id="view-findings">
+  {% if summary.findings %}
+  <section class="summary" aria-label="Summary">
+    <h2>Summary</h2>
+    <p>{{ summary.findings }} findings: {{ summary.by_severity.High }} High, {{ summary.by_severity.Medium }} Medium, {{ summary.by_severity.Low }} Low.{% if summary.monthly_savings_usd %} About ${{ "{:,.2f}".format(summary.monthly_savings_usd) }}/month possible savings (estimate).{% endif %}</p>
+    <h3>Top fixes</h3>
+    <ol>
+      {% for x in summary.top_fixes %}{{ fix_item(x) }}{% endfor %}
+    </ol>
+    <h3>By pillar</h3>
+    <ul>
+      {% for line in pillar_lines %}<li>{{ line }}</li>{% endfor %}
+    </ul>
+    {% if theme_lines %}
+    <h3>By theme</h3>
+    <p class="meta">A finding can be in more than one.</p>
+    <ul>
+      {% for line in theme_lines %}<li>{{ line }}</li>{% endfor %}
+    </ul>
+    {% endif %}
+    {% if summary.quick_wins %}
+    <h3>Quick wins</h3>
+    <p class="meta">Low effort, with suggested code.</p>
+    <ul>
+      {% for x in summary.quick_wins %}{{ fix_item(x) }}{% endfor %}
+    </ul>
+    {% endif %}
+  </section>
+  {% endif %}
   <nav class="tabs" aria-label="Filter by severity">
     <button type="button" data-tab="All" aria-pressed="true" aria-controls="findings">All ({{ total }})</button>
     {% for sev in severities %}
     <button type="button" data-tab="{{ sev }}" aria-pressed="false" aria-controls="findings">{{ sev }} ({{ counts[sev] }})</button>
     {% endfor %}
     {% if cost and cost.stacks %}
-    <button type="button" data-tab="Cost" aria-pressed="false" aria-controls="cost">Cost (${{ "{:,.0f}".format(cost.total_monthly_usd) }}/mo)</button>
+    <button type="button" data-tab="Cost" aria-pressed="false" aria-controls="cost">Cost ({% if cost.prices_unavailable %}no prices{% else %}${{ "{:,.0f}".format(cost.headline_monthly_usd if cost.headline_monthly_usd is defined else cost.total_monthly_usd) }}/mo{% endif %})</button>
     {% endif %}
     {% if theme_counts %}
     <label class="theme-filter">Theme
@@ -165,26 +233,27 @@
       </header>
       <div class="facts">
         <span>Pillar: <b>{{ f.pillar }}</b></span>
-        {% if f.environment %}<span>Environment: <b>{{ f.environment }}</b></span>{% endif %}
-        {% if f.location %}<span>File: <code>{{ f.location }}</code></span>{% endif %}
-        {% if f.verdict %}<span>LLM verdict: <b>{{ f.verdict.label }}</b> — {{ f.verdict.why }}</span>{% endif %}
-        {% if f.suppressed %}<span>Status: <b>{{ f.suppressed }}</b>{% if f.suppression_reason %} — {{ f.suppression_reason }}{% endif %}</span>{% endif %}
+        {% if f.locations | length > 1 %}<span>Resources: <b>{{ f.locations | length }}</b></span>{% endif %}
       </div>
-      {% if f.estimates %}
-      <h4>Estimate</h4>
-      <ul class="estimate">
-        {% for line in f.estimates %}<li>{{ line | replace("**", "") }}</li>{% endfor %}
-      </ul>
-      {% endif %}
-      {% if f.evidence %}
-      <h4>Evidence</h4>
-      <pre>{{ f.evidence }}</pre>
-      {% endif %}
+      {% if f.recommendation %}
       <h4>Recommendation</h4>
       <p>{{ f.recommendation }}</p>
+      {% endif %}
       {% if f.suggested_code %}
       <h4>Suggested code</h4>
       <pre>{{ f.suggested_code }}</pre>
+      {% endif %}
+      {% if f.locations | length > 1 %}
+      <details class="locations">
+        <summary>{{ f.locations | length }} locations</summary>
+        {% for loc in f.locations %}
+        <div class="location">
+          {{ location(f, loc) }}
+        </div>
+        {% endfor %}
+      </details>
+      {% else %}
+      {% for loc in f.locations %}{{ location(f, loc) }}{% endfor %}
       {% endif %}
       {% if f.docs %}
       <h4>Learn more</h4>
@@ -212,6 +281,12 @@
     </p>
     {% endif %}
     <p class="meta">{{ cost.basis }} {% if "," in cost.region %}Regions{% else %}Region{% endif %} {{ cost.region }}{% if cost.snapshot_date %}, AWS prices of {{ cost.snapshot_date }}{% endif %}.{% if prices %} Prices: {{ prices }}.{% endif %}</p>
+    {% if cost.prices_unavailable %}
+    <p class="budget fail" role="status">{{ cost.prices_unavailable }} The totals below are not the stack's cost.</p>
+    {% endif %}
+    {% if cost.illustrated_monthly_usd %}
+    <p><b>${{ "{:,.2f}".format(cost.headline_monthly_usd) }}/month</b>, an illustration, not a bill: ${{ "{:,.2f}".format(cost.total_monthly_usd) }} the IaC states plus <span class="tag usage">assumed</span> low-traffic usage of ${{ "{:,.2f}".format(cost.illustrated_monthly_usd) }}. A real <code>.aws-arch-agent-usage.yaml</code> replaces it. Budgets and cost comparisons ignore it.</p>
+    {% endif %}
     {% if cost.usage_monthly_usd %}
     <p>Fixed (from the IaC): <b>${{ "{:,.2f}".format(cost.fixed_monthly_usd) }}/month</b>. <span class="tag usage">usage assumed</span> from the usage profile: <b>${{ "{:,.2f}".format(cost.usage_monthly_usd) }}/month</b>.</p>
     {% endif %}
@@ -228,7 +303,7 @@
     <h3>Top resources by estimated cost</h3>
     <ol>
       {% for r in cost.top_resources %}
-      <li><code>{{ r.name }}</code> ({{ r.type }}) in <code>{{ r.file }}</code>{% if r.line %} (line {{ r.line }}){% endif %}: ${{ "{:,.2f}".format(r.monthly_usd) }}/month{% if r.usage_assumed %} <span class="tag usage">usage assumed</span>{% endif %}. {{ r.basis }}</li>
+      <li><code>{{ r.name }}</code> ({{ r.type }}) in <code>{{ r.file }}</code>{% if r.line %} (line {{ r.line }}){% endif %}: ${{ "{:,.2f}".format(r.monthly_usd) }}/month{% if r.illustrated %} <span class="tag usage">assumed</span>{% elif r.usage_assumed %} <span class="tag usage">usage assumed</span>{% endif %}. {{ r.basis }}</li>
       {% endfor %}
     </ol>
     {% endif %}
@@ -249,7 +324,9 @@
     {% if cost.savings_findings %}
     <p>Possible savings from {{ cost.savings_findings }} finding(s) in this report: <b>${{ "{:,.2f}".format(cost.savings_monthly_usd) }}/month</b> (estimate; not subtracted from the total).</p>
     {% endif %}
-    {% if cost.not_priced %}
+    {% if cost.not_modelled %}
+    <p class="meta">No cost model yet: {{ cost.not_modelled }}.{% if cost.not_priced %} {{ cost.not_priced.values() | sum }} resource(s) not priced; the JSON report lists them.{% endif %}</p>
+    {% elif cost.not_priced %}
     <p class="meta">Not priced (usage-based, or no AWS price found): {% for t, n in cost.not_priced.items() %}{{ t }} ×{{ n }}{% if not loop.last %}, {% endif %}{% endfor %}.</p>
     {% endif %}
   </section>

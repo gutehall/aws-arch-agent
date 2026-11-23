@@ -8,6 +8,7 @@ from aws_arch_agent import pricing
 from aws_arch_agent.cli import app
 from aws_arch_agent.rules import estimates, stack_cost
 from aws_arch_agent.rules.cf_template import run_cf_rules_from_paths, run_resource_checks
+from aws_arch_agent.rules.resource_model import resources_from_cf_template
 from aws_arch_agent.rules.terraform_model import resources_from_terraform
 
 H = 730
@@ -172,7 +173,9 @@ def test_reports_show_the_cost_section(tmp_path: Path) -> None:
     assert f"| `stack.json` | us-east-1 | 6 | **${total:,.2f}** |".replace("**", "") in md
     assert f"| **Total** | | 6 | **${total:,.2f}** |" in md
     assert "Top 5 resources by estimated cost:" in md
-    assert "Not priced (usage-based, or no AWS price found): AWS::DynamoDB::Table ×1" in md
+    # One line instead of a type-by-type list; JSON keeps the counts.
+    assert "No cost model yet: CloudFront traffic, Cognito monthly active users, CloudTrail data events." in md
+    assert "Not priced (usage-based" not in md
     assert f"Region us-east-1, AWS prices of {pricing.snapshot_date('us-east-1')}." in md
 
     out_json = tmp_path / "r.json"
@@ -186,7 +189,7 @@ def test_reports_show_the_cost_section(tmp_path: Path) -> None:
     assert result.exit_code == 0, result.output
     html = out_html.read_text(encoding="utf-8")
     assert "Estimated monthly cost (estimate)" in html and f"${total:,.2f}" in html
-    assert "AWS::Lambda::Function ×1" in html
+    assert "No cost model yet: CloudFront traffic" in html and "AWS::Lambda::Function ×1" not in html
 
 
 def test_region_changes_the_total(tmp_path: Path) -> None:
@@ -244,6 +247,69 @@ resource "aws_dynamodb_table" "from_var" {
     assert cost["not_priced"] == {"aws_dynamodb_table": 1, "aws_route53_health_check": 1, "aws_route53_zone": 1}
     assert cost["stacks"][0]["resources_priced"] == 1  # the BYOIP address, at $0
     assert cost["total_monthly_usd"] == 0.0
+
+
+def test_wiring_is_free_and_flat_priced_resources_add_their_price(tmp_path: Path) -> None:
+    free = {
+        "Auth": "AWS::ApiGateway::Authorizer", "Resp": "AWS::ApiGateway::GatewayResponse",
+        "Stage": "AWS::ApiGateway::Stage", "Stage2": "AWS::ApiGatewayV2::Stage",
+        "Oac": "AWS::CloudFront::OriginAccessControl", "WafLog": "AWS::WAFv2::LoggingConfiguration",
+        "Param": "AWS::SSM::Parameter", "Client": "AWS::Cognito::UserPoolClient",
+        "Budget1": "AWS::Budgets::Budget", "Budget2": "AWS::Budgets::Budget",
+    }
+    resources: dict = {name: {"Type": t, "Properties": {}} for name, t in free.items()}
+    resources.update({
+        "Advanced": {"Type": "AWS::SSM::Parameter", "Properties": {"Tier": "Advanced"}},
+        "Budget3": {"Type": "AWS::Budgets::Budget", "Properties": {}},
+        "CachedStage": {"Type": "AWS::ApiGateway::Stage", "Properties": {"CacheClusterEnabled": True}},
+        "Alarm": {"Type": "AWS::CloudWatch::Alarm", "Properties": {"Period": 300}},
+        "FastAlarm": {"Type": "AWS::CloudWatch::Alarm", "Properties": {"Period": 10}},
+        "Acl": {"Type": "AWS::WAFv2::WebACL", "Properties": {"Rules": [{}, {}, {}]}},
+        **{f"Dash{i}": {"Type": "AWS::CloudWatch::Dashboard", "Properties": {}} for i in range(4)},
+    })
+    path = tmp_path / "t.json"
+    path.write_text(json.dumps({"Resources": resources}), encoding="utf-8")
+    with stack_cost.collect():
+        stack_cost.record(path, resources_from_cf_template(path, {"Resources": resources}))
+        cost = stack_cost.summary([], tmp_path)
+    assert cost is not None
+    # A cached stage, an advanced parameter and a third budget are not free; the rest are not listed.
+    assert cost["not_priced"] == {"AWS::ApiGateway::Stage": 1, "AWS::Budgets::Budget": 1, "AWS::SSM::Parameter": 1}
+    priced = {r["name"]: r["monthly_usd"] for r in cost["resources"]}
+    # Alarm 0.10, high-resolution 0.30, web ACL 5 + 3 rules, the fourth dashboard 3.
+    assert priced == {"Alarm": 0.1, "FastAlarm": 0.3, "Acl": 8.0, "Dash3": 3.0}
+    assert cost["total_monthly_usd"] == 11.4
+    assert "CloudFront traffic" in cost["not_modelled"]
+
+
+def test_terraform_web_acl_prices_each_rule(tmp_path: Path) -> None:
+    (tmp_path / "main.tf").write_text("""\
+resource "aws_wafv2_web_acl" "acl" {
+  name  = "a"
+  scope = "REGIONAL"
+  rule {
+    name = "one"
+    statement {
+      rate_based_statement {
+        limit = 100
+      }
+    }
+  }
+  rule {
+    name = "two"
+  }
+}
+
+resource "aws_cloudwatch_metric_alarm" "fast" {
+  alarm_name = "a"
+  period     = 10
+}
+""", encoding="utf-8")
+    resources = resources_from_terraform(tmp_path)
+    acl = next(r for r in resources if r.source_type == "aws_wafv2_web_acl")
+    assert estimates.resource_cost(acl).monthly_cost_usd == 7.0  # type: ignore[union-attr]
+    alarm = next(r for r in resources if r.type == "cloudwatch_alarm")
+    assert estimates.resource_cost(alarm).monthly_cost_usd == 0.3  # type: ignore[union-attr]
 
 
 def test_aurora_cluster_is_not_priced_twice(tmp_path: Path) -> None:

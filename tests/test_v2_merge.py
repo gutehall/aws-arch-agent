@@ -227,19 +227,19 @@ def test_v2_all_calls_ok_reports_responded(tmp_path: Path, monkeypatch) -> None:
     assert ctx.llm.line == "LLM: ollama/llama3:8b responded"
 
 
-def _security_pillar_fails(prompt: str, system: str = "") -> LLMResult:
+def _security_pillar_fails(prompt: str, system: str = "", json_reply: bool = False) -> LLMResult:
     return _failed(prompt) if "SEC-001" in prompt else _ok("[]")
 
 
 def test_v2_partial_failure_never_claims_responded(tmp_path: Path, monkeypatch) -> None:
-    """A pillar fails and the others answer: the run is still a fallback."""
+    """A pillar fails and the others answer: the run is partial, never responded."""
     monkeypatch.setattr(v2_graph, "_pillar_cache", {})
     _stack_repo(tmp_path)
     with patch("aws_arch_agent.agent.v2_graph.LLMClient") as mock_cls:
         mock_cls.return_value.polish.side_effect = _security_pillar_fails
         _, ctx, _, _ = analyze_v2(tmp_path, use_llm=True, skip_synth=True)
-    assert ctx.llm.status == "fallback"
-    assert ctx.llm.line == "LLM: fallback (Ollama request failed)"
+    assert ctx.llm.status == "partial"
+    assert ctx.llm.line.startswith("LLM: partial (") and ctx.llm.line.endswith("calls answered; Ollama request failed)")
 
 
 def test_v2_failed_pillar_is_asked_again(tmp_path: Path, monkeypatch) -> None:
@@ -250,7 +250,7 @@ def test_v2_failed_pillar_is_asked_again(tmp_path: Path, monkeypatch) -> None:
         mock_cls.return_value.polish.side_effect = _security_pillar_fails
         analyze_v2(tmp_path, use_llm=True, skip_synth=True)
         calls = mock_cls.return_value.polish.call_count
-        mock_cls.return_value.polish.side_effect = lambda prompt, system="": _ok("[]")
+        mock_cls.return_value.polish.side_effect = lambda prompt, system="", json_reply=False: _ok("[]")
         _, ctx, _, _ = analyze_v2(tmp_path, use_llm=True, skip_synth=True)
     assert mock_cls.return_value.polish.call_count == calls + 1
     assert ctx.llm.status == "ok"

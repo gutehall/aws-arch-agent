@@ -44,16 +44,22 @@ _COST_NOTE = {
         "stacks": {"type": "array", "items": {"type": "object", "properties": {
             "name": {"type": "string"}, "region": {"type": "string"}, "snapshot_date": _DATE,
             "resources_priced": {"type": "integer", "minimum": 0}, "monthly_usd": _USD,
-            "fixed_monthly_usd": _USD, "usage_monthly_usd": _USD,
+            "fixed_monthly_usd": _USD, "usage_monthly_usd": _USD, "illustrated_monthly_usd": _USD,
         }}},
         "total_monthly_usd": {**_USD, "description": "fixed_monthly_usd + usage_monthly_usd."},
         "fixed_monthly_usd": {**_USD, "description": "Cost the IaC states: instance hours, sizes, counts."},
         "usage_monthly_usd": {**_USD, "description": "Cost of the usage a usage profile states (usage assumed)."},
         "usage_file": {"type": "string", "description": "The usage profile read, when one was."},
+        "illustrated_monthly_usd": {**_USD, "description": (
+            "Without a usage file: the cost of an assumed low-traffic usage. An illustration, not a bill; "
+            "not in total_monthly_usd, budgets or --compare-cost.")},
+        "headline_monthly_usd": {**_USD, "description": "total_monthly_usd + illustrated_monthly_usd."},
+        "prices_unavailable": {"type": "string", "description": "Why no AWS price was used, when one was needed."},
+        "not_modelled": {"type": "string", "description": "Costs no model covers yet."},
         "top_resources": {"type": "array", "items": {"type": "object", "properties": {
             "name": {"type": "string"}, "type": {"type": "string"}, "stack": {"type": "string"},
             "file": {"type": "string"}, "line": {"type": ["integer", "null"]}, "monthly_usd": _USD,
-            "basis": {"type": "string"}, "usage_assumed": {"type": "boolean"},
+            "basis": {"type": "string"}, "usage_assumed": {"type": "boolean"}, "illustrated": {"type": "boolean"},
         }}},
         "resources": {"type": "array", "description": "Every priced resource; --compare-cost reads these.",
                       "items": {"type": "object", "properties": {
@@ -293,7 +299,7 @@ REPORT_SCHEMA: dict = {
             "description": "What the verdict calls did. A connection failure is fallback, and "
             "no finding then has a verdict.",
             "properties": {
-                "status": {"type": "string", "enum": ["ok", "fallback", "skipped", "invalid"]},
+                "status": {"type": "string", "enum": ["ok", "fallback", "skipped", "invalid", "partial"]},
                 "provider": {"type": ["string", "null"]},
                 "model": {"type": ["string", "null"]},
                 "reason": {"type": ["string", "null"]},
@@ -304,7 +310,7 @@ REPORT_SCHEMA: dict = {
             "description": "What the hypothesis call did, apart from llm. Absent when no call "
             "was made.",
             "properties": {
-                "status": {"type": "string", "enum": ["ok", "fallback", "skipped", "invalid"]},
+                "status": {"type": "string", "enum": ["ok", "fallback", "skipped", "invalid", "partial"]},
                 "provider": {"type": ["string", "null"]},
                 "model": {"type": ["string", "null"]},
                 "reason": {"type": ["string", "null"]},

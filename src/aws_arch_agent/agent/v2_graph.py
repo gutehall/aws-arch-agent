@@ -22,7 +22,7 @@ from aws_arch_agent.agent.v1 import (
 )
 from aws_arch_agent.progress import report
 from aws_arch_agent.tools.files import truncation_notes, walk_files
-from aws_arch_agent.tools.llm import NO_LLM, LLMClient, LLMResult, aggregate_results
+from aws_arch_agent.tools.llm import NO_LLM, LLMClient, LLMResult, activity, aggregate_results
 from aws_arch_agent.rules.fix_snippets import attach_fixes
 from aws_arch_agent.rules.registry import ALL_RULES
 from aws_arch_agent.rules.repo_practices import AI_REPO_RULES
@@ -445,8 +445,6 @@ def _pillar_node(role: str, state_key: str):
         rag_block = _rag_block(state, query=f"{role} AWS Well-Architected best practices")
         result: LLMResult | None = None
         verdicts: dict[str, Verdict] = {}
-        if use_llm and llm_mode != "compact":
-            report(f"Reviewing {role}")
         if llm_mode == "compact":
             categories = PILLAR_CATEGORIES.get(role, [role])
             rel = [f for f in findings if f.category.lower() in [c.lower() for c in categories]]
@@ -455,15 +453,18 @@ def _pillar_node(role: str, state_key: str):
             notes = f"## {role}\n\n{snippet}\n{'' if use_llm else rag_block}\n"
         else:
             llm = LLMClient()
-            notes, result, verdicts = _summarize_role(
-                role,
-                findings,
-                synth_summary,
-                llm,
-                Path(state["repo_path"]),
-                use_llm=use_llm,
-                rag_block=rag_block,
-            )
+            # The pillars run in parallel but their calls take turns, so the line is printed
+            # when this pillar's call starts, not when the node does.
+            with activity(f"Reviewing {role}"):
+                notes, result, verdicts = _summarize_role(
+                    role,
+                    findings,
+                    synth_summary,
+                    llm,
+                    Path(state["repo_path"]),
+                    use_llm=use_llm,
+                    rag_block=rag_block,
+                )
         out: State = {}
         out[state_key] = notes  # type: ignore[literal-required]
         if result is not None:
@@ -524,7 +525,7 @@ def node_hypotheses(state: State) -> State:
     """Ask about the files with no finding, counting the findings the filters removed."""
     if not state.get("use_llm", True):
         return {}
-    # A model that did not answer gets no second wait.
+    # A model that did not answer, even one pillar of it, gets no second wait.
     if aggregate_results(state.get("llm_results") or []).status not in ("ok", "skipped"):
         return {}
     repo_path = Path(state["repo_path"])
@@ -589,8 +590,8 @@ def node_report(state: State) -> State:
     if cost is not None:
         ctx.notes["cost"] = cost
     ctx.notes["prices"] = regions.note()
-    # Any batch that did not answer means no labels at all, as in V1.
-    if aggregate_results(state.get("llm_results") or []).status == "ok":
+    # The pillars that answered keep their verdicts when another one did not (partial).
+    if aggregate_results(state.get("llm_results") or [], allow_partial=True).status in ("ok", "partial"):
         apply_verdicts(findings, state.get("verdicts") or {})
     warnings = [*warnings, *suppressions.apply(findings, Path(state["repo_path"]))]
     base_report = render_markdown(ctx, findings, warnings=warnings, group_by=state.get("group_by") or "severity")
@@ -732,6 +733,6 @@ def analyze_v2(
         warnings = [*warnings, *account_facts.warnings]
     if ctx is None:
         ctx = RepoContext(repo_path=str(repo_path), language="unknown")
-    ctx.llm = aggregate_results(out.get("llm_results") or []) if use_llm else NO_LLM
+    ctx.llm = aggregate_results(out.get("llm_results") or [], allow_partial=True) if use_llm else NO_LLM
     ctx.hypothesis_llm = aggregate_results([out["hypothesis_result"]] if "hypothesis_result" in out else [])
     return report, ctx, findings, warnings
