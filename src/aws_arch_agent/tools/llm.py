@@ -2,17 +2,23 @@
 from __future__ import annotations
 
 import functools
+from contextlib import contextmanager
 from dataclasses import dataclass, replace
 import logging
+import math
 import os
-from typing import Any, Iterable, Literal
+import threading
+from typing import Any, Iterable, Iterator, Literal
 
 import requests
 
+from aws_arch_agent.progress import report
+
 logger = logging.getLogger(__name__)
 
-# The same bound on every request, so a stalled model cannot hang a scan.
-LLM_TIMEOUT_S = 120
+# The same bound on every request, so a stalled model cannot hang a scan. A local model
+# answering a full verdict batch can take minutes; LLM_TIMEOUT_S overrides it.
+DEFAULT_LLM_TIMEOUT_S = 300
 # Room for a full batch of verdicts, so the reply is not cut off into invalid JSON.
 MAX_REPLY_TOKENS = 4096
 # Ollama silently cuts a prompt longer than its context, and its default is far below the
@@ -20,7 +26,45 @@ MAX_REPLY_TOKENS = 4096
 # Verdict prompts are capped to fit: see MAX_PROMPT_CHARS in agent/verdicts.py.
 DEFAULT_OLLAMA_NUM_CTX = 24576
 
-LLMStatus = Literal["ok", "fallback", "skipped", "invalid"]
+LLMStatus = Literal["ok", "fallback", "skipped", "invalid", "partial"]
+
+# One local Ollama answers one request at a time and queues the rest, so parallel callers
+# would spend their timeout waiting in its queue. Calls take turns here instead.
+_OLLAMA_LOCK = threading.Lock()
+_activity = threading.local()
+
+
+@contextmanager
+def activity(label: str) -> Iterator[None]:
+    """Name this thread's LLM calls. The progress line shows it once a call starts, so it
+    names the call in flight rather than one still waiting for its turn."""
+    previous = getattr(_activity, "label", None)
+    _activity.label = label
+    try:
+        yield
+    finally:
+        _activity.label = previous
+
+
+def _announce() -> None:
+    label = getattr(_activity, "label", None)
+    if label:
+        report(label)
+
+
+def llm_timeout_s() -> float:
+    """LLM_TIMEOUT_S when it is a positive number of seconds, otherwise the default."""
+    raw = os.getenv("LLM_TIMEOUT_S", "").strip()
+    if not raw:
+        return DEFAULT_LLM_TIMEOUT_S
+    try:
+        value = float(raw)
+    except ValueError:
+        value = 0
+    if math.isfinite(value) and value > 0:
+        return value
+    logger.warning("Ignoring LLM_TIMEOUT_S=%r: not a positive number of seconds", raw)
+    return DEFAULT_LLM_TIMEOUT_S
 
 
 @dataclass(frozen=True)
@@ -90,15 +134,22 @@ def _default_ollama_model() -> str:
     return chat[0] if chat else DEFAULT_OLLAMA_MODEL
 
 
-def aggregate_results(results: Iterable[LLMResult]) -> LLMResult:
+def aggregate_results(results: Iterable[LLMResult], allow_partial: bool = False) -> LLMResult:
     """One run-level result with no text: the first non-ok call, otherwise the first ok call.
 
-    A partial failure never reports `responded`. No calls at all is NO_CALL.
+    A partial failure never reports `responded`. With allow_partial, some ok calls and some
+    failed ones are `partial`, so the caller can keep what the ok calls returned. No calls
+    at all is NO_CALL.
     """
     calls = list(results)
     if not calls:
         return NO_CALL
-    return replace(next((c for c in calls if c.status != "ok"), calls[0]), text="")
+    failed = [c for c in calls if c.status != "ok"]
+    ok = [c for c in calls if c.status == "ok"]
+    if allow_partial and ok and failed:
+        return LLMResult("", "partial", ok[0].provider, ok[0].model,
+                         f"{len(ok)} of {len(calls)} calls answered; {failed[0].reason}")
+    return replace(failed[0] if failed else calls[0], text="")
 
 
 class LLMClient:
@@ -122,16 +173,20 @@ class LLMClient:
     def ollama_model(self, value: str) -> None:
         self._ollama_model = value
 
-    def polish(self, markdown: str, system: str) -> LLMResult:
+    def polish(self, markdown: str, system: str, json_reply: bool = False) -> LLMResult:
         """Send content to LLM with system prompt; a failure returns the original as its text.
 
         With no server configured nothing is sent: the result is skipped, with the prompt as text.
+        json_reply asks Ollama for a JSON body (its `format: json`); the caller still parses it.
         """
         if not llm_configured():
             return LLMResult(markdown, "skipped", reason=NOT_CONFIGURED)
         if self.provider == "ollama":
-            return self._ollama(markdown, system)
+            with _OLLAMA_LOCK:
+                _announce()
+                return self._ollama(markdown, system, json_reply)
         if self.provider == "selfhosted":
+            _announce()
             return self._selfhosted(markdown, system)
         # No fall-through: a leftover setting must not send the prompt somewhere unexpected.
         logger.warning("Unsupported LLM_PROVIDER: %s", self.provider)
@@ -139,7 +194,7 @@ class LLMClient:
             markdown, "fallback", reason="unsupported LLM_PROVIDER, use ollama or selfhosted"
         )
 
-    def _ollama(self, prompt: str, system: str) -> LLMResult:
+    def _ollama(self, prompt: str, system: str, json_reply: bool = False) -> LLMResult:
         model = self.ollama_model
         url = f"{self.ollama_host}/api/chat"
         payload = {
@@ -150,9 +205,10 @@ class LLMClient:
             ],
             "options": {"num_ctx": self.ollama_num_ctx},
             "stream": False,
+            **({"format": "json"} if json_reply else {}),
         }
         try:
-            r = requests.post(url, json=payload, timeout=LLM_TIMEOUT_S)
+            r = requests.post(url, json=payload, timeout=llm_timeout_s())
             r.raise_for_status()
             data = r.json()
             reply = data.get("message", {}).get("content")
@@ -179,7 +235,7 @@ class LLMClient:
             "stream": False,
         }
         try:
-            r = requests.post(url, json=payload, timeout=LLM_TIMEOUT_S)
+            r = requests.post(url, json=payload, timeout=llm_timeout_s())
             r.raise_for_status()
             reply = r.json()["choices"][0]["message"]["content"]
             return _from_reply(reply, prompt, "selfhosted", model, "Self-hosted LLM")

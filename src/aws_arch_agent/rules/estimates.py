@@ -21,6 +21,15 @@ GP3_BASELINE_GIB = 1000
 # Up to 170 GiB gp2 gives 128 MiB/s, about gp3's included 125 MB/s; above it gp2 gives more.
 GP2_SMALL_THROUGHPUT_GIB = 170
 
+# Flat monthly list prices the Price List does not carry as a plain per-unit row. The same
+# in the Regions this tool prices; requests and metric math are not included.
+ALARM_STANDARD_USD = 0.10       # standard-resolution metric alarm
+ALARM_HIGH_RES_USD = 0.30       # period under 60 seconds
+DASHBOARD_USD = 3.00            # each dashboard after the first three in an account
+FREE_DASHBOARDS = 3
+WEB_ACL_USD = 5.00              # WAFv2 web ACL
+WEB_ACL_RULE_USD = 1.00         # each rule in it
+
 # Instance sizes from small to large, for "one size smaller" and nonprod.max_instance_size.
 SIZES = _SIZES = (
     "nano", "micro", "small", "medium", "large", "xlarge", "2xlarge", "3xlarge", "4xlarge",
@@ -587,6 +596,29 @@ def volume_extras(props: dict) -> Estimate | None:
     return _sum(parts) if parts else None
 
 
+def cloudwatch_alarm(props: dict) -> Estimate:
+    period = _literal_int(props.get("Period"))
+    high = period is not None and period < 60
+    usd = ALARM_HIGH_RES_USD if high else ALARM_STANDARD_USD
+    return Estimate(usd, None, f"1 {'high-resolution' if high else 'standard'} alarm × ${usd:.2f}/month, "
+                    "AWS list price. Metric math alarms bill per metric.")
+
+
+def dashboard() -> Estimate:
+    return Estimate(DASHBOARD_USD, None, f"1 dashboard × ${DASHBOARD_USD:.2f}/month, AWS list price "
+                    f"(the first {FREE_DASHBOARDS} in an account are free).")
+
+
+def web_acl(props: dict) -> Estimate | None:
+    rules = props.get("Rules", [])
+    if not isinstance(rules, list):
+        return None  # rules from a variable or a dynamic block: count unknown
+    n = len(rules)
+    return Estimate(_round(WEB_ACL_USD + n * WEB_ACL_RULE_USD), None,
+                    f"1 web ACL × ${WEB_ACL_USD:.2f} + {n} rule(s) × ${WEB_ACL_RULE_USD:.2f}/month, "
+                    "AWS list price. Excludes requests.")
+
+
 def resource_cost(res: Any, index: dict[str, Any] | None = None) -> Estimate | None:
     """The monthly on-demand cost of one resource, or None when it cannot be priced.
 
@@ -641,6 +673,10 @@ def resource_cost(res: Any, index: dict[str, Any] | None = None) -> Estimate | N
         est = kinesis_stream(props)
     elif res.type == "autoscaling_group":
         est = autoscaling_group(res, index)
+    elif res.type == "cloudwatch_alarm":
+        est = cloudwatch_alarm(props)
+    elif res.source_type in ("AWS::WAFv2::WebACL", "aws_wafv2_web_acl"):
+        est = web_acl(props)
     else:
         return None
     if est is None or est.monthly_cost_usd is None:
@@ -726,7 +762,7 @@ def _per(key: str, amount: float, what: str) -> tuple[Estimate, Price] | None:
     return Estimate(amount * unit.usd, None, f"{amount:,.6g} {what} × {_unit_price(unit)}"), unit
 
 
-def _usage_sum(parts: list[tuple[Estimate, Price] | None], stated: str) -> Estimate | None:
+def _usage_sum(parts: list[tuple[Estimate, Price] | None], stated: str, label: str) -> Estimate | None:
     """The parts' total with the assumptions stated, or None when any part has no price."""
     if not parts or any(p is None for p in parts):
         return None
@@ -734,13 +770,15 @@ def _usage_sum(parts: list[tuple[Estimate, Price] | None], stated: str) -> Estim
     total = _sum([est for est, _ in found])
     return Estimate(
         total.monthly_cost_usd, None,
-        f"Usage assumed ({stated}): {total.basis}, {_where(found[0][1])}. "
+        f"{label} ({stated}): {total.basis}, {_where(found[0][1])}. "
         "First paid tier; free tier not deducted.",
     )
 
 
-def usage_cost(res: Any, usage: dict[str, Any]) -> Estimate | None:
-    """The monthly cost of the usage a profile states for one resource, or None."""
+def usage_cost(res: Any, usage: dict[str, Any], label: str = "Usage assumed") -> Estimate | None:
+    """The monthly cost of the usage a profile states for one resource, or None.
+
+    label opens the basis: "Usage assumed" for a usage file, "Illustration" otherwise."""
     props = res.properties
     def get(key: str) -> Any:
         return usage.get(key)
@@ -797,7 +835,7 @@ def usage_cost(res: Any, usage: dict[str, Any]) -> Estimate | None:
                           "FIFO requests" if fifo else "requests"))
     elif res.type == "sns_topic" and get("monthly_requests") is not None:
         parts.append(_per("sns:request", get("monthly_requests"), "publish requests"))
-    est = _usage_sum(parts, stated)
+    est = _usage_sum(parts, stated, label)
     count = getattr(res, "count", 1)
     if est is None or est.monthly_cost_usd is None or count == 1:
         return est

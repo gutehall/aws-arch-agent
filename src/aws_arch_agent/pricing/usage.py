@@ -18,7 +18,8 @@ alone. A usage profile states the usage, and only what it states is priced:
         storage_class: standard-ia
 
 A resource's own entry wins over its type's defaults, key by key. Without a profile
-nothing usage-based is priced.
+the stack cost applies ILLUSTRATION, a low-traffic profile, and labels the result an
+illustration, not a bill: budgets and --compare-cost never read it.
 
 The same file carries the usage signals a few rules read instead of a resource property
 (rules/usage_signals.py): per type or resource (SIGNAL_FIELDS) and for the whole workload:
@@ -83,6 +84,8 @@ class UsageProfile:
     resources: Mapping[str, Mapping[str, Any]] = field(default_factory=dict)
     path: str = ""
     workload: Mapping[str, Any] = field(default_factory=dict)
+    # True only for ILLUSTRATION: assumed usage, not usage anyone stated.
+    illustration: bool = False
 
     def for_resource(self, rtype: str | None, name: str) -> dict[str, Any] | None:
         """The usage stated for one resource (its type's defaults, then its own entry), or None."""
@@ -98,6 +101,25 @@ class UsageProfile:
         out = [(f"defaults.{t}", self.defaults[t][key]) for t in types if key in self.defaults.get(t, {})]
         out += [(f"resources.{name}", entry[key]) for name, entry in self.resources.items() if key in entry]
         return out
+
+
+# The low-traffic usage the stack cost assumes when no usage file is loaded. Documented in
+# docs/REFERENCE.md (Prices); change both together.
+ILLUSTRATION = UsageProfile(
+    defaults={
+        "lambda_function": {"monthly_requests": 100_000, "avg_duration_ms": 100},
+        "s3_bucket": {"storage_gb": 5},
+        "dynamodb_table": {"monthly_read_request_units": 1_000_000, "monthly_write_request_units": 100_000,
+                           "storage_gb": 1},
+        "cloudwatch_log_group": {"monthly_ingest_gb": 1},
+        "api_gateway_rest_api": {"monthly_requests": 100_000},
+        "apigatewayv2_api": {"monthly_requests": 100_000},
+        "sqs_queue": {"monthly_requests": 100_000},
+        "sns_topic": {"monthly_requests": 100_000},
+    },
+    path="low-traffic illustration",
+    illustration=True,
+)
 
 
 def _value(key: str, value: Any, where: str) -> Any:

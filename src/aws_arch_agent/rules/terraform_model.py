@@ -1924,12 +1924,14 @@ def _log_delivery_source(body: dict) -> dict:
 
 
 def _wafv2_web_acl(body: dict) -> dict:
-    """aws_wafv2_web_acl: whether a rule is rate-based, for CF-DEMAND-001/002. A dynamic rule may be."""
+    """aws_wafv2_web_acl: its rules, and whether each is rate-based (CF-DEMAND-001/002). A dynamic rule may be."""
     if "rule" in _dynamic_names(body):
         return {"Rules": UNRESOLVED}
-    rate = any(_blocks(statement, "rate_based_statement") or "rate_based_statement" in _dynamic_names(statement)
-               for rule in _blocks(body, "rule") for statement in _blocks(rule, "statement"))
-    return {"Rules": [{"Statement": {"RateBasedStatement": {}}}] if rate else []}
+    def rate(rule: dict) -> bool:
+        return any(_blocks(statement, "rate_based_statement") or "rate_based_statement" in _dynamic_names(statement)
+                   for statement in _blocks(rule, "statement"))
+    # One entry per rule block: the stack cost prices each rule.
+    return {"Rules": [{"Statement": {"RateBasedStatement": {}}} if rate(rule) else {} for rule in _blocks(body, "rule")]}
 
 
 def _sns_subscription(body: dict) -> dict:
@@ -2029,6 +2031,7 @@ def _metric_alarm(body: dict) -> dict:
     _set(props, "ActionsEnabled", _v(body, "actions_enabled"))
     _set(props, "Namespace", _ref(body, "namespace"))
     _set(props, "MetricName", _ref(body, "metric_name"))  # CF-SUST-004
+    _set(props, "Period", _v(body, "period"))  # stack cost: high resolution under 60 s
     _set(props, "Dimensions", _alarm_dimensions(body))
     if "metric_query" in _dynamic_names(body):
         props["Metrics"] = UNRESOLVED
