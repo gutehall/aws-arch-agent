@@ -295,23 +295,10 @@ class RdsReadReplicas(Rule):
     )
 
     def run(self, repo_path: Path, language: str = "typescript") -> List[Finding]:
-        rds_pat = r'new\s+rds\.(DatabaseInstance|DatabaseCluster)\(' if language == "typescript" else r'rds\.(DatabaseInstance|DatabaseCluster)\('
-        dbs = rg(repo_path, rds_pat, glob=code_glob(language))
-        replicas = rg(repo_path, r'addReadReplica|readReplica', glob=code_glob(language))
-        out: List[Finding] = []
-        if dbs and not replicas:
-            f, ln, txt = dbs[0]
-            out.append(Finding(
-                id=self.id,
-                title=self.title,
-                severity="Low",
-                category=self.category,
-                file=f,
-                line=ln,
-                evidence=txt,
-                recommendation=self.recommendation,
-            ))
-        return out
+        # Answered by the usage file (rules/usage_signals.py); quiet when it states nothing.
+        from aws_arch_agent.rules import usage_signals
+
+        return usage_signals.read_replicas(self, repo_path)
 
 
 class NatGatewaySingleAz(Rule):

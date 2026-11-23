@@ -50,21 +50,10 @@ class RightSizingHint(Rule):
     )
 
     def run(self, repo_path: Path, language: str = "typescript") -> List[Finding]:
-        # Heuristic: fixed instance sizes without autoscaling
-        asg = rg(repo_path, r"addAutoScaling|AutoScalingGroup|autoscaling", glob=code_glob(language))
-        instances = rg(repo_path, r"InstanceSize|instanceType|machineImage", glob=code_glob(language))
-        if instances and not asg:
-            return [Finding(
-                id=self.id,
-                title=self.title,
-                severity="Low",
-                category=self.category,
-                file=None,
-                line=None,
-                evidence=None,
-                recommendation=self.recommendation,
-            )]
-        return []
+        # Answered by the usage file (rules/usage_signals.py); quiet when it states nothing.
+        from aws_arch_agent.rules import usage_signals
+
+        return usage_signals.low_utilization(self, repo_path)
 
 
 class ScheduledScalingMissing(Rule):
@@ -79,21 +68,15 @@ class ScheduledScalingMissing(Rule):
     )
 
     def run(self, repo_path: Path, language: str = "typescript") -> List[Finding]:
-        asg = rg(repo_path, r'AutoScalingGroup|addAutoScaling', glob=code_glob(language))
-        scheduled = rg(repo_path, r'scalingSchedule|ScalingSchedule|schedule.*scale', glob=code_glob(language))
-        out: List[Finding] = []
-        if asg and not scheduled:
-            return [Finding(
-                id=self.id,
-                title=self.title,
-                severity="Low",
-                category=self.category,
-                file=None,
-                line=None,
-                evidence=None,
-                recommendation=self.recommendation,
-            )]
-        return out
+        # Answered by the usage file (rules/usage_signals.py); quiet when it states nothing.
+        from aws_arch_agent.rules import usage_signals
+
+        return usage_signals.scheduled_scaling(self, repo_path)
+
+
+# SUST-004 and SUST-005 are design judgments: a repo note answers them (rules/repo_practices.py).
+# They read the whole repo tree, so they run for every source, like the REPO-* rules.
+REPO_NOTE_RULE_IDS = frozenset({"SUST-004", "SUST-005"})
 
 
 class AsyncProcessingHint(Rule):
@@ -107,23 +90,19 @@ class AsyncProcessingHint(Rule):
     )
 
     def run(self, repo_path: Path, language: str = "typescript") -> List[Finding]:
-        lambda_pat = r'new\s+lambda\.Function\(' if language == "typescript" else r'lambda_.Function\('
-        lambdas = rg(repo_path, lambda_pat, glob=code_glob(language))
-        sqs = rg(repo_path, r'sqs\.Queue|SQS', glob=code_glob(language))
-        eventbridge = rg(repo_path, r'events\.Rule|EventBridge', glob=code_glob(language))
-        out: List[Finding] = []
-        if lambdas and not sqs and not eventbridge:
-            return [Finding(
-                id=self.id,
-                title=self.title,
-                severity="Low",
-                category=self.category,
-                file=None,
-                line=None,
-                evidence=None,
-                recommendation=self.recommendation,
-            )]
-        return out
+        from aws_arch_agent.rules.repo_practices import batch_without_note
+
+        found = batch_without_note(repo_path)
+        if not found:
+            return []
+        places = ", ".join(f"{kind} in {rel}" for kind, rel in list(found.items())[:4])
+        return [Finding(
+            id=self.id, title=self.title, severity="Low", category=self.category,
+            file=next(iter(found.values())), line=None,
+            evidence=f"Batch work: {places}; searched the repo notes for one that names the batch "
+                     "path and why it is synchronous or asynchronous; found none",
+            recommendation=self.recommendation,
+        )]
 
 
 class ManagedServicesPreference(Rule):
@@ -137,22 +116,19 @@ class ManagedServicesPreference(Rule):
     )
 
     def run(self, repo_path: Path, language: str = "typescript") -> List[Finding]:
-        ec2 = rg(repo_path, r'ec2\.Instance\(' if language == "typescript" else r'ec2\.Instance\(', glob=code_glob(language))
-        rds = rg(repo_path, r'rds\.|RDS', glob=code_glob(language))
-        lambda_ref = rg(repo_path, r'lambda\.Function|Lambda', glob=code_glob(language))
-        out: List[Finding] = []
-        if ec2 and not rds and not lambda_ref:
-            return [Finding(
-                id=self.id,
-                title=self.title,
-                severity="Low",
-                category=self.category,
-                file=None,
-                line=None,
-                evidence=None,
-                recommendation=self.recommendation,
-            )]
-        return out
+        from aws_arch_agent.rules.repo_practices import self_managed_without_note
+
+        found = self_managed_without_note(repo_path)
+        if not found:
+            return []
+        places = ", ".join(f"{name} in {rel}" for name, rel in sorted(found.items())[:4])
+        return [Finding(
+            id=self.id, title=self.title, severity="Low", category=self.category,
+            file=next(iter(found.values())), line=None,
+            evidence=f"Self-managed: {places}; searched the repo notes for one that names each "
+                     "and why it is not a managed service; found none",
+            recommendation=self.recommendation,
+        )]
 
 
 class CloudFrontCompression(Rule):

@@ -10984,7 +10984,8 @@ class ProjectLifecycleUntracked(_RepoRule):
 # COST 4: decommissioning. Tracking resources over their lifetime (REPO-086) and a
 # decommissioning process for temporary environments (REPO-087).
 
-_CREATED_BY_TAG = _tag_key(r"(?:created[-_ ]?by|managed[-_ ]?by|creator|iac)")
+_CREATED_BY_KEY = r"(?:created[-_ ]?by|managed[-_ ]?by|creator|iac)"
+_CREATED_BY_TAG = _tag_key(_CREATED_BY_KEY)
 # Terraform modules and some resources take source, repository and repo arguments, so a
 # lowercase unquoted one is not a tag; a quoted or capitalized key is.
 _SOURCE_KEY = r"(?i:source|repository|repo)"
@@ -13783,6 +13784,111 @@ class HumanEscalationMissing(_AiNoteRule):
         "the notes for a file or heading on human override, escalation, a kill switch or AI "
         "incidents"
     )
+
+
+# SUS 3 design judgments answered by a repo note: async processing for batch work (SUST-004)
+# and managed services over self-managed ones (SUST-005). The rule classes live in
+# rules/sustainability.py and keep their ids; these decide.
+
+_LAMBDA_FN = re.compile(
+    _cf_type(r"Lambda::Function|Serverless::Function") + r"|resource\s+\"aws_lambda_function\""
+    r"|\blambda\.(?:Cfn)?Function\(|\b(?:Nodejs|Python|DockerImage)Function\("
+)
+_BATCH_COMPUTE = _kinds(
+    ("AWS Batch", _cf_type(r"Batch::(?:JobDefinition|JobQueue|ComputeEnvironment)")
+     + r"|resource\s+\"aws_batch_(?:job_definition|job_queue|compute_environment)\""
+     r"|\bbatch\.(?:Cfn\w+|EcsJobDefinition|JobQueue|\w*ComputeEnvironment)\("),
+    ("Step Functions Map state", r"[\"']Type[\"']\s*:\s*[\"']Map[\"']|\bType:\s*Map\b"
+     r"|\bsfn\.(?:Distributed)?Map\(|\bDistributedMap\("),
+    ("Glue job", _cf_type(r"Glue::Job") + r"|resource\s+\"aws_glue_job\"|\bglue\.(?:Cfn)?Job\("),
+    ("EMR", _cf_type(r"EMR::Cluster|EMRServerless::Application")
+     + r"|resource\s+\"aws_(?:emr_cluster|emrserverless_application)\""
+     r"|\bemr\.CfnCluster\(|\bemrserverless\.CfnApplication\("),
+    ("ECS scheduled task", r"\bScheduled(?:Fargate|Ec2)Task\(|[\"']?EcsParameters[\"']?\s*:|\becs_target\s*\{"),
+)
+
+
+def batch_compute(repo_path: Path) -> dict[str, str]:
+    """Batch work the production IaC declares: kind -> first file. A Lambda function counts
+    when the same file puts it on a schedule (_SCHEDULE)."""
+    found = _in_production_iac(repo_path, _BATCH_COMPUTE)
+    for rel, text in iac_texts(repo_path):
+        if _production(rel) and _LAMBDA_FN.search(text) and _SCHEDULE.search(text):
+            found.setdefault("Lambda on a schedule", rel)
+            break
+    return found
+
+
+_REASON = r"(?=.*\b(?:because|since|so that|why|reason|rationale|trade-?offs?)\b)"
+_BATCH_NOTE_NAME = re.compile(r"(?:^|[-_. ])(?:batch|async|asynchronous|processing|adrs?|decisions?)(?:$|[-_. ])")
+_BATCH_NOTE_HEADING = re.compile(r"(?i).*\b(?:batch|async(?:hronous)?|synchronous|processing)\b.*")
+_BATCH_NOTE_BODY = re.compile(
+    r"(?is)^(?=.*\b(?:batch|jobs?|scheduled)\b)(?=.*\b(?:a?synchronous(?:ly)?|async|sync)\b)" + _REASON
+)
+
+
+def batch_without_note(repo_path: Path) -> dict[str, str]:
+    """SUST-004: batch compute in the IaC, and no note that names the batch path and why it
+    is synchronous or asynchronous."""
+    found = batch_compute(repo_path)
+    if not found or _note_with(repo_path, _BATCH_NOTE_NAME, _BATCH_NOTE_HEADING, _BATCH_NOTE_BODY):
+        return {}
+    return found
+
+
+# Data stores, caches, queues and search engines a team runs itself: an engine installed or
+# started on a host (_DB_ON_HOST, as REPO-063 reads it) or a container image.
+_SELF_MANAGED_STEMS = (
+    "postgres", "mysql", "mariadb", "mongo", "redis", "valkey", "memcached", "kafka",
+    "rabbitmq", "elasticsearch", "opensearch", "cassandra",
+)
+_STORE_IMAGE = re.compile(
+    r"(?i)(?:\bimage\b[\"']?\s*[:=]\s*[\"']?|ContainerImage\.from_?[rR]egistry\(\s*[\"'])"
+    r"(?:[\w.-]+(?::\d+)?/)*(?:cp-)?(postgres(?:ql)?|mysql|mariadb|mongo(?:db)?|redis|valkey|memcached"
+    r"|kafka|rabbitmq|elasticsearch|opensearch|cassandra)(?=[:@\"'\s]|$)"
+)
+
+
+def _stem(engine: str) -> str:
+    engine = engine.lower()
+    return next((s for s in _SELF_MANAGED_STEMS if s in engine), engine)
+
+
+def self_managed_stores(repo_path: Path) -> dict[str, str]:
+    """Self-managed stores in the production IaC: component -> first file."""
+    found: dict[str, str] = {}
+    for rel, text in iac_texts(repo_path):
+        if not _production(rel):
+            continue
+        if _HOST_SETUP.search(text):
+            for match in _DB_ON_HOST.finditer(text):
+                engine = next((g for g in match.groups() if g), "")
+                if engine:
+                    found.setdefault(_stem(engine), rel)
+        for match in _STORE_IMAGE.finditer(text):
+            found.setdefault(_stem(match.group(1)), rel)
+    return found
+
+
+_MANAGED_NOTE_NAME = re.compile(
+    r"(?:^|[-_. ])(?:self[-_]?managed|managed[-_]services?|adrs?|decisions?|architecture)(?:$|[-_. ])"
+)
+_MANAGED_NOTE_HEADING = re.compile(
+    r"(?i).*\b(?:self[- ]?managed|managed services?|data stores?|build (?:vs\.?|or) buy)\b.*"
+)
+
+
+def self_managed_without_note(repo_path: Path) -> dict[str, str]:
+    """SUST-005: self-managed stores in the IaC, and no note that names each of them and why
+    it is not a managed service."""
+    found = self_managed_stores(repo_path)
+    if not found:
+        return {}
+    names = "".join(rf"(?=.*\b{re.escape(stem)})" for stem in sorted(found))
+    body = re.compile(r"(?is)^" + names + _REASON)
+    if _note_with(repo_path, _MANAGED_NOTE_NAME, _MANAGED_NOTE_HEADING, body):
+        return {}
+    return found
 
 
 AI_REPO_RULES: List[Rule] = [

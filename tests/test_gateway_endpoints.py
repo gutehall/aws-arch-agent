@@ -179,3 +179,16 @@ def test_sub_list_form_and_data_source_service_names(tmp_path: Path) -> None:
     # An endpoint type from a variable may be Gateway.
     text = TF.replace('vpc_endpoint_type = "Interface"', "vpc_endpoint_type = var.kind")
     assert _tf(tmp_path, text) == []
+
+
+def test_nat_with_no_s3_endpoint_fails_cost08_bp02(tmp_path: Path) -> None:
+    """The NAT path with no gateway endpoint is the template half of COST08-BP02 (REPO-095
+    keeps the cross-region copy with no recorded reason)."""
+    from aws_arch_agent.rules import well_architected
+
+    found = [f for f in _cf(tmp_path, _vpc()) if f.id == "CF-VPC-002"]
+    well_architected.annotate(found)
+    assert found and found[0].question == "COST 8"
+    assert "COST08-BP02" in found[0].best_practices
+    (cost8,) = [a for a in well_architected.answers(found) if a.question.id == "COST 8"]
+    assert not cost8.met

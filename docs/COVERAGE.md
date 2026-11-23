@@ -10,12 +10,12 @@ Which CDK rules have a template check, and which AWS Foundational Security Best 
 | `partial` | A template check covers part of the CDK rule, so V2 keeps both (`CF_PARTLY_COVERS_STATIC`). |
 | `account` | Needs a live account. A scan of templates cannot see it. |
 | `cdk-only` | Reads the CDK code itself, not a resource property. |
-| `advice` | No property to read. The answer depends on traffic, usage or design. |
-| `repo` | Reads the repository tree (tests, CI config, environments, account guardrails), not one IaC file. Runs for every source. |
+| `advice` | No property to read. The answer depends on traffic, usage or design. No rule has this status now: the usage file or a repo note answers the former ones. |
+| `repo` | Reads the repository tree (tests, CI config, environments, account guardrails, the usage file), not one IaC file. Runs for every source. |
 
 ## CDK rules
 
-368 rules: 141 covered, 10 account, 5 cdk-only, 8 advice, 204 repo.
+368 rules: 141 covered, 10 account, 5 cdk-only, 212 repo.
 
 | Rule | Title | Template check | Status | Note |
 | -- | -- | -- | -- | -- |
@@ -34,7 +34,7 @@ Which CDK rules have a template check, and which AWS Foundational Security Best 
 | SEC-013 | SQS queue not encrypted | `CF-SQS-001` | `covered` |  |
 | SEC-014 | SNS topic not encrypted | `CF-SNS-001` | `covered` |  |
 | SEC-015 | Secrets Manager rotation not enabled | `CF-SM-001` | `covered` |  |
-| SEC-016 | Potential hardcoded credentials/secrets in code |  | `cdk-only` | Scans source for secret-looking literals. CF-PAR-001/002 check template parameters. |
+| SEC-016 | Potential hardcoded credentials/secrets in code |  | `cdk-only` | Scans source for secret-looking literals. A template cannot answer it: synth resolves or drops the literal, and a secret in application code never reaches the template. `CF-PAR-001` and `CF-PAR-002` check the template's own parameters. |
 | SEC-017 | Lambda environment variables may contain secrets | `CF-LAM-005` | `covered` |  |
 | SEC-018 | CloudFront not enforcing HTTPS | `CF-CF-001` | `covered` |  |
 | SEC-019 | CloudFront using legacy SSL/TLS | `CF-CF-002` | `covered` |  |
@@ -74,7 +74,7 @@ Which CDK rules have a template check, and which AWS Foundational Security Best 
 | SEC-053 | CodeBuild project using privileged mode | `CF-CB-003` | `covered` |  |
 | SEC-054 | Security Group egress too permissive (0.0.0.0/0) | `CF-SG-003` | `covered` |  |
 | SEC-055 | Network ACLs not configured | `CF-NACL-001` | `covered` | CF-NACL-001 reports a VPC with no custom network ACL, and entries that open 22 or 3389. |
-| SEC-056 | Stack termination protection not enabled |  | `cdk-only` | Termination protection is a stack setting, not in the template. |
+| SEC-056 | Stack termination protection not enabled |  | `cdk-only` | Termination protection is a stack setting passed at deploy time (CDK `terminationProtection`, `aws cloudformation update-termination-protection`). A template cannot answer it: no template property holds it. |
 | SEC-057 | Lambda function URL without authentication | `CF-LAM-004` | `covered` |  |
 | SEC-058 | ECS task may run as root user | `CF-ECS-003` | `covered` |  |
 | SEC-059 | Redshift cluster encryption not enabled | `CF-RS-001` | `covered` |  |
@@ -83,7 +83,7 @@ Which CDK rules have a template check, and which AWS Foundational Security Best 
 | SEC-062 | CloudWatch Logs not encrypted with KMS | `CF-CW-002` | `covered` |  |
 | SEC-063 | Backup vault encryption not configured | `CF-BAK-001` | `covered` |  |
 | SEC-064 | RDS instance may be publicly accessible | `CF-RDS-004` | `covered` |  |
-| SEC-065 | Amazon Macie not enabled for sensitive data discovery |  | `account` | Macie is an account service. `CF-MACIE-001` checks a session the repo defines. |
+| SEC-065 | Amazon Macie not enabled for sensitive data discovery |  | `account` | Macie is an account service. `CF-MACIE-001` checks a session the repo defines. `--live-account` reads the account's session (`macie2:GetMacieSession`): not `ENABLED` is this finding. |
 | SEC-066 | EC2 instance may not require IMDSv2 | `CF-EC2-001` | `covered` |  |
 | SEC-067 | IAM principal has full admin access | `CF-IAM-008` | `covered` |  |
 | SEC-068 | Lambda function uses a deprecated runtime | `CF-LAM-003` | `covered` |  |
@@ -100,7 +100,7 @@ Which CDK rules have a template check, and which AWS Foundational Security Best 
 | REL-008 | SQS missing dead-letter queue configuration | `CF-SQS-002` | `covered` |  |
 | REL-009 | Lambda timeout may be too low or too high | `CF-LAM-007` | `covered` |  |
 | REL-010 | Lambda not in VPC when accessing RDS/ElastiCache | `CF-LAM-011` | `covered` | CF-LAM-011 reads a function with no VpcConfig that refers to an RDS database or ElastiCache cluster that is not public. |
-| REL-011 | RDS read replicas missing for read-heavy workloads |  | `advice` | Read replicas depend on read load. |
+| REL-011 | RDS read replicas missing for read-heavy workloads |  | `repo` | Reads `read_write_ratio` (`db_instance` or `rds_cluster`) from the usage file: 4 reads per write or more, and the IaC declares a database with no read replica or Aurora reader. Quiet when the usage file does not state it. |
 | REL-012 | NAT Gateway single point of failure (need multi-AZ) | `CF-NAT-001` | `covered` |  |
 | REL-013 | AWS Backup vault not configured | `CF-BAK-005` | `covered` |  |
 | REL-014 | Cross-region backup replication missing | `CF-BAK-002` | `covered` |  |
@@ -124,24 +124,24 @@ Which CDK rules have a template check, and which AWS Foundational Security Best 
 | COST-001 | Log retention may be infinite (cost risk) | `CF-CW-001` | `covered` |  |
 | COST-002 | Compute resources may miss autoscaling | `CF-ECS-013` | `covered` | CF-ECS-013 reports an ECS service that no Application Auto Scaling target scales. CF-ASG-006 (fixed-size group) is a reliability check. |
 | COST-003 | DynamoDB provisioned capacity may miss autoscaling | `CF-DDB-003` | `covered` |  |
-| COST-005 | RDS not using Reserved Instances (savings opportunity) |  | `account` | Reserved Instances are bought for the account. |
+| COST-005 | RDS not using Reserved Instances (savings opportunity) |  | `account` | Reserved Instances are bought for the account. `--live-account` reads them (`rds:DescribeReservedDBInstances`) when the scan has an RDS instance or cluster. |
 | COST-006 | NAT Gateway incurs data processing costs | `CF-COST-002`, `CF-VPC-002`, `CF-VPC-003` | `covered` |  |
 | COST-007 | S3 Intelligent-Tiering not enabled | `CF-S3-007` | `covered` |  |
 | COST-008 | EBS volumes using gp2 instead of gp3 | `CF-EBS-002` | `covered` |  |
-| COST-009 | ElastiCache may benefit from reserved nodes |  | `account` | Reserved nodes are bought for the account. |
+| COST-009 | ElastiCache may benefit from reserved nodes |  | `account` | Reserved nodes are bought for the account. `--live-account` reads them (`elasticache:DescribeReservedCacheNodes`) when the scan has an ElastiCache cluster or replication group. |
 | COST-010 | RDS not using Graviton instances | `CF-RDS-014` | `covered` |  |
 | COST-011 | CloudFront using all edge locations (Price Class All) | `CF-CF-006` | `covered` |  |
 | COST-012 | Elastic IP allocated but may not be used | `CF-EIP-001` | `covered` |  |
 | COST-013 | S3 lifecycle policy not configured for cost optimization | `CF-S3-006` | `covered` |  |
 | COST-014 | AWS Budgets not configured |  | `account` | Budgets are account-level. `CF-BUDGET-001` checks a budget the repo defines. |
 | COST-015 | Cost allocation tags may not be configured | `CF-TAG-001` | `covered` |  |
-| COST-016 | Savings Plans opportunity for compute workloads |  | `account` | Savings Plans are bought for the account. |
-| COST-018 | S3 Storage Lens not enabled |  | `account` | Storage Lens is configured for the account or organization. |
+| COST-016 | Savings Plans opportunity for compute workloads |  | `account` | Savings Plans are bought for the account. `--live-account` reads them (`savingsplans:DescribeSavingsPlans`) when the scan has EC2, Lambda or ECS compute. |
+| COST-018 | S3 Storage Lens not enabled |  | `account` | Storage Lens is configured for the account or organization. `--live-account` reads the dashboards (`s3:ListStorageLensConfigurations`): none enabled is this finding. |
 | BP-001 | Standard tags may be missing | `CF-TAG-001` | `covered` |  |
 | BP-002 | Using environment variables instead of Secrets Manager | `CF-LAM-005` | `covered` |  |
-| BP-003 | Resource naming convention may not be followed |  | `cdk-only` | Reads construct and resource names in code. |
-| BP-004 | CDK Aspects not used for policy enforcement |  | `cdk-only` | Reads CDK Aspects. |
-| BP-005 | CDK context not used for environment-specific config |  | `cdk-only` | Reads CDK context. |
+| BP-003 | Resource naming convention may not be followed |  | `cdk-only` | Reads construct and resource names in code. A template cannot answer it: synth replaces construct ids with generated logical ids and hashes, so the names the team chose are gone. |
+| BP-004 | CDK Aspects not used for policy enforcement |  | `cdk-only` | Reads CDK Aspects. A template cannot answer it: Aspects run during synth and leave no trace in the output, only their effect. |
+| BP-005 | CDK context not used for environment-specific config |  | `cdk-only` | Reads CDK context. A template cannot answer it: synth resolves context values into literals, so the template cannot show where a value came from. |
 | OPS-001 | CloudTrail / audit trail may be missing |  | `account` | A trail is usually an organization or account trail outside the app. CF-CT-001 to CF-CT-005 check a trail the template defines. |
 | OPS-002 | VPC Flow Logs may be missing | `CF-FL-001` | `covered` |  |
 | OPS-003 | X-Ray / distributed tracing may be missing | `CF-APIGW-002`, `CF-APIGW-V2-002`, `CF-LAM-002` | `covered` |  |
@@ -162,7 +162,7 @@ Which CDK rules have a template check, and which AWS Foundational Security Best 
 | OPS-019 | Glue job bookmarks not enabled | `CF-GLUE-003` | `covered` | CF-GLUE-003 reports a literal job-bookmark-disable; a job with the option unset keeps OPS-019. |
 | OPS-020 | CodeBuild project logging not configured | `CF-CB-004` | `covered` |  |
 | OPS-021 | CloudWatch dashboards not configured | `CF-DASH-001` | `covered` | Stacks with more than `dashboards.min_resources` resources (default 20). Not reported in dev. |
-| OPS-023 | SSM Parameter Store throughput setting may need review |  | `advice` | Restated: it used to recommend the advanced tier for throughput, but AWS sets throughput per account and Region, whatever the tier. Throughput needs traffic data. `CF-SSM-002` reports the separate cost of an advanced parameter that does not need that tier. |
+| OPS-023 | SSM Parameter Store throughput setting may need review |  | `repo` | Reads `get_parameter_tps` (`ssm_parameter`) from the usage file: above the default 40 TPS of GetParameter and GetParameters per account and Region, and the IaC does not turn on the higher throughput setting. The tier is CF-SSM-002's concern. Quiet when the usage file does not state it. |
 | OPS-025 | S3 replication metrics not enabled | `CF-S3-011` | `covered` |  |
 | OPS-026 | EC2 instances have no patch baseline | `CF-PATCH-001` | `covered` |  |
 | OPS-027 | Alarms have no escalation path | `CF-ALARM-003` | `covered` | The template check also passes on an alarm action that targets a response plan ARN, and needs an alarm with an action. |
@@ -172,15 +172,15 @@ Which CDK rules have a template check, and which AWS Foundational Security Best 
 | PERF-006 | CloudFront caching strategy not optimized | `CF-CF-013` | `covered` | Narrowed: CF-CF-013 reports only the managed CachingDisabled policy on a static-looking path, because a template does not show other caching gaps. |
 | PERF-007 | ECS task sizing (CPU/memory) may need review | `CF-ECS-011` | `covered` |  |
 | PERF-008 | RDS instance class may be oversized | `CF-PERF-003` | `covered` | PERF-008 reads instance types in files that define an RDS database; CF-PERF-003 reads DBInstanceClass. |
-| PERF-011 | Global Accelerator not used for global traffic |  | `advice` | Global Accelerator depends on where users are. |
+| PERF-011 | Global Accelerator not used for global traffic |  | `repo` | Reads `workload.user_regions` from the usage file: users in 2 or more Regions, a load balancer in the IaC and no Global Accelerator. Quiet when the usage file does not state it. |
 | PERF-013 | AppSync API caching not enabled | `CF-APPSYNC-004` | `covered` | Advice: a cache suits repeated reads. A merged API is not judged. |
-| PERF-014 | S3 Transfer Acceleration not enabled for global uploads |  | `advice` | Transfer Acceleration depends on where uploads come from. |
+| PERF-014 | S3 Transfer Acceleration not enabled for global uploads |  | `repo` | Reads `workload.upload_regions` from the usage file: uploads from 2 or more Regions, an S3 bucket in the IaC and no Transfer Acceleration. Quiet when the usage file does not state it. |
 | PERF-015 | Lambda SnapStart not enabled for Java functions | `CF-LAM-010` | `covered` | CF-LAM-010 reads a Java runtime with SnapStart.ApplyOn not PublishedVersions. |
 | SUST-001 | Fleet may not use Spot for interruptible workloads | `CF-SUST-001`, `CF-SUST-002`, `CF-SUST-003` | `covered` | CF-SUST-001 checks Auto Scaling groups (ECS on EC2 runs on one), CF-SUST-002 Fargate and CF-SUST-003 launch templates. |
-| SUST-002 | Right-sizing and efficiency review recommended |  | `advice` | Right-sizing needs usage data. CF-PERF-003/004 flag large instances. |
-| SUST-003 | Scheduled scaling not configured for predictable patterns |  | `advice` | Scheduled scaling depends on traffic patterns. |
-| SUST-004 | Consider async processing for batch workloads |  | `advice` | Architecture advice. |
-| SUST-005 | Consider managed services over self-managed |  | `advice` | Architecture advice. |
+| SUST-002 | Right-sizing and efficiency review recommended |  | `repo` | Reads `avg_cpu_percent` (`instance` or `db_instance`) from the usage file: under 20%. A resource CF-PERF-003/004 already flags as large is left to them. Quiet when the usage file does not state it. |
+| SUST-003 | Scheduled scaling not configured for predictable patterns |  | `repo` | Reads `workload.traffic_pattern` from the usage file: `daily` or `business-hours`, scaling compute in the IaC and no scheduled scaling action. Quiet when the usage file does not state it. |
+| SUST-004 | Consider async processing for batch workloads |  | `repo` | Reads the repo: reports once when the production IaC declares batch work (AWS Batch, a Step Functions Map state, a Glue job, EMR, an ECS scheduled task, a Lambda function on a schedule) and no repo note (named or headed for batch, async, processing, an ADR or a decision) names the batch path and why it is synchronous or asynchronous. |
+| SUST-005 | Consider managed services over self-managed |  | `repo` | Reads the repo: reports once when the production IaC runs a store itself (a database, cache, queue or search engine installed on a host by user data, or a container image such as postgres, mysql, redis, kafka, rabbitmq, mongo or elasticsearch) and no repo note (named or headed for self-managed, managed services, an ADR, a decision or the architecture) names each such component and why it is not a managed service. |
 | SUST-006 | CloudFront compression not enabled | `CF-CF-007` | `covered` |  |
 | SUST-007 | Latest generation instance types not used | `CF-GEN-001` | `covered` |  |
 | REPO-001 | Repo has no automated tests |  | `repo` | Looks for test directories and test file names. |
@@ -251,7 +251,7 @@ Which CDK rules have a template check, and which AWS Foundational Security Best 
 | REPO-066 | Dedicated connectivity or VPN has no redundant link |  | `repo` | Fires on exactly one Direct Connect connection or virtual interface with no second one, LAG or VPN backup, and on exactly one VPN connection with one customer gateway and no Direct Connect; no hybrid link passes. |
 | REPO-067 | Traffic is not spread by a load balancer |  | `repo` | Fires on a production EC2 instance with a public IP or Elastic IP when the repo declares no load balancer, and on a target group with exactly one literal target and no Auto Scaling group or ECS service registered. |
 | REPO-068 | Edge uses an older network protocol |  | `repo` | Fires on explicit CloudFront http1.1, a CloudFront viewer minimum below TLSv1.2, a load balancer TLS policy that allows TLS 1.0 or 1.1, an API Gateway domain on TLS_1_0, or an internet-facing HTTP listener that forwards instead of redirecting; dev and staging paths are skipped. |
-| REPO-069 | No Cost and Usage Report or data export |  | `repo` | Fires when production IaC declares compute, a data store or an edge and the repo has no Cost and Usage Report or AWS Data Exports export. Org-level: off unless `rules.org`. |
+| REPO-069 | No Cost and Usage Report or data export |  | `repo` | Fires when production IaC declares compute, a data store or an edge and the repo has no Cost and Usage Report or AWS Data Exports export. Org-level: off unless `rules.org`. `--live-account` reads a Cost and Usage Report or Data Exports export (`cur:DescribeReportDefinitions`, `bcm-data-exports:ListExports`): one found clears this rule; none is `ACCT-004`, unless this rule already fired. Same org gate. |
 | REPO-070 | No cost attribution tag or cost category |  | `repo` | Fires when production IaC declares compute, a data store or an edge and no tag is keyed CostCenter, BusinessUnit, Project, Product or CostCategory (any case) and no Cost Categories rule exists; Owner, Environment and Name keys do not count. |
 | REPO-071 | No unit-cost metric for the workload |  | `repo` | When production IaC runs compute, looks for a metric named like CostPerRequest or UnitCost in a metric-name position (metric name, metric filter, metric math label or id, Powertools or embedded metric format); comments and README text do not count. |
 | REPO-072 | Costs are not allocated by workload metrics |  | `repo` | When production IaC runs compute, looks for metric math on an alarm or dashboard (or a CDK MathExpression) that reads EstimatedCharges or a unit-cost metric and at least one other metric. |
@@ -277,7 +277,7 @@ Which CDK rules have a template check, and which AWS Foundational Security Best 
 | REPO-092 | Marketplace product with no recorded agreement term |  | `repo` | Fires when the IaC uses an AWS Marketplace AMI, product code or Service Catalog Marketplace product and no MarketplaceTerm, ContractTerm, ContractEnd, LicenseTerm or SubscriptionTerm tag and no marketplace, third-party, vendor or licence note gives a term, renewal or date. |
 | REPO-093 | Organization tracks no shared Savings Plans or Reserved Instances |  | `repo` | Fires only on an organization stack (Organizations accounts, OUs or a service control policy) with no Savings Plans or RI utilization or coverage budget, no RI or Savings Plans sharing setting, and no note named or headed savings plan, reserved instance or commitment. |
 | REPO-094 | Data transfer between Availability Zones or Regions is not modeled |  | `repo` | Fires when production IaC creates resources that move data across Availability Zones or Regions (Multi-AZ database or cache, replicated ElastiCache group, zone-aware OpenSearch domain, MSK cluster, Aurora readers, Auto Scaling group, ECS service or EKS node group over several subnets, S3 or DynamoDB replication, AWS Backup copy action, snapshot copy, EFS replication) and there is no DataTransfer, TransferCost or CrossAZTraffic tag, no data-transfer, cross-AZ or egress comment on or above the resource, and no note named or headed for data transfer that gives a size, unit or service. |
-| REPO-095 | Data movers pay for transfer they could avoid |  | `repo` | Fires when a Lambda function, ECS service or EC2 instance in a VPC reaches S3 or DynamoDB through a NAT gateway (explicit, or the CDK default VPC) with no gateway endpoint for it and no single-AZ VPC, or when production IaC copies data to another Region with no recorded reason and no VPC endpoint. |
+| REPO-095 | Data movers pay for transfer they could avoid |  | `repo` | Fires when a Lambda function, ECS service or EC2 instance in a VPC reaches S3 or DynamoDB through a NAT gateway (explicit, or the CDK default VPC) with no gateway endpoint for it and no single-AZ VPC, or when production IaC copies data to another Region with no recorded reason and no VPC endpoint. COST08-BP02 is also answered by `CF-VPC-002` and `CF-VPC-003` for the NAT path to S3 or DynamoDB with no gateway endpoint; the cross-Region copy and its recorded reason stay on this rule, since a template does not hold them. |
 | REPO-096 | Workload demand is not analysed |  | `repo` | Fires when production IaC has compute (Lambda, ECS service, EKS cluster, EC2 or Auto Scaling group, App Runner) and no scheduled scaling action, no demand metric (queue depth, request count, invocations, concurrency) used to scale or alarm, and no note named or headed demand, traffic, usage pattern, load profile or capacity plan that gives a rate, volume or calendar pattern. CPU and memory alone do not count. |
 | REPO-097 | Demand has no buffer or throttle |  | `repo` | Fires when production IaC has an API Gateway API and no stage or usage plan throttle, no WAF rate-based rule and no Lambda reserved concurrency, or a Lambda function invoked directly by SNS or S3 with no SQS queue, Kinesis stream or EventBridge bus and no reserved or provisioned concurrency. |
 | REPO-098 | Service levels are not aligned with sustainability goals |  | `repo` | Fires when production IaC has workload resources and no note named or headed SLA, SLO, service level, availability target or reliability target mentions a sustainability word (sustainability, carbon, energy, emissions, idle, utilization, right-sizing, scale to zero, off-hours). |
@@ -390,7 +390,7 @@ Which CDK rules have a template check, and which AWS Foundational Security Best 
 
 ## FSBP controls
 
-Controls a template can show. Account-level controls (for example S3.1, EC2.7 and IAM password policy controls) are not listed.
+Controls a template can show. The account-level controls a template cannot show are under [Account-level FSBP controls](#account-level-fsbp-controls).
 
 | Control | Check | Resource type |
 | -- | -- | -- |
@@ -559,9 +559,21 @@ Controls a template can show. Account-level controls (for example S3.1, EC2.7 an
 | StepFunctions.1 | `CF-SFN-003` | `AWS::StepFunctions::StateMachine` |
 | Transfer.2 | `CF-TRANSFER-001` | `AWS::Transfer::Server` |
 
+## Account-level FSBP controls
+
+Account settings, not resources: no template holds them. `--live-account` reads them read-only on every scan and reports each control that is off as one finding. A read the credentials may not make is a report warning, not a finding. Without the flag these ids do not run.
+
+| Control | Live read | Finding |
+| -- | -- | -- |
+| S3.1 | `s3control:GetPublicAccessBlock` for the account: all four settings on. No configuration is off. | `ACCT-001` |
+| EC2.7 | `ec2:GetEbsEncryptionByDefault` in the scan's Region. | `ACCT-002` |
+| IAM.7 | `iam:GetAccountPasswordPolicy`: upper and lower case, numbers and symbols required (IAM.7), at least 14 characters (IAM.15), 24 passwords remembered (IAM.16), expiry within 90 days. No policy is off. | `ACCT-003` |
+
+Not an FSBP control, read the same way: a Cost and Usage Report or a Data Exports export (`cur:DescribeReportDefinitions`, `bcm-data-exports:ListExports`, in us-east-1). Either one answers COST03-BP01; none is `ACCT-004`. A found export also clears `REPO-069`. A cost export belongs to the management account, so this read has the org gate of `REPO-069`: it runs only with `rules.org`, or when `rules.include` names `ACCT-004` or `REPO-069`.
+
 ## Practices that stay on a repo rule
 
-Operational excellence, cost optimization and sustainability best practices that only a `REPO-*` rule answers. `tests/test_coverage_doc.py` checks both lists against `wa_map.py`.
+Operational excellence, cost optimization and sustainability best practices that only a `REPO-*` rule answers. `tests/test_coverage_doc.py` checks the list against `wa_map.py`.
 
 Process practices are about people, ownership, reviews, documents and account-wide policy. No resource property in a stack shows them, so the repo rule (a note, a runbook, CI config, a template in the repo) stays the answer:
 
@@ -569,8 +581,4 @@ Process practices are about people, ownership, reviews, documents and account-wi
 - Cost optimization (32): COST01-BP01, COST01-BP02, COST01-BP04, COST01-BP07, COST01-BP08, COST01-BP09, COST02-BP01, COST02-BP02, COST02-BP03, COST02-BP04, COST02-BP05, COST02-BP06, COST03-BP03, COST03-BP04, COST03-BP06, COST04-BP02, COST05-BP01, COST05-BP02, COST05-BP03, COST05-BP04, COST05-BP06, COST06-BP01, COST06-BP04, COST07-BP01, COST07-BP02, COST07-BP03, COST07-BP05, COST08-BP01, COST09-BP01, COST10-BP01, COST10-BP02, COST11-BP01
 - Sustainability (14): SUS01-BP01, SUS02-BP02, SUS02-BP04, SUS02-BP05, SUS03-BP02, SUS03-BP03, SUS03-BP04, SUS03-BP05, SUS04-BP01, SUS06-BP01, SUS06-BP02, SUS06-BP03, SUS06-BP04, SUS06-BP05
 
-These have a resource control but no template check yet, so the repo rule still answers them:
-
-- Operational excellence (4): OPS04-BP04, OPS08-BP01, OPS08-BP03, OPS10-BP07
-- Cost optimization (4): COST03-BP01, COST04-BP01, COST08-BP02, COST09-BP02
-- Sustainability (5): SUS02-BP06, SUS04-BP02, SUS04-BP06, SUS04-BP08, SUS05-BP04
+No template check yet: none. Every practice with a resource control now has a template check or a live account read, so this list is empty. A practice that loses its check fails `tests/test_coverage_doc.py` until it is listed above as a process practice.

@@ -19,6 +19,17 @@ alone. A usage profile states the usage, and only what it states is priced:
 
 A resource's own entry wins over its type's defaults, key by key. Without a profile
 nothing usage-based is priced.
+
+The same file carries the usage signals a few rules read instead of a resource property
+(rules/usage_signals.py): per type or resource (SIGNAL_FIELDS) and for the whole workload:
+
+    defaults:
+      db_instance:
+        read_write_ratio: 6         # REL-011
+    workload:
+      traffic_pattern: business-hours   # SUST-003
+      user_regions: 3                   # PERF-011
+      upload_regions: 2                 # PERF-014
 """
 from __future__ import annotations
 
@@ -49,7 +60,17 @@ FIELDS: dict[str, tuple[str, ...]] = {
     "sqs_queue": ("monthly_requests",),
     "sns_topic": ("monthly_requests",),
 }
-_ALL_FIELDS = sorted({key for keys in FIELDS.values() for key in keys})
+# Resource type -> the usage signals it carries. Rules read them; nothing is priced from them.
+SIGNAL_FIELDS: dict[str, tuple[str, ...]] = {
+    "db_instance": ("read_write_ratio", "avg_cpu_percent"),
+    "rds_cluster": ("read_write_ratio",),
+    "instance": ("avg_cpu_percent",),
+    "ssm_parameter": ("get_parameter_tps",),
+}
+TRAFFIC_PATTERNS = ("steady", "daily", "business-hours", "spiky")
+WORKLOAD_FIELDS = ("traffic_pattern", "user_regions", "upload_regions")
+_TYPES = {t: FIELDS.get(t, ()) + SIGNAL_FIELDS.get(t, ()) for t in {**FIELDS, **SIGNAL_FIELDS}}
+_ALL_FIELDS = sorted({key for keys in _TYPES.values() for key in keys})
 
 
 class UsageError(ConfigError):
@@ -61,6 +82,7 @@ class UsageProfile:
     defaults: Mapping[str, Mapping[str, Any]] = field(default_factory=dict)
     resources: Mapping[str, Mapping[str, Any]] = field(default_factory=dict)
     path: str = ""
+    workload: Mapping[str, Any] = field(default_factory=dict)
 
     def for_resource(self, rtype: str | None, name: str) -> dict[str, Any] | None:
         """The usage stated for one resource (its type's defaults, then its own entry), or None."""
@@ -70,16 +92,33 @@ class UsageProfile:
         merged = {k: v for k, v in merged.items() if k in FIELDS[rtype]}
         return merged or None
 
+    def signal(self, key: str, types: tuple[str, ...]) -> list[tuple[str, Any]]:
+        """Where a usage signal is stated: ("defaults.<type>", value) per type default, and
+        ("resources.<name>", value) per resource entry that sets it."""
+        out = [(f"defaults.{t}", self.defaults[t][key]) for t in types if key in self.defaults.get(t, {})]
+        out += [(f"resources.{name}", entry[key]) for name, entry in self.resources.items() if key in entry]
+        return out
+
 
 def _value(key: str, value: Any, where: str) -> Any:
     if key == "storage_class":
         if value not in S3_CLASSES:
             raise UsageError(f"{where}.storage_class must be one of {', '.join(S3_CLASSES)}")
         return value
+    if key == "traffic_pattern":
+        if value not in TRAFFIC_PATTERNS:
+            raise UsageError(f"{where}.traffic_pattern must be one of {', '.join(TRAFFIC_PATTERNS)}")
+        return value
+    if key in ("user_regions", "upload_regions"):
+        if isinstance(value, bool) or not isinstance(value, int) or value < 1:
+            raise UsageError(f"{where}.{key} must be a whole number of Regions, 1 or more")
+        return value
     if isinstance(value, bool) or not isinstance(value, (int, float)) or not math.isfinite(value):
         raise UsageError(f"{where}.{key} must be a number")
     if value < 0:
         raise UsageError(f"{where}.{key} must not be negative")
+    if key == "avg_cpu_percent" and value > 100:
+        raise UsageError(f"{where}.avg_cpu_percent must be 100 or less")
     return value
 
 
@@ -97,21 +136,23 @@ def parse(data: Any, path: str = "") -> UsageProfile:
     if data is None:
         return UsageProfile(path=path)
     if not isinstance(data, dict):
-        raise UsageError("the usage profile must be a mapping with defaults and/or resources")
-    unknown = sorted(set(map(str, data)) - {"defaults", "resources"})
+        raise UsageError("the usage profile must be a mapping with defaults, resources and/or workload")
+    unknown = sorted(set(map(str, data)) - {"defaults", "resources", "workload"})
     if unknown:
-        raise UsageError(f"unknown top-level key(s) {', '.join(unknown)}; allowed: defaults, resources")
+        raise UsageError(f"unknown top-level key(s) {', '.join(unknown)}; allowed: defaults, resources, workload")
     defaults_raw = {} if data.get("defaults") is None else data["defaults"]
     resources_raw = {} if data.get("resources") is None else data["resources"]
     if not isinstance(defaults_raw, dict) or not isinstance(resources_raw, dict):
         raise UsageError("defaults and resources must be mappings")
     defaults = {}
     for rtype, entry in defaults_raw.items():
-        if rtype not in FIELDS:
-            raise UsageError(f"defaults: unknown resource type {rtype!r}; allowed: {', '.join(FIELDS)}")
-        defaults[str(rtype)] = _entry(entry, FIELDS[str(rtype)], f"defaults.{rtype}")
+        if rtype not in _TYPES:
+            raise UsageError(f"defaults: unknown resource type {rtype!r}; allowed: {', '.join(sorted(_TYPES))}")
+        defaults[str(rtype)] = _entry(entry, _TYPES[str(rtype)], f"defaults.{rtype}")
     resources = {str(name): _entry(entry, _ALL_FIELDS, f"resources.{name}") for name, entry in resources_raw.items()}
-    return UsageProfile(defaults, resources, path)
+    workload_raw = {} if data.get("workload") is None else data["workload"]
+    workload = _entry(workload_raw, WORKLOAD_FIELDS, "workload")
+    return UsageProfile(defaults, resources, path, workload)
 
 
 def load(path: Path) -> UsageProfile:

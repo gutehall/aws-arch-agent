@@ -28,7 +28,7 @@ from aws_arch_agent.rules.registry import ALL_RULES
 from aws_arch_agent.rules.repo_practices import AI_REPO_RULES
 from aws_arch_agent.rules.runner import filter_by_severity, run_all_rules
 from aws_arch_agent.rules import account, cf_template, effort, environments, nonprod, regions, stack_cost, themes
-from aws_arch_agent.rules import ai_gate, well_architected
+from aws_arch_agent.rules import ai_gate, usage_signals, well_architected
 from aws_arch_agent.rules.tag_policy import TagPolicy, use_tag_policy
 from aws_arch_agent.report.markdown import render_markdown
 from aws_arch_agent.tools.cdk_synth import (
@@ -257,7 +257,8 @@ def node_collect(state: State) -> State:
         ai_gate.observe_cdk_source(files, repo_path)
     with limit_to_files(repo_path, files):
         findings, warnings = run_all_rules(repo_path, rules, _languages_to_scan(language))
-    findings = account.apply(findings, ctx.notes)
+    findings = account.apply(
+        findings, ctx.notes, state.get("rules_include"), state.get("rules_exclude"), bool(state.get("rules_org")))
     unfiltered = findings
     findings = _shown(findings, state)
 
@@ -582,6 +583,7 @@ def node_report(state: State) -> State:
         templates=bool(state.get("synth_ok")),
         theme_filter=wanted,
         severity_threshold=state.get("severity_threshold"),
+        usage_stated=usage_signals.stated(Path(state["repo_path"])),
     )
     cost = stack_cost.summary(findings, Path(state["repo_path"]))
     if cost is not None:

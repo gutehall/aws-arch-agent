@@ -138,3 +138,19 @@ def test_repo_only_practices_are_listed_as_process_or_open() -> None:
     assert set(listed) == repo_only, (
         f"listed but has a resource rule: {sorted(set(listed) - repo_only)}; "
         f"repo-only but not listed: {sorted(repo_only - set(listed))}")
+
+
+def test_account_fsbp_rows_name_a_live_control() -> None:
+    from aws_arch_agent.rules.account import ACCOUNT_CONTROLS
+
+    rows = re.findall(r"^\| ([A-Za-z0-9]+\.\d+) \| .+ \| `(ACCT-\d{3})` \|$", _section("Account-level FSBP controls"), re.M)
+    assert sorted(rows) == sorted((c.control, c.id) for c in ACCOUNT_CONTROLS if c.control)
+
+
+def test_no_template_check_yet_list_is_empty() -> None:
+    """Every practice a repo rule alone answers is a listed process practice; none waits on a
+    template check. A practice that loses its template check must be given a status above."""
+    section = _section("Practices that stay on a repo rule")
+    line = next(row for row in section.splitlines() if row.startswith("No template check yet:"))
+    assert not re.findall(r"\b(?:OPS|COST|SUS)\d{2}-BP\d{2}\b", line)
+    assert "none" in line
