@@ -23,7 +23,8 @@ def test_org_rules_run_when_enabled(tmp_path: Path) -> None:
     _report, _ctx, findings, _warnings = analyze_v1(tmp_path, use_llm=False, rules_org=True)
     ids = {finding.id for finding in findings}
     # CF-BEDROCK-004 reads Bedrock resources in a template; test_ai_checks.py covers it.
-    assert ORG_RULE_IDS - {"CF-BEDROCK-004"} <= ids
+    # ACCT-004 is the --live-account cost export read; test_live_account.py covers it.
+    assert ORG_RULE_IDS - {"CF-BEDROCK-004", "ACCT-004"} <= ids
 
 
 def test_include_runs_one_org_rule(tmp_path: Path) -> None:

@@ -629,23 +629,10 @@ class SsmParameterAdvancedTier(Rule):
     )
 
     def run(self, repo_path: Path, language: str = "typescript") -> List[Finding]:
-        param_pat = r'new\s+ssm\.(StringParameter|CfnParameter)\(' if language == "typescript" else r'ssm\.(StringParameter|CfnParameter)\('
-        params = rg(repo_path, param_pat, glob=code_glob(language))
-        # Throughput is an account and Region setting, separate from the parameter tier.
-        throughput = rg(repo_path, r'high-throughput-enabled', glob=code_glob(language))
-        out: List[Finding] = []
-        if params and not throughput:
-            return [Finding(
-                id=self.id,
-                title=self.title,
-                severity="Low",
-                category=self.category,
-                file=None,
-                line=None,
-                evidence=None,
-                recommendation=self.recommendation,
-            )]
-        return out
+        # Answered by the usage file (rules/usage_signals.py); quiet when it states nothing.
+        from aws_arch_agent.rules import usage_signals
+
+        return usage_signals.ssm_throughput(self, repo_path)
 
 
 class LambdaReservedConcurrencyHint(Rule):

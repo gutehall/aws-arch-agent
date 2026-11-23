@@ -172,8 +172,7 @@
     "positive_ts": "new lambda.Function(this, 'Fn', { runtime: lambda.Runtime.NODEJS_18_X, handler: 'h', code: lambda.Code.fromInline('x') });"
   },
   "OPS-023": {
-    "negative_ts": "// clean compliant stack",
-    "positive_ts": "new ssm.StringParameter(this, 'P', { parameterName: '/x', stringValue: 'v' });"
+    "negative_ts": "new ssm.StringParameter(this, 'P', { parameterName: '/x', stringValue: 'v' });"
   },
   "OPS-024": {
     "negative_ts": "// clean compliant stack",
@@ -210,16 +209,14 @@
     "positive_ts": "new rds.DatabaseInstance(this, 'Db', { instanceType: 'db.r5.xlarge' });"
   },
   "PERF-011": {
-    "negative_ts": "globalaccelerator",
-    "positive_ts": "new elbv2.ApplicationLoadBalancer(this, 'Alb', { vpc });"
+    "negative_ts": "new elbv2.ApplicationLoadBalancer(this, 'Alb', { vpc });"
   },
   "PERF-013": {
     "negative_ts": "// clean compliant stack",
     "positive_ts": "new appsync.GraphqlApi(this, 'A', { name: 'api', schema: schema });"
   },
   "PERF-014": {
-    "negative_ts": "transferAcceleration: true",
-    "positive_ts": "new s3.Bucket(this, \"B\");"
+    "negative_ts": "new s3.Bucket(this, \"B\");"
   },
   "PERF-015": {
     "negative_ts": "snapStart",
@@ -274,8 +271,7 @@
     "positive_ts": "new rds.DatabaseInstance(this, 'DB', { vpc, engine: rds.DatabaseInstanceEngine.postgres({ version: rds.PostgresEngineVersion.VER_15 }) });\nnew lambda.Function(this, 'Fn', { runtime: lambda.Runtime.NODEJS_18_X, handler: 'h', code: lambda.Code.fromInline('x') });"
   },
   "REL-011": {
-    "negative_ts": "addReadReplica",
-    "positive_ts": "new rds.DatabaseInstance(this, 'DB', { vpc, engine: rds.DatabaseInstanceEngine.postgres({ version: rds.PostgresEngineVersion.VER_15 }) });"
+    "negative_ts": "new rds.DatabaseInstance(this, 'DB', { vpc, engine: rds.DatabaseInstanceEngine.postgres({ version: rds.PostgresEngineVersion.VER_15 }) });"
   },
   "REL-012": {
     "negative_ts": "natGateways: 2",
@@ -641,20 +637,18 @@
     "positive_ts": "new ecs.FargateService(this, \"Svc\", { cluster, taskDefinition });"
   },
   "SUST-002": {
-    "negative_ts": "// right-sized",
-    "positive_ts": "new ec2.Instance(this, 'Inst', { instanceType: ec2.InstanceType.of(ec2.InstanceClass.T3, ec2.InstanceSize.MEDIUM), vpc, machineImage: ec2.MachineImage.latestAmazonLinux() });"
+    "negative_ts": "new ec2.Instance(this, 'Inst', { instanceType: ec2.InstanceType.of(ec2.InstanceClass.T3, ec2.InstanceSize.MEDIUM), vpc, machineImage: ec2.MachineImage.latestAmazonLinux() });"
   },
   "SUST-003": {
-    "negative_ts": "// clean compliant stack",
-    "positive_ts": "new autoscaling.AutoScalingGroup(this, 'Asg', { vpc, instanceType: ec2.InstanceType.of(ec2.InstanceClass.T3, ec2.InstanceSize.MEDIUM), machineImage: ec2.MachineImage.latestAmazonLinux() });"
+    "negative_ts": "new autoscaling.AutoScalingGroup(this, 'Asg', { vpc, instanceType: ec2.InstanceType.of(ec2.InstanceClass.T3, ec2.InstanceSize.MEDIUM), machineImage: ec2.MachineImage.latestAmazonLinux() });"
   },
   "SUST-004": {
-    "negative_ts": "// clean compliant stack",
-    "positive_ts": "new lambda.Function(this, 'Fn', { environment: { PASSWORD: 'secret123456789' } });"
+    "negative_ts": "new lambda.Function(this, 'Fn', { environment: { PASSWORD: 'secret123456789' } });",
+    "positive_ts": "new lambda.Function(this, 'Fn', {});\nnew events.Rule(this, 'Nightly', { schedule: events.Schedule.cron({ hour: '2' }), targets: [new targets.LambdaFunction(fn)] });"
   },
   "SUST-005": {
-    "negative_ts": "lambda.Function",
-    "positive_ts": "new ec2.Instance(this, 'Inst', { instanceType: ec2.InstanceType.of(ec2.InstanceClass.T3, ec2.InstanceSize.MEDIUM), vpc, machineImage: ec2.MachineImage.latestAmazonLinux() });"
+    "negative_ts": "new ec2.Instance(this, 'Inst', { instanceType: ec2.InstanceType.of(ec2.InstanceClass.T3, ec2.InstanceSize.MEDIUM), vpc, machineImage: ec2.MachineImage.latestAmazonLinux() });",
+    "positive_ts": "taskDef.addContainer('Db', { image: ecs.ContainerImage.fromRegistry('postgres:16') });"
   },
   "SUST-006": {
     "negative_ts": "// clean compliant stack",

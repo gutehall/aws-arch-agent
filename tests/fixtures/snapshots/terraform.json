@@ -77,6 +77,20 @@
     "evidence": "aws_vpc.network (aws_vpc)"
   },
   {
+    "id": "CF-OBS-001",
+    "severity": "Low",
+    "file": "main.tf",
+    "line": 24,
+    "evidence": "aws_db_instance.database (aws_db_instance)"
+  },
+  {
+    "id": "CF-OBS-003",
+    "severity": "Low",
+    "file": "main.tf",
+    "line": 41,
+    "evidence": "aws_lambda_function.worker (aws_lambda_function)"
+  },
+  {
     "id": "CF-RDS-003",
     "severity": "Medium",
     "file": "main.tf",
@@ -138,6 +152,13 @@
     "file": "main.tf",
     "line": 32,
     "evidence": "aws_sqs_queue.dead_letters (aws_sqs_queue)"
+  },
+  {
+    "id": "CF-TAG-002",
+    "severity": "Low",
+    "file": "main.tf",
+    "line": 20,
+    "evidence": "aws_s3_bucket.data (aws_s3_bucket): no created-by or owner tag (2 more resources in this stack miss them too)"
   },
   {
     "id": "CF-VPC-001",

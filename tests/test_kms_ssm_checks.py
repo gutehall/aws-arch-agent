@@ -306,6 +306,9 @@ def test_restated_throughput_rule_does_not_recommend_the_advanced_tier(tmp_path:
     lib.mkdir()
     stack = lib / "stack.ts"
     stack.write_text("new ssm.StringParameter(this, 'P', { tier: ssm.ParameterTier.ADVANCED });\n", encoding="utf-8")
+    assert SsmParameterAdvancedTier().run(tmp_path, "typescript") == []  # no usage signal: quiet
+    (tmp_path / ".aws-arch-agent-usage.yaml").write_text(
+        "defaults:\n  ssm_parameter:\n    get_parameter_tps: 90\n", encoding="utf-8")
     found = SsmParameterAdvancedTier().run(tmp_path, "typescript")
     assert [f.id for f in found] == ["OPS-023"]
     assert "does not raise this limit" in found[0].recommendation

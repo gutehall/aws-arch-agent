@@ -355,6 +355,12 @@ RULE_BEST_PRACTICES: dict[str, tuple[str, ...]] = {
     "CF-ALARM-001": ("OPS08-BP04",),
     "CF-ALARM-002": ("OPS10-BP02",),
     "CF-ALARM-003": ("OPS10-BP01", "OPS10-BP04"),
+    "CF-ALARM-004": ("OPS10-BP07",),
+    "CF-DEMAND-001": ("COST09-BP02",),
+    "CF-DEMAND-002": ("SUS02-BP06",),
+    "CF-OBS-001": ("OPS04-BP04",),
+    "CF-OBS-002": ("OPS08-BP01",),
+    "CF-OBS-003": ("OPS08-BP03",),
     "CF-ALB-001": ("SEC04-BP01",),
     "CF-ALB-002": ("SEC09-BP02",),
     "CF-ALB-003": ("SEC09-BP02",),
@@ -596,6 +602,11 @@ RULE_BEST_PRACTICES: dict[str, tuple[str, ...]] = {
     "CF-RS-007": ("OPS05-BP06",),
     "CF-RS-008": ("SEC09-BP02",),
     "CF-S3-001": ("SEC03-BP07",),
+    # Account-level FSBP controls the --live-account read answers (rules/account.py).
+    "ACCT-001": ("SEC03-BP07",),  # S3.1, as CF-S3-001
+    "ACCT-002": ("SEC08-BP02",),  # EC2.7, as CF-EBS-001
+    "ACCT-003": ("SEC02-BP01",),  # IAM.7, as SEC-035
+    "ACCT-004": ("COST03-BP01",),  # a cost export, as REPO-069
     "CF-S3-002": ("SEC08-BP02",),
     "CF-S3-003": ("REL09-BP01",),
     "CF-S3-004": ("SEC04-BP01",),
@@ -630,6 +641,11 @@ RULE_BEST_PRACTICES: dict[str, tuple[str, ...]] = {
     "CF-SUST-001": ("COST07-BP04",),
     "CF-SUST-002": ("COST07-BP04",),
     "CF-SUST-003": ("COST07-BP04",),
+    "CF-SUST-004": ("SUS05-BP04",),
+    "CF-SUST-005": ("SUS04-BP02",),
+    "CF-SUST-006": ("SUS04-BP06",),
+    "CF-SUST-007": ("SUS04-BP08",),
+    "CF-TAG-002": ("COST04-BP01",),
     "CF-SYN-001": ("OPS04-BP03",),
     "CF-TAG-001": ("COST03-BP02",),
     "CF-TGW-001": ("SEC05-BP02",),
@@ -638,8 +654,8 @@ RULE_BEST_PRACTICES: dict[str, tuple[str, ...]] = {
     "CF-TRANSFER-002": ("SEC04-BP01",),
     "CF-TRANSFER-003": ("SEC05-BP01",),
     "CF-VPC-001": ("SEC05-BP02",),
-    "CF-VPC-002": ("COST08-BP03",),
-    "CF-VPC-003": ("COST08-BP03",),
+    "CF-VPC-002": ("COST08-BP02", "COST08-BP03"),
+    "CF-VPC-003": ("COST08-BP02", "COST08-BP03"),
     "CF-VPC-004": ("REL02-BP03",),
     "CF-VPC-005": ("REL02-BP03",),
     "CF-VPC-006": ("REL02-BP04",),

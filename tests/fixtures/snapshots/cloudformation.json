@@ -49,6 +49,20 @@
     "evidence": "Network (AWS::EC2::VPC)"
   },
   {
+    "id": "CF-OBS-001",
+    "severity": "Low",
+    "file": "stack.yaml",
+    "line": 17,
+    "evidence": "Database (AWS::RDS::DBInstance)"
+  },
+  {
+    "id": "CF-OBS-003",
+    "severity": "Low",
+    "file": "stack.yaml",
+    "line": 34,
+    "evidence": "Worker (AWS::Lambda::Function)"
+  },
+  {
     "id": "CF-RDS-003",
     "severity": "Medium",
     "file": "stack.yaml",
@@ -110,6 +124,13 @@
     "file": "stack.yaml",
     "line": 25,
     "evidence": "DeadLetters (AWS::SQS::Queue)"
+  },
+  {
+    "id": "CF-TAG-002",
+    "severity": "Low",
+    "file": "stack.yaml",
+    "line": 13,
+    "evidence": "DataBucket (AWS::S3::Bucket): no created-by or owner tag (2 more resources in this stack miss them too)"
   },
   {
     "id": "CF-VPC-001",

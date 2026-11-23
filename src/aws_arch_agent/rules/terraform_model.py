@@ -896,7 +896,16 @@ def _instance(body: dict) -> dict:
             "LaunchTemplateId": _ref(template, "id"),
             "LaunchTemplateName": _ref(template, "name"),
         }
+    _set(props, "BlockDeviceMappings", _ephemeral_devices(body, "ephemeral_block_device"))
     return props
+
+
+def _ephemeral_devices(body: dict, block: str) -> list[dict] | None:
+    """Instance store devices (virtual_name ephemeralN) in the shape of BlockDeviceMappings,
+    for CF-SUST-005. A name the scan cannot read is left out."""
+    devices = [{"VirtualName": name} for item in _blocks(body, block)
+               for name in [_v(item, "virtual_name")] if type(name) is str]
+    return devices or None
 
 
 def _launch_template(body: dict) -> dict:
@@ -911,7 +920,7 @@ def _launch_template(body: dict) -> dict:
     # Its own property, so an unknown block device does not hide the Spot or IMDS checks.
     # A device whose encryption or snapshot is unknown is left out on its own, so it does
     # not hide the other devices either.
-    devices = []
+    devices = _ephemeral_devices(body, "block_device_mappings") or []
     for item in _blocks(body, "block_device_mappings"):
         name = item.get("device_name")
         for ebs in _blocks(item, "ebs"):
@@ -1914,6 +1923,32 @@ def _log_delivery_source(body: dict) -> dict:
     return {"ResourceArn": _known(_ref(body, "resource_arn"))}
 
 
+def _wafv2_web_acl(body: dict) -> dict:
+    """aws_wafv2_web_acl: whether a rule is rate-based, for CF-DEMAND-001/002. A dynamic rule may be."""
+    if "rule" in _dynamic_names(body):
+        return {"Rules": UNRESOLVED}
+    rate = any(_blocks(statement, "rate_based_statement") or "rate_based_statement" in _dynamic_names(statement)
+               for rule in _blocks(body, "rule") for statement in _blocks(rule, "statement"))
+    return {"Rules": [{"Statement": {"RateBasedStatement": {}}}] if rate else []}
+
+
+def _sns_subscription(body: dict) -> dict:
+    """aws_sns_topic_subscription: the protocol and the endpoint it delivers to."""
+    props: dict = {}
+    _set(props, "Protocol", _v(body, "protocol"))
+    _set(props, "Endpoint", _ref(body, "endpoint"))
+    return props
+
+
+def _s3_bucket_notification(body: dict) -> dict:
+    """aws_s3_bucket_notification: the functions it invokes, in the shape of a bucket's
+    NotificationConfiguration.LambdaConfigurations."""
+    if "lambda_function" in _dynamic_names(body):
+        return {"LambdaConfigurations": UNRESOLVED}
+    return {"LambdaConfigurations": [{"Function": _ref(item, "lambda_function_arn")}
+                                     for item in _blocks(body, "lambda_function")]}
+
+
 def _waf_association(body: dict) -> dict:
     props: dict = {}
     _set(props, "ResourceArn", _known(_ref(body, "resource_arn")))
@@ -1981,6 +2016,7 @@ def _metric_query(block: dict) -> Any:
     if metric:
         fields: dict = {}
         _set(fields, "Namespace", _ref(metric, "namespace"))
+        _set(fields, "MetricName", _ref(metric, "metric_name"))
         _set(fields, "Dimensions", _alarm_dimensions(metric))
         query["MetricStat"] = {"Metric": fields}
     return query
@@ -1992,6 +2028,7 @@ def _metric_alarm(body: dict) -> dict:
     _set(props, "AlarmActions", _ref(body, "alarm_actions"))
     _set(props, "ActionsEnabled", _v(body, "actions_enabled"))
     _set(props, "Namespace", _ref(body, "namespace"))
+    _set(props, "MetricName", _ref(body, "metric_name"))  # CF-SUST-004
     _set(props, "Dimensions", _alarm_dimensions(body))
     if "metric_query" in _dynamic_names(body):
         props["Metrics"] = UNRESOLVED
@@ -2053,6 +2090,10 @@ def _ssmincidents_response_plan(body: dict) -> dict:
     """aws_ssmincidents_response_plan: engagements are the contacts it pages."""
     props: dict = {}
     _set(props, "Engagements", _ref(body, "engagements"))
+    if "action" in _dynamic_names(body):
+        props["Actions"] = UNRESOLVED
+    elif any(_blocks(a, "ssm_automation") for a in _blocks(body, "action")):
+        props["Actions"] = [{"SsmAutomation": {}}]  # CF-ALARM-004
     return props
 
 
@@ -2493,6 +2534,7 @@ def _event_rule(body: dict) -> dict:
 def _event_target(body: dict) -> dict:
     """aws_cloudwatch_event_target in the shape of one entry in a rule's Targets."""
     props: dict = {}
+    _set(props, "Arn", _ref(body, "arn"))  # CF-ALARM-004: an SSM Automation target
     names = _dynamic_names(body)
     dead_letter = _first_block(body, "dead_letter_config")
     if "dead_letter_config" in names:
@@ -2734,6 +2776,7 @@ def _launch_configuration(body: dict) -> dict:
     _set(props, "InstanceType", _v(body, "instance_type"))
     _set(props, "MetadataOptions", _metadata_options(body))
     _set(props, "AssociatePublicIpAddress", _v(body, "associate_public_ip_address"))
+    _set(props, "BlockDeviceMappings", _ephemeral_devices(body, "ephemeral_block_device"))
     return props
 
 
@@ -3061,6 +3104,9 @@ def _budgets_budget(body: dict) -> dict:
 
 
 _ADAPTERS: dict[str, Callable[[dict], dict]] = {
+    "aws_wafv2_web_acl": _wafv2_web_acl,
+    "aws_sns_topic_subscription": _sns_subscription,
+    "aws_s3_bucket_notification": _s3_bucket_notification,
     "aws_guardduty_detector": _guardduty_detector,
     "aws_guardduty_detector_feature": _guardduty_detector_feature,
     "aws_securityhub_account": _securityhub_account,
