@@ -10,13 +10,13 @@ A scan needs no AWS credentials. Price lookups are the only network calls, unles
 
 Python 3.11+, git, and [ripgrep](https://github.com/BurntSushi/ripgrep#installation) (`brew install ripgrep`, `sudo apt install ripgrep`, or `winget install BurntSushi.ripgrep.MSVC`).
 
-Latest release: [v1.2.0](https://github.com/gutehall/aws-arch-agent/releases/tag/v1.2.0). The package is on [PyPI](https://pypi.org/project/aws-arch-agent/).
+Latest release: [v1.3.0](https://github.com/gutehall/aws-arch-agent/releases/tag/v1.3.0). The package is on [PyPI](https://pypi.org/project/aws-arch-agent/).
 
 ```bash
 python3 -m venv .venv
 source .venv/bin/activate
-pip install "aws-arch-agent==1.2.0"
-aws-arch-agent --version   # 1.2.0
+pip install "aws-arch-agent==1.3.0"
+aws-arch-agent --version   # 1.3.0
 ```
 
 Windows (PowerShell):
@@ -24,8 +24,8 @@ Windows (PowerShell):
 ```powershell
 py -m venv .venv
 .venv\Scripts\Activate.ps1
-pip install "aws-arch-agent==1.2.0"
-aws-arch-agent --version   # 1.2.0
+pip install "aws-arch-agent==1.3.0"
+aws-arch-agent --version   # 1.3.0
 ```
 
 Without a virtual environment:
@@ -37,7 +37,7 @@ pipx install aws-arch-agent
 From GitHub:
 
 ```bash
-pip install "git+https://github.com/gutehall/aws-arch-agent@v1.2.0"
+pip install "git+https://github.com/gutehall/aws-arch-agent@v1.3.0"
 ```
 
 | Extra | Adds |
@@ -47,7 +47,7 @@ pip install "git+https://github.com/gutehall/aws-arch-agent@v1.2.0"
 | `v2` | LangGraph mode and `cdk synth` |
 | `rag` | embedding search over `--rag` |
 
-`pip install "aws-arch-agent[v2]==1.2.0"`. V2 synth also needs Node.js (`npx`). To work on the scanner, see [CONTRIBUTING.md](CONTRIBUTING.md).
+`pip install "aws-arch-agent[v2]==1.3.0"`. V2 synth also needs Node.js (`npx`). To work on the scanner, see [CONTRIBUTING.md](CONTRIBUTING.md).
 
 ## Usage
 
@@ -105,7 +105,7 @@ aws-arch-agent --repo . --no-llm --fail-on high --enforce-baseline
 To accept one finding in source, put `# aws-arch-agent: ignore <RULE_ID> reason="..." expires=YYYY-MM-DD` on its line or the line above. [Inline suppressions](docs/CONFIG.md#inline-suppressions).
 
 ```yaml
-- uses: gutehall/aws-arch-agent/.github/actions/aws-arch-agent@v1.2.0
+- uses: gutehall/aws-arch-agent/.github/actions/aws-arch-agent@v1.3.0
   with:
     repo: .
     fail-on: high
