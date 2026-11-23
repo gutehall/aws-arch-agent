@@ -4,19 +4,19 @@ Local-first AWS architecture review for **CDK** (TypeScript and Python), **Cloud
 
 A scan needs no AWS credentials. Price lookups are the only network calls, unless you pass `--live-account` or point the optional LLM at a server you run. `--pricing-source off` skips prices. `--no-llm` skips the model. If the model does not answer, the findings stay as the rules wrote them.
 
-368 static rules and 328 template checks are implemented and tested. 141 of the 368 CDK rules (38%) have a template check. Those checks run on CloudFormation, Terraform, and synthesised CDK. [docs/COVERAGE.md](docs/COVERAGE.md) gives the reason for each of the others.
+368 static rules and 328 template checks are implemented and tested. 141 of the 368 CDK rules (38%) have a template check. Those checks run on CloudFormation, Terraform, and synthesised CDK. Every other rule is answered by a repo rule, a usage signal, or a `--live-account` read; [docs/COVERAGE.md](docs/COVERAGE.md) gives the reason for each.
 
 ## Install
 
 Python 3.11+, git, and [ripgrep](https://github.com/BurntSushi/ripgrep#installation) (`brew install ripgrep`, `sudo apt install ripgrep`, or `winget install BurntSushi.ripgrep.MSVC`).
 
-Latest release: [v1.1.0](https://github.com/gutehall/aws-arch-agent/releases/tag/v1.1.0). The package is on [PyPI](https://pypi.org/project/aws-arch-agent/).
+Latest release: [v1.2.0](https://github.com/gutehall/aws-arch-agent/releases/tag/v1.2.0). The package is on [PyPI](https://pypi.org/project/aws-arch-agent/).
 
 ```bash
 python3 -m venv .venv
 source .venv/bin/activate
-pip install "aws-arch-agent==1.1.0"
-aws-arch-agent --version   # 1.1.0
+pip install "aws-arch-agent==1.2.0"
+aws-arch-agent --version   # 1.2.0
 ```
 
 Windows (PowerShell):
@@ -24,8 +24,8 @@ Windows (PowerShell):
 ```powershell
 py -m venv .venv
 .venv\Scripts\Activate.ps1
-pip install "aws-arch-agent==1.1.0"
-aws-arch-agent --version   # 1.1.0
+pip install "aws-arch-agent==1.2.0"
+aws-arch-agent --version   # 1.2.0
 ```
 
 Without a virtual environment:
@@ -37,7 +37,7 @@ pipx install aws-arch-agent
 From GitHub:
 
 ```bash
-pip install "git+https://github.com/gutehall/aws-arch-agent@v1.1.0"
+pip install "git+https://github.com/gutehall/aws-arch-agent@v1.2.0"
 ```
 
 | Extra | Adds |
@@ -47,7 +47,7 @@ pip install "git+https://github.com/gutehall/aws-arch-agent@v1.1.0"
 | `v2` | LangGraph mode and `cdk synth` |
 | `rag` | embedding search over `--rag` |
 
-`pip install "aws-arch-agent[v2]==1.1.0"`. V2 synth also needs Node.js (`npx`). To work on the scanner, see [CONTRIBUTING.md](CONTRIBUTING.md).
+`pip install "aws-arch-agent[v2]==1.2.0"`. V2 synth also needs Node.js (`npx`). To work on the scanner, see [CONTRIBUTING.md](CONTRIBUTING.md).
 
 ## Usage
 
@@ -76,7 +76,7 @@ The source is detected. `--iac cdk|cloudformation|terraform` forces one. `--tf-p
 | **Sustainability** | 27 | No Spot, no right-sizing, idle resources, no data expiry |
 | **Best Practices** | 5 | Tags, secrets in environment variables, CDK Aspects |
 
-`REPO-*` checks also read notes in the repo (README, ADRs, runbooks, `docs/`). AI checks run only for an AI workload, or when `lenses.ai` is set. Account-level rules stay off until `rules.org: true`.
+`REPO-*` checks, SUST-004 and SUST-005 also read notes in the repo (README, ADRs, runbooks, `docs/`). AI checks run only for an AI workload, or when `lenses.ai` is set. Account-level rules stay off until `rules.org: true`.
 
 The report answers each of the 57 Well-Architected questions from the findings. An AI workload also gets the four lens question lists. Full lists: [docs/CF_RULES.md](docs/CF_RULES.md), [Well-Architected answers](docs/REFERENCE.md#well-architected-answers), [AI lens answers](docs/REFERENCE.md#ai-lens-answers).
 
@@ -91,7 +91,7 @@ aws-arch-agent --repo . --no-llm --max-monthly-cost 500
 aws-arch-agent --repo . --no-llm --pricing-source off
 ```
 
-Usage-based resources (S3, Lambda, NAT data, and similar) are priced only from `.aws-arch-agent-usage.yaml` or `--usage-file`. Prices, budgets, and the usage file: [docs/REFERENCE.md](docs/REFERENCE.md#prices).
+Usage-based resources (S3, Lambda, NAT data, and similar) are priced only from `.aws-arch-agent-usage.yaml` or `--usage-file`. The same file can state usage signals (read/write ratio, CPU, Parameter Store rate, a daily traffic pattern, user and upload Regions); REL-011, OPS-023, SUST-002, SUST-003, PERF-011 and PERF-014 report only when it does. Prices, budgets, and the usage file: [docs/REFERENCE.md](docs/REFERENCE.md#prices).
 
 ## CI
 
@@ -105,7 +105,7 @@ aws-arch-agent --repo . --no-llm --fail-on high --enforce-baseline
 To accept one finding in source, put `# aws-arch-agent: ignore <RULE_ID> reason="..." expires=YYYY-MM-DD` on its line or the line above. [Inline suppressions](docs/CONFIG.md#inline-suppressions).
 
 ```yaml
-- uses: gutehall/aws-arch-agent/.github/actions/aws-arch-agent@v1.1.0
+- uses: gutehall/aws-arch-agent/.github/actions/aws-arch-agent@v1.2.0
   with:
     repo: .
     fail-on: high
