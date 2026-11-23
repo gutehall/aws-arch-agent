@@ -141,6 +141,7 @@ def rules_run(
     templates: bool,
     theme_filter: Iterable[str] | None = None,
     severity_threshold: str | None = None,
+    usage_stated: Iterable[str] = (),
 ) -> List[str]:
     """The rule ids a report can show findings for.
 
@@ -155,9 +156,18 @@ def rules_run(
     if severity_threshold and severity_threshold.capitalize() != "Low":
         return []
     wanted = set(theme_filter or ())
+    from aws_arch_agent.rules.sustainability import REPO_NOTE_RULE_IDS
+    from aws_arch_agent.rules.usage_signals import USAGE_RULE_IDS
+
+    stated = set(usage_stated)
     out = []
     for rid in active:
-        if rid.startswith("REPO-"):
+        if rid in USAGE_RULE_IDS:
+            # Reads the usage file and the IaC text: runs for every source, answers only
+            # when the usage file states its signal.
+            if rid not in stated or not (cdk or templates):
+                continue
+        elif rid.startswith("REPO-") or rid in REPO_NOTE_RULE_IDS:
             if not (cdk or templates):
                 continue
         elif not (templates if rid.startswith("CF-") else cdk):
@@ -165,6 +175,12 @@ def rules_run(
         if wanted and not wanted & set(themes_of(rid)):
             continue
         out.append(rid)
+    # The account-level FSBP controls run only when the --live-account read answered them.
+    from aws_arch_agent.rules.account import ACCOUNT_CONTROL_IDS, live_checked
+
+    for rid in sorted(live_checked() & ACCOUNT_CONTROL_IDS):
+        if not wanted or wanted & set(themes_of(rid)):
+            out.append(rid)
     return out
 
 

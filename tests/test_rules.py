@@ -322,6 +322,9 @@ def test_right_sizing_hint_ts(tmp_path: Path) -> None:
         encoding="utf-8",
     )
     rule = RightSizingHint()
+    assert rule.run(tmp_path, "typescript") == []  # no usage signal: quiet
+    (tmp_path / ".aws-arch-agent-usage.yaml").write_text(
+        "defaults:\n  instance:\n    avg_cpu_percent: 6\n", encoding="utf-8")
     findings = rule.run(tmp_path, "typescript")
     assert len(findings) >= 1
     assert findings[0].id == "SUST-002"

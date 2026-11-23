@@ -32,12 +32,15 @@ TF_MAIN = 'resource "aws_s3_bucket" "data" {\n  bucket = "data"\n}\n'
 
 
 def _rule_ids() -> set[str]:
-    """Every id a scan can report: CDK rules, and template checks named anywhere in rules/."""
+    """Every id a scan can report: CDK rules, template checks named anywhere in rules/, and the
+    account-level controls of the live read."""
     emitted = set()
     for path in RULES_DIR.glob("*.py"):
         text = path.read_text(encoding="utf-8")
         emitted |= set(re.findall(r'"(CF-[A-Z0-9]+(?:-V2)?-\d{3})"', text))
-    return {r.id for r in ALL_RULES} | set(CF_TITLES) | set(CF_THEMES) | emitted
+    from aws_arch_agent.rules.account import ACCOUNT_CONTROL_IDS
+
+    return {r.id for r in ALL_RULES} | set(CF_TITLES) | set(CF_THEMES) | emitted | ACCOUNT_CONTROL_IDS
 
 
 def _ctx() -> RepoContext:

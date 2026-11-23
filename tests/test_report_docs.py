@@ -73,7 +73,9 @@ def _template_check_ids() -> set[str]:
 def test_every_rule_and_template_check_has_a_topic_and_no_other_ids_do() -> None:
     template_ids = _template_check_ids()
     assert len(template_ids) >= 99  # the regex still finds the template checks
-    ids = {rule.id for rule in ALL_RULES} | template_ids
+    from aws_arch_agent.rules.account import ACCOUNT_CONTROL_IDS
+
+    ids = {rule.id for rule in ALL_RULES} | template_ids | ACCOUNT_CONTROL_IDS
     assert sorted(ids - set(RULE_TOPICS)) == []
     assert sorted(set(RULE_TOPICS) - ids) == []
 

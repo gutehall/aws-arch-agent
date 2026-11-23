@@ -12,6 +12,10 @@ the policy does not allow, at its file and line. Tags set for a whole stack coun
 every resource under it: CDK Tags.of(app) is already on each resource in synth output,
 and Terraform provider default_tags are merged in (Resource.inherited_tags). With no
 tags.required the check is off. Keys and values are case-sensitive, as in AWS.
+
+CF-TAG-002 runs with no policy: in a stack that declares compute, a data store or an edge,
+each of those resources must carry a created-by and an owner tag, with the key names
+REPO-086 accepts (any case). Inherited tags count, as for CF-TAG-001.
 """
 from __future__ import annotations
 
@@ -20,7 +24,10 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Iterator, List
 
+import re
+
 from aws_arch_agent.models import Finding
+from aws_arch_agent.rules.repo_practices import _CREATED_BY_KEY, _OWNER_KEY, _SOURCE_KEY
 from aws_arch_agent.rules.resource_model import TF_MODULE_CALL, Resource
 
 CHECK_ID = "CF-TAG-001"
@@ -208,3 +215,65 @@ def findings(resources: List[Resource], template_path: Path) -> List[Finding]:
             ),
         ))
     return out
+
+
+LIFETIME_CHECK_ID = "CF-TAG-002"
+# Tag keys that say where a resource came from and who owns it, as REPO-086 reads them.
+_CREATED_BY = re.compile(rf"{_CREATED_BY_KEY}|{_SOURCE_KEY}", re.IGNORECASE)
+_OWNER = re.compile(_OWNER_KEY, re.IGNORECASE)
+# Compute, data stores and edges (REPO-086's workload), of the taggable types.
+_WORKLOAD_TYPES = frozenset({
+    "AWS::Lambda::Function", "AWS::ECS::Service", "AWS::EKS::Cluster", "AWS::EC2::Instance",
+    "AWS::AutoScaling::AutoScalingGroup",
+    "AWS::S3::Bucket", "AWS::DynamoDB::Table", "AWS::RDS::DBInstance", "AWS::RDS::DBCluster",
+    "AWS::ElastiCache::CacheCluster", "AWS::ElastiCache::ReplicationGroup",
+    "AWS::OpenSearchService::Domain", "AWS::EFS::FileSystem", "AWS::Redshift::Cluster",
+    "AWS::DocDB::DBCluster", "AWS::Neptune::DBCluster", "AWS::Kinesis::Stream",
+    "AWS::ApiGateway::RestApi", "AWS::ApiGatewayV2::Api",
+    "AWS::ElasticLoadBalancingV2::LoadBalancer", "AWS::CloudFront::Distribution",
+    "aws_lambda_function", "aws_ecs_service", "aws_eks_cluster", "aws_instance",
+    "aws_autoscaling_group",
+    "aws_s3_bucket", "aws_dynamodb_table", "aws_db_instance", "aws_rds_cluster",
+    "aws_elasticache_cluster", "aws_elasticache_replication_group", "aws_opensearch_domain",
+    "aws_efs_file_system", "aws_redshift_cluster", "aws_docdb_cluster", "aws_neptune_cluster",
+    "aws_kinesis_stream", "aws_api_gateway_rest_api", "aws_apigatewayv2_api", "aws_lb", "aws_alb",
+    "aws_cloudfront_distribution",
+})
+
+
+def lifetime_findings(resources: List[Resource], template_path: Path) -> List[Finding]:
+    """CF-TAG-002, once per stack: the first workload resource with no created-by or no owner
+    tag. A resource whose tags the scan cannot read is not judged."""
+    untagged: list[tuple[Resource, list[str]]] = []
+    for res in resources:
+        if res.malformed or res.source_type not in _WORKLOAD_TYPES:
+            continue
+        tags = effective_tags(res)
+        if tags is None:
+            continue
+        missing = [what for what, key in (("created-by", _CREATED_BY), ("owner", _OWNER))
+                   if not any(key.fullmatch(k.strip()) for k in tags)]
+        if missing:
+            untagged.append((res, missing))
+    if not untagged:
+        return []
+    res, missing = untagged[0]
+    others = f" ({len(untagged) - 1} more resources in this stack miss them too)" if len(untagged) > 1 else ""
+    return [Finding(
+        id=LIFETIME_CHECK_ID,
+        title="Resources are not tagged with who created and owns them",
+        severity="Low",
+        category="Cost Optimization",
+        file=res.file or str(template_path),
+        line=res.line,
+        evidence=f"{res.name} ({res.source_type}): no {' or '.join(missing)} tag{others}",
+        recommendation=(
+            "This stack runs compute, a data store or an edge, and its resources do not say where "
+            "they came from and who owns them, so nobody can tell later whether they are still used. "
+            "Add a created-by tag (CreatedBy, ManagedBy, Creator, Source, Repository, Repo or IaC) and "
+            "an owner tag (Owner, CostOwner or Team) to the resource Tags (Terraform tags), or to the "
+            "whole stack: CDK Tags.of(app).add, Terraform provider default_tags. Tags that only "
+            "`aws cloudformation deploy --tags` adds are not in the template: if you set them there, "
+            "exclude this check."
+        ),
+    )]

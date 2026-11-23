@@ -94,6 +94,11 @@ def collect(options: FinOps | None = None) -> Iterator[None]:
         _stacks, _options, _profile = saved
 
 
+def usage_profile() -> UsageProfile | None:
+    """The usage profile of the scan in progress (collect()), or None."""
+    return _profile
+
+
 def is_free(source_type: str) -> bool:
     return bool(source_type == TF_MODULE_CALL or _FREE_CF.match(source_type) or _FREE_TF.match(source_type))
 

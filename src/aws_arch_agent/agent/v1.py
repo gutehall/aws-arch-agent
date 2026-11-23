@@ -10,6 +10,7 @@ from typing import Literal
 from aws_arch_agent.models import IacSource, RepoContext, Finding
 from aws_arch_agent.rules.registry import ALL_RULES
 from aws_arch_agent.rules.repo_practices import REPO_RULES
+from aws_arch_agent.rules.sustainability import REPO_NOTE_RULE_IDS
 from aws_arch_agent.rules.cf_template import (
     run_cf_rules_from_paths,
     run_resource_checks,
@@ -28,7 +29,7 @@ from aws_arch_agent.rules.terraform_model import (
 )
 from aws_arch_agent.rules.runner import filter_by_severity, run_all_rules
 from aws_arch_agent.rules import account, cf_template, effort, environments, nonprod, regions, stack_cost, themes
-from aws_arch_agent.rules import ai_gate, well_architected
+from aws_arch_agent.rules import ai_gate, usage_signals, well_architected
 from aws_arch_agent import suppressions
 from aws_arch_agent.rules.tag_policy import TagPolicy, policy_checked, use_tag_policy
 from aws_arch_agent.report.markdown import render_markdown
@@ -280,6 +281,8 @@ ORG_RULE_IDS = frozenset({
     "REPO-162", "REPO-163",
     # Model invocation logging has no CloudFormation type: it is an account and Region setting.
     "CF-BEDROCK-004",
+    # The --live-account cost export read (rules/account.py ORG_CONTROL_IDS), gated like REPO-069.
+    "ACCT-004",
 })
 
 
@@ -527,7 +530,11 @@ def _collect_findings(
             findings.extend(found)
             warnings.extend(warned)
         # The repo-level checks (tests, pipeline, accounts, incidents, app security) read the tree.
-        repo_rules = _filter_rules(REPO_RULES, rules_include, rules_exclude, org=rules_org)
+        # The usage-signal rules (usage file and IaC text) and the repo-note rules SUST-004
+        # and SUST-005 read the repo tree, so they run here too.
+        usage_rules = [r for r in ALL_RULES
+                       if r.id in usage_signals.USAGE_RULE_IDS or r.id in REPO_NOTE_RULE_IDS]
+        repo_rules = _filter_rules([*REPO_RULES, *usage_rules], rules_include, rules_exclude, org=rules_org)
         found, warned = run_all_rules(repo_path, repo_rules, ["typescript"])
         findings.extend(found)
         warnings.extend(warned)
@@ -538,7 +545,8 @@ def _collect_findings(
             findings, warnings = run_all_rules(repo_path, rules, _languages_to_scan(language))
     if tf_plan is not None and source not in TERRAFORM_SOURCES:
         warnings.append(f"--tf-plan applies only to a Terraform scan (source is {source}); ignored")
-    findings = account.apply(findings, ctx.notes)
+    findings = usage_signals.drop_sized(findings)
+    findings = account.apply(findings, ctx.notes, rules_include, rules_exclude, rules_org)
     findings = suppressions.exclude_by_path(findings, rules_exclude_paths)
     findings = filter_by_severity(findings, severity_threshold)
     effort.annotate(findings)
@@ -609,6 +617,7 @@ def analyze_v1(
             templates=on_templates,
             theme_filter=theme_filter,
             severity_threshold=severity_threshold,
+            usage_stated=usage_signals.stated(repo_path),
         )
         cost = stack_cost.summary(findings, repo_path)
         if cost is not None:

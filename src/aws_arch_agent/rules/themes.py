@@ -24,6 +24,10 @@ def themes_of(rule_id: str) -> tuple[str, ...]:
 
     if rule_id in CF_THEMES:
         return CF_THEMES[rule_id]
+    if rule_id.startswith("ACCT-"):
+        from aws_arch_agent.rules.account import ACCOUNT_CONTROLS
+
+        return next((c.themes for c in ACCOUNT_CONTROLS if c.id == rule_id), ())
     for rule in ALL_RULES:
         if rule.id == rule_id:
             return rule.themes

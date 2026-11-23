@@ -217,22 +217,10 @@ class GlobalAcceleratorOptimization(Rule):
     )
 
     def run(self, repo_path: Path, language: str = "typescript") -> List[Finding]:
-        alb_pat = r'new\s+elbv2\.(ApplicationLoadBalancer|NetworkLoadBalancer)\(' if language == "typescript" else r'elbv2\.(ApplicationLoadBalancer|NetworkLoadBalancer)\('
-        lbs = rg(repo_path, alb_pat, glob=code_glob(language))
-        ga = rg(repo_path, r'globalaccelerator\.(Accelerator|CfnAccelerator)', glob=code_glob(language))
-        out: List[Finding] = []
-        if lbs and not ga:
-            return [Finding(
-                id=self.id,
-                title=self.title,
-                severity="Low",
-                category=self.category,
-                file=None,
-                line=None,
-                evidence=None,
-                recommendation=self.recommendation,
-            )]
-        return out
+        # Answered by the usage file (rules/usage_signals.py); quiet when it states nothing.
+        from aws_arch_agent.rules import usage_signals
+
+        return usage_signals.global_accelerator(self, repo_path)
 
 
 class AppSyncCaching(Rule):
@@ -278,22 +266,10 @@ class S3TransferAcceleration(Rule):
     )
 
     def run(self, repo_path: Path, language: str = "typescript") -> List[Finding]:
-        s3_pat = r'new\s+s3\.(Bucket|CfnBucket)\(' if language == "typescript" else r's3\.(Bucket|CfnBucket)\('
-        buckets = rg(repo_path, s3_pat, glob=code_glob(language))
-        acceleration = rg(repo_path, r'transferAcceleration.*true', glob=code_glob(language))
-        out: List[Finding] = []
-        if buckets and not acceleration:
-            return [Finding(
-                id=self.id,
-                title=self.title,
-                severity="Low",
-                category=self.category,
-                file=None,
-                line=None,
-                evidence=None,
-                recommendation=self.recommendation,
-            )]
-        return out
+        # Answered by the usage file (rules/usage_signals.py); quiet when it states nothing.
+        from aws_arch_agent.rules import usage_signals
+
+        return usage_signals.transfer_acceleration(self, repo_path)
 
 
 class LambdaSnapStart(Rule):

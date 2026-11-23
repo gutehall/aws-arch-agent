@@ -4,7 +4,7 @@ Local-first AWS architecture review for **CDK** (TypeScript and Python), **Cloud
 
 A scan needs no AWS credentials. Price lookups are the only network calls, unless you pass `--live-account` or point the optional LLM at a server you run. `--pricing-source off` skips prices. `--no-llm` skips the model. If the model does not answer, the findings stay as the rules wrote them.
 
-368 static rules and 317 template checks are implemented and tested. 141 of the 368 CDK rules (38%) have a template check. Those checks run on CloudFormation, Terraform, and synthesised CDK. [docs/COVERAGE.md](docs/COVERAGE.md) gives the reason for each of the others.
+368 static rules and 328 template checks are implemented and tested. 141 of the 368 CDK rules (38%) have a template check. Those checks run on CloudFormation, Terraform, and synthesised CDK. [docs/COVERAGE.md](docs/COVERAGE.md) gives the reason for each of the others.
 
 ## Install
 
@@ -43,7 +43,7 @@ pip install "git+https://github.com/gutehall/aws-arch-agent@v1.1.0"
 | Extra | Adds |
 |-------|------|
 | `aws` | boto3, for prices from the Price List Query API |
-| `account` | `--live-account` |
+| `account` | `--live-account`: read-only reads of account services (Security Hub, GuardDuty, CloudTrail, Config, Budgets), the account FSBP controls S3.1, EC2.7 and IAM.7, Macie, Storage Lens and a cost export, and of Reserved Instances, reserved nodes and Savings Plans for the compute the scan found |
 | `v2` | LangGraph mode and `cdk synth` |
 | `rag` | embedding search over `--rag` |
 

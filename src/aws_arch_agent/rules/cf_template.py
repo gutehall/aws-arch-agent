@@ -12,6 +12,7 @@ from aws_arch_agent.models import Finding, Severity
 from aws_arch_agent.progress import report
 from aws_arch_agent.rules.secret_names import is_literal_secret, is_secret_name
 from aws_arch_agent.rules import (
+    account,
     ai_gate,
     eks_versions,
     environments,
@@ -23,6 +24,18 @@ from aws_arch_agent.rules import (
     regions,
     stack_cost,
     tag_policy,
+    usage_signals,
+)
+from aws_arch_agent.rules.repo_practices import (
+    _ACCELERATOR_ALARM_METRIC,
+    _ACCELERATOR_TYPE,
+    _ANOMALY_BAND,
+    _DEPENDENCY_NAMESPACE,
+    _EDGE_METRIC,
+    _EDGE_NAMESPACE,
+    _INSTANCE_STORE,
+    _RESPONSE_AUTOMATION,
+    _TRACE_NAMESPACE,
 )
 from aws_arch_agent.rules.resource_model import TF_MODULE_CALL, Resource, resources_from_cf_template
 from aws_arch_agent.rules.terraform_model import TfVariable
@@ -583,7 +596,9 @@ CF_THEMES: dict[str, tuple[str, ...]] = {
     "CF-EBS-003": (_F, _SUS), "CF-RDS-015": (_SUS,), "CF-S3-013": (_F, _SUS),
     "CF-ECS-013": (_F,),
     "CF-LAM-010": (_RES,), "CF-LAM-011": (_RES, _NET),
-    "CF-ALARM-001": (_OBS,), "CF-ALARM-002": (_OBS,), "CF-ALARM-003": (_OBS,),
+    "CF-ALARM-001": (_OBS,), "CF-ALARM-002": (_OBS,), "CF-ALARM-003": (_OBS,), "CF-ALARM-004": (_OBS,),
+    "CF-DEMAND-001": (_F,), "CF-DEMAND-002": (_SUS, _F),
+    "CF-OBS-001": (_OBS,), "CF-OBS-002": (_OBS,), "CF-OBS-003": (_OBS,),
     "CF-DASH-001": (_OBS,),
     "CF-CT-004": (_OBS, _SB), "CF-CT-005": (_OBS, _DP),
     "CF-R53-001": (_OBS, _SB), "CF-R53-002": (_SB,), "CF-R53-003": (_RES,),
@@ -674,7 +689,8 @@ CF_THEMES: dict[str, tuple[str, ...]] = {
     "CF-EB-002": (_RES,), "CF-SQS-003": (_RES,),
     "CF-SQS-001": (_DP,), "CF-SQS-002": (_RES,),
     "CF-SUST-001": (_SUS, _F), "CF-SUST-002": (_SUS, _F), "CF-SUST-003": (_SUS, _F),
-    "CF-TAG-001": (_F,), "CF-VPC-001": (_NET, _F), "CF-VPC-002": (_F,), "CF-VPC-003": (_F,), "CF-WAF-001": (_NET,),
+    "CF-SUST-004": (_SUS, _F), "CF-SUST-005": (_SUS, _RES), "CF-SUST-006": (_SUS, _F), "CF-SUST-007": (_SUS, _F),
+    "CF-TAG-001": (_F,), "CF-TAG-002": (_F,), "CF-VPC-001": (_NET, _F), "CF-VPC-002": (_F,), "CF-VPC-003": (_F,), "CF-WAF-001": (_NET,),
     "CF-VPC-004": (_RES,), "CF-VPC-005": (_RES,), "CF-VPC-006": (_RES,),
 }
 
@@ -687,6 +703,12 @@ CF_TITLES: dict[str, str] = {
     "CF-ALARM-001": "Stack has no CloudWatch alarm on its main resources",
     "CF-ALARM-002": "CloudWatch alarm has no action",
     "CF-ALARM-003": "Alarms have no escalation path in this template",
+    "CF-ALARM-004": "Alarms start no automated response beyond a notification",
+    "CF-DEMAND-001": "Demand has no buffer or throttle",
+    "CF-DEMAND-002": "Demand spikes reach the workload unflattened",
+    "CF-OBS-001": "No alarm on the datastores and queues in this stack",
+    "CF-OBS-002": "Alarms watch only infrastructure metrics, not the workload's",
+    "CF-OBS-003": "Workload traces are not analyzed",
     "CF-ALB-001": "ALB access logs not enabled (template-level)",
     "CF-ALB-002": "HTTP listener does not redirect to HTTPS",
     "CF-ALB-003": "Listener TLS policy allows TLS 1.0 or 1.1",
@@ -985,7 +1007,12 @@ CF_TITLES: dict[str, str] = {
     "CF-SUST-001": "Auto Scaling Group does not use Spot or mixed instances",
     "CF-SUST-002": "ECS Fargate service does not use FARGATE_SPOT",
     "CF-SUST-003": "Launch template(s) do not use Spot",
+    "CF-SUST-004": "Accelerated instances have no utilization alarm or schedule",
+    "CF-SUST-005": "Instance store holds data and the stack has no durable store",
+    "CF-SUST-006": "Several EBS volumes and no shared file system or bucket",
+    "CF-SUST-007": "AWS Backup selects a cache or a temporary bucket",
     "CF-TAG-001": "Resource does not meet the required tag policy",
+    "CF-TAG-002": "Resources are not tagged with who created and owns them",
     "CF-TGW-001": "Transit gateway accepts shared attachments automatically",
     "CF-TGW-002": "Transit gateway has no flow logs",
     "CF-TRANSFER-001": "Transfer Family server allows FTP",
@@ -2345,6 +2372,35 @@ def _unread(value: Any) -> bool:
     return isinstance(value, dict) and _is_intrinsic(value)
 
 
+def _throttling_plans(plans: List[Resource]) -> List[Resource]:
+    """The usage plans that throttle, on the plan or on one of its stages."""
+    return [p for p in plans if p.properties.get("Throttle") or any(
+        isinstance(s, dict) and s.get("Throttle") for s in p.properties.get("ApiStages") or [])]
+
+
+def _rest_stage_may_throttle(stage: Resource, api: Resource | None, rest_apis: List[Resource],
+                             plans: List[Resource]) -> bool:
+    """True when a REST stage throttles in MethodSettings, a throttling usage plan may cover it, or
+    its settings cannot be read. A plan the scan cannot tie (or a stage with no known API) counts."""
+    settings = stage.properties.get("MethodSettings")
+    if "MethodSettings" in stage.unresolved or _unread(settings):
+        return True
+    settings = [m for m in settings if isinstance(m, dict)] if isinstance(settings, list) else []
+    if any(m.get("ThrottlingRateLimit") is not None or m.get("ThrottlingBurstLimit") is not None for m in settings):
+        return True
+    return any(api is None or _points_at(p, "ApiStages", api) or _points_at(p, "ApiStages", stage)
+               or not any(_points_at(p, "ApiStages", a) for a in rest_apis) for p in plans)
+
+
+def _v2_stage_may_throttle(stage: Resource) -> bool:
+    """True when an HTTP or WebSocket stage sets a default route throttle, or it cannot be read."""
+    defaults = stage.properties.get("DefaultRouteSettings")
+    if "DefaultRouteSettings" in stage.unresolved or (isinstance(defaults, dict) and _is_intrinsic(defaults)):
+        return True
+    defaults = defaults if isinstance(defaults, dict) else {}
+    return defaults.get("ThrottlingRateLimit") is not None or defaults.get("ThrottlingBurstLimit") is not None
+
+
 def _api_gateway_findings(resources: List[Resource], template_path: Path) -> List[Finding]:
     """REST API (CF-APIGW-003..009) and HTTP / WebSocket API (CF-APIGW-V2-003/004) checks.
 
@@ -2425,21 +2481,14 @@ def _api_gateway_findings(resources: List[Resource], template_path: Path) -> Lis
                 "securityPolicy: apigateway.SecurityPolicy.TLS_1_2.")
 
     # REST stages: throttling, cache encryption, caching for GET, client certificate.
-    plans = [p for p in of["api_gateway_usage_plan"] if p.properties.get("Throttle") or any(
-        isinstance(s, dict) and s.get("Throttle") for s in p.properties.get("ApiStages") or [])]
+    plans = _throttling_plans(of["api_gateway_usage_plan"])
     for stage in of["api_gateway_stage"]:
         props = stage.properties
         api = api_of(stage, "RestApiId", "api_gateway_rest_api")
         settings_known = "MethodSettings" not in stage.unresolved
         settings = props.get("MethodSettings")
         settings = [m for m in settings if isinstance(m, dict)] if isinstance(settings, list) else []
-        throttled = any(m.get("ThrottlingRateLimit") is not None or m.get("ThrottlingBurstLimit") is not None
-                        for m in settings)
-        # A plan the scan cannot tie (or a stage with no known API) may throttle this stage.
-        planned = any(api is None or _points_at(p, "ApiStages", api) or _points_at(p, "ApiStages", stage)
-                      or not any(_points_at(p, "ApiStages", a) for a in of["api_gateway_rest_api"])
-                      for p in plans)
-        if settings_known and not throttled and not planned:
+        if not _rest_stage_may_throttle(stage, api, of["api_gateway_rest_api"], plans):
             add(stage, "CF-APIGW-005", "API Gateway stage has no throttling", "Low", "Reliability",
                 "Set ThrottlingRateLimit and ThrottlingBurstLimit in MethodSettings, or attach a usage plan "
                 "with a throttle, so one client cannot use up the account's API Gateway limit. In CDK: "
@@ -2482,13 +2531,7 @@ def _api_gateway_findings(resources: List[Resource], template_path: Path) -> Lis
                 f"Route {key} takes requests from anyone. Set AuthorizationType to JWT, AWS_IAM or CUSTOM "
                 "with an authorizer (Security Hub APIGateway.8). In CDK: defaultAuthorizer on the HttpApi.")
     for stage in of["apigatewayv2_stage"]:
-        if "DefaultRouteSettings" in stage.unresolved:
-            continue
-        defaults = stage.properties.get("DefaultRouteSettings")
-        if isinstance(defaults, dict) and _is_intrinsic(defaults):
-            continue
-        defaults = defaults if isinstance(defaults, dict) else {}
-        if defaults.get("ThrottlingRateLimit") is None and defaults.get("ThrottlingBurstLimit") is None:
+        if not _v2_stage_may_throttle(stage):
             add(stage, "CF-APIGW-V2-004", "API Gateway V2 stage has no default route throttling", "Low",
                 "Reliability",
                 "Set DefaultRouteSettings with ThrottlingRateLimit and ThrottlingBurstLimit, so one client "
@@ -4321,23 +4364,29 @@ def _arn_text_may_page(text: str, by_name: dict[str, Resource]) -> bool:
 
 def _action_may_page(action: Any, by_name: dict[str, Resource]) -> bool:
     """True when one alarm action may target a response plan. What cannot be read counts."""
+    return _action_text_may(action, by_name, _arn_text_may_page)
+
+
+def _action_text_may(action: Any, by_name: dict[str, Resource], check: Callable[[str, dict[str, Resource]], bool]) -> bool:
+    """True when check holds for the ARN text or reference an action resolves to. What cannot be
+    read counts."""
     if isinstance(action, str):
-        return _arn_text_may_page(action, by_name)
+        return check(action, by_name)
     if not isinstance(action, dict) or len(action) != 1:
         return True
     (fn, arg), = action.items()
     if fn == "Ref" and isinstance(arg, str):
-        return _arn_text_may_page(arg, by_name)
+        return check(arg, by_name)
     if fn == "Fn::GetAtt":
         name = arg[0] if isinstance(arg, list) and arg else arg
-        return _arn_text_may_page(name, by_name) if isinstance(name, str) else True
+        return check(name, by_name) if isinstance(name, str) else True
     if fn == "Fn::Join" and isinstance(arg, list) and len(arg) == 2 and isinstance(arg[1], list):
         # CDK writes ARNs as joins of the partition, region and account with literal parts.
         text = "".join(p if isinstance(p, str) else "${?}" for p in arg[1])
-        return _arn_text_may_page(text, by_name) if text.startswith("arn:") else True
+        return check(text, by_name) if text.startswith("arn:") else True
     if fn == "Fn::Sub":
         text = arg[0] if isinstance(arg, list) and arg else arg
-        return _arn_text_may_page(text, by_name) if isinstance(text, str) else True
+        return check(text, by_name) if isinstance(text, str) else True
     return True
 
 
@@ -4443,9 +4492,531 @@ def _monitoring_findings(resources: List[Resource], template_path: Path) -> List
     return out
 
 
+# Telemetry on dependencies, workload alarms and trace analysis (OPS 4, OPS 8): CF-OBS-001..003.
+# REPO-020, REPO-027 and REPO-029 read the same facts from the whole repo and stay as the backstop.
+_DEPENDENCY_TYPES = frozenset({
+    "dynamodb_table", "db_instance", "rds_cluster", "elasticache_cluster", "elasticache_replication_group",
+    "sqs_queue", "sns_topic", "kinesis_stream", "opensearch_domain",
+})
+_DEPENDENCY_SOURCE_TYPES = frozenset({
+    "AWS::DynamoDB::GlobalTable", "AWS::ElastiCache::ServerlessCache", "aws_elasticache_serverless_cache",
+    "AWS::Elasticsearch::Domain", "aws_elasticsearch_domain",
+})
+_COMPUTE_TYPES = frozenset({"lambda_function", "ecs_service", "eks_cluster", "instance", "autoscaling_group"})
+_COMPUTE_SOURCE_TYPES = frozenset({"AWS::AppRunner::Service", "aws_apprunner_service"})
+_TRACE_ANALYSIS_TYPES = frozenset({
+    "AWS::XRay::Group", "AWS::XRay::SamplingRule", "aws_xray_group", "aws_xray_sampling_rule",
+    "AWS::ApplicationSignals::ServiceLevelObjective", "AWS::ApplicationSignals::Discovery",
+})
+_ALARM_TF_TYPES = ("aws_cloudwatch_metric_alarm",)
+_TRACE_TF_TYPES = ("aws_xray_group", "aws_xray_sampling_rule", "aws_cloudwatch_metric_alarm")
+
+
+def _alarm_metrics(alarm: Resource) -> list[tuple[str, Any]] | None:
+    """(namespace, metric name) of the alarm's metric and of each metric its math reads, or None
+    when the scan cannot read them all. A SEARCH or SELECT expression reads metrics of its own."""
+    props = alarm.properties
+    if alarm.malformed or {"Namespace", "Metrics"} & alarm.unresolved:
+        return None
+    metrics = props.get("Metrics")
+    if metrics is None:
+        namespace = props.get("Namespace")
+        return [(namespace, props.get("MetricName"))] if type(namespace) is str else None
+    if not isinstance(metrics, list):
+        return None
+    out: list[tuple[str, Any]] = []
+    for item in metrics:
+        if not isinstance(item, dict) or _is_intrinsic(item):
+            return None
+        stat = item.get("MetricStat")
+        if stat is None:
+            expression = item.get("Expression")
+            if type(expression) is not str or re.search(r"(?i)\b(?:search|select)\b", expression):
+                return None
+            if _ANOMALY_BAND.search(expression):
+                out.append(("ANOMALY_DETECTION_BAND", None))  # a workload signal of its own
+            continue
+        metric = stat.get("Metric") if isinstance(stat, dict) and not _is_intrinsic(stat) else None
+        if not isinstance(metric, dict) or _is_intrinsic(metric) or type(metric.get("Namespace")) is not str:
+            return None
+        out.append((metric["Namespace"], metric.get("MetricName")))
+    return out
+
+
+def _is_workload_metric(namespace: str, name: Any) -> bool:
+    """A metric that says whether the workload serves its users, as REPO-027 reads it: outside
+    AWS/, an edge latency or 5xx metric, a datastore or queue metric, or a trace metric. An edge
+    metric whose name cannot be read counts."""
+    if not namespace.startswith("AWS/") or _DEPENDENCY_NAMESPACE.search(namespace) or _TRACE_NAMESPACE.search(namespace):
+        return True
+    return bool(_EDGE_NAMESPACE.search(namespace)) and (type(name) is not str or bool(_EDGE_METRIC.search(name)))
+
+
+def _telemetry_findings(resources: List[Resource], template_path: Path) -> List[Finding]:
+    """Alarms on the datastores and queues (CF-OBS-001), alarms on workload metrics (CF-OBS-002) and
+    trace analysis (CF-OBS-003), once per stack each. An alarm the scan cannot read counts for all."""
+    usable = [r for r in resources if not r.malformed]
+    alarms = [r for r in resources if r.type == "cloudwatch_alarm"]
+    read = [_alarm_metrics(a) for a in alarms]
+    out: List[Finding] = []
+
+    def add(res: Resource, check_id: str, recommendation: str) -> None:
+        out.append(Finding(
+            id=check_id, title=CF_TITLES[check_id], severity="Low", category="Operational Excellence",
+            file=res.file or str(template_path), line=res.line,
+            evidence=f"{res.name} ({res.source_type})", recommendation=recommendation,
+        ))
+
+    dependencies = [r for r in usable if r.type in _DEPENDENCY_TYPES or r.source_type in _DEPENDENCY_SOURCE_TYPES]
+    if (dependencies and not _may_be_out_of_sight(resources, _ALARM_TF_TYPES)
+            and not any(m is None or any(_DEPENDENCY_NAMESPACE.search(ns) for ns, _ in m) for m in read)):
+        add(dependencies[0], "CF-OBS-001",
+            "This stack declares a datastore or a queue (RDS, DynamoDB, ElastiCache, OpenSearch, SQS, SNS or "
+            "Kinesis) and no AWS::CloudWatch::Alarm (Terraform aws_cloudwatch_metric_alarm) on a metric in its "
+            "namespace (AWS/RDS, AWS/DynamoDB, AWS/ElastiCache, AWS/ES, AWS/SQS, AWS/SNS, AWS/Kinesis), so "
+            "throttles, connection limits or a growing backlog in a dependency raise no signal. Alarm on the "
+            "dependency metrics (DynamoDB ThrottledRequests, RDS DatabaseConnections, SQS "
+            "ApproximateAgeOfOldestMessage). Exclude this check if another stack holds the alarms. In CDK: "
+            "table.metricThrottledRequestsForOperations().createAlarm() or queue.metricApproximateAgeOfOldestMessage().")
+
+    compute = [r for r in usable if (r.type in _COMPUTE_TYPES or r.source_type in _COMPUTE_SOURCE_TYPES)
+               and not (r.type == "lambda_function" and _CDK_HELPER_FUNCTION.search(r.name))]
+    if (compute and alarms and not _may_be_out_of_sight(resources, _ALARM_TF_TYPES)
+            and all(m is not None and not any(_is_workload_metric(ns, name) for ns, name in m) for m in read)):
+        add(alarms[0], "CF-OBS-002",
+            "Every CloudWatch alarm in this stack watches an AWS/ infrastructure metric (CPU, memory, invocations, "
+            "errors), and none watches a metric that says whether the workload serves its users: a metric in "
+            "your own namespace (from code or an AWS::Logs::MetricFilter, Terraform "
+            "aws_cloudwatch_log_metric_filter), an API Gateway, ALB or CloudFront latency or 5xx metric, a "
+            "datastore or queue metric, or an anomaly detection band. Add an alarm on the application KPI. "
+            "Exclude this check if another stack holds the workload alarms. In CDK: new cloudwatch.Metric({ "
+            "namespace: 'MyApp', metricName: 'OrdersFailed' }).createAlarm().")
+
+    if (compute and not any(r.source_type in _TRACE_ANALYSIS_TYPES for r in resources)
+            and not any(m is None or any(_TRACE_NAMESPACE.search(ns) for ns, _ in m) for m in read)
+            and not _may_be_out_of_sight(resources, _TRACE_TF_TYPES)):
+        add(compute[0], "CF-OBS-003",
+            "This stack runs compute and defines no AWS::XRay::Group or AWS::XRay::SamplingRule (Terraform "
+            "aws_xray_group, aws_xray_sampling_rule), no CloudWatch Application Signals service level objective, "
+            "and no alarm on an AWS/X-Ray or ApplicationSignals metric, so traces may be collected but nobody "
+            "analyzes them. Define an X-Ray group with insights for the main paths, sampling rules for what "
+            "matters, or Application Signals SLOs, and alarm on their metrics. Exclude this check if another "
+            "stack or account-wide setup holds them. In CDK: new xray.CfnGroup() or new xray.CfnSamplingRule().")
+    return out
+
+
+# An alarm that starts automation (OPS 10): CF-ALARM-004. REPO-112 reads the same facts from the
+# whole repo and stays as the backstop. A scaling policy as the only action does not count.
+_AUTOMATION_SERVICES = ("automate", "lambda", "ssm", "ssm-incidents")
+_AUTOMATION_TYPES = frozenset({"lambda_function", "lambda_alias", "ssm_incidents_response_plan"})
+_AUTOMATION_TF_TYPES = ("aws_lambda_function", "aws_lambda_alias", "aws_ssmincidents_response_plan")
+_SSM_DOCUMENT_TYPES = frozenset({"AWS::SSM::Document", "aws_ssm_document"})
+_AUTOMATION_OUT_OF_SIGHT = ("aws_cloudwatch_event_rule", "aws_cloudwatch_event_target", "aws_ssm_document",
+                            "aws_ssmincidents_response_plan", "aws_cloudwatch_metric_alarm",
+                            "aws_cloudwatch_composite_alarm")
+
+
+def _arn_text_may_automate(text: str, by_name: dict[str, Resource]) -> bool:
+    """True when an alarm action string may run automation, as REPO-112 reads it: an EC2 action
+    (arn:aws:automate), a Lambda function, an SSM OpsItem or automation, or an Incident Manager
+    response plan. A literal ARN of another service (SNS, Auto Scaling) is not one."""
+    whole = _WHOLE_INTERPOLATION.fullmatch(text)
+    if whole:
+        text = whole.group(1)
+    if text.startswith("arn:"):
+        parts = re.sub(r"\$\{[^}]*\}", "${?}", text).split(":")  # ${AWS::Partition} holds colons
+        return len(parts) < 3 or parts[2] in _AUTOMATION_SERVICES or parts[2].startswith("${")
+    address = _TF_ADDRESS.match(text)
+    if address:
+        return address.group(1) in _AUTOMATION_TF_TYPES
+    target = by_name.get(text.split(".", 1)[0])
+    if target is not None:
+        return target.type in _AUTOMATION_TYPES
+    return True  # a data source, module output or function: not known
+
+
+def _automation_target(res: Resource, by_name: dict[str, Resource]) -> bool:
+    """True when an EventBridge target (a rule's Targets entry, or a Terraform event target) runs
+    an SSM Automation document."""
+    targets = [res.properties] if res.type == "events_target" else res.properties.get("Targets")
+    for target in targets if isinstance(targets, list) else []:
+        arn = target.get("Arn") if isinstance(target, dict) else None
+        if "automation-definition" in json.dumps(arn, default=str) or any(
+                _value_mentions(arn, d.name) for d in by_name.values() if d.source_type in _SSM_DOCUMENT_TYPES):
+            return True
+    return any(by_name[n].source_type in _SSM_DOCUMENT_TYPES for n in res.references if n in by_name)
+
+
+def _alarm_rule_with_target(rule: Resource, resources: List[Resource]) -> bool:
+    """True when an EventBridge rule may match alarm state changes and has a target. A pattern or a
+    target the scan cannot read counts."""
+    pattern = rule.properties.get("EventPattern")
+    if "EventPattern" in rule.unresolved or (isinstance(pattern, dict) and _is_intrinsic(pattern)):
+        matches = True
+    else:
+        text = json.dumps(pattern, default=str)
+        matches = "aws.cloudwatch" in text or "CloudWatch Alarm State Change" in text
+    if not matches:
+        return False
+    if rule.source_type == "AWS::Events::Rule":
+        return bool(rule.properties.get("Targets")) or "Targets" in rule.unresolved
+    targets = [t for t in resources if t.type == "events_target"]
+    return any(rule.name in t.references for t in targets) or any(
+        not any(r.name in t.references for r in resources if r.type == "events_rule") for t in targets)
+
+
+def _automation_findings(resources: List[Resource], template_path: Path) -> List[Finding]:
+    """CF-ALARM-004, once per stack: alarms whose actions only notify or scale, with no EventBridge
+    rule on alarm state and no SSM Automation target or response plan action. What the scan cannot
+    read counts as automation."""
+    alarms = [r for r in resources if r.type in ("cloudwatch_alarm", "cloudwatch_composite_alarm")]
+    if not alarms or _may_be_out_of_sight(resources, _AUTOMATION_OUT_OF_SIGHT):
+        return []
+    by_name = {r.name: r for r in resources}
+    for alarm in alarms:
+        actions = _alarm_actions(alarm)
+        if alarm.malformed or actions is None or any(_action_text_may(a, by_name, _arn_text_may_automate)
+                                                     for a in actions):
+            return []
+    for res in resources:
+        if res.malformed and res.type in ("events_rule", "events_target", "ssm_incidents_response_plan"):
+            return []
+        if res.type == "events_rule" and _alarm_rule_with_target(res, resources):
+            return []
+        if res.type in ("events_rule", "events_target") and _automation_target(res, by_name):
+            return []
+        if res.type == "ssm_incidents_response_plan" and (
+                "Actions" in res.unresolved or _RESPONSE_AUTOMATION.search(json.dumps(res.properties.get("Actions"), default=str))):
+            return []
+    alarm = alarms[0]
+    return [Finding(
+        id="CF-ALARM-004", title=CF_TITLES["CF-ALARM-004"], severity="Low", category="Operational Excellence",
+        file=alarm.file or str(template_path), line=alarm.line, evidence=f"{alarm.name} ({alarm.source_type})",
+        recommendation=(
+            "The alarms in this stack only notify (or scale): no AlarmActions entry runs automation (a Lambda "
+            "function, an EC2 action arn:aws:automate:<region>:ec2:recover|reboot|stop|terminate, an SSM OpsItem "
+            "or an Incident Manager response plan), no AWS::Events::Rule (Terraform aws_cloudwatch_event_rule) "
+            "on \"CloudWatch Alarm State Change\" has a target, and no EventBridge target or response plan "
+            "runs an SSM Automation document. Automate the first response: route alarm state changes to an SSM "
+            "Automation runbook or a Lambda function, or point an alarm action at one. A scaling policy alone "
+            "does not count. Exclude this check if another stack or account-wide rule automates the response. "
+            "In CDK: alarm.addAlarmAction(new LambdaAction(fn)) or an events.Rule with targets.SsmAutomation."
+        ),
+    )]
+
+
+# Demand with nothing to throttle or buffer it (COST 9, SUS 2): one detection, reported as
+# CF-DEMAND-001 (COST09-BP02) and CF-DEMAND-002 (SUS02-BP06), as REPO-097 and REPO-102 share
+# unbuffered_demand. They stay as the repo-wide backstop.
+_PROVISIONED_SOURCE_TYPES = frozenset({"AWS::Lambda::Alias", "AWS::Lambda::Version",
+                                       "aws_lambda_provisioned_concurrency_config"})
+_INTEGRATION_SOURCE_TYPES = frozenset({"AWS::ApiGateway::Method", "AWS::ApiGatewayV2::Integration",
+                                       "aws_api_gateway_integration", "aws_apigatewayv2_integration"})
+_API_THROTTLE_TF_TYPES = ("aws_api_gateway_stage", "aws_api_gateway_method_settings", "aws_api_gateway_usage_plan",
+                          "aws_apigatewayv2_stage", "aws_wafv2_web_acl", "aws_wafv2_web_acl_association",
+                          "aws_api_gateway_integration", "aws_apigatewayv2_integration", "aws_lambda_function")
+_CAP_TF_TYPES = ("aws_lambda_provisioned_concurrency_config",)
+_DEMAND_RECOMMENDATION = (
+    "Throttle the API (a stage throttle in MethodSettings or DefaultRouteSettings, a usage plan "
+    "Throttle, or an AWS::WAFv2::WebACL rate-based rule associated with the stage; Terraform "
+    "aws_api_gateway_method_settings, aws_api_gateway_usage_plan throttle_settings, aws_wafv2_web_acl "
+    "rate_based_statement), cap the Lambda function with ReservedConcurrentExecutions (Terraform "
+    "reserved_concurrent_executions) or provisioned concurrency, or put an SQS queue, Kinesis stream or "
+    "EventBridge bus between an SNS topic or S3 bucket and the function. Exclude this check if the limit "
+    "lives in another stack. In CDK: deployOptions throttling, reservedConcurrentExecutions, or an "
+    "SqsEventSource behind an SqsSubscription."
+)
+
+
+def _function_capped(fn: Resource, resources: List[Resource]) -> bool:
+    """True when a function has reserved concurrency, or provisioned concurrency on a version or
+    alias. A value the scan cannot read counts."""
+    if "ReservedConcurrentExecutions" in fn.unresolved or fn.properties.get("ReservedConcurrentExecutions") is not None:
+        return True
+    return any(r.source_type in _PROVISIONED_SOURCE_TYPES and _refers_to(r, fn) and (
+        r.properties.get("ProvisionedConcurrencyConfig") or "ProvisionedConcurrencyConfig" in r.unresolved
+        or r.malformed) for r in resources)
+
+
+def _rate_limited_by_waf(api: Resource, stages: List[Resource], resources: List[Resource]) -> bool:
+    """True when a web ACL with a rate-based rule may be associated with the API or one of its
+    stages. A web ACL or an association the scan cannot tie counts."""
+    acls = [r for r in resources if r.source_type in ("AWS::WAFv2::WebACL", "aws_wafv2_web_acl")]
+    rated = [a for a in acls if a.malformed or "Rules" in a.unresolved
+             or "RateBasedStatement" in json.dumps(a.properties.get("Rules"), default=str)]
+    if not rated:
+        return False
+    associations = [r for r in resources if r.type == "waf_association"]
+    for acl in rated:
+        tied = [x for x in associations if _refers_to(x, acl)]
+        if not tied:
+            return True  # associated from elsewhere, or not tied
+        apis = [r for r in resources if r.type in ("api_gateway_rest_api", "api_gateway_stage")]
+        if any(any(_refers_to(x, t) for t in (api, *stages)) or not any(_refers_to(x, t) for t in apis)
+               for x in tied):
+            return True
+    return False
+
+
+def _unbuffered_demand(resources: List[Resource]) -> List[tuple[Resource, str]]:
+    """APIs with no throttle, WAF rate rule or capped integration function, and functions an SNS
+    topic or S3 bucket invokes directly with no concurrency cap: (resource, what is missing)."""
+    usable = [r for r in resources if not r.malformed]
+    functions = [r for r in usable if r.type == "lambda_function"]
+    found: List[tuple[Resource, str]] = []
+
+    rest_apis = [r for r in usable if r.type == "api_gateway_rest_api"]
+    plans = _throttling_plans([r for r in usable if r.type == "api_gateway_usage_plan"])
+    if not _may_be_out_of_sight(resources, _API_THROTTLE_TF_TYPES):
+        for api in rest_apis + [r for r in usable if r.type == "apigatewayv2_api"]:
+            rest = api.type == "api_gateway_rest_api"
+            key, stage_type = ("RestApiId", "api_gateway_stage") if rest else ("ApiId", "apigatewayv2_stage")
+            all_stages = [r for r in resources if r.type == stage_type]
+            stages = [s for s in all_stages if _points_at(s, key, api)]
+            untied = [s for s in all_stages if not any(_points_at(s, key, a) for a in usable if a.type == api.type)]
+            if not stages or untied or any(s.malformed for s in stages):
+                continue  # no stage in sight, or one the scan cannot tie: not judged
+            if any(_rest_stage_may_throttle(s, api, rest_apis, plans) if rest else _v2_stage_may_throttle(s)
+                   for s in stages):
+                continue
+            if _rate_limited_by_waf(api, stages, resources):
+                continue
+            integrations = [r for r in resources if r.source_type in _INTEGRATION_SOURCE_TYPES and _refers_to(r, api)]
+            targets = [f for f in functions if any(_refers_to(i, f) for i in integrations)]
+            if targets and all(_function_capped(f, resources) for f in targets):
+                continue
+            found.append((api, "no stage or usage plan throttle, WAF rate-based rule or capped integration function"))
+
+    if _may_be_out_of_sight(resources, _CAP_TF_TYPES):
+        return found
+    triggered: dict[str, str] = {}
+    for res in resources:
+        entries: Any = None
+        if res.source_type == "AWS::SNS::Topic":
+            entries = res.properties.get("Subscription")
+        elif res.source_type in ("AWS::SNS::Subscription", "aws_sns_topic_subscription"):
+            entries = [res.properties]
+        if entries is not None:
+            for entry in entries if isinstance(entries, list) else []:
+                protocol = entry.get("Protocol") if isinstance(entry, dict) else None
+                if type(protocol) is str and protocol.lower() == "lambda":
+                    for fn in functions:
+                        if _value_mentions(entry.get("Endpoint"), fn.name):
+                            triggered.setdefault(fn.name, "an SNS topic invokes it directly")
+        configs: Any = None
+        if res.type == "s3_bucket":
+            configs = _dig(res.properties, "NotificationConfiguration", "LambdaConfigurations")
+        elif res.source_type == "aws_s3_bucket_notification":
+            configs = res.properties.get("LambdaConfigurations")
+        for entry in configs if isinstance(configs, list) else []:
+            for fn in functions:
+                if isinstance(entry, dict) and _value_mentions(entry.get("Function"), fn.name):
+                    triggered.setdefault(fn.name, "an S3 bucket notification invokes it directly")
+    for fn in functions:
+        if fn.name in triggered and not _function_capped(fn, resources):
+            found.append((fn, f"{triggered[fn.name]}, with no queue, stream or bus between and no concurrency cap"))
+    return found
+
+
+def _demand_findings(resources: List[Resource], template_path: Path) -> List[Finding]:
+    """CF-DEMAND-001 (cost) and CF-DEMAND-002 (sustainability) for each gap _unbuffered_demand finds."""
+    out: List[Finding] = []
+    for res, detail in _unbuffered_demand(resources):
+        for check_id, category, other, why in (
+                ("CF-DEMAND-001", "Cost Optimization", "CF-DEMAND-002",
+                 "A spike then sets the bill: every request runs and is paid for."),
+                ("CF-DEMAND-002", "Sustainability", "CF-DEMAND-001",
+                 "Unflattened spikes make you provision for the peak, which then sits idle.")):
+            out.append(Finding(
+                id=check_id, title=CF_TITLES[check_id], severity="Low", category=category,
+                file=res.file or str(template_path), line=res.line,
+                evidence=f"{res.name} ({res.source_type}): {detail}",
+                recommendation=(f"Demand reaches this resource with nothing to absorb or limit it. {why} "
+                                + _DEMAND_RECOMMENDATION
+                                + f" {other} reports the same gap for the other pillar: one fix clears both."),
+            ))
+    return out
+
+
 def _is_literal_false(value: Any) -> bool:
     """True only when the template says false. Unset, an intrinsic and an expression are not."""
     return value is False or (type(value) is str and value.lower() == "false")
+
+
+# Sustainability of hardware and data (SUS 4, SUS 5): CF-SUST-004..007. REPO-150, REPO-152,
+# REPO-155 and REPO-156 read the same facts from the whole repo and stay as the backstop.
+_EC2_HOSTS = ("instance", "launch_template", "launch_configuration")
+# Resources that run capacity on a schedule (a batch window), as REPO-150's _BATCH_WINDOW.
+_BATCH_WINDOW_TYPES = frozenset({
+    "AWS::AutoScaling::ScheduledAction", "aws_autoscaling_schedule", "AWS::Scheduler::Schedule",
+    "aws_scheduler_schedule", "aws_appautoscaling_scheduled_action",
+})
+_ACCELERATOR_OUT_OF_SIGHT = ("aws_cloudwatch_metric_alarm", "aws_autoscaling_schedule",
+                             "aws_scheduler_schedule", "aws_appautoscaling_scheduled_action")
+_FSX_TF_TYPES = ("aws_fsx_lustre_file_system", "aws_fsx_windows_file_system",
+                 "aws_fsx_ontap_file_system", "aws_fsx_openzfs_file_system")
+_SHARED_STORE_TYPES = frozenset({"efs_file_system", "fsx_file_system", "s3_bucket"})
+_SHARED_STORE_TF_TYPES = ("aws_efs_file_system", "aws_s3_bucket", *_FSX_TF_TYPES)
+# Durable stores, as REPO-152's _PERSISTENT_STORE.
+_DURABLE_STORE_TYPES = _SHARED_STORE_TYPES | {"ebs_volume", "dynamodb_table", "db_instance", "rds_cluster"}
+_DURABLE_STORE_TF_TYPES = (*_SHARED_STORE_TF_TYPES, "aws_ebs_volume", "aws_dynamodb_table",
+                           "aws_db_instance", "aws_rds_cluster")
+_ELASTICACHE_TYPES = frozenset({"elasticache_cluster", "elasticache_replication_group"})
+_ELASTICACHE_SOURCE_TYPES = frozenset({"AWS::ElastiCache::ServerlessCache", "aws_elasticache_serverless_cache"})
+# A bucket named for data that is cheap to recreate, as REPO-156's _RECREATABLE.
+_RECREATABLE_NAME = re.compile(r"(?<![a-z])(?:tmp|temp|scratch|cache)(?![a-z])")
+
+
+def _instance_types(res: Resource) -> list[str]:
+    """The literal instance types an EC2 instance, launch template or configuration, or an Auto
+    Scaling group's overrides set. A value the scan cannot read is left out."""
+    props = res.properties
+    found = [props.get("InstanceType"), _dig(props, "LaunchTemplateData", "InstanceType")]
+    if res.type == "autoscaling_group":
+        overrides = _dig(props, "MixedInstancesPolicy", "LaunchTemplate", "Overrides")
+        found += [o.get("InstanceType") for o in overrides if isinstance(o, dict)] \
+            if isinstance(overrides, list) else []
+    return [t for t in found if type(t) is str]
+
+
+def _block_device_mappings(res: Resource) -> list[Any]:
+    mappings = res.properties.get("BlockDeviceMappings")  # Terraform keeps them apart
+    if mappings is None:
+        mappings = _dig(res.properties, "LaunchTemplateData", "BlockDeviceMappings")
+    return mappings if isinstance(mappings, list) else []
+
+
+def _instance_store(res: Resource) -> str | None:
+    """What gives this host an instance store: an ephemeral device mapping, or a storage
+    optimized or NVMe instance type."""
+    for item in _block_device_mappings(res):
+        name = item.get("VirtualName") if isinstance(item, dict) else None
+        if type(name) is str and name.startswith("ephemeral"):
+            return f"device {name}"
+    for kind in _instance_types(res):
+        if _INSTANCE_STORE.search(kind):
+            return kind
+    return None
+
+
+def _watches_accelerator(alarm: Resource) -> bool:
+    """True when the alarm is on a GPU or Neuron core utilization metric, or may be: a metric
+    name the scan cannot read counts."""
+    if alarm.unresolved & {"MetricName", "Metrics"}:
+        return True
+    text = json.dumps(alarm.properties, default=str)
+    return bool(_ACCELERATOR_ALARM_METRIC.search(text))
+
+
+def _runs_on_schedule(res: Resource) -> bool:
+    if res.source_type in _BATCH_WINDOW_TYPES:
+        return True
+    if res.type == "scalable_target" and (res.properties.get("ScheduledActions") or "ScheduledActions" in res.unresolved):
+        return True
+    return bool(res.properties.get("ScheduleExpression")) or "ScheduleExpression" in res.unresolved
+
+
+def _recreatable_name(res: Resource) -> str | None:
+    """The bucket name, or its logical id or Terraform label when unnamed, if it marks the data as
+    temporary, scratch or cache. A name the scan cannot read is not judged."""
+    if "BucketName" in res.unresolved:
+        return None
+    name = res.properties.get("BucketName")
+    if name is None:
+        name = res.name.rsplit(".", 1)[-1]
+    if type(name) is not str:
+        return None
+    words = re.sub(r"(?<=[a-z0-9])(?=[A-Z])", "-", name).lower()
+    return name if _RECREATABLE_NAME.search(words) else None
+
+
+def _selected_recreatable(selection: Resource, usable: List[Resource]) -> str | None:
+    """What cheap-to-recreate data the backup selection names in its Resources: an ElastiCache
+    resource or ARN, or a bucket named for temporary data. Tags are not read."""
+    body = selection.properties.get("BackupSelection")
+    entries = body.get("Resources") if isinstance(body, dict) else None
+    if "BackupSelection" in selection.unresolved or not isinstance(entries, list):
+        return None
+    recreatable = [r for r in usable if r.type in _ELASTICACHE_TYPES or r.source_type in _ELASTICACHE_SOURCE_TYPES
+                   or (r.type == "s3_bucket" and _recreatable_name(r))]
+    for entry in entries:
+        if type(entry) is str:
+            parts = entry.split(":")
+            if entry == "*" and recreatable:
+                return recreatable[0].name
+            if len(parts) > 2 and parts[2] == "elasticache":
+                return entry
+            if len(parts) > 5 and parts[2] == "s3" and _RECREATABLE_NAME.search(parts[5].split("/")[0].lower()):
+                return entry
+            continue
+        for res in recreatable:
+            if _value_mentions(entry, res.name):
+                return res.name
+    return None
+
+
+def _sustainability_findings(resources: List[Resource], template_path: Path) -> List[Finding]:
+    """Accelerators with nothing to show they are busy (CF-SUST-004), instance store with no
+    durable store (CF-SUST-005), EBS volumes with no shared store (CF-SUST-006) and a backup of
+    data that is cheap to recreate (CF-SUST-007). Once per stack, except CF-SUST-007 per selection.
+    A value the scan cannot read is not judged."""
+    usable = [r for r in resources if not r.malformed]
+    out: List[Finding] = []
+
+    def add(res: Resource, check_id: str, detail: str, recommendation: str) -> None:
+        out.append(Finding(
+            id=check_id, title=CF_TITLES[check_id], severity="Low", category="Sustainability",
+            file=res.file or str(template_path), line=res.line,
+            evidence=f"{res.name} ({res.source_type}){detail}", recommendation=recommendation,
+        ))
+
+    hosts = [r for r in usable if r.type in (*_EC2_HOSTS, "autoscaling_group")]
+    accelerated = [(r, t) for r in hosts for t in _instance_types(r) if _ACCELERATOR_TYPE.search(t)]
+    if (accelerated and not any(_watches_accelerator(r) for r in resources if r.type == "cloudwatch_alarm")
+            and not any(_runs_on_schedule(r) for r in resources)
+            and not _may_be_out_of_sight(resources, _ACCELERATOR_OUT_OF_SIGHT)):
+        add(accelerated[0][0], "CF-SUST-004", f": {accelerated[0][1]}",
+            "This stack runs an accelerated instance type (GPU, Inferentia, Trainium, Gaudi, FPGA or video "
+            "transcoding) and has no AWS::CloudWatch::Alarm (Terraform aws_cloudwatch_metric_alarm) on a GPU or "
+            "Neuron core utilization metric and no scheduled scaling (AWS::AutoScaling::ScheduledAction, Terraform "
+            "aws_autoscaling_schedule, or an EventBridge Scheduler schedule), so idle accelerators keep running. "
+            "Alarm on utilization (CloudWatch agent nvidia_gpu or DCGM metrics, neuroncore_utilization) and scale "
+            "in when it is low, or run the capacity only in the batch window. Exclude this check if another stack "
+            "holds the alarm or the schedule. In CDK: metric.createAlarm() on the GPU metric, or "
+            "autoScalingGroup.scaleOnSchedule().")
+
+    stores = [(r, s) for r in usable if r.type in _EC2_HOSTS for s in [_instance_store(r)] if s]
+    if (stores and not any(r.type in _DURABLE_STORE_TYPES for r in resources)
+            and not _may_be_out_of_sight(resources, _DURABLE_STORE_TF_TYPES)):
+        add(stores[0][0], "CF-SUST-005", f": {stores[0][1]}",
+            "This stack gives instances an instance store (an ephemeral BlockDeviceMappings VirtualName, or a "
+            "storage optimized or NVMe instance type) and declares no S3 bucket, EFS or FSx file system, EBS "
+            "volume (AWS::EC2::Volume, Terraform aws_ebs_volume), DynamoDB table or database, so data may live "
+            "only on disks that are lost when the instance stops. Keep data that must last on a durable store and "
+            "use instance store only as scratch space. Exclude this check if another stack holds the durable "
+            "store. In CDK: s3.Bucket, efs.FileSystem or ec2.Volume.")
+
+    volumes = [r for r in usable if r.type == "ebs_volume"]
+    if (sum(r.count for r in volumes) >= 2 and not any(r.type in _SHARED_STORE_TYPES for r in resources)
+            and not _may_be_out_of_sight(resources, _SHARED_STORE_TF_TYPES)):
+        add(volumes[0], "CF-SUST-006", f": {sum(r.count for r in volumes)} EBS volumes",
+            "This stack declares two or more EBS volumes (AWS::EC2::Volume, Terraform aws_ebs_volume) and no "
+            "shared store: no AWS::EFS::FileSystem, AWS::FSx::FileSystem or AWS::S3::Bucket (Terraform "
+            "aws_efs_file_system, aws_fsx_*_file_system, aws_s3_bucket). Data several instances read is then "
+            "copied to each volume. Store common data once on EFS, FSx or S3 and mount or fetch it. Exclude this "
+            "check if each volume holds data only its instance uses, or another stack holds the shared store. "
+            "In CDK: efs.FileSystem or s3.Bucket.")
+
+    for selection in (r for r in usable if r.type == "backup_selection"):
+        what = _selected_recreatable(selection, usable)
+        if what:
+            add(selection, "CF-SUST-007", f": selects {what}",
+                "This AWS::Backup::BackupSelection (Terraform aws_backup_selection) selects an ElastiCache "
+                "resource or a bucket named for temporary, scratch or cache data, which is cheap to recreate, so "
+                "backing it up stores data nobody needs to restore. Take it out of Resources, or select by a tag "
+                "that only durable data carries. Exclude this check if the data cannot be rebuilt. In CDK: "
+                "plan.addSelection() with BackupResource.fromTag().")
+    return out
 
 
 def _dig(value: Any, *keys: str) -> Any:
@@ -8018,6 +8589,7 @@ def _run_resource_checks(
         warnings = []
     findings: List[Finding] = []
     ai_gate.observe(resources)
+    account.observe(resources)  # the compute a --live-account purchase read is for
     ai_on = ai_gate.checks_on(resources)  # the AI template checks run only for an AI workload
 
     def count(*types: str) -> int:
@@ -8754,6 +9326,7 @@ def _run_resource_checks(
 
     # --- Required tag policy (config tags.required; off without one) ---
     findings.extend(tag_policy.findings(resources, template_path))
+    findings.extend(tag_policy.lifetime_findings(resources, template_path))
 
     # --- Production-grade spend in dev and staging stacks ---
     stack_env = environments.resolve(template_path, resources)
@@ -8909,6 +9482,12 @@ def _run_resource_checks(
 
     # --- CloudWatch alarms and dashboards; S3 data events on a trail ---
     findings.extend(_monitoring_findings(resources, template_path))
+    findings.extend(_telemetry_findings(resources, template_path))
+    findings.extend(_automation_findings(resources, template_path))
+    findings.extend(_demand_findings(resources, template_path))
+
+    # --- Accelerators, instance store, EBS copies and backups of recreatable data (SUS 4, SUS 5) ---
+    findings.extend(_sustainability_findings(resources, template_path))
 
     # --- AWS Backup vaults, plans and which resources they select ---
     findings.extend(_backup_findings(resources, template_path))
@@ -9102,6 +9681,7 @@ def _store_repo_relative(findings: List[Finding], repo_path: Path | None) -> Non
 
 def drop_static_covered_by_cf(findings: List[Finding]) -> List[Finding]:
     """Drop a static finding when a CloudFormation finding already covers that control."""
+    findings = usage_signals.drop_sized(findings)
     covered = {sid for f in findings for sid in CF_COVERS_STATIC.get(f.id, ())}
     if environments.only_nonprod():
         # Every stack is dev or staging: the CDK source Multi-AZ advice is prod-only.
