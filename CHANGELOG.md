@@ -2,6 +2,16 @@
 
 New releases go at the top. See [CONTRIBUTING.md](CONTRIBUTING.md#releases) for when to cut one and how the version is bumped.
 
+## v1.2.0 - 2026-11-23
+
+### Changes
+
+- New template checks for CloudFormation and Terraform, all Low: `CF-SUST-004`..`007` (accelerators with no utilization alarm or schedule, instance store with no durable store, EBS volumes with no shared store, backups of cache or temp data), `CF-TAG-002` (created-by and owner tags; CDK app tags and Terraform `default_tags` count), `CF-OBS-001`..`003` (dependency alarms, workload-metric alarms, tracing), `CF-ALARM-004` (an alarm that starts automation), and `CF-DEMAND-001`/`002` (an API or a directly invoked Lambda with no throttle or buffer, reported for cost and for sustainability). `CF-VPC-002`/`003` also answer COST08-BP02 (#123)
+- `--live-account` reads, all read-only: RDS Reserved Instances, ElastiCache reserved nodes and Savings Plans (COST-005/009/016) when the scan has that compute; the account-level FSBP controls S3.1, EC2.7 and IAM.7 as new findings `ACCT-001`..`003`; Macie (SEC-065) and Storage Lens (COST-018); and, behind the `rules.org` gate, a Cost and Usage Report or Data Exports export (`ACCT-004`). A denied read is a warning, never a finding (#123)
+- The usage file can state usage signals (`read_write_ratio`, `avg_cpu_percent`, `get_parameter_tps`, and a `workload:` block with `traffic_pattern`, `user_regions`, `upload_regions`). REL-011, OPS-023, SUST-002, SUST-003, PERF-011 and PERF-014 now report only when it does; before, they fired on a CDK construct alone. SUST-004 and SUST-005 answer from a repo note that names the batch path or the self-managed components and says why (#123)
+- `--live-account` without `rules.org` no longer turns REPO-069 on; `ACCT-004` replaces that read behind the same gate. `CF-APIGW-005` no longer judges `MethodSettings` given as an intrinsic (#123)
+- No rule is advice-only any more; `docs/COVERAGE.md` gives the answer for every rule (#123)
+
 ## v1.1.0 - 2026-11-22
 
 ### Changes
