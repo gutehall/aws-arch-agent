@@ -15,6 +15,8 @@ from aws_arch_agent.agent.hypotheses import (
     HYPOTHESIS_SYSTEM,
     MAX_FILE_CHARS,
     MAX_SLICE_CHARS,
+    MIN_SLICE_CHARS,
+    TOO_SHORT_REASON,
     build_prompt,
     build_slice,
     find_hypotheses,
@@ -63,6 +65,9 @@ class FakeLLM:
     def __init__(self, reply: Callable[[str, str], LLMResult]) -> None:
         self.reply = reply
         self.calls: list[tuple[str, str]] = []
+
+    def prompt_chars(self, cap: int) -> int:
+        return cap
 
     def polish(self, prompt: str, system: str = "", json_reply: bool = False) -> LLMResult:
         self.calls.append((prompt, system))
@@ -257,6 +262,48 @@ def test_a_fallback_is_not_retried(repo: Path) -> None:
     fake = FakeLLM(lambda p, _s: LLMResult(p, "fallback", "ollama", "m", "down"))
     hypotheses, result = find_hypotheses(fake, [], repo, iac_files(repo, "cdk"))
     assert (hypotheses, result.status, len(fake.calls)) == ([], "fallback", 1)
+
+
+
+class _Budget(FakeLLM):
+    """A model whose context holds `chars` characters of prompt."""
+
+    def __init__(self, chars: int) -> None:
+        super().__init__(_answering([]))
+        self.chars = chars
+
+    def prompt_chars(self, cap: int) -> int:
+        return min(cap, self.chars)
+
+
+def _big_repo(tmp_path: Path) -> Path:
+    (tmp_path / "package.json").write_text("{}", encoding="utf-8")
+    (tmp_path / "lib").mkdir()
+    for n in range(10):
+        (tmp_path / "lib" / f"f{n}.ts").write_text("x\n" * 3000, encoding="utf-8")
+    return tmp_path
+
+
+def test_a_shorter_context_gets_a_smaller_slice(tmp_path: Path) -> None:
+    repo = _big_repo(tmp_path)
+    overhead = len(build_prompt([], []))
+    fake = _Budget(overhead + MIN_SLICE_CHARS + 2_000)
+    find_hypotheses(fake, [], repo, sorted((repo / "lib").glob("*.ts")))
+    [prompt] = fake.asked(HYPOTHESIS_SYSTEM)
+    assert len(prompt) <= fake.chars
+
+
+def test_a_context_too_short_for_the_catalog_sends_nothing(tmp_path: Path) -> None:
+    # llama3:8b: 8192 tokens hold less than the catalog alone.
+    repo = _big_repo(tmp_path)
+    fake = _Budget((8192 - 2048) * 7 // 2)
+    hypotheses, result = find_hypotheses(fake, [], repo, sorted((repo / "lib").glob("*.ts")))
+    assert hypotheses == [] and fake.calls == []
+    assert result is not None and result.status == "skipped" and result.reason == TOO_SHORT_REASON
+
+
+def test_a_short_context_with_no_quiet_file_is_still_no_call(repo: Path) -> None:
+    assert find_hypotheses(_Budget(1_000), [], repo, []) == ([], None)
 
 
 # V1 and V2

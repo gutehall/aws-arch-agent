@@ -46,6 +46,7 @@ def test_v2_max_files_respected(tmp_path: Path) -> None:
 def test_v2_compact_llm_mode(tmp_path: Path) -> None:
     _stack_repo(tmp_path)
     with patch("aws_arch_agent.agent.v2_graph.LLMClient") as mock_cls:
+        mock_cls.return_value.prompt_chars.side_effect = lambda cap: cap
         mock_cls.return_value.polish.return_value = _ok("[]")
         _, ctx, _, _ = analyze_v2(tmp_path, use_llm=True, skip_synth=True, llm_mode="compact")
     assert ctx.llm.status == "ok"
@@ -55,6 +56,7 @@ def test_v2_compact_llm_mode(tmp_path: Path) -> None:
 def test_v2_compact_with_no_findings_makes_no_call(tmp_path: Path) -> None:
     (tmp_path / "package.json").write_text("{}", encoding="utf-8")
     with patch("aws_arch_agent.agent.v2_graph.LLMClient") as mock_cls:
+        mock_cls.return_value.prompt_chars.side_effect = lambda cap: cap
         _, ctx, findings, _ = analyze_v2(
             tmp_path, use_llm=True, skip_synth=True, llm_mode="compact",
             rules_include=["SEC-001"],
@@ -74,6 +76,7 @@ def test_v2_full_llm_mode_calls_pillars_and_not_merge(tmp_path: Path, monkeypatc
         encoding="utf-8",
     )
     with patch("aws_arch_agent.agent.v2_graph.LLMClient") as mock_cls:
+        mock_cls.return_value.prompt_chars.side_effect = lambda cap: cap
         mock_cls.return_value.polish.return_value = _ok("[]")
         report, _, findings, _ = analyze_v2(
             tmp_path, use_llm=True, skip_synth=True, llm_mode="full"
@@ -92,6 +95,7 @@ def test_v2_rag_included_in_pillar_prompt(tmp_path: Path, monkeypatch) -> None:
     (tmp_path / "lib").mkdir()
     (tmp_path / "lib" / "stack.ts").write_text('Action: "*"', encoding="utf-8")
     with patch("aws_arch_agent.agent.v2_graph.LLMClient") as mock_cls:
+        mock_cls.return_value.prompt_chars.side_effect = lambda cap: cap
         mock_cls.return_value.polish.return_value = _ok("[]")
         analyze_v2(
             tmp_path,
@@ -221,6 +225,7 @@ def test_v2_all_calls_ok_reports_responded(tmp_path: Path, monkeypatch) -> None:
     monkeypatch.setattr(v2_graph, "_pillar_cache", {})
     _stack_repo(tmp_path)
     with patch("aws_arch_agent.agent.v2_graph.LLMClient") as mock_cls:
+        mock_cls.return_value.prompt_chars.side_effect = lambda cap: cap
         mock_cls.return_value.polish.return_value = _ok("[]")
         _, ctx, _, _ = analyze_v2(tmp_path, use_llm=True, skip_synth=True, rules_exclude=REPO_IDS)
     assert mock_cls.return_value.polish.call_count == 1  # the one pillar with findings
@@ -236,6 +241,7 @@ def test_v2_partial_failure_never_claims_responded(tmp_path: Path, monkeypatch) 
     monkeypatch.setattr(v2_graph, "_pillar_cache", {})
     _stack_repo(tmp_path)
     with patch("aws_arch_agent.agent.v2_graph.LLMClient") as mock_cls:
+        mock_cls.return_value.prompt_chars.side_effect = lambda cap: cap
         mock_cls.return_value.polish.side_effect = _security_pillar_fails
         _, ctx, _, _ = analyze_v2(tmp_path, use_llm=True, skip_synth=True)
     assert ctx.llm.status == "partial"
@@ -247,6 +253,7 @@ def test_v2_failed_pillar_is_asked_again(tmp_path: Path, monkeypatch) -> None:
     monkeypatch.setattr(v2_graph, "_pillar_cache", {})
     _stack_repo(tmp_path)
     with patch("aws_arch_agent.agent.v2_graph.LLMClient") as mock_cls:
+        mock_cls.return_value.prompt_chars.side_effect = lambda cap: cap
         mock_cls.return_value.polish.side_effect = _security_pillar_fails
         analyze_v2(tmp_path, use_llm=True, skip_synth=True)
         calls = mock_cls.return_value.polish.call_count
@@ -259,6 +266,7 @@ def test_v2_failed_pillar_is_asked_again(tmp_path: Path, monkeypatch) -> None:
 def test_v2_compact_failure_is_reported(tmp_path: Path) -> None:
     _stack_repo(tmp_path)
     with patch("aws_arch_agent.agent.v2_graph.LLMClient") as mock_cls:
+        mock_cls.return_value.prompt_chars.side_effect = lambda cap: cap
         mock_cls.return_value.polish.return_value = _failed("prompt")
         _, ctx, _, _ = analyze_v2(tmp_path, use_llm=True, skip_synth=True, llm_mode="compact")
     assert ctx.llm.status == "fallback"
@@ -267,6 +275,7 @@ def test_v2_compact_failure_is_reported(tmp_path: Path) -> None:
 def test_v2_no_llm_is_skipped_with_no_call(tmp_path: Path) -> None:
     _stack_repo(tmp_path)
     with patch("aws_arch_agent.agent.v2_graph.LLMClient") as mock_cls:
+        mock_cls.return_value.prompt_chars.side_effect = lambda cap: cap
         _, ctx, _, _ = analyze_v2(tmp_path, use_llm=False, skip_synth=True)
     mock_cls.return_value.polish.assert_not_called()
     assert ctx.llm.line == "LLM: skipped (--no-llm)"

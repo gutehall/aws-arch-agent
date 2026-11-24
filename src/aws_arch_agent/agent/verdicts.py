@@ -24,7 +24,8 @@ SOURCE_RADIUS = 20  # lines either side of the finding, so about 40 in all
 MAX_SOURCE_LINE_CHARS = 400
 MAX_EVIDENCE_CHARS = 2000
 # The whole prompt. Ollama cuts a longer one silently, and the run would still report ok.
-# About 3 characters a token leaves room in DEFAULT_OLLAMA_NUM_CTX for the reply.
+# At CHARS_PER_TOKEN in tools/llm.py it leaves room in DEFAULT_OLLAMA_NUM_CTX for the reply;
+# a model with a shorter context gets less (LLMClient.prompt_chars).
 MAX_PROMPT_CHARS = 48_000
 MAX_REFERENCE_CHARS = 6000
 MAX_LOCATION_CHARS = 300
@@ -48,6 +49,11 @@ def finding_key(finding: Finding) -> str:
     """`<rule id>#<8 hex>` over file, line and evidence. Identical keys are identical findings."""
     payload = json.dumps([finding.file, finding.line, finding.evidence])
     return f"{finding.id}#{hashlib.sha256(payload.encode()).hexdigest()[:8]}"
+
+
+def batch_size(llm: LLMClient) -> int:
+    """Findings per batch: fewer when the model's context is short, so each still gets its source."""
+    return max(1, BATCH_SIZE * llm.prompt_chars(MAX_PROMPT_CHARS) // MAX_PROMPT_CHARS)
 
 
 def make_batches(findings: List[Finding], size: int = BATCH_SIZE) -> list[list[Finding]]:
@@ -126,21 +132,23 @@ def _finding_block(finding: Finding, repo_path: Path, share: int) -> str:
     )
 
 
-def build_prompt(findings: List[Finding], repo_path: Path, reference: str = "") -> str:
-    """The prompt for one batch, inside data markers, in at most MAX_PROMPT_CHARS.
+def build_prompt(
+    findings: List[Finding], repo_path: Path, reference: str = "", max_chars: int = MAX_PROMPT_CHARS
+) -> str:
+    """The prompt for one batch, inside data markers, in at most max_chars.
 
     Markers stay whole, and rule cards and locations have their own caps. Evidence and source
     share what is left, so a long batch narrows its source windows around each finding and
     every finding is still asked.
     """
     cards = render_cards(cards_for_findings(findings))
-    ref = reference.strip()[:MAX_REFERENCE_CHARS].strip()
+    ref = reference.strip()[:min(MAX_REFERENCE_CHARS, max_chars // 8)].strip()
 
     def data_for(blocks: list[str]) -> str:
         return "\n\n".join(["## Rule cards", cards, "## Findings", *blocks, *([ref] if ref else [])])
 
     bare = [f"{_finding_head(f)}\n{_NO_SOURCE}" for f in findings]
-    spare = MAX_PROMPT_CHARS - len(_wrap(findings, data_for(bare)))
+    spare = max_chars - len(_wrap(findings, data_for(bare)))
     share = spare // max(len(findings), 1)
     return _wrap(findings, data_for([_finding_block(f, repo_path, share) for f in findings]))
 
@@ -221,7 +229,7 @@ def judge_batch(
     Only an ok reply is parsed, since a fallback's text is the prompt. A fallback is not
     retried. An empty reply or a body that is not JSON is retried once, then stays invalid.
     """
-    prompt = build_prompt(findings, repo_path, reference)
+    prompt = build_prompt(findings, repo_path, reference, llm.prompt_chars(MAX_PROMPT_CHARS))
     key = hashlib.sha256(prompt.encode()).hexdigest()
     if cache is not None and key in cache:
         return cache[key]

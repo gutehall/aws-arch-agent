@@ -162,6 +162,9 @@ def test_garbage_llm_reply_cannot_alter_summary_or_findings(tmp_path: Path, monk
     from aws_arch_agent.tools.llm import LLMResult
 
     class FakeLLM:
+        def prompt_chars(self, cap: int) -> int:
+            return cap
+
         def polish(self, text: str, system: str = "", json_reply: bool = False) -> LLMResult:
             return LLMResult("## Summary\n0 findings. All clear!", "ok", "ollama", "llama3:8b")
 
