@@ -2,6 +2,13 @@
 
 New releases go at the top. See [CONTRIBUTING.md](CONTRIBUTING.md#releases) for when to cut one and how the version is bumped.
 
+## v1.3.1 - 2026-11-24
+
+### Fixes
+
+- Price List bulk API: the offer CSV is served as `application/octet-stream`, so every bulk fetch failed with `can't concat str to bytes` and no price was estimated. It is now read as UTF-8 (#127)
+- Ollama: prompts are sized to the model's trained context, read from `/api/show`, instead of `OLLAMA_NUM_CTX` alone. Ollama runs `llama3:8b` at 8192 tokens whatever `num_ctx` asks and cut longer prompts from the middle, so verdict replies were not JSON. Verdicts now go in smaller batches on a short context; hypotheses are skipped with a reason when the rule catalog alone does not fit. Long-context models are unchanged (#127)
+
 ## v1.3.0 - 2026-11-23
 
 ### Changes
