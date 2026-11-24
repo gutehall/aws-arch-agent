@@ -165,7 +165,7 @@ class LLMClient:
         self.ollama_host = os.getenv("OLLAMA_HOST", LOCAL_OLLAMA)
         self._ollama_model: str | None = None  # resolved on first use: building a client probes nothing
         self.ollama_num_ctx = _ollama_num_ctx()
-        self._context_tokens: int | None = None  # asked of Ollama on first use
+        self._context_tokens: int | None = None  # asked of Ollama until it answers
         self.selfhosted_url = os.getenv("LLM_BASE_URL", "")
         self.selfhosted_model = os.getenv("LLM_MODEL", "")
 
@@ -187,7 +187,9 @@ class LLMClient:
             return None
         if self._context_tokens is None:
             trained = _ollama_context_length(self.ollama_host, self.ollama_model)
-            self._context_tokens = min(self.ollama_num_ctx, trained) if trained else self.ollama_num_ctx
+            if trained is None:
+                return self.ollama_num_ctx  # not known yet: ask again on the next call
+            self._context_tokens = min(self.ollama_num_ctx, trained)
         return self._context_tokens
 
     def prompt_chars(self, cap: int) -> int:

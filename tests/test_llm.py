@@ -346,3 +346,11 @@ def test_a_selfhosted_server_keeps_the_full_prompt(monkeypatch: pytest.MonkeyPat
     with patch("aws_arch_agent.tools.llm.requests.post") as post:
         assert _client(monkeypatch, "selfhosted").prompt_chars(48_000) == 48_000
     post.assert_not_called()
+
+
+def test_a_failed_context_lookup_is_asked_again(monkeypatch: pytest.MonkeyPatch) -> None:
+    client = _client(monkeypatch, "ollama")
+    with patch("aws_arch_agent.tools.llm.requests.post", side_effect=requests.Timeout("slow")):
+        assert client.context_tokens() == DEFAULT_OLLAMA_NUM_CTX
+    with patch("aws_arch_agent.tools.llm.requests.post", side_effect=_ollama_with_context(8192)):
+        assert client.context_tokens() == 8192

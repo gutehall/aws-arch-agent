@@ -24,7 +24,8 @@ SOURCE_RADIUS = 20  # lines either side of the finding, so about 40 in all
 MAX_SOURCE_LINE_CHARS = 400
 MAX_EVIDENCE_CHARS = 2000
 # The whole prompt. Ollama cuts a longer one silently, and the run would still report ok.
-# About 3 characters a token leaves room in DEFAULT_OLLAMA_NUM_CTX for the reply.
+# At CHARS_PER_TOKEN in tools/llm.py it leaves room in DEFAULT_OLLAMA_NUM_CTX for the reply;
+# a model with a shorter context gets less (LLMClient.prompt_chars).
 MAX_PROMPT_CHARS = 48_000
 MAX_REFERENCE_CHARS = 6000
 MAX_LOCATION_CHARS = 300
