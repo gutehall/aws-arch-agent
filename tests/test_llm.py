@@ -42,7 +42,8 @@ def test_a_configured_server_is_called(monkeypatch: pytest.MonkeyPatch, name: st
         client.provider = "selfhosted"
     with patch("aws_arch_agent.tools.llm.requests.post", return_value=reply) as post:
         result = client.polish("p", "s")
-    post.assert_called_once()
+    # Ollama is also asked once for the model's context length (/api/show).
+    assert [c for c in post.call_args_list if not c.args[0].endswith("/api/show")] == [post.call_args]
     assert result.status == "ok"
 
 
@@ -308,3 +309,40 @@ def test_aggregate_partial_keeps_what_answered() -> None:
     assert run.status == "partial" and run.line == "LLM: partial (2 of 3 calls answered; reply is not JSON)"
     assert aggregate_results([ok, ok], allow_partial=True).status == "ok"
     assert aggregate_results([bad], allow_partial=True).status == "invalid"
+
+
+def _ollama_with_context(trained: int | None):
+    """requests.post for an Ollama whose model was trained on `trained` tokens."""
+    def post(url: str, **kwargs):
+        if url.endswith("/api/show"):
+            info = {"general.architecture": "llama"}
+            if trained is not None:
+                info["llama.context_length"] = trained
+            return _ollama_reply({"model_info": info})
+        return _ollama_reply({"message": {"content": "ok"}})
+    return post
+
+
+def test_ollama_context_is_capped_at_the_trained_length(monkeypatch: pytest.MonkeyPatch) -> None:
+    # llama3:8b: Ollama runs 8192 whatever num_ctx asks, and cuts a longer prompt from the middle.
+    client = _client(monkeypatch, "ollama")
+    with patch("aws_arch_agent.tools.llm.requests.post", side_effect=_ollama_with_context(8192)) as post:
+        client.polish("text", system="s")
+        assert client.prompt_chars(48_000) == (8192 - 2048) * 7 // 2
+    chat = [c for c in post.call_args_list if c.args[0].endswith("/api/chat")]
+    assert chat[0].kwargs["json"]["options"]["num_ctx"] == 8192
+    assert sum(c.args[0].endswith("/api/show") for c in post.call_args_list) == 1  # asked once
+
+
+@pytest.mark.parametrize("trained", [None, 131072])
+def test_a_long_or_unknown_context_keeps_the_full_prompt(monkeypatch: pytest.MonkeyPatch, trained) -> None:
+    client = _client(monkeypatch, "ollama")
+    with patch("aws_arch_agent.tools.llm.requests.post", side_effect=_ollama_with_context(trained)):
+        assert client.context_tokens() == DEFAULT_OLLAMA_NUM_CTX
+        assert client.prompt_chars(48_000) == 48_000
+
+
+def test_a_selfhosted_server_keeps_the_full_prompt(monkeypatch: pytest.MonkeyPatch) -> None:
+    with patch("aws_arch_agent.tools.llm.requests.post") as post:
+        assert _client(monkeypatch, "selfhosted").prompt_chars(48_000) == 48_000
+    post.assert_not_called()

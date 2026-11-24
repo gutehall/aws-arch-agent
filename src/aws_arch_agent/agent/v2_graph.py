@@ -10,7 +10,13 @@ from typing import Annotated, Literal, TypedDict, List
 from aws_arch_agent import suppressions
 from aws_arch_agent.models import Finding, Hypothesis, IacSource, RepoContext, Verdict
 from aws_arch_agent.agent.hypotheses import find_hypotheses
-from aws_arch_agent.agent.verdicts import VerdictCache, apply_verdicts, judge_batch, make_batches
+from aws_arch_agent.agent.verdicts import (
+    VerdictCache,
+    apply_verdicts,
+    batch_size,
+    judge_batch,
+    make_batches,
+)
 from aws_arch_agent.agent.v1 import (
     _collect_findings,
     _filter_rules,
@@ -175,7 +181,7 @@ def _summarize_role(
         notes = f"## {role}\n(skipped LLM)\n\n{snippet}\n\nSynth summary: {synth_summary[:500]}"
         return notes, None, {}
     verdicts, result = judge_batch(
-        llm, make_batches(rel)[0], repo_path, reference=rag_block, cache=_pillar_cache
+        llm, make_batches(rel, batch_size(llm))[0], repo_path, reference=rag_block, cache=_pillar_cache
     )
     return f"## {role}\n\n{snippet}\n", result, verdicts
 
@@ -506,9 +512,10 @@ def node_merge(state: State) -> State:
         report("Merging review")
         out: State = {"merged_notes": _joined_notes(state)}
         if llm_mode == "compact" and findings:
+            llm = LLMClient()
             verdicts, result = judge_batch(
-                LLMClient(),
-                make_batches(findings)[0],
+                llm,
+                make_batches(findings, batch_size(llm))[0],
                 Path(state["repo_path"]),
                 reference=_rag_block(state),
             )

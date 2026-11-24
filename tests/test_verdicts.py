@@ -16,6 +16,7 @@ from aws_arch_agent.agent.verdicts import (
     MAX_VERDICT_BATCHES,
     VERDICT_SYSTEM,
     apply_verdicts,
+    batch_size,
     build_prompt,
     finding_key,
     judge_batch,
@@ -82,6 +83,9 @@ class FakeLLM:
         self.reply = reply
         self.prompts: list[str] = []
         self.systems: list[str] = []
+
+    def prompt_chars(self, cap: int) -> int:
+        return cap
 
     def polish(self, prompt: str, system: str = "", json_reply: bool = False) -> LLMResult:
         self.prompts.append(prompt)
@@ -451,6 +455,9 @@ def test_unknown_id_is_absent(tmp_path: Path, monkeypatch) -> None:
 
 
 def _cli(args: list[str], monkeypatch, reply: Callable[[str], LLMResult]):
+    def prompt_chars(self, cap: int) -> int:
+        return cap
+
     def polish(self, prompt: str, system: str, json_reply: bool = False) -> LLMResult:
         return reply(prompt)
 
@@ -756,3 +763,27 @@ def test_the_longest_written_card_text_is_not_capped(tmp_path: Path) -> None:
     prompt = build_prompt([finding], tmp_path)
     assert f"CF-X-001: {title}\n" in prompt
     assert f"Recommendation: {recommendation}\n" in prompt
+
+
+class _ShortContext:
+    """An LLM with llama3:8b's 8192-token context."""
+
+    def prompt_chars(self, cap: int) -> int:
+        return min(cap, (8192 - 2048) * 7 // 2)
+
+
+def test_a_short_context_gets_smaller_batches_that_fit(tmp_path: Path) -> None:
+    llm = _ShortContext()
+    size = batch_size(llm)  # type: ignore[arg-type]
+    assert 1 <= size < BATCH_SIZE
+    cards = sorted(STATIC_CARDS.values(), key=lambda c: len(c.title) + len(c.recommendation), reverse=True)
+    (tmp_path / "a.ts").write_text("\n".join("x" * 2000 for _ in range(100)), encoding="utf-8")
+    findings = [
+        _finding(rule=card.id, file="a.ts", line=n + 21, evidence="e" * 5000)
+        for n, card in enumerate(cards[:size])
+    ]
+    budget = llm.prompt_chars(MAX_PROMPT_CHARS)
+    prompt = build_prompt(findings, tmp_path, reference="r" * 50_000, max_chars=budget)
+    assert len(prompt) <= budget
+    for card in cards[:size]:
+        assert f"Recommendation: {card.recommendation}" in prompt

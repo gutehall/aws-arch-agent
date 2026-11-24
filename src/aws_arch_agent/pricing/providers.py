@@ -189,6 +189,10 @@ def _stream(url: str) -> Iterable[str]:
         resp.close()
         raise PricingUnavailable(f"Price List bulk API: HTTP {resp.status_code} for {url}")
 
+    # The offer CSV is UTF-8 but served as application/octet-stream, so requests finds no
+    # charset and iter_lines(decode_unicode=True) would yield bytes.
+    resp.encoding = "utf-8"
+
     def lines() -> Iterable[str]:
         with resp:
             for line in resp.iter_lines(decode_unicode=True):

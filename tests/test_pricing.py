@@ -530,3 +530,20 @@ def test_truncated_query_results_are_not_known_misses(tmp_path: Path) -> None:
     assert hybrid.cache.get("eu-north-1", "ec2:m5.xlarge") is None  # not stored as a miss
     assert hybrid.cache.get("eu-north-1", "ec2:m5.large").usd == 0.102  # type: ignore[union-attr]
     assert api.price("ec2:m5.large", "eu-north-1") is not None
+
+
+def test_bulk_stream_decodes_an_octet_stream_body(monkeypatch: pytest.MonkeyPatch) -> None:
+    # The bulk API serves its CSV as application/octet-stream: no charset for requests to use.
+    import requests
+
+    from aws_arch_agent.pricing.providers import _stream
+
+    def fake_get(url: str, **kwargs: Any) -> requests.Response:
+        resp = requests.Response()
+        resp.status_code = 200
+        resp.headers["Content-Type"] = "application/octet-stream"
+        resp.raw = io.BytesIO('"FormatVersion","v1.0"\n"Région","€"\n'.encode())
+        return resp
+
+    monkeypatch.setattr(requests, "get", fake_get)
+    assert list(_stream("https://example.invalid/index.csv")) == ['"FormatVersion","v1.0"\n', '"Région","€"\n']
