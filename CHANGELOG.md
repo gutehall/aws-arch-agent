@@ -2,6 +2,12 @@
 
 New releases go at the top. See [CONTRIBUTING.md](CONTRIBUTING.md#releases) for when to cut one and how the version is bumped.
 
+## v1.3.2 - 2026-11-24
+
+### Changes
+
+- The HTML report has three tabs: Summary (opens first), Findings and Well-Architected answers. Summary draws the findings as charts: a severity ring, Well-Architected questions met per pillar, findings per pillar and per theme as bars split by severity, and the top fixes and quick wins as cards. Every view stays reachable without script (#129)
+
 ## v1.3.1 - 2026-11-24
 
 ### Fixes
