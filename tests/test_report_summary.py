@@ -85,7 +85,7 @@ def test_json_and_html_carry_the_summary() -> None:
     assert data["findings"][0]["effort"] == "medium"
     html = render_html(ctx, FINDINGS)
     assert "<h2>Summary</h2>" in html and "Top fixes" in html and "By pillar" in html
-    # The summary opens the findings view, before the first card.
+    # The summary is its own view, before the findings view.
     assert html.index("<h2>Summary</h2>") < html.index('<article class="finding"')
     for fix in summary["top_fixes"]:
         assert f'<span class="rule">{fix["id"]}</span>' in html

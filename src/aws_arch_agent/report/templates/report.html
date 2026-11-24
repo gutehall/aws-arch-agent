@@ -27,7 +27,24 @@
 {% endif %}
 {% endmacro %}
 {% macro fix_item(x) %}
-<li><span class="rule">{{ x.id }}</span> {{ x.title }} ({{ x.severity }}, {{ x.findings }} resource{{ "s" if x.findings != 1 else "" }}{% if x.monthly_savings_usd %}, saves about ${{ "{:,.2f}".format(x.monthly_savings_usd) }}/month (estimate){% endif %}, {{ x.effort }} effort){% if x.first_location %}, e.g. <code>{{ x.first_location }}</code>{% endif %}</li>
+<li class="fix">
+  <div class="fix-head"><span class="badge {{ x.severity }}">{{ x.severity }}</span> <span class="rule">{{ x.id }}</span> <b>{{ x.title }}</b></div>
+  <div class="chips">
+    <span class="chip">{{ x.findings }} resource{{ "s" if x.findings != 1 else "" }}</span>
+    <span class="chip effort-{{ x.effort }}">{{ x.effort }} effort</span>
+    {% if x.monthly_savings_usd %}<span class="chip save">saves ~${{ "{:,.2f}".format(x.monthly_savings_usd) }}/mo (estimate)</span>{% endif %}
+    {% if x.first_location %}<span class="chip">e.g. <code>{{ x.first_location }}</code></span>{% endif %}
+  </div>
+</li>
+{% endmacro %}
+{% macro severity_bar(row, scale, line) %}
+{# One stacked bar: its length is the row's findings against the largest row, split by severity. #}
+<div class="bar-row">
+  <span class="bar-name">{{ row.name }}</span>
+  <span class="track" aria-hidden="true"><span class="bar" style="width: {{ (row.findings / scale * 100) | round(1) }}%">{% for sev in ("High", "Medium", "Low") %}{% if row.by_severity[sev] %}<span class="seg {{ sev }}" style="flex: {{ row.by_severity[sev] }}" title="{{ row.by_severity[sev] }} {{ sev }}"></span>{% endif %}{% endfor %}</span></span>
+  <span class="bar-n" aria-hidden="true">{{ row.findings }}{% if row.monthly_savings_usd %} <span class="save">~${{ "{:,.0f}".format(row.monthly_savings_usd) }}/mo</span>{% endif %}</span>
+  <span class="sr-only">{{ line }}</span>
+</div>
 {% endmacro %}
 <html lang="en">
 <head>
@@ -39,7 +56,7 @@
   :root {
     color-scheme: dark;
     --bg: #0d1117; --fg: #e6edf3; --muted: #9198a1; --line: #30363d; --panel: #161b22;
-    --high: #f47067; --medium: #e0a040; --low: #6cb6ff; --warn: #b083f0; --link: #58a6ff;
+    --high: #f47067; --medium: #e0a040; --low: #6cb6ff; --warn: #b083f0; --link: #58a6ff; --met: #3fb950;
   }
   * { box-sizing: border-box; }
   body { margin: 0; background: var(--bg); color: var(--fg);
@@ -123,6 +140,39 @@
   details.locations { margin-top: 12px; }
   details.locations summary { cursor: pointer; color: var(--muted); }
   .location { border-top: 1px solid var(--line); margin-top: 10px; padding-top: 6px; }
+  .summary .lead { font-size: 16px; margin: 0 0 16px; }
+  .charts { display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); gap: 16px; margin-bottom: 8px; }
+  .chart { border: 1px solid var(--line); border-radius: 8px; padding: 12px 16px; margin: 0; }
+  .chart h3 { margin-top: 0; }
+  .donut-wrap { display: flex; align-items: center; gap: 20px; flex-wrap: wrap; }
+  .donut { width: 120px; height: 120px; border-radius: 50%; display: grid; place-items: center; flex: none; }
+  .donut::before { content: ""; grid-area: 1 / 1; width: 78px; height: 78px; border-radius: 50%; background: var(--panel); }
+  .donut span { grid-area: 1 / 1; z-index: 1; text-align: center; font-size: 22px; font-weight: 600; line-height: 1.1; }
+  .donut small { display: block; font-size: 11px; font-weight: 400; color: var(--muted); }
+  .legend { list-style: none; margin: 0; padding: 0; font-size: 14px; }
+  .legend li { display: flex; align-items: center; gap: 8px; }
+  .legend.inline { display: flex; gap: 16px; margin-top: 8px; color: var(--muted); font-size: 12px; }
+  .dot { width: 10px; height: 10px; border-radius: 2px; flex: none; }
+  .dot.High, .seg.High { background: var(--high); } .dot.Medium, .seg.Medium { background: var(--medium); }
+  .dot.Low, .seg.Low { background: var(--low); } .dot.met { background: var(--met); } .dot.open { background: var(--line); }
+  .bar-row { display: grid; grid-template-columns: minmax(90px, 200px) 1fr auto; align-items: center; gap: 4px 12px; margin: 6px 0; font-size: 14px; }
+  .bar-name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .track { height: 14px; border-radius: 4px; background: var(--bg); overflow: hidden; display: block; }
+  .bar { display: flex; height: 100%; min-width: 3px; gap: 1px; }
+  .bar.met { background: var(--met); }
+  .seg { display: block; height: 100%; }
+  .bar-n { color: var(--muted); font-variant-numeric: tabular-nums; white-space: nowrap; }
+  .save { color: var(--met); }
+  .fixes { list-style: none; margin: 0; padding: 0; display: grid; gap: 8px; counter-reset: fix; }
+  .fix { border: 1px solid var(--line); border-radius: 8px; padding: 8px 12px; background: var(--bg); }
+  ol.fixes .fix-head::before { counter-increment: fix; content: counter(fix) "."; color: var(--muted); margin-right: 6px; font-weight: 600; }
+  .chips { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 6px; font-size: 12px; }
+  .chip { border: 1px solid var(--line); border-radius: 999px; padding: 1px 8px; color: var(--muted); }
+  .chip.save { border-color: var(--met); }
+  .chip.effort-low { color: var(--met); border-color: var(--met); }
+  .chip.effort-high { color: var(--high); border-color: var(--high); }
+  .sr-only { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
+  @media (max-width: 560px) { .bar-row { grid-template-columns: 1fr auto; } .bar-row .track { grid-column: 1 / -1; grid-row: 2; } }
   [hidden] { display: none !important; }
 </style>
 </head>
@@ -143,16 +193,6 @@
   <p class="meta">Accepted findings stay in the report and do not fail the build.</p>
   {% endif %}
 
-  <section class="counts" aria-label="Summary">
-    {% for sev in severities %}
-    <div class="count {{ sev }}"><div class="n">{{ counts[sev] }}</div><div class="label">{{ sev }}</div></div>
-    {% endfor %}
-    <div class="count warnings"><div class="n">{{ warnings | length }}</div><div class="label">Warnings</div></div>
-    {% if cost and cost.stacks %}
-    {% set headline = cost.headline_monthly_usd if cost.headline_monthly_usd is defined else cost.total_monthly_usd %}
-    <div class="count cost-kpi{% if cost.budget and not cost.budget.passed %} over{% endif %}"><div class="n">{% if cost.prices_unavailable %}n/a{% else %}${{ "{:,.0f}".format(headline) }}{% endif %}</div><div class="label">{% if cost.prices_unavailable %}No prices{% elif cost.illustrated_monthly_usd %}Illustrated monthly cost{% else %}Est. monthly cost{% endif %}{% if cost.budget %} · budget {{ "passed" if cost.budget.passed else "FAILED" }}{% endif %}</div></div>
-    {% endif %}
-  </section>
 
   {% if warnings %}
   <section class="warnings-list">
@@ -166,39 +206,86 @@
   {% endif %}
 
   <nav class="views" aria-label="Report view">
-    <button type="button" data-view="findings" aria-pressed="true" aria-controls="view-findings">Findings ({{ total }})</button>
+    <button type="button" data-view="summary" aria-pressed="true" aria-controls="view-summary">Summary</button>
+    <button type="button" data-view="findings" aria-pressed="false" aria-controls="view-findings">Findings ({{ total }})</button>
     <button type="button" data-view="answers" aria-pressed="false" aria-controls="view-answers">Well-Architected answers ({{ answers | selectattr("met") | list | length }}/{{ answers | length }} met)</button>
   </nav>
 
-  <div id="view-findings">
+  <div id="view-summary">
+  <section class="counts" aria-label="Totals">
+    {% for sev in severities %}
+    <div class="count {{ sev }}"><div class="n">{{ counts[sev] }}</div><div class="label">{{ sev }}</div></div>
+    {% endfor %}
+    <div class="count warnings"><div class="n">{{ warnings | length }}</div><div class="label">Warnings</div></div>
+    {% if cost and cost.stacks %}
+    {% set headline = cost.headline_monthly_usd if cost.headline_monthly_usd is defined else cost.total_monthly_usd %}
+    <div class="count cost-kpi{% if cost.budget and not cost.budget.passed %} over{% endif %}"><div class="n">{% if cost.prices_unavailable %}n/a{% else %}${{ "{:,.0f}".format(headline) }}{% endif %}</div><div class="label">{% if cost.prices_unavailable %}No prices{% elif cost.illustrated_monthly_usd %}Illustrated monthly cost{% else %}Est. monthly cost{% endif %}{% if cost.budget %} · budget {{ "passed" if cost.budget.passed else "FAILED" }}{% endif %}</div></div>
+    {% endif %}
+  </section>
+
   {% if summary.findings %}
+  {% set sev_total = summary.findings %}
+  {% set high_pct = summary.by_severity.High / sev_total * 100 %}
+  {% set med_pct = high_pct + summary.by_severity.Medium / sev_total * 100 %}
+  {% set met_count = answers | selectattr("met") | list | length %}
   <section class="summary" aria-label="Summary">
     <h2>Summary</h2>
-    <p>{{ summary.findings }} findings: {{ summary.by_severity.High }} High, {{ summary.by_severity.Medium }} Medium, {{ summary.by_severity.Low }} Low.{% if summary.monthly_savings_usd %} About ${{ "{:,.2f}".format(summary.monthly_savings_usd) }}/month possible savings (estimate).{% endif %}</p>
-    <h3>Top fixes</h3>
-    <ol>
-      {% for x in summary.top_fixes %}{{ fix_item(x) }}{% endfor %}
-    </ol>
+    <p class="lead">{{ summary.findings }} findings: {{ summary.by_severity.High }} High, {{ summary.by_severity.Medium }} Medium, {{ summary.by_severity.Low }} Low.{% if summary.monthly_savings_usd %} About ${{ "{:,.2f}".format(summary.monthly_savings_usd) }}/month possible savings (estimate).{% endif %}</p>
+    <div class="charts">
+      <figure class="chart">
+        <h3>Severity mix</h3>
+        <div class="donut-wrap">
+          <div class="donut" role="img" aria-label="{{ summary.by_severity.High }} High, {{ summary.by_severity.Medium }} Medium, {{ summary.by_severity.Low }} Low" style="background: conic-gradient(var(--high) 0 {{ high_pct | round(2) }}%, var(--medium) 0 {{ med_pct | round(2) }}%, var(--low) 0 100%)"><span>{{ sev_total }}<small>findings</small></span></div>
+          <ul class="legend">
+            {% for sev in severities %}
+            <li><span class="dot {{ sev }}"></span>{{ sev }}: <b>{{ summary.by_severity[sev] }}</b> <span class="meta">({{ (summary.by_severity[sev] / sev_total * 100) | round | int }}%)</span></li>
+            {% endfor %}
+          </ul>
+        </div>
+      </figure>
+      <figure class="chart">
+        <h3>Well-Architected questions met</h3>
+        <p class="meta">{{ met_count }} of {{ answers | length }} met.</p>
+        {% for pillar, group in answers | groupby("pillar") %}
+        {% set met = group | selectattr("met") | list | length %}
+        <div class="bar-row">
+          <span class="bar-name">{{ pillar }}</span>
+          <span class="track" aria-hidden="true"><span class="bar met" style="width: {{ (met / group | length * 100) | round(1) }}%"></span></span>
+          <span class="bar-n">{{ met }}/{{ group | length }}</span>
+        </div>
+        {% endfor %}
+      </figure>
+    </div>
     <h3>By pillar</h3>
-    <ul>
-      {% for line in pillar_lines %}<li>{{ line }}</li>{% endfor %}
-    </ul>
+    {% set pillar_scale = summary.pillars | map(attribute="findings") | max %}
+    {% for row in summary.pillars %}{{ severity_bar(row, pillar_scale, pillar_lines[loop.index0]) }}{% endfor %}
     {% if theme_lines %}
     <h3>By theme</h3>
     <p class="meta">A finding can be in more than one.</p>
-    <ul>
-      {% for line in theme_lines %}<li>{{ line }}</li>{% endfor %}
-    </ul>
+    {% set theme_scale = summary.themes | map(attribute="findings") | max %}
+    {% for row in summary.themes %}{{ severity_bar(row, theme_scale, theme_lines[loop.index0]) }}{% endfor %}
     {% endif %}
+    <ul class="legend inline" aria-hidden="true">
+      {% for sev in severities %}<li><span class="dot {{ sev }}"></span>{{ sev }}</li>{% endfor %}
+    </ul>
+    <h3>Top fixes</h3>
+    <ol class="fixes">
+      {% for x in summary.top_fixes %}{{ fix_item(x) }}{% endfor %}
+    </ol>
     {% if summary.quick_wins %}
     <h3>Quick wins</h3>
     <p class="meta">Low effort, with suggested code.</p>
-    <ul>
+    <ul class="fixes">
       {% for x in summary.quick_wins %}{{ fix_item(x) }}{% endfor %}
     </ul>
     {% endif %}
   </section>
+  {% else %}
+  <p class="empty">No findings.</p>
   {% endif %}
+  </div>
+
+  <div id="view-findings" hidden>
   <nav class="tabs" aria-label="Filter by severity">
     <button type="button" data-tab="All" aria-pressed="true" aria-controls="findings">All ({{ total }})</button>
     {% for sev in severities %}
@@ -443,8 +530,10 @@
     btn.addEventListener("click", function () {
       var name = btn.getAttribute("data-view");
       views.forEach(function (b) { b.setAttribute("aria-pressed", b === btn ? "true" : "false"); });
-      document.getElementById("view-findings").hidden = name !== "findings";
-      document.getElementById("view-answers").hidden = name !== "answers";
+      views.forEach(function (b) {
+        var view = b.getAttribute("data-view");
+        document.getElementById("view-" + view).hidden = view !== name;
+      });
     });
   });
   var answerFilter = document.getElementById("answer-filter");
