@@ -36,6 +36,7 @@ from aws_arch_agent.report.markdown import render_markdown
 from aws_arch_agent.agent.verdicts import (
     MAX_VERDICT_BATCHES,
     apply_verdicts,
+    batch_size,
     judge_batch,
     make_batches,
 )
@@ -642,7 +643,7 @@ def _judge(findings: list[Finding], repo_path: Path) -> LLMResult:
     llm = LLMClient()
     verdicts: dict[str, Verdict] = {}
     results: list[LLMResult] = []
-    for batch in make_batches(findings)[:MAX_VERDICT_BATCHES]:
+    for batch in make_batches(findings, batch_size(llm))[:MAX_VERDICT_BATCHES]:
         judged, result = judge_batch(llm, batch, repo_path)
         verdicts.update(judged)
         results.append(result)

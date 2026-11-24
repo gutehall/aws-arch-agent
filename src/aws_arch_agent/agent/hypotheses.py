@@ -22,7 +22,12 @@ from aws_arch_agent.tools.files import read_text_safe
 from aws_arch_agent.tools.llm import LLMClient, LLMResult
 from aws_arch_agent.tools.paths import normalize_rel_path, to_repo_relative
 
-MAX_SLICE_CHARS = 24_000  # all files together
+MAX_SLICE_CHARS = 24_000  # all files together, less when the model's context is short
+MIN_SLICE_CHARS = 4_000  # below one file's worth, the call is not worth making
+TOO_SHORT_REASON = (
+    "the model's context is too short for the rule catalog; use a longer-context model, "
+    "such as llama3.1:8b"
+)
 MAX_FILE_CHARS = 4_000  # one file, so the first big file cannot use the whole slice
 MAX_SYNTH_CHARS = 4_000
 MAX_HYPOTHESES = 20
@@ -39,14 +44,14 @@ def _repo_file(finding_file: str, repo_path: Path) -> str | None:
 
 
 def build_slice(
-    files: Iterable[Path], repo_path: Path, findings: List[Finding]
+    files: Iterable[Path], repo_path: Path, findings: List[Finding], max_chars: int = MAX_SLICE_CHARS
 ) -> tuple[list[str], dict[str, int]]:
     """Numbered text of files with no finding, capped: the blocks, and each file's last line shown."""
     reported = {_repo_file(f.file, repo_path) for f in findings if f.file}
     root = repo_path.resolve()
     blocks: list[str] = []
     shown: dict[str, int] = {}
-    budget = MAX_SLICE_CHARS
+    budget = max_chars
     for path in sorted(files):
         try:
             resolved = path.resolve()  # follows symlinks: a link out of the repo fails
@@ -60,7 +65,9 @@ def build_slice(
         text = read_text_safe(resolved)
         if not text.strip():
             continue
-        limit = min(MAX_FILE_CHARS, budget)
+        header = f"File: {rel}\n"
+        # The rows, plus this block's header and the blank line that joins it to the next.
+        limit = min(MAX_FILE_CHARS, budget - len(header) - 2)
         rows: list[str] = []
         used = 0
         for number, raw in enumerate(text.split("\n"), start=1):
@@ -71,9 +78,9 @@ def build_slice(
             used += len(row) + 1
         if not rows:
             continue
-        blocks.append(f"File: {rel}\n" + "\n".join(rows))
+        blocks.append(header + "\n".join(rows))
         shown[rel] = len(rows)
-        budget -= used
+        budget -= used + len(header) + 2
     return blocks, shown
 
 
@@ -168,10 +175,18 @@ def find_hypotheses(
     synth_summary: str = "",
     titles: dict[str, str] | None = None,
 ) -> tuple[list[Hypothesis], LLMResult | None]:
-    """One call, retried once on an unusable reply. A None result means no file to ask about."""
-    blocks, shown = build_slice(files, repo_path, findings)
+    """One call, retried once on an unusable reply. A None result means no file to ask about.
+
+    The slice gets what the model's context leaves after the instructions and the catalog. When
+    that is less than MIN_SLICE_CHARS nothing is sent: Ollama would cut the prompt from the middle.
+    """
+    overhead = len(build_prompt([], findings, synth_summary, titles))
+    room = llm.prompt_chars(overhead + MAX_SLICE_CHARS) - overhead
+    blocks, shown = build_slice(files, repo_path, findings, max(room, MIN_SLICE_CHARS))
     if not blocks:
         return [], None
+    if room < MIN_SLICE_CHARS:
+        return [], LLMResult("", "skipped", reason=TOO_SHORT_REASON)
     prompt = build_prompt(blocks, findings, synth_summary, titles)
     result: LLMResult | None = None
     for _ in range(2):
