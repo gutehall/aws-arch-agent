@@ -87,6 +87,12 @@ def test_json_and_html_carry_the_summary() -> None:
     assert "<h2>Summary</h2>" in html and "Top fixes" in html and "By pillar" in html
     # The summary is its own view, before the findings view.
     assert html.index("<h2>Summary</h2>") < html.index('<article class="finding"')
+    # No view is hidden in the markup; the script picks Summary, so findings stay reachable without it.
+    for view in ("summary", "findings"):
+        assert f'<div id="view-{view}">' in html
+    assert '<section id="view-answers" class="answers" aria-label="Well-Architected answers">' in html
+    assert 'showView("summary")' in html
+    assert "conic-gradient(" in html and html.count('<div class="bar-row">') >= len(summary["pillars"])
     for fix in summary["top_fixes"]:
         assert f'<span class="rule">{fix["id"]}</span>' in html
     for row in summary["pillars"]:

@@ -159,7 +159,7 @@
   .bar-name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   .track { height: 14px; border-radius: 4px; background: var(--bg); overflow: hidden; display: block; }
   .bar { display: flex; height: 100%; min-width: 3px; gap: 1px; }
-  .bar.met { background: var(--met); }
+  .bar.met { background: var(--met); min-width: 0; }
   .seg { display: block; height: 100%; }
   .bar-n { color: var(--muted); font-variant-numeric: tabular-nums; white-space: nowrap; }
   .save { color: var(--met); }
@@ -285,7 +285,7 @@
   {% endif %}
   </div>
 
-  <div id="view-findings" hidden>
+  <div id="view-findings">
   <nav class="tabs" aria-label="Filter by severity">
     <button type="button" data-tab="All" aria-pressed="true" aria-controls="findings">All ({{ total }})</button>
     {% for sev in severities %}
@@ -434,7 +434,7 @@
   {% endif %}
   </div>
 
-  <section id="view-answers" class="answers" aria-label="Well-Architected answers" hidden>
+  <section id="view-answers" class="answers" aria-label="Well-Architected answers">
     <h2>Well-Architected answers</h2>
     <p class="meta">{{ answers | selectattr("met") | list | length }} of {{ answers | length }} questions met. Each answer is computed from the findings; a question with a best practice this scan did not check is not met.</p>
     <label class="answer-filter">Show
@@ -525,17 +525,19 @@
   });
   if (themeSelect) { themeSelect.addEventListener("change", apply); }
 
+  // Every view is in the markup unhidden, so the page still shows all of it without script.
   var views = document.querySelectorAll(".views button");
-  views.forEach(function (btn) {
-    btn.addEventListener("click", function () {
-      var name = btn.getAttribute("data-view");
-      views.forEach(function (b) { b.setAttribute("aria-pressed", b === btn ? "true" : "false"); });
-      views.forEach(function (b) {
-        var view = b.getAttribute("data-view");
-        document.getElementById("view-" + view).hidden = view !== name;
-      });
+  function showView(name) {
+    views.forEach(function (b) {
+      var view = b.getAttribute("data-view");
+      b.setAttribute("aria-pressed", view === name ? "true" : "false");
+      document.getElementById("view-" + view).hidden = view !== name;
     });
+  }
+  views.forEach(function (btn) {
+    btn.addEventListener("click", function () { showView(btn.getAttribute("data-view")); });
   });
+  showView("summary");
   var answerFilter = document.getElementById("answer-filter");
   if (answerFilter) {
     answerFilter.addEventListener("change", function () {
