@@ -19,7 +19,7 @@ The agent covers all six AWS Well-Architected pillars. Static and CloudFormation
 | `--no-llm` | `false` | Make no LLM calls: no verdicts, no hypotheses. See [LLM review](#llm-review) |
 | `--llm-mode` | `full` | V2 only: `full` (one verdict call per pillar with findings) or `compact` (one verdict call). Either way, plus one hypothesis call |
 | `--templates` | — | Path to CloudFormation templates (dir or file); V2 only, skips cdk synth |
-| `--no-synth` | `false` | Do not run cdk synth; V2 only (static only or with `--templates`) |
+| `--no-synth` | `false` | Do not run cdk synth; V2 only (static only or with `--templates`). Synth executes the scanned repo's code (its `cdk.json` `app` command) as the invoking user: pass `--no-synth` when scanning a repo you do not trust, such as a pull request from a fork. See [CDK synth runs repo code](#cdk-synth-runs-repo-code) |
 | `--rag` | — | Path to RAG doc (V2 only) |
 | `--suggestions` | — | Write findings JSON to this path |
 | `--baseline` | `.aws-arch-agent-baseline.json` | Path to baseline suppressions file |
@@ -64,6 +64,10 @@ aws-arch-agent --repo . --iac terraform --tf-plan infra/plan.json --no-llm
 
 - **V1**: static rules over CDK source, or `CF-*` checks over CloudFormation and Terraform. No synth, finishes in seconds.
 - **V2**: runs `cdk synth`, then six LangGraph reviewers judge the static findings and the synthesised template. A release install needs the `v2` extra on the same tag as the base install. A checkout installed with `.[dev]` or `.[v2]` already has it. `--llm-mode full` (default) makes one verdict call per pillar with findings. `--llm-mode compact` makes one. See [LLM review](#llm-review).
+
+### CDK synth runs repo code
+
+`cdk synth` is not static analysis. It runs the app command from the scanned repo's `cdk.json` (or `python app.py`), with the scanner's environment and credentials. Scanning a repo with synth on means trusting its code as much as running it yourself. V1, `--no-synth`, `--templates` and `--iac terraform` never run repo code. The GitHub Action defaults `no-synth` to `"true"`; set it to `"false"` only for a repo whose code you trust, and never for pull requests from forks. A `no_synth: false` in the scanned repo's config file does not override the action, because the action passes `--no-synth` and a flag wins over the config file.
 
 ## LLM providers
 
@@ -131,7 +135,7 @@ Use the composite action, pinned to a release tag (`@main` changes with every me
 | `out` | `report.md` | `--out` |
 | `fail-on` | `none` | `--fail-on` |
 | `no-llm` | `"true"` | `--no-llm` when `"true"` |
-| `no-synth` | `"false"` | `--no-synth` when `"true"` |
+| `no-synth` | `"true"` | `--no-synth` when `"true"`. Set `"false"` to run cdk synth in V2, only for a repo whose code you trust |
 | `llm-mode` | `full` | `--llm-mode` |
 | `baseline` | empty | `--baseline` |
 | `enforce-baseline` | `"false"` | `--enforce-baseline` when `"true"` |

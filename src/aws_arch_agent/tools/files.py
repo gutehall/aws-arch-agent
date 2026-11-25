@@ -1,5 +1,6 @@
 """File iteration and safe read helpers for scanning a repo."""
 from __future__ import annotations
+import stat
 from pathlib import Path
 from typing import Any, Dict, List, Tuple
 
@@ -40,7 +41,11 @@ def walk_files(repo_path: Path, max_files: int = 400) -> Tuple[List[Path], bool]
                 return
             try:
                 is_dir = p.is_dir()
+                is_link = p.is_symlink()
             except OSError:
+                continue
+            if is_link and (is_dir or not resolves_inside(p, root)):
+                # A symlinked dir can loop forever; any link can point outside the repo.
                 continue
             if is_dir:
                 if not should_skip_dir(p):
@@ -52,8 +57,18 @@ def walk_files(repo_path: Path, max_files: int = 400) -> Tuple[List[Path], bool]
                     return
                 files.append(p)
 
+    root = repo_path.resolve()
     walk(repo_path)
     return files, truncated
+
+
+def resolves_inside(path: Path, root: Path) -> bool:
+    """True when path, with symlinks resolved, is root or lies under it."""
+    try:
+        path.resolve().relative_to(root)
+    except (OSError, RuntimeError, ValueError):
+        return False
+    return True
 
 
 def iter_files(repo_path: Path, max_files: int = 400) -> List[Path]:
@@ -75,6 +90,27 @@ def truncation_message(notes: Dict[str, Any]) -> str | None:
         f"File walk stopped at --max-files {limit}: files past that were not scanned. "
         "Raise --max-files to scan the whole repo."
     )
+
+
+class FileTooLargeError(ValueError):
+    """A file passed the size cap of read_text_capped; it was not parsed."""
+
+
+def read_text_capped(path: Path, max_chars: int, errors: str = "strict") -> str:
+    """Read path as UTF-8 text, like Path.read_text, but refuse files over max_chars.
+
+    Only a regular file is read: a FIFO would block and a device such as /dev/zero never
+    ends, so both raise OSError. The read itself is bounded, so a huge file cannot exhaust
+    memory. Raises FileTooLargeError when the file is over the cap, and OSError or
+    UnicodeDecodeError as Path.read_text would.
+    """
+    if not stat.S_ISREG(path.stat().st_mode):
+        raise OSError(f"{path.name} is not a regular file")
+    with path.open(encoding="utf-8", errors=errors) as handle:
+        text = handle.read(max_chars + 1)
+    if len(text) > max_chars:
+        raise FileTooLargeError(f"{path.name} is larger than the {max_chars:,}-character limit")
+    return text
 
 
 def read_text_safe(path: Path, max_bytes: int = 200_000) -> str:

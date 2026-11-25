@@ -12,6 +12,7 @@ from aws_arch_agent.rules.base import DEFAULT_EXCLUDE_GLOBS
 from aws_arch_agent.tools.paths import normalize_rel_path
 
 RG_TIMEOUT_S = 30
+FALLBACK_MAX_CHARS = 2_000_000  # the Python fallback skips source files larger than this
 Hit = tuple[str, int, str]
 _scan_files: contextvars.ContextVar[frozenset[str] | None] = contextvars.ContextVar(
     "aws_arch_agent_scan_files",
@@ -89,7 +90,7 @@ def _fallback_search(
         return []
     
     # Import iter_files to respect exclusions
-    from aws_arch_agent.tools.files import iter_files
+    from aws_arch_agent.tools.files import FileTooLargeError, iter_files, read_text_capped
     
     hits: List[Tuple[str, int, str]] = []
     
@@ -109,9 +110,9 @@ def _fallback_search(
     
     for fp in sorted(files):
         try:
-            text = fp.read_text(encoding="utf-8", errors="replace")
-        except OSError:
-            continue
+            text = read_text_capped(fp, FALLBACK_MAX_CHARS, errors="replace")
+        except (OSError, FileTooLargeError):
+            continue  # unreadable, or too large to search in memory
         try:
             rel = fp.relative_to(repo_path)
         except ValueError:

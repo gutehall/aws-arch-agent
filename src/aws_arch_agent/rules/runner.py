@@ -13,15 +13,20 @@ SEVERITY_ORDER = ("Low", "Medium", "High")
 
 
 def filter_by_severity(findings: list[Finding], severity_threshold: str | None) -> list[Finding]:
-    """Keep findings at or above the given severity threshold."""
+    """Keep findings at or above the given severity threshold.
+
+    An unknown threshold raises ValueError: a typo must not silently turn the filter off.
+    """
     if not severity_threshold:
         return findings
     try:
         idx = SEVERITY_ORDER.index(severity_threshold.capitalize())
-        allowed = set(SEVERITY_ORDER[idx:])
-        return [f for f in findings if f.severity in allowed]
     except ValueError:
-        return findings
+        raise ValueError(
+            f"severity_threshold must be high, medium, or low, got {severity_threshold!r}"
+        ) from None
+    allowed = set(SEVERITY_ORDER[idx:])
+    return [f for f in findings if f.severity in allowed]
 
 
 def _finding_key(finding: Finding) -> tuple[str, str | None, int | None, str | None]:

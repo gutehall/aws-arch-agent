@@ -22,6 +22,12 @@ from aws_arch_agent.rules.resource_model import TF_MODULE_CALL, Resource
 from aws_arch_agent.rules.secret_names import is_literal_secret
 from aws_arch_agent.rules.tag_policy import TF_TAGGABLE
 from aws_arch_agent.rules.tag_policy import UNKNOWN as UNKNOWN_TAG
+from aws_arch_agent.tools.files import FileTooLargeError, read_text_capped
+
+# Read caps: a hand-written .tf file is far below 5 MB; `terraform show -json` of a large
+# estate can pass 100 MB. Parsed JSON takes several times its text size in memory.
+TF_FILE_MAX_CHARS = 5_000_000
+TF_PLAN_MAX_CHARS = 200_000_000
 
 TF_TYPE_TO_CANONICAL: dict[str, str] = {
     "aws_s3_bucket": "s3_bucket",
@@ -403,7 +409,10 @@ def _iter_type_maps(section: Any) -> list[dict]:
 
 def _load_tf(path: Path) -> tuple[dict, str, bool, Callable[[Any], Any]]:
     """Parse one *.tf or *.tf.json file: (document, text, is_json, value normalizer)."""
-    text = path.read_text(encoding="utf-8")
+    try:
+        text = read_text_capped(path, TF_FILE_MAX_CHARS)
+    except FileTooLargeError as exc:
+        raise TerraformError(f"Skipped Terraform {path.name}: {exc}") from exc
     is_json = path.name.endswith(".tf.json")
     try:
         if is_json:
@@ -3693,7 +3702,7 @@ def load_plan_modules(path: Path) -> dict[str, dict[str, dict]]:
     match the addresses of the child module's own HCL blocks.
     """
     try:
-        doc = json.loads(path.read_text(encoding="utf-8"))
+        doc = json.loads(read_text_capped(path, TF_PLAN_MAX_CHARS))
     except (OSError, UnicodeError, ValueError) as exc:
         raise TerraformError(f"Failed to read Terraform plan {path}: {exc}") from exc
     section = None

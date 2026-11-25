@@ -9,9 +9,11 @@ from pathlib import Path
 from typing import Any, NamedTuple
 
 from aws_arch_agent.models import Finding
+from aws_arch_agent.tools.files import FileTooLargeError, read_text_capped
 from aws_arch_agent.tools.paths import normalize_rel_path
 
 DEFAULT_BASELINE_NAME = ".aws-arch-agent-baseline.json"
+BASELINE_MAX_CHARS = 50_000_000  # tens of thousands of accepted findings fit well under this
 
 
 class Fingerprint(NamedTuple):
@@ -176,8 +178,10 @@ def load_baseline(path: Path) -> set[Fingerprint]:
     if not path.exists():
         return set()
     try:
-        text = path.read_text(encoding="utf-8")
-    except OSError as exc:
+        text = read_text_capped(path, BASELINE_MAX_CHARS)
+    except FileTooLargeError as exc:
+        raise BaselineError(f"Refused baseline {path}: {exc}") from exc
+    except (OSError, UnicodeError) as exc:
         raise BaselineError(f"Failed to read baseline {path}: {exc}") from exc
     try:
         data = json.loads(text)
@@ -194,8 +198,8 @@ def load_baseline(path: Path) -> set[Fingerprint]:
 def load_cost_snapshot(path: Path) -> dict[str, Any] | None:
     """The baseline's cost_snapshot, or None (no file, an older baseline, or no priced scan)."""
     try:
-        data = json.loads(path.read_text(encoding="utf-8"))
-    except (OSError, json.JSONDecodeError):
+        data = json.loads(read_text_capped(path, BASELINE_MAX_CHARS))
+    except (OSError, ValueError):  # FileTooLargeError, UnicodeError, JSONDecodeError
         return None
     snapshot = data.get("cost_snapshot") if isinstance(data, dict) else None
     return dict(snapshot) if isinstance(snapshot, dict) else None
