@@ -29,6 +29,7 @@ from typing import Any
 from aws_arch_agent.pricing import DEFAULT_REGION, current_region, price_info, snapshot_date, use_region
 from aws_arch_agent.pricing import warnings as pricing_warnings
 from aws_arch_agent.rules.resource_model import Resource
+from aws_arch_agent.tools.files import read_text_capped
 
 REGION = re.compile(r"[a-z]{2}(?:-gov|-iso[a-z]?)?-[a-z]+-\d{1,2}")
 _AZ = re.compile(rf"({REGION.pattern})[a-z]")
@@ -127,15 +128,17 @@ def terraform_provider_region(module_dir: Path) -> str | None:
                         value = defaults.get(match.group(1))
                     if isinstance(value, str) and REGION.fullmatch(value.strip()):
                         return value.strip()
-                    return None  # the default provider sets no readable region
+                    # No readable region here: another file may still declare one.
     return None
 
 
 def terraform_plan_region(plan: Path) -> str | None:
     """The default aws provider's region from `terraform show -json` output, or None."""
+    from aws_arch_agent.rules.terraform_model import TF_PLAN_MAX_CHARS
+
     try:
-        doc = json.loads(plan.read_text(encoding="utf-8"))
-    except (OSError, UnicodeError, ValueError):
+        doc = json.loads(read_text_capped(plan, TF_PLAN_MAX_CHARS))
+    except (OSError, UnicodeError, ValueError):  # FileTooLargeError is a ValueError
         return None
     if not isinstance(doc, dict):
         return None

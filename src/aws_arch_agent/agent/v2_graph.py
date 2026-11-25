@@ -222,6 +222,12 @@ def node_collect(state: State) -> State:
     else:
         source = resolve_source(repo_path, iac, files)
     report(f"Read {len(files)} files ({source})")
+    root_warnings: list[str] = []
+    try:
+        top_level = sorted(p.name for p in repo_path.iterdir() if p.is_dir())
+    except OSError as exc:
+        top_level = []
+        _note(root_warnings, f"Could not list the repo root {repo_path}: {exc}")
     ctx = RepoContext(
         repo_path=str(repo_path),
         language=detect_language(repo_path),
@@ -229,7 +235,7 @@ def node_collect(state: State) -> State:
         files_scanned=len(files),
         key_files=[p.name for p in files if p.name in {"cdk.json", "package.json", "requirements.txt"}],
         notes={
-            "top_level": [p.name for p in repo_path.iterdir() if p.is_dir()],
+            "top_level": top_level,
             "prices": regions.note(),  # replaced in node_report once stacks are priced
             **truncation_notes(truncated, max_files),
         },
@@ -248,7 +254,7 @@ def node_collect(state: State) -> State:
             "ctx": tf_ctx,
             "raw_findings": _shown(tf_findings, state),
             "unfiltered_findings": tf_findings,
-            "rule_warnings": tf_warnings,
+            "rule_warnings": [*root_warnings, *tf_warnings],
             "rag": _build_rag(state),
         }
 
@@ -272,7 +278,7 @@ def node_collect(state: State) -> State:
         "ctx": ctx,
         "raw_findings": findings,
         "unfiltered_findings": unfiltered,
-        "rule_warnings": warnings,
+        "rule_warnings": [*root_warnings, *warnings],
         "rag": _build_rag(state),
     }
 
@@ -313,7 +319,8 @@ def node_synth(state: State) -> State:
                 "raw_findings": out_findings,
                 "rule_warnings": warnings,
             }
-        template_paths = list_templates_from_path(tpath)
+        # real_only, like V1: workflow YAML and other non-templates are not CF-checked.
+        template_paths = list_templates_from_path(tpath, real_only=True)
         if not template_paths:
             message = f"No template files found at {tpath}."
             _note(warnings, message)
@@ -698,6 +705,7 @@ def analyze_v2(
     finops: stack_cost.FinOps | None = None,
 ) -> tuple[str, RepoContext, List[Finding], List[str]]:
     """Run V2 graph; return (final_report_md, ctx, findings, warnings)."""
+    filter_by_severity([], severity_threshold)  # an unknown threshold fails before the scan
     graph = build_graph()
     initial: State = {
         "repo_path": str(repo_path),

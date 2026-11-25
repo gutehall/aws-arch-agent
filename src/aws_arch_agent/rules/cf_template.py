@@ -40,7 +40,8 @@ from aws_arch_agent.rules.repo_practices import (
 from aws_arch_agent.rules.resource_model import TF_MODULE_CALL, Resource, resources_from_cf_template
 from aws_arch_agent.rules.terraform_model import TfVariable
 from aws_arch_agent.tools.cdk_synth import list_cf_templates
-from aws_arch_agent.tools.cfn_yaml import parse_template_with_lines
+from aws_arch_agent.tools.cfn_yaml import TEMPLATE_MAX_BYTES, parse_template_with_lines
+from aws_arch_agent.tools.files import read_text_capped
 from aws_arch_agent.tools.paths import to_repo_relative
 
 # Sensitive ports for security group checks (SSH, RDP, Postgres, MySQL, Mongo)
@@ -323,7 +324,7 @@ def _read_template_with_lines(path: Path) -> tuple[dict, dict[str, int], str | N
     if not path.is_file():
         return {}, {}, f"Template file not found: {path}"
     try:
-        text = path.read_text(encoding="utf-8")
+        text = read_text_capped(path, TEMPLATE_MAX_BYTES)
         doc, lines = parse_template_with_lines(path, text)
     except Exception as exc:
         return {}, {}, f"Failed to parse template {path.name}: {exc}"
@@ -8669,7 +8670,7 @@ def _run_resource_checks(
                 # --- S3 checks ---
                 if ctype == "s3_bucket":
                     pab = props.get("PublicAccessBlockConfiguration")
-                    if not pab or not all(pab.get(k) is True for k in [
+                    if not isinstance(pab, dict) or not all(_flag(pab.get(k)) is True for k in [
                         "BlockPublicAcls", "IgnorePublicAcls", "BlockPublicPolicy", "RestrictPublicBuckets"
                     ]):
                         findings.append(Finding(
@@ -8810,7 +8811,7 @@ def _run_resource_checks(
                                 recommendation="Enable DeletionProtection for production databases to prevent accidental deletion.",
                             ))
 
-                    if props.get("PubliclyAccessible") is True:
+                    if _flag(props.get("PubliclyAccessible")) is True:
                         findings.append(Finding(
                             id="CF-RDS-004",
                             title="RDS instance is publicly accessible",
