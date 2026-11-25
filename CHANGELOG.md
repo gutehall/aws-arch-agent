@@ -2,6 +2,25 @@
 
 New releases go at the top. See [CONTRIBUTING.md](CONTRIBUTING.md#releases) for when to cut one and how the version is bumped.
 
+## v1.3.3 - 2026-11-25
+
+### Changes
+
+- Exit codes: a run with analysis warnings now exits 1 when `--fail-on` finds something at its threshold or a budget is breached. Exit 2 is now only for warnings when no gate fails. Before, warnings always won with 2. CI that branches on exit 2 for such runs now gets 1 (#132)
+- GitHub Action: `no-synth` defaults to `"true"`. `cdk synth` runs the scanned repo's own CDK app, so with synth on, scanning a fork's pull request runs untrusted code. Set `no-synth: "false"` only for a repo whose code you trust. The CLI default is unchanged. REFERENCE has a new "CDK synth runs repo code" section (#131)
+
+### Fixes
+
+- CF-S3-001 and CF-RDS-004 now read string booleans: a `PubliclyAccessible: "true"` RDS instance was missed, and a block written with `"true"` values was reported as missing (#131)
+- The file walk and template discovery skip symlinked directories, and any symlink that points outside the scanned tree (#131)
+- Templates, Terraform files and plans, baselines, and the Python `rg` fallback are read with a size cap. Only regular files are read, so a FIFO or `/dev/zero` cannot hang or exhaust the scan. An oversize file becomes a warning or error, not a parse (#131)
+- V2 `--templates` checks only real CloudFormation templates, as V1 does, so workflow YAML next to them gets no CF findings (#131)
+- V2 reports an unreadable repo root as a warning instead of crashing (#131)
+- The Terraform price region keeps looking past a provider block whose region it cannot read (#131)
+- An unknown severity threshold raises an error instead of turning the filter off (#131)
+- The LLM verdict cache is keyed by repo and capped at 256 batches (#131)
+- CI actions are pinned to commit SHAs (#131)
+
 ## v1.3.2 - 2026-11-24
 
 ### Changes
