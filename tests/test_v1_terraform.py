@@ -435,3 +435,12 @@ def test_tf_plan_child_module_finding_names_its_calls(tmp_path: Path) -> None:
     assert inner.recommendation.endswith(
         "Module calls with this finding: module.a.module.inner, module.b.module.inner."
     )
+
+
+def test_fail_on_exit_1_wins_over_warning_exit_2(tmp_path: Path) -> None:
+    _tf_repo(tmp_path)
+    result = runner.invoke(app, [
+        "--repo", str(tmp_path), "--no-llm", "--format", "json", "--out", str(tmp_path / "r.json"),
+        "--tf-plan", str(tmp_path / "missing.json"), "--fail-on", "high",
+    ])
+    assert result.exit_code == 1, result.output

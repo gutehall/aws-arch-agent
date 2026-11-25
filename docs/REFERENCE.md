@@ -510,7 +510,7 @@ budget:
   max_increase_percent: 10
 ```
 
-`--max-monthly-cost` and `--max-cost-increase` set the same limits from the CLI. A breached limit prints a `Budget breached: ...` line and the run exits 1. Exit 2 for analysis warnings still takes precedence. An increase limit without `--compare-cost` is reported as not checked, not as a failure. JSON has the result as `context.notes.cost.budget`.
+`--max-monthly-cost` and `--max-cost-increase` set the same limits from the CLI. A breached limit prints a `Budget breached: ...` line and the run exits 1. It takes precedence over exit 2 for analysis warnings. An increase limit without `--compare-cost` is reported as not checked, not as a failure. JSON has the result as `context.notes.cost.budget`.
 
 ### Cost in the reports
 
@@ -543,7 +543,7 @@ Report: /path/to/report.md
 - **Top fixes**: up to five, from `build_summary`: the same rules, in the same order, as the report's Summary. A scan with no findings prints the zero counts and no fix list.
 - **Report**: the path of the report file.
 
-The lines are plain text when stdout is not a terminal, so CI logs show them as written. They are printed before the process exits, so a run that fails still shows them. They do not replace the report file: the file is written as before, in the requested format, and the exit codes are unchanged (0; 1 for `--fail-on` or a breached budget; 2 when a check warned, which wins over both). This is not a TUI; read findings in the report (the HTML report for browsing). There is no flag to turn it off and no new dependency.
+The lines are plain text when stdout is not a terminal, so CI logs show them as written. They are printed before the process exits, so a run that fails still shows them. They do not replace the report file: the file is written as before, in the requested format, and the exit codes are unchanged (0; 1 for `--fail-on` or a breached budget; 2 when a check warned and neither of those applies). This is not a TUI; read findings in the report (the HTML report for browsing). There is no flag to turn it off and no new dependency.
 
 ## Well-Architected answers
 
