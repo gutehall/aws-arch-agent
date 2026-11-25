@@ -599,10 +599,11 @@ def analyze(
         severity_hit = _should_fail(cfg.fail_on, findings_for_fail)
         if severity_hit:
             console.print(f"[red]fail-on={cfg.fail_on}: findings at or above threshold[/red]")
-        if warnings:
-            raise typer.Exit(code=2)
+        # A gate the user set (--fail-on, a budget) wins over analysis warnings.
         if severity_hit or budget_breached:
             raise typer.Exit(code=1)
+        if warnings:
+            raise typer.Exit(code=2)
 
 
 if __name__ == "__main__":

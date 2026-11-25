@@ -990,7 +990,7 @@ def test_summary_without_findings_has_no_fix_list(tmp_path: Path, monkeypatch) -
     ("none", False, 0),
     ("high", False, 1),
     ("none", True, 2),
-    ("high", True, 2),  # a warning wins over --fail-on
+    ("high", True, 1),  # --fail-on wins over a warning
 ])
 def test_exit_codes_and_report_are_unchanged_by_the_summary(
     tmp_path: Path, monkeypatch, fail_on: str, warn: bool, code: int

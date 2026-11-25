@@ -320,8 +320,8 @@ def test_fail_on_ignores_suppressed_findings(tmp_path: Path) -> None:
 
 def test_fail_on_counts_expired_suppression(tmp_path: Path) -> None:
     _cdk_ts_repo(tmp_path, "// aws-arch-agent: ignore SEC-005 expires=2001-01-01\n")
-    # The expiry warning is a scan warning, which exits 2 before the fail-on exit of 1.
-    assert _fail_on(tmp_path) == 2
+    # The expired suppression counts for --fail-on again, whose exit 1 wins over the warning's 2.
+    assert _fail_on(tmp_path) == 1
     report = (tmp_path / "report.md").read_text()
     assert "Suppression of SEC-005 at lib/stack.ts:2 expired on 2001-01-01" in report
 
