@@ -7,8 +7,8 @@ import json
 import os
 import shutil
 
-from aws_arch_agent.tools.cfn_yaml import is_cf_template, load_cfn_yaml
-from aws_arch_agent.tools.files import DEFAULT_EXCLUDES
+from aws_arch_agent.tools.cfn_yaml import TEMPLATE_MAX_BYTES, is_cf_template, load_cfn_yaml
+from aws_arch_agent.tools.files import DEFAULT_EXCLUDES, read_text_capped, resolves_inside
 
 
 def _detect_python_app(repo_path: Path) -> str | None:
@@ -106,8 +106,12 @@ def _discover_real_templates(root: Path) -> List[Path]:
                     and not entry.name.startswith(".")
                 ):
                     stack.append(entry)
-            elif entry.is_file() and is_cf_template(entry):
-                out.append(entry)
+            elif (
+                entry.is_file()
+                and not (entry.is_symlink() and not resolves_inside(entry, root))
+                and is_cf_template(entry)
+            ):
+                out.append(entry)  # a symlinked file counts only when it stays under root
     return sorted(out)
 
 
@@ -131,20 +135,31 @@ def list_templates_from_path(
         return [path]
     if real_only:
         return _discover_real_templates(path)
-    # Directory: collect matching files recursively
+    # Directory: collect matching files recursively, skipping symlinks (a link can
+    # point outside the tree or loop forever).
     exts = ["*.template.json"]
     if allow_yaml:
         exts.extend(["*.yaml", "*.yml"])
     out: List[Path] = []
     for ext in exts:
         out.extend(path.rglob(ext))
-    return sorted(set(p for p in out if p.is_file()))
+    return sorted(set(p for p in out if p.is_file() and not _under_symlink(p, path)))
+
+
+def _under_symlink(path: Path, root: Path) -> bool:
+    """True when path, or any directory between root and path, is a symlink."""
+    current = path
+    while current != root and current != current.parent:
+        if current.is_symlink():
+            return True
+        current = current.parent
+    return False
 
 
 def load_json(path: Path) -> dict[Any, Any]:
     """Load JSON file; return empty dict on parse error or missing file."""
     try:
-        return cast(dict[Any, Any], json.loads(path.read_text(encoding="utf-8")))
+        return cast(dict[Any, Any], json.loads(read_text_capped(path, TEMPLATE_MAX_BYTES)))
     except Exception:
         return {}
 
@@ -158,7 +173,7 @@ def load_template(path: Path) -> dict[Any, Any]:
         return load_json(path)
     if suf in (".yaml", ".yml", ".template"):
         try:
-            doc = load_cfn_yaml(path.read_text(encoding="utf-8")) or {}
+            doc = load_cfn_yaml(read_text_capped(path, TEMPLATE_MAX_BYTES)) or {}
         except Exception:
             return {}
         return cast(dict[Any, Any], doc) if isinstance(doc, dict) else {}

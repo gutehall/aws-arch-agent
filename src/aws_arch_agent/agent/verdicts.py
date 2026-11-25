@@ -33,6 +33,17 @@ MAX_WHY_CHARS = 300
 NOT_JSON_REASON = "model reply was not JSON"
 
 VerdictCache = dict[str, tuple[dict[str, Verdict], LLMResult]]
+VERDICT_CACHE_MAX = 256  # batches; a long-lived process drops its oldest entries past this
+
+
+def _remember(cache: VerdictCache, key: str, value: tuple[dict[str, Verdict], LLMResult]) -> None:
+    """Store one verdict batch, evicting the oldest entries so the cache stays bounded."""
+    while len(cache) >= VERDICT_CACHE_MAX:
+        try:
+            cache.pop(next(iter(cache)), None)
+        except (StopIteration, RuntimeError):  # emptied or resized by a parallel pillar
+            break
+    cache[key] = value
 
 _SEVERITY_RANK = {severity: rank for rank, severity in enumerate(get_args(Severity))}
 _VERDICT_VALUES = frozenset(get_args(VerdictValue))
@@ -230,7 +241,9 @@ def judge_batch(
     retried. An empty reply or a body that is not JSON is retried once, then stays invalid.
     """
     prompt = build_prompt(findings, repo_path, reference, llm.prompt_chars(MAX_PROMPT_CHARS))
-    key = hashlib.sha256(prompt.encode()).hexdigest()
+    # The repo is part of the key: a long-lived process must not reuse one repo's verdicts
+    # for another, even when the two prompts happen to match.
+    key = hashlib.sha256(f"{repo_path.resolve()}\0{prompt}".encode()).hexdigest()
     if cache is not None and key in cache:
         return cache[key]
     allowed = {finding_key(f) for f in findings}
@@ -240,7 +253,7 @@ def judge_batch(
             verdicts = parse_reply(result.text, allowed)
             if verdicts is not None:
                 if cache is not None:
-                    cache[key] = (verdicts, result)
+                    _remember(cache, key, (verdicts, result))
                 return verdicts, result
             result = replace(result, text=prompt, status="invalid", reason=NOT_JSON_REASON)
         elif result.status != "invalid":
