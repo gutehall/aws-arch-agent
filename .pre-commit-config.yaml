@@ -1,3 +1,5 @@
+default_install_hook_types: [pre-commit, commit-msg]
+
 repos:
   - repo: local
     hooks:
@@ -7,3 +9,9 @@ repos:
         language: system
         pass_filenames: false
         stages: [pre-commit]
+      - id: no-tracker-ids
+        name: no DM3 tracker IDs in commit messages
+        # Skips git's "#" comment lines, which name the current branch.
+        entry: '(?i)^(?!#).*dm3-[0-9]+'
+        language: pygrep
+        stages: [commit-msg]

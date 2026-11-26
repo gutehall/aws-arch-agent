@@ -41,9 +41,9 @@ Thanks for your interest in contributing. This document covers local setup, runn
 
 CI runs all of these on push/PR to `main` or `master`, plus V1/V2 dogfood scans.
 
-### Optional pre-commit hook
+### Optional pre-commit hooks
 
-A [`.pre-commit-config.yaml`](.pre-commit-config.yaml) is included. Install and enable:
+A [`.pre-commit-config.yaml`](.pre-commit-config.yaml) is included. It runs the scan before each commit and rejects commit messages that contain a DM3 tracker ID such as `DM3-123`. Install and enable both:
 
 ```bash
 pip install pre-commit
