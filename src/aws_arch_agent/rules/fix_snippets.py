@@ -1889,6 +1889,148 @@ _CLOUDFORMATION["CF-BEDROCK-012"] = """$name:
         - Type: RELEVANCE
           Threshold: 0.75"""
 
+_CLOUDFORMATION["CF-BEDROCK-015"] = """$name:
+  Type: AWS::IAM::Role
+  Properties:
+    # keep the other properties as they are; only the agent service assumes the agent's role
+    AssumeRolePolicyDocument:
+      Version: "2012-10-17"
+      Statement:
+        - Effect: Allow
+          Principal:
+            Service: bedrock.amazonaws.com
+          Action: sts:AssumeRole
+          Condition:
+            StringEquals:
+              aws:SourceAccount: !Ref AWS::AccountId"""
+
+_CLOUDFORMATION["CF-BEDROCK-016"] = """$name:
+  Type: AWS::IAM::Role
+  Properties:
+    # keep the other properties as they are; the boundary caps what the agent may ever be granted
+    PermissionsBoundary: !Ref AgentBoundaryPolicy"""
+
+_CLOUDFORMATION["CF-BEDROCK-017"] = """$name:
+  Type: AWS::IAM::Role
+  Properties:
+    # keep the other properties as they are; grant only what the agent's tools call
+    Policies:
+      - PolicyName: agent-tools
+        PolicyDocument:
+          Version: "2012-10-17"
+          Statement:
+            - Effect: Allow
+              Action: bedrock:InvokeModel
+              Resource: arn:aws:bedrock:us-east-1::foundation-model/anthropic.claude-3-haiku-20240307-v1:0"""
+
+_CLOUDFORMATION["CF-SAGE-014"] = """$name:
+  Type: AWS::IAM::Policy
+  Properties:
+    # keep the other properties as they are; invoke only the endpoints this principal serves
+    PolicyDocument:
+      Version: "2012-10-17"
+      Statement:
+        - Effect: Allow
+          Action: sagemaker:InvokeEndpoint
+          Resource: !Ref ModelEndpoint"""
+
+_CLOUDFORMATION["CF-BEDROCK-018"] = """$name:
+  Type: AWS::Bedrock::Guardrail
+  Properties:
+    # keep the other properties as they are; list each category the use case must block
+    ContentPolicyConfig:
+      FiltersConfig:
+        - Type: HATE
+          InputStrength: HIGH
+          OutputStrength: HIGH
+        - Type: MISCONDUCT
+          InputStrength: HIGH
+          OutputStrength: HIGH"""
+
+_CLOUDFORMATION["CF-BEDROCK-019"] = _CLOUDFORMATION["CF-BEDROCK-018"]
+
+_CLOUDFORMATION["CF-SAGE-015"] = """$name:
+  Type: AWS::SageMaker::EndpointConfig
+  Properties:
+    # keep the other properties as they are
+    DataCaptureConfig:
+      EnableCapture: true
+      InitialSamplingPercentage: 20
+      DestinationS3Uri: s3://my-capture-bucket/capture
+      KmsKeyId: !GetAtt CaptureKey.Arn
+      CaptureOptions:
+        - CaptureMode: Input
+        - CaptureMode: Output"""
+
+_CLOUDFORMATION["CF-BEDROCK-020"] = """$name:
+  Type: AWS::IAM::Policy
+  Properties:
+    # keep the other properties as they are; invoke only the approved models
+    PolicyDocument:
+      Version: "2012-10-17"
+      Statement:
+        - Effect: Allow
+          Action:
+            - bedrock:InvokeModel
+            - bedrock:InvokeModelWithResponseStream
+          Resource: arn:aws:bedrock:us-east-1::foundation-model/anthropic.claude-3-haiku-20240307-v1:0"""
+
+_CLOUDFORMATION["CF-BEDROCK-021"] = """$name:
+  Type: AWS::IAM::Role
+  Properties:
+    # keep the other properties as they are; read only the knowledge base's own data source
+    Policies:
+      - PolicyName: data-source
+        PolicyDocument:
+          Version: "2012-10-17"
+          Statement:
+            - Effect: Allow
+              Action:
+                - s3:GetObject
+                - s3:ListBucket
+              Resource:
+                - !GetAtt DocsBucket.Arn
+                - arn:aws:s3:::my-docs-bucket/*"""
+
+_CLOUDFORMATION["CF-SAGE-016"] = """$name:
+  Type: AWS::IAM::Role
+  Properties:
+    # keep the other properties as they are; drop AmazonSageMakerFullAccess and grant the job's own data
+    Policies:
+      - PolicyName: training-data
+        PolicyDocument:
+          Version: "2012-10-17"
+          Statement:
+            - Effect: Allow
+              Action:
+                - s3:GetObject
+                - s3:PutObject
+                - s3:ListBucket
+              Resource:
+                - !GetAtt TrainingBucket.Arn
+                - arn:aws:s3:::my-training-bucket/*"""
+
+_CLOUDFORMATION["CF-BEDROCK-013"] = """$name:
+  Type: AWS::Bedrock::Guardrail
+  Properties:
+    # keep the other properties and filters as they are; add the prompt attack filter
+    ContentPolicyConfig:
+      FiltersConfig:
+        - Type: PROMPT_ATTACK
+          InputStrength: HIGH
+          OutputStrength: NONE"""
+
+_CLOUDFORMATION["CF-BEDROCK-014"] = """$name:
+  Type: AWS::Bedrock::Guardrail
+  Properties:
+    # keep the other properties as they are; act on responses for each entity the use case protects
+    SensitiveInformationPolicyConfig:
+      PiiEntitiesConfig:
+        - Type: EMAIL
+          Action: ANONYMIZE
+          OutputAction: ANONYMIZE
+          OutputEnabled: true"""
+
 _CLOUDFORMATION["CF-SAGE-007"] = """$name:
   Type: AWS::SageMaker::NotebookInstance
   Properties:
@@ -2903,6 +3045,143 @@ _TERRAFORM["CF-BEDROCK-012"] = """resource "aws_bedrock_guardrail" "$tf_name" {
       threshold = 0.75
     }
   }
+}"""
+
+_TERRAFORM["CF-BEDROCK-013"] = """resource "aws_bedrock_guardrail" "$tf_name" {
+  # keep the other arguments and filters as they are; add the prompt attack filter
+  content_policy_config {
+    filters_config {
+      type            = "PROMPT_ATTACK"
+      input_strength  = "HIGH"
+      output_strength = "NONE"
+    }
+  }
+}"""
+
+_TERRAFORM["CF-BEDROCK-014"] = """resource "aws_bedrock_guardrail" "$tf_name" {
+  # keep the other arguments as they are; act on responses for each entity the use case protects
+  sensitive_information_policy_config {
+    pii_entities_config {
+      type           = "EMAIL"
+      action         = "ANONYMIZE"
+      output_action  = "ANONYMIZE"
+      output_enabled = true
+    }
+  }
+}"""
+
+_TERRAFORM["CF-BEDROCK-015"] = """resource "aws_iam_role" "$tf_name" {
+  # keep the other arguments as they are; only the agent service assumes the agent's role
+  assume_role_policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [{
+      Effect    = "Allow"
+      Principal = { Service = "bedrock.amazonaws.com" }
+      Action    = "sts:AssumeRole"
+      Condition = { StringEquals = { "aws:SourceAccount" = data.aws_caller_identity.current.account_id } }
+    }]
+  })
+}"""
+
+_TERRAFORM["CF-BEDROCK-016"] = """resource "aws_iam_role" "$tf_name" {
+  # keep the other arguments as they are; the boundary caps what the agent may ever be granted
+  permissions_boundary = aws_iam_policy.agent_boundary.arn
+}"""
+
+_TERRAFORM["CF-BEDROCK-017"] = """resource "aws_iam_role_policy" "$tf_name" {
+  # grant only what the agent's tools call, on the resources they use
+  role = aws_iam_role.agent.id
+  policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [{
+      Effect   = "Allow"
+      Action   = ["bedrock:InvokeModel"]
+      Resource = ["arn:aws:bedrock:us-east-1::foundation-model/anthropic.claude-3-haiku-20240307-v1:0"]
+    }]
+  })
+}"""
+
+_TERRAFORM["CF-SAGE-014"] = """resource "aws_iam_role_policy" "$tf_name" {
+  # invoke only the endpoints this principal serves
+  role = aws_iam_role.app.id
+  policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [{
+      Effect   = "Allow"
+      Action   = ["sagemaker:InvokeEndpoint"]
+      Resource = [aws_sagemaker_endpoint.model.arn]
+    }]
+  })
+}"""
+
+_TERRAFORM["CF-BEDROCK-018"] = """resource "aws_bedrock_guardrail" "$tf_name" {
+  # keep the other arguments as they are; add one block per category the use case must block
+  content_policy_config {
+    filters_config {
+      type            = "HATE"
+      input_strength  = "HIGH"
+      output_strength = "HIGH"
+    }
+    filters_config {
+      type            = "MISCONDUCT"
+      input_strength  = "HIGH"
+      output_strength = "HIGH"
+    }
+  }
+}"""
+
+_TERRAFORM["CF-BEDROCK-019"] = _TERRAFORM["CF-BEDROCK-018"]
+
+_TERRAFORM["CF-SAGE-015"] = """resource "aws_sagemaker_endpoint_configuration" "$tf_name" {
+  # keep the other arguments as they are
+  data_capture_config {
+    enable_capture              = true
+    initial_sampling_percentage = 20
+    destination_s3_uri          = "s3://my-capture-bucket/capture"
+    kms_key_id                  = aws_kms_key.capture.arn
+    capture_options {
+      capture_mode = "InputAndOutput"
+    }
+  }
+}"""
+
+_TERRAFORM["CF-BEDROCK-020"] = """resource "aws_iam_role_policy" "$tf_name" {
+  # invoke only the models this principal is approved for
+  role = aws_iam_role.app.id
+  policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [{
+      Effect   = "Allow"
+      Action   = ["bedrock:InvokeModel", "bedrock:InvokeModelWithResponseStream"]
+      Resource = ["arn:aws:bedrock:us-east-1::foundation-model/anthropic.claude-3-haiku-20240307-v1:0"]
+    }]
+  })
+}"""
+
+_TERRAFORM["CF-BEDROCK-021"] = """resource "aws_iam_role_policy" "$tf_name" {
+  # read only the knowledge base's own data source
+  role = aws_iam_role.knowledge_base.id
+  policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [{
+      Effect   = "Allow"
+      Action   = ["s3:GetObject", "s3:ListBucket"]
+      Resource = [aws_s3_bucket.docs.arn, "$${aws_s3_bucket.docs.arn}/*"]
+    }]
+  })
+}"""
+
+_TERRAFORM["CF-SAGE-016"] = """resource "aws_iam_role_policy" "$tf_name" {
+  # replace AmazonSageMakerFullAccess and service-wide actions with the job's own data
+  role = aws_iam_role.sagemaker_execution.id
+  policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [{
+      Effect   = "Allow"
+      Action   = ["s3:GetObject", "s3:PutObject", "s3:ListBucket"]
+      Resource = [aws_s3_bucket.training.arn, "$${aws_s3_bucket.training.arn}/*"]
+    }]
+  })
 }"""
 
 _TERRAFORM["CF-SAGE-007"] = """resource "aws_sagemaker_notebook_instance" "$tf_name" {

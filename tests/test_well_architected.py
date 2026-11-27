@@ -281,3 +281,26 @@ def test_a_practice_with_no_rule_run_is_not_checked_not_needs_org() -> None:
     items = {a.question.id: a for a in answers([], [])}
     assert items["SEC 6"].not_checked and not items["SEC 6"].needs_org == items["SEC 6"].not_checked
     assert "not checked" in items["SEC 6"].reason()
+
+
+@pytest.mark.parametrize("cf_id,rule_id", [
+    ("CF-EC-002", "SEC-025"), ("CF-OS-002", "SEC-039"), ("CF-MSK-001", "SEC-044"),
+    ("CF-KMS-001", "SEC-007"), ("CF-S3-007", "COST-007"),
+])
+def test_a_template_replacement_on_another_question_keeps_the_cdk_finding_there(
+    cf_id: str, rule_id: str
+) -> None:
+    from aws_arch_agent.rules.cf_template import drop_static_covered_by_cf
+
+    findings = drop_static_covered_by_cf([
+        Finding(id=cf_id, title="t", recommendation="r"),
+        Finding(id=rule_id, title="t", recommendation="r"),
+    ])
+    by_question = {a.question.id: {f.id for f in a.findings} for a in answers(findings)}
+    assert cf_id in by_question[question_of(cf_id)]
+    assert rule_id in by_question[question_of(rule_id)]
+
+
+def test_a_question_is_met_only_when_every_practice_was_checked() -> None:
+    for a in answers([], ran=[]):
+        assert not a.met and a.not_checked
