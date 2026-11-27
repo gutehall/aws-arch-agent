@@ -78,7 +78,7 @@ The source is detected. `--iac cdk|cloudformation|terraform` forces one. `--tf-p
 
 `REPO-*` checks, SUST-004 and SUST-005 also read notes in the repo (README, ADRs, runbooks, `docs/`). AI checks run only for an AI workload, or when `lenses.ai` is set. Account-level rules stay off until `rules.org: true`.
 
-The report answers each of the 57 Well-Architected questions from the findings. An AI workload also gets the four lens question lists. Full lists: [docs/CF_RULES.md](docs/CF_RULES.md), [Well-Architected answers](docs/REFERENCE.md#well-architected-answers), [AI lens answers](docs/REFERENCE.md#ai-lens-answers).
+The report answers each of the 57 Well-Architected questions from the findings. An AI workload also gets the four lens question lists: all 133 questions and 404 best practices of the Machine Learning, Generative AI, Responsible AI and Agentic AI lenses have a rule. Guardrails, agent roles, endpoints and model access are read from the templates. Practices that are about process are answered by a note in the repo or a signal in the code, the builds or the dependency lists. Full lists: [docs/CF_RULES.md](docs/CF_RULES.md), [Well-Architected answers](docs/REFERENCE.md#well-architected-answers), [AI lens answers](docs/REFERENCE.md#ai-lens-answers).
 
 ## Cost
 
