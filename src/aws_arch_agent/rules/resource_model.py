@@ -92,6 +92,8 @@ CF_TYPE_TO_CANONICAL: dict[str, str] = {
     "AWS::CloudFront::Distribution": "cloudfront_distribution",
     "AWS::ElastiCache::CacheCluster": "elasticache_cluster",
     "AWS::ElastiCache::ReplicationGroup": "elasticache_replication_group",
+    "AWS::MemoryDB::Cluster": "memorydb_cluster",
+    "AWS::Events::Archive": "event_archive",
     # IAM: documents live on a policy resource (PolicyDocument) or inline on a
     # principal (Policies). Terraform's split inline-policy types map to iam_policy.
     "AWS::IAM::Policy": "iam_policy",

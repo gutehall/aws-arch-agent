@@ -15,7 +15,7 @@ from aws_arch_agent.models import Effort, Finding
 
 LOW: frozenset[str] = frozenset({
     "CF-S3-001", "CF-S3-002", "CF-S3-003", "CF-S3-004", "CF-CT-001", "CF-CT-002",
-    "CF-CW-001", "CF-LAM-002", "CF-APIGW-001", "CF-APIGW-002", "CF-APIGW-V2-001",
+    "CF-CW-001", "CF-CW-003", "CF-BAK-006", "CF-MDB-001", "CF-EB-003", "CF-LAM-002", "CF-APIGW-001", "CF-APIGW-002", "CF-APIGW-V2-001",
     "CF-APIGW-V2-002", "CF-SQS-001", "CF-SNS-001", "CF-DDB-001", "CF-DDB-002", "CF-RDS-002",
     "CF-RDS-005", "CF-ECR-001", "CF-ECR-002", "CF-ECR-003", "CF-EBS-002", "CF-EIP-001",
     "CF-CF-001", "CF-CF-002", "CF-PAR-001", "CF-DEL-001", "CF-TAG-001", "CF-EKS-001",

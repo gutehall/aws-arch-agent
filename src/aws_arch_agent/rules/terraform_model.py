@@ -189,6 +189,8 @@ TF_TYPE_TO_CANONICAL: dict[str, str] = {
     "aws_cloudwatch_log_delivery_source": "cloudwatch_log_delivery_source",
     "aws_elasticache_cluster": "elasticache_cluster",
     "aws_elasticache_replication_group": "elasticache_replication_group",
+    "aws_memorydb_cluster": "memorydb_cluster",
+    "aws_cloudwatch_event_archive": "event_archive",
     "aws_iam_policy": "iam_policy",
     "aws_iam_role_policy": "iam_policy",
     "aws_iam_user_policy": "iam_policy",
@@ -847,6 +849,7 @@ def _db(body: dict) -> dict:
         ("allocated_storage", "AllocatedStorage"),
         ("max_allocated_storage", "MaxAllocatedStorage"),  # CF-RDS-015
         ("storage_type", "StorageType"),
+        ("identifier", "DBInstanceIdentifier"),  # CF-CW-003: /aws/rds/instance/<id>/<log>
     ):
         _set(props, cf_key, body.get(tf_key))
     if "for_each" in body or "count" in body:  # how many Aurora members a block makes (CF-RDS-003)
@@ -1341,11 +1344,15 @@ def _transit_gateway(body: dict) -> dict:
 
 
 def _flow_log(body: dict) -> dict:
-    """aws_flow_log on a transit gateway, in the AWS::EC2::FlowLog shape (CF-TGW-002)."""
+    """aws_flow_log in the AWS::EC2::FlowLog shape: a transit gateway log (CF-TGW-002) and the
+    CloudWatch Logs destination (CF-CW-003)."""
+    props: dict = {"LogDestinationType": _v(body, "log_destination_type", "cloud-watch-logs")}
+    _set(props, "LogGroupName", _v(body, "log_group_name"))
+    _set(props, "LogDestination", _ref(body, "log_destination"))
     tgw = _ref(body, "transit_gateway_id")
-    if tgw is None:
-        return {}
-    return {"ResourceType": "TransitGateway", "ResourceId": tgw}
+    if tgw is not None:
+        props.update({"ResourceType": "TransitGateway", "ResourceId": tgw})
+    return props
 
 
 def _lb(body: dict) -> dict:
@@ -2236,10 +2243,16 @@ def _container_environment(value: Any) -> Any:
 
 
 def _container_logs(value: Any) -> Any:
-    """logConfiguration -> LogConfiguration, with only the driver: options may hold secrets."""
+    """logConfiguration -> LogConfiguration: the driver and, for awslogs, the group name only.
+    Other options may hold secrets."""
     if not isinstance(value, dict):
         return _OPAQUE
-    return {"LogDriver": value.get("logDriver")}
+    out: dict = {"LogDriver": value.get("logDriver")}
+    options = value.get("options")
+    if value.get("logDriver") == "awslogs" and isinstance(options, dict) and "awslogs-group" in options:
+        group = options["awslogs-group"]
+        out["Options"] = {"awslogs-group": group if type(group) is str else _OPAQUE}
+    return out
 
 
 def _json_or_unresolved(text: str) -> Any:
@@ -2340,6 +2353,13 @@ def _lambda(body: dict) -> dict:
     _set(props, "Architectures", _v(body, "architectures"))
     _set(props, "Runtime", _v(body, "runtime"))
     _set(props, "PackageType", _v(body, "package_type"))
+    _set(props, "FunctionName", _v(body, "function_name"))  # CF-CW-003: /aws/lambda/<name>
+    if "logging_config" in _dynamic_names(body):
+        props["LoggingConfig"] = UNRESOLVED
+    elif _first_block(body, "logging_config"):
+        logging: dict = {}
+        _set(logging, "LogGroup", _ref(_first_block(body, "logging_config"), "log_group"))
+        props["LoggingConfig"] = logging
     # Provider defaults: 3 second timeout, -1 (no reserved concurrency).
     _set(props, "Timeout", _v(body, "timeout", 3))
     _set(props, "MemorySize", _v(body, "memory_size"))
@@ -2415,6 +2435,8 @@ def _log_group(body: dict) -> dict:
     if retention != 0:  # 0 means "never expire" in Terraform
         _set(props, "RetentionInDays", retention)
     _set(props, "KmsKeyId", _ref(body, "kms_key_id"))
+    # A name_prefix makes a name the scan cannot know (CF-CW-003).
+    _set(props, "LogGroupName", _v(body, "name") if "name_prefix" not in body else UNRESOLVED)
     return props
 
 
@@ -2497,6 +2519,7 @@ def _codebuild_project(body: dict) -> dict:
         cloudwatch = _first_block(logs, "cloudwatch_logs")
         if cloudwatch:
             config.setdefault("CloudWatchLogs", {"Status": _v(cloudwatch, "status", "ENABLED")})
+            _set(config["CloudWatchLogs"], "GroupName", _v(cloudwatch, "group_name"))
         s3_logs = _first_block(logs, "s3_logs")
         if s3_logs:
             s3: dict = {"Status": _v(s3_logs, "status", "DISABLED")}
@@ -2963,6 +2986,20 @@ def _asg_link(body: dict) -> dict:
     return props
 
 
+def _memorydb_cluster(body: dict) -> dict:
+    """aws_memorydb_cluster: snapshot_retention_limit (CF-MDB-001)."""
+    props: dict = {}
+    _set(props, "SnapshotRetentionLimit", _v(body, "snapshot_retention_limit"))
+    return props
+
+
+def _event_archive(body: dict) -> dict:
+    """aws_cloudwatch_event_archive: retention_days, where 0 keeps events forever (CF-EB-003)."""
+    props: dict = {}
+    _set(props, "RetentionDays", _v(body, "retention_days"))
+    return props
+
+
 def _elasticache_cluster(body: dict) -> dict:
     props: dict = {}
     _set(props, "CacheNodeType", _v(body, "node_type"))
@@ -3030,6 +3067,7 @@ def _ecs_service(body: dict) -> dict:
 
 def _eks(body: dict) -> dict:
     props: dict = {}
+    _set(props, "Name", _v(body, "name"))
     types = _v(body, "enabled_cluster_log_types")
     if types is UNRESOLVED:
         props["Logging"] = UNRESOLVED
@@ -3227,6 +3265,8 @@ _ADAPTERS: dict[str, Callable[[dict], dict]] = {
     "aws_efs_backup_policy": _efs_backup_policy,
     "aws_kinesis_stream": _kinesis_stream,
     "aws_elasticache_replication_group": _elasticache_replication_group,
+    "aws_memorydb_cluster": _memorydb_cluster,
+    "aws_cloudwatch_event_archive": _event_archive,
     "aws_opensearch_domain": _opensearch_domain,
     "aws_elasticache_cluster": _elasticache_cluster,
     "aws_launch_configuration": _launch_configuration,

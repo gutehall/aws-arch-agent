@@ -10,6 +10,7 @@ New releases go at the top. See [CONTRIBUTING.md](CONTRIBUTING.md#releases) for 
 
 ### Changes
 
+- New retention checks for data that is kept forever: a log group a service creates at deploy time with no retention (CF-CW-003: Lambda, the awslogs driver, VPC flow logs, RDS log exports, EKS control-plane logs, CodeBuild), a backup plan rule that never deletes recovery points (CF-BAK-006), a MemoryDB cluster with no automatic snapshots (CF-MDB-001), and an EventBridge archive with no retention (CF-EB-003). They run on CloudFormation, Terraform and synthesised CDK; MemoryDB clusters and EventBridge archives are now in the resource model
 - New Agentic AI lens checks for AGENTSEC 9, security testing of an agent: an AI red-team or vulnerability scan in the pipeline (REPO-205), a note on the scoped environment the security tests run in (REPO-206), and runtime threat detection with automated response (REPO-207). They run only when the scan sees a Bedrock agent or AgentCore runtime
 - New Agentic AI lens checks for AGENTSEC 8, agent inputs and outputs: a Bedrock guardrail with no prompt attack filter on input (CF-BEDROCK-013), and one whose sensitive-information filters do not act on responses (CF-BEDROCK-014), on CloudFormation, Terraform and synthesised CDK
 - New Agentic AI lens checks for AGENTSEC 7, human oversight and rogue agents: a note on how reviewers are protected from overload and manipulation (REPO-208), anomaly detection with containment (REPO-209), and red teaming on a schedule (REPO-210)
