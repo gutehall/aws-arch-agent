@@ -90,3 +90,42 @@ jobs:
 
       - name: Publish to PyPI
         uses: pypa/gh-action-pypi-publish@7245906fb61fa33a13554f9d5fb856fe61758086 # v1.14.3
+
+  # Same tag, same commit: the image is the install for any CI. Two images per tag on GitHub
+  # Container Registry: <tag> (no Node) and <tag>-v2 (Node and the v2 extra, for cdk synth).
+  # An image that already exists for the tag is left alone, like the release.
+  image:
+    needs: release
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+    env:
+      TAG: ${{ github.ref_name }}
+      GH_TOKEN: ${{ github.token }}
+      ACTOR: ${{ github.actor }}
+      REPOSITORY: ${{ github.repository }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Log in to GitHub Container Registry
+        run: echo "$GH_TOKEN" | docker login ghcr.io -u "$ACTOR" --password-stdin
+
+      - name: Build, check and push the images
+        run: |
+          repo="ghcr.io/$(echo "$REPOSITORY" | tr '[:upper:]' '[:lower:]')"
+          want="${TAG#v}"
+          for target in default v2; do
+            tag="$TAG"; [ "$target" = v2 ] && tag="$TAG-v2"
+            if docker manifest inspect "$repo:$tag" >/dev/null 2>&1; then
+              echo "$repo:$tag already exists; leaving it alone."
+              continue
+            fi
+            docker build --target "$target" \
+              --label "org.opencontainers.image.source=https://github.com/$REPOSITORY" \
+              --label "org.opencontainers.image.version=$TAG" \
+              -t "$repo:$tag" .
+            docker run --rm "$repo:$tag" --version | grep -F "$want" \
+              || { echo "$repo:$tag does not report version $want"; exit 1; }
+            docker push "$repo:$tag"
+          done

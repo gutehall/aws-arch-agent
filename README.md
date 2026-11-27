@@ -117,6 +117,8 @@ To accept one finding in source, put `# aws-arch-agent: ignore <RULE_ID> reason=
 
 Pin a release tag. A minor release can add checks, so new findings may appear. A major release can change CLI flags or the report schema. [GitHub Action](docs/REFERENCE.md#github-action), [releases](https://github.com/gutehall/aws-arch-agent/releases), [CHANGELOG.md](CHANGELOG.md).
 
+Other CI systems run the release image, `ghcr.io/gutehall/aws-arch-agent:v1.3.3` (`-v2` adds Node for `cdk synth`). `--format codequality` writes a GitLab Code Quality report, and `--summary-out` writes a Markdown summary from the same scan. Jobs to paste for GitLab CI, Jenkins, AWS CodeBuild and Azure Pipelines are in [Other CI systems](docs/REFERENCE.md#other-ci-systems).
+
 ## Modes
 
 `--mode auto` (the default) uses V2 for a CDK app when the `v2` extra and Node.js are installed, or when `--templates` is passed. Otherwise it uses V1.

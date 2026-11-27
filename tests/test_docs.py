@@ -79,6 +79,15 @@ def test_readme_pins_the_action_to_the_current_release() -> None:
     assert f"releases/tag/v{__version__})" in readme
 
 
+def test_image_examples_pin_the_current_release() -> None:
+    """Every container image reference is the current release tag (or its -v2 twin)."""
+    for path in (ROOT / "README.md", ROOT / "docs" / "REFERENCE.md"):
+        text = path.read_text(encoding="utf-8")
+        tags = re.findall(r"ghcr\.io/gutehall/aws-arch-agent:([\w.<>-]+)", text)
+        assert tags, path
+        assert set(tags) <= {f"v{__version__}", f"v{__version__}-v2", "<tag>", "<tag>-v2"}, (path, set(tags))
+
+
 def test_reference_pins_the_action_and_lists_every_cli_option() -> None:
     text = (ROOT / "docs" / "REFERENCE.md").read_text(encoding="utf-8")
     assert _pins_action_to_current_release(text)

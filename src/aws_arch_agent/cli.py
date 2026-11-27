@@ -39,6 +39,7 @@ from aws_arch_agent.rules.themes import THEMES
 from aws_arch_agent.report.json_report import render_json
 from aws_arch_agent.report.html import render_html
 from aws_arch_agent.report.summary import _span_text, build_summary, terminal_lines
+from aws_arch_agent.report.codequality import render_codequality
 from aws_arch_agent.report.sarif import BASELINE_SUPPRESSION, render_sarif
 from aws_arch_agent.tools.files import iter_files, truncation_message
 
@@ -52,7 +53,7 @@ console = Console()
 
 SEVERITY_ORDER = ("Low", "Medium", "High")
 _MODES = ("auto", "v1", "v2")
-_FORMATS = ("markdown", "json", "sarif", "html")
+_FORMATS = ("markdown", "json", "sarif", "html", "codequality")
 _FAIL_ON = ("high", "medium", "low", "none")
 _LLM_MODES = ("full", "compact")
 
@@ -299,7 +300,7 @@ def analyze(
     config: str | None = typer.Option(None, "--config", help="Path to config file (JSON or YAML)"),
     format: str = typer.Option(
         "html", "--format", "-f",
-        help="Output format: html (default) | markdown | json | sarif. Default: from --out's suffix, else html",
+        help="Output format: html (default) | markdown | json | sarif | codequality (GitLab Code Quality). Default: from --out's suffix, else html",
     ),
     fail_on: str = typer.Option(
         "none", "--fail-on", help="Exit non-zero if any finding has this severity or higher (high|medium|low|none)"
@@ -310,6 +311,10 @@ def analyze(
     no_synth: bool = typer.Option(False, "--no-synth", help="Do not run cdk synth; V2 only (static analysis or use with --templates)"),
     rag: str | None = typer.Option(None, "--rag", help="Path to RAG doc (e.g. Well-Architected markdown); V2 only"),
     suggestions: str | None = typer.Option(None, "--suggestions", help="Write findings with suggested code to this JSON file"),
+    summary_out: str | None = typer.Option(
+        None, "--summary-out",
+        help="Also write the Markdown report to this file, from the same scan (for a CI job summary)",
+    ),
     baseline: str | None = typer.Option(None, "--baseline", help="Path to baseline file for suppressions"),
     enforce_baseline: bool = typer.Option(False, "--enforce-baseline", help="Only fail on findings not in baseline"),
     update_baseline: bool = typer.Option(False, "--update-baseline", help="Add current findings to baseline file"),
@@ -415,6 +420,13 @@ def analyze(
     price_provider = pricing.configure(cfg.pricing_source, cfg.price_cache_ttl_hours, refresh=refresh_prices)
 
     out_path = Path(cfg.out).expanduser().resolve()
+    summary_path = Path(summary_out).expanduser().resolve() if summary_out else None
+    if summary_path is not None:
+        # Checked before the scan, so a bad path writes no report.
+        if not summary_path.parent.is_dir():
+            _fail(f"--summary-out directory does not exist: {summary_path.parent}")
+        if summary_path == out_path and cfg.format != "markdown":
+            _fail("--summary-out is the same file as --out; give the summary its own path")
     baseline_path = _resolve_baseline_path(repo_path, baseline)
     accepted_before: set[Fingerprint] | None = None
     if enforce_baseline or update_baseline:
@@ -565,7 +577,16 @@ def analyze(
             findings_for_fail = filter_new_findings(findings_for_fail, accepted_before or set())
 
         progress("Writing report")
-        if cfg.format == "json":
+        markdown = "\n".join(llm_lines) + f"\n\n{report_md}"
+        if enforce_baseline:
+            markdown = _mark_baselined(markdown, "markdown", findings, accepted_before or set())
+        if cfg.format == "codequality":
+            # GitLab shows each entry as open: leave out what a suppression or the baseline accepted.
+            open_findings = suppressions.active(findings)
+            if enforce_baseline:
+                open_findings = filter_new_findings(open_findings, accepted_before or set())
+            content = render_codequality(open_findings)
+        elif cfg.format == "json":
             content = render_json(ctx_report, findings, warnings=warnings)
         elif cfg.format == "sarif":
             content = render_sarif(ctx_report, findings, warnings=warnings)
@@ -577,13 +598,16 @@ def analyze(
             )
             content = render_html(ctx_report, findings, warnings=warnings, baselined=baselined)
         else:
-            content = "\n".join(llm_lines) + f"\n\n{report_md}"
+            content = markdown
 
-        if enforce_baseline and cfg.format != "html":
+        if enforce_baseline and cfg.format in ("json", "sarif"):
             content = _mark_baselined(content, cfg.format, findings, accepted_before or set())
 
         out_path.write_text(content, encoding="utf-8")
         console.print(f"Wrote report to: [bold]{escape(str(out_path))}[/bold]")
+        if summary_path is not None:
+            summary_path.write_text(markdown, encoding="utf-8")
+            console.print(f"Wrote summary to: [bold]{escape(str(summary_path))}[/bold]")
         # Before any exit, so a failing run still shows what it found.
         for line in terminal_lines(build_summary(findings), str(out_path)):
             console.print(line, markup=False, highlight=False, emoji=False, soft_wrap=True)
