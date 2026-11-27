@@ -4,7 +4,7 @@ This document provides a comprehensive list of all rules checked by AWS Arch Age
 
 ## Overview
 
-AWS Arch Agent checks **534 static analysis rules** and **340 template checks** across the six AWS Well-Architected pillars, plus a few CDK best-practice checks. 141 of the 534 CDK rules (26%) have a template check. Those checks run on CloudFormation, Terraform, and synthesised CDK. [COVERAGE.md](COVERAGE.md) gives the reason for each of the others.
+AWS Arch Agent checks **534 static analysis rules** and **344 template checks** across the six AWS Well-Architected pillars, plus a few CDK best-practice checks. 141 of the 534 CDK rules (26%) have a template check. Those checks run on CloudFormation, Terraform, and synthesised CDK. [COVERAGE.md](COVERAGE.md) gives the reason for each of the others.
 
 ## Static Analysis Rules (V1 & V2 Modes)
 
@@ -794,7 +794,7 @@ CloudFormation template rules run when the agent has access to template files. T
   - CF-VPC-005 (Low): the literal subnet CIDRs of a VPC take every address of its literal IPv4 CIDR blocks (`CidrBlock` on the VPC and on `AWS::EC2::VPCCidrBlock`; Terraform `aws_vpc` and `aws_vpc_ipv4_cidr_block_association` `cidr_block`), so no subnet can be added. A block from a parameter, a variable or IPAM is not judged. A default CDK `ec2.Vpc` splits its CIDR among its subnets and so fires. Answers REL02-BP03.
   - CF-VPC-006 (Low): three or more VPC peering connections (`AWS::EC2::VPCPeeringConnection`, `aws_vpc_peering_connection`) and no transit gateway or Cloud WAN core network, or an attachment to one, in the template, a child stack or a module. Answers REL02-BP04.
 - **Transit Gateway** (`AWS::EC2::TransitGateway`, `aws_ec2_transit_gateway`): CF-TGW-001 (Medium, Security Hub EC2.23): `AutoAcceptSharedAttachments: enable`. CF-TGW-002 (Low): no `AWS::EC2::FlowLog` / `aws_flow_log` on the gateway. A transit gateway flow log the scan cannot tie to a gateway counts for all of them. In V2, CF-TGW-002 replaces OPS-016
-- **CloudWatch Logs**: CF-CW-001 (no retention), CF-CW-002 (no KMS)
+- **CloudWatch Logs**: CF-CW-001 (no retention), CF-CW-002 (no KMS), CF-CW-003 (Low, Cost Optimization: a log group a service creates at deploy time that no declared log group or CDK `Custom::LogRetention` covers, so it never expires: `/aws/lambda/<FunctionName>`, an ECS `awslogs-group`, a VPC flow log `LogGroupName`, `/aws/rds/instance|cluster/<id>/<log>` for RDS log exports, `/aws/eks/<name>/cluster` for EKS control-plane logs, and a CodeBuild `CloudWatchLogs.GroupName`. A declared group with no retention is CF-CW-001's finding. A name the scan cannot read is not judged, and a log group whose name it cannot read may cover any of them. Skipped when a child stack or unread Terraform module may declare the group. Reported in dev and staging too)
 - **SQS**: CF-SQS-001 (encryption not configured), CF-SQS-002 (no redrive/DLQ), CF-SQS-003 (Medium): `VisibilityTimeout` (default 30) shorter than the `Timeout` (default 3) of a Lambda that an event source mapping connects to the queue. The check asks for no more than the timeout; the recommendation gives the AWS advice of 6 times it
 - **SNS**: CF-SNS-001 (no `KmsMasterKeyId`, Low: SNS still keeps its own disk encryption)
 - **EBS**: CF-EBS-001 (`AWS::EC2::Volume` or a launch template EBS block device without `Encrypted: true`, Medium; a volume from a snapshot takes the snapshot's setting and is not reported. Account-level EBS encryption by default is not visible to the scan)
@@ -873,6 +873,7 @@ CloudFormation template rules run when the agent has access to template files. T
   - CF-BEANSTALK-003 (Low, Security Hub ElasticBeanstalk.3): `StreamLogs` in `aws:elasticbeanstalk:cloudwatch:logs` unset, which means false, or false.
 - **Kinesis**: CF-KIN-001 (no `StreamEncryption`, Medium; Terraform `encryption_type` defaults to `NONE`)
 - **ElastiCache** (`AWS::ElastiCache::ReplicationGroup`): CF-EC-001 (not encrypted at rest, Medium; Redis OSS defaults to off, Valkey to on, so an unset value on Valkey is not reported), CF-EC-002 (`TransitEncryptionEnabled` not true, Medium), CF-EC-003 (Medium, Security Hub ElastiCache.3: `AutomaticFailoverEnabled` or `MultiAZEnabled` not true; not reported in dev or staging stacks; in V2 it replaces REL-016), CF-EC-006 (Medium, ElastiCache.6: Redis OSS below 6 with no `AuthToken`; an unset `EngineVersion` is not judged). On replication groups and `AWS::ElastiCache::CacheCluster` (`aws_elasticache_cluster`): CF-EC-004 (Low, ElastiCache.1: Redis OSS or Valkey with `SnapshotRetentionLimit` 0 or unset), CF-EC-005 (Low, ElastiCache.2: Redis OSS or Valkey with `AutoMinorVersionUpgrade: false`), CF-EC-007 (Low, ElastiCache.7: `CacheSubnetGroupName` unset or `default`). A Terraform cluster in a replication group takes these from the group, and the template does not show what an existing `PrimaryClusterId` already has, so neither is judged for them or for CF-EC-006
+- **MemoryDB** (`AWS::MemoryDB::Cluster`, `aws_memorydb_cluster`): CF-MDB-001 (Low, Reliability): `SnapshotRetentionLimit` 0 or unset, so no automatic snapshots are kept. 1 day passes. An unreadable value is not judged.
 - **OpenSearch** (`AWS::OpenSearchService::Domain`): CF-OS-001 (`EncryptionAtRestOptions.Enabled` not true, Medium), CF-OS-002 (`NodeToNodeEncryptionOptions.Enabled` not true, Medium); both are off by default
 - **Redshift**: CF-RS-001 (explicit `Encrypted: false`, Low). New provisioned clusters are encrypted by default since 2025, so an unset value is not reported
 - **DocumentDB / Neptune**: CF-DOCDB-001, CF-NEP-001 (`StorageEncrypted` not true, Medium); a cluster restored from a snapshot or another cluster inherits its encryption and is not reported
@@ -930,7 +931,8 @@ CloudFormation template rules run when the agent has access to template files. T
 - **AWS Backup** (`AWS::Backup::BackupVault`, `BackupPlan`, `BackupSelection`; Terraform `aws_backup_vault`, `aws_backup_vault_lock_configuration`, `aws_backup_plan`, `aws_backup_selection`). A value from a parameter or variable is not judged. In V2, CF-BAK-001, CF-BAK-002 and CF-BAK-005 replace SEC-063, REL-014 and REL-013:
   - CF-BAK-001 (Low): vault with no `EncryptionKeyArn`, so it uses the AWS managed key
   - CF-BAK-002 (Low): plan rule with no `CopyActions` to another Region. A copy to a vault in the same template, or to an ARN in the stack's Region, stays in the Region. A literal ARN is compared only when the scan knows the stack's Region, and a Terraform reference is not judged, because its provider may be in another Region
-  - CF-BAK-003 (Low): plan rule with `Lifecycle.DeleteAfterDays` below 7. Unset keeps recovery points forever and is not reported
+  - CF-BAK-003 (Low): plan rule with `Lifecycle.DeleteAfterDays` below 7. Unset keeps recovery points forever and is CF-BAK-006's finding
+  - CF-BAK-006 (Low, Cost Optimization): plan rule with no `Lifecycle.DeleteAfterDays` (Terraform `lifecycle.delete_after`), so recovery points are never deleted. `MoveToColdStorageAfterDays` alone is not a delete. One finding per plan, naming the rules. An unreadable plan or lifecycle is not judged
   - CF-BAK-004 (Low): vault with no `LockConfiguration` or `aws_backup_vault_lock_configuration` in a stack marked prod. A stack whose environment is unknown is not reported
   - CF-BAK-005 (Low): RDS, DynamoDB, EFS, EBS or FSx resource that no selection in the template selects, by ARN or tag. With no plan or selection in the template, one finding per stack. A selection is read for `Resources`, `ListOfTags` and `Conditions.StringEquals`. A wildcard or literal ARN of the resource's service, or a tag the scan cannot read, counts as selected. An Aurora member and a read replica are not reported
 - **Step Functions** (`AWS::StepFunctions::StateMachine`, `aws_sfn_state_machine`):
@@ -938,6 +940,7 @@ CloudFormation template rules run when the agent has access to template files. T
   - CF-SFN-002 (Low): `TracingConfiguration.Enabled` not true
   - CF-SFN-003 (Medium, Security Hub StepFunctions.1): no `LoggingConfiguration`, or `Level: OFF`
 - **EventBridge rule targets** (`AWS::Events::Rule` `Targets`, `aws_cloudwatch_event_target`): CF-EB-001 (Low): no `DeadLetterConfig`. CF-EB-002 (Low): no `RetryPolicy`, or `MaximumRetryAttempts` 0. A policy that sets only `MaximumEventAgeInSeconds` is not reported. Event bus policies open to anyone are CF-RP-001
+- **EventBridge archives** (`AWS::Events::Archive`, `aws_cloudwatch_event_archive`): CF-EB-003 (Low, Cost Optimization): `RetentionDays` unset or 0, so the archive keeps events forever. Any value of 1 day or more passes. An unreadable value is not judged.
 - **Athena workgroups** (`AWS::Athena::WorkGroup`, `aws_athena_workgroup`):
   - CF-ATH-001 (Medium): no `ResultConfiguration.EncryptionConfiguration` in `WorkGroupConfiguration`. A value from a parameter or variable is not judged, and neither is a workgroup with the older `WorkGroupConfigurationUpdates`, Athena-managed query results, or a Spark engine. In V2 it replaces SEC-042
   - CF-ATH-002 (Low): `EnforceWorkGroupConfiguration` literally false. Unset is not reported
@@ -981,9 +984,9 @@ CloudFormation template rules run when the agent has access to template files. T
 |--------|-------------|
 | Operational Excellence | CF-ECS-012, CF-CFG-001, CF-ALARM-001, CF-ALARM-002, CF-ALARM-003, CF-ALARM-004, CF-OBS-001, CF-OBS-002, CF-OBS-003, CF-DASH-001, CF-CT-004, CF-S3-004, CF-RDS-007, CF-RDS-010, CF-RDS-011, CF-CT-001, CF-CT-002, CF-FL-001, CF-EKS-001, CF-TGW-002, CF-CB-004, CF-CP-003, CF-OS-006, CF-RS-004, CF-DOCDB-003, CF-NEP-002, CF-SFN-002, CF-SFN-003, CF-EB-001, CF-ECS-008, CF-ECS-010, CF-ASG-005, CF-GLUE-002, CF-GLUE-003, CF-S3-011, CF-CF-005, CF-FSX-002, CF-PATCH-001, CF-SAGE-006, CF-BEDROCK-004, CF-SYN-001, CF-LOGS-001, CF-SAGE-010 |
 | Security | CF-GD-001, CF-SH-001, CF-MACIE-001, CF-CT-005, CF-S3-001, CF-S3-002, CF-S3-005, CF-RDS-001, CF-RDS-004, CF-APIGW-003, CF-APIGW-004, CF-APIGW-007, CF-APIGW-009, CF-APIGW-V2-003, CF-LAM-004, CF-LAM-005, CF-RDS-006, CF-RDS-008, CF-RDS-009, CF-RDS-012, CF-RDS-013, CF-CT-003, CF-KMS-001, CF-RP-001, CF-EC2-001, CF-EKS-002, CF-EKS-003, CF-IAM-001, CF-IAM-002, CF-IAM-003, CF-IAM-004, CF-IAM-005, CF-IAM-006, CF-IAM-007, CF-IAM-008, CF-IAM-009, CF-IAM-010, CF-IAM-011, CF-ALB-002, CF-ALB-003, CF-NLB-001, CF-ALB-004, CF-ALB-006, CF-CLB-001, CF-CLB-002, CF-SG-001, CF-SG-002, CF-SG-003, CF-NACL-001, CF-TGW-001, CF-CW-002, CF-SQS-001, CF-DDB-002, CF-LAM-003, CF-SNS-001, CF-EBS-001, CF-EFS-001, CF-KIN-001, CF-EC-001, CF-EC-002, CF-OS-001, CF-OS-002, CF-RS-001, CF-DOCDB-001, CF-NEP-001, CF-MSK-001, CF-CF-001, CF-CF-002, CF-CF-003, CF-CF-004, CF-WAF-001, CF-EC2-002, CF-EC2-003, CF-PAR-001, CF-PAR-002, CF-ECR-001, CF-ECR-002, CF-ECR-003, CF-ECS-001, CF-ECS-002, CF-ECS-003, CF-SM-001, CF-COG-001, CF-COG-002, CF-COG-003, CF-CB-001, CF-CB-002, CF-CB-003, CF-CB-005, CF-CP-001, CF-KMS-002, CF-SSM-001, CF-OS-003, CF-OS-004, CF-OS-005, CF-MSK-002, CF-MSK-003, CF-RS-002, CF-RS-005, CF-RS-006, CF-RS-007, CF-RS-008, CF-NEP-005, CF-BAK-001, CF-EC-005, CF-EC-006, CF-EC-007, CF-EFS-004, CF-EFS-005, CF-ECS-004, CF-ECS-005, CF-ECS-006, CF-ECS-007, CF-ECS-009, CF-EKS-004, CF-ASG-003, CF-ASG-004, CF-ATH-001, CF-ATH-002, CF-GLUE-001, CF-FH-001, CF-EMR-001, CF-EMR-002, CF-EMR-003, CF-DMS-001, CF-DMS-002, CF-DMS-003, CF-S3-008, CF-S3-009, CF-CF-008, CF-CF-010, CF-CF-011, CF-SAGE-001, CF-SAGE-002, CF-SAGE-003, CF-SAGE-004, CF-FSX-001, CF-APPSYNC-001, CF-APPSYNC-002, CF-APPSYNC-003, CF-TRANSFER-001, CF-TRANSFER-002, CF-TRANSFER-003, CF-BEANSTALK-002, CF-R53-001, CF-R53-002, CF-ACM-002, CF-ACM-003, CF-BEDROCK-001, CF-LAM-011, CF-SAGE-008, CF-SAGE-009, CF-SAGE-012, CF-BEDROCK-010, CF-BEDROCK-011, CF-BEDROCK-012, CF-BEDROCK-013, CF-BEDROCK-014, CF-BEDROCK-015, CF-BEDROCK-016, CF-BEDROCK-017, CF-SAGE-014, CF-BEDROCK-018, CF-BEDROCK-019, CF-SAGE-015, CF-BEDROCK-020, CF-BEDROCK-021, CF-SAGE-016 |
-| Reliability | CF-S3-003, CF-RDS-002, CF-RDS-003, CF-RDS-005, CF-LAM-001, CF-LAM-006, CF-LAM-007, CF-LAM-008, CF-LAM-009, CF-APIGW-005, CF-APIGW-006, CF-APIGW-V2-004, CF-DDB-001, CF-SQS-002, CF-DEL-001, CF-NAT-001, CF-ALB-005, CF-ALB-007, CF-CLB-004, CF-CLB-005, CF-CP-002, CF-KMS-003, CF-OS-007, CF-KIN-002, CF-RS-003, CF-DOCDB-002, CF-DOCDB-004, CF-NEP-003, CF-NEP-004, CF-SFN-001, CF-EB-002, CF-SQS-003, CF-BAK-002, CF-BAK-003, CF-BAK-004, CF-BAK-005, CF-DDB-004, CF-DDB-005, CF-EC-003, CF-EC-004, CF-EFS-002, CF-ASG-001, CF-ASG-002, CF-DMS-004, CF-S3-010, CF-CF-009, CF-SAGE-005, CF-FSX-003, CF-R53-003, CF-ACM-001, CF-GA-001, CF-VPC-004, CF-VPC-005, CF-VPC-006, CF-BEDROCK-003, CF-SAGE-011, CF-SAGE-013 |
+| Reliability | CF-S3-003, CF-RDS-002, CF-RDS-003, CF-RDS-005, CF-LAM-001, CF-LAM-006, CF-LAM-007, CF-LAM-008, CF-LAM-009, CF-APIGW-005, CF-APIGW-006, CF-APIGW-V2-004, CF-DDB-001, CF-SQS-002, CF-DEL-001, CF-NAT-001, CF-ALB-005, CF-ALB-007, CF-CLB-004, CF-CLB-005, CF-CP-002, CF-KMS-003, CF-OS-007, CF-KIN-002, CF-RS-003, CF-DOCDB-002, CF-DOCDB-004, CF-NEP-003, CF-NEP-004, CF-SFN-001, CF-EB-002, CF-SQS-003, CF-BAK-002, CF-BAK-003, CF-BAK-004, CF-BAK-005, CF-DDB-004, CF-DDB-005, CF-EC-003, CF-EC-004, CF-EFS-002, CF-ASG-001, CF-ASG-002, CF-DMS-004, CF-S3-010, CF-CF-009, CF-SAGE-005, CF-FSX-003, CF-R53-003, CF-ACM-001, CF-GA-001, CF-VPC-004, CF-VPC-005, CF-VPC-006, CF-BEDROCK-003, CF-SAGE-011, CF-SAGE-013, CF-MDB-001 |
 | Performance Efficiency | CF-APIGW-008, CF-PERF-001, CF-PERF-002, CF-PERF-003, CF-PERF-004, CF-PERF-005, CF-PERF-006, CF-ECS-011, CF-CF-013, CF-APPSYNC-004, CF-LAM-010 |
-| Cost Optimization | CF-DEMAND-001, CF-BUDGET-001, CF-CW-001, CF-RDS-014, CF-COST-002, CF-EBS-002, CF-EIP-001, CF-TAG-001, CF-TAG-002, CF-ENV-001, CF-ENV-002, CF-ENV-003, CF-ENV-004, CF-ENV-005, CF-ENV-006, CF-GEN-001, CF-S3-006, CF-S3-007, CF-DDB-003, CF-VPC-002, CF-VPC-003, CF-SSM-002, CF-EFS-003, CF-ASG-006, CF-S3-012, CF-CF-006, CF-CF-012, CF-CE-001, CF-ECS-013, CF-SAGE-007 |
+| Cost Optimization | CF-DEMAND-001, CF-BUDGET-001, CF-CW-001, CF-RDS-014, CF-COST-002, CF-EBS-002, CF-EIP-001, CF-TAG-001, CF-TAG-002, CF-ENV-001, CF-ENV-002, CF-ENV-003, CF-ENV-004, CF-ENV-005, CF-ENV-006, CF-GEN-001, CF-S3-006, CF-S3-007, CF-DDB-003, CF-VPC-002, CF-VPC-003, CF-SSM-002, CF-EFS-003, CF-ASG-006, CF-S3-012, CF-CF-006, CF-CF-012, CF-CE-001, CF-ECS-013, CF-SAGE-007, CF-CW-003, CF-BAK-006, CF-EB-003 |
 | Sustainability | CF-DEMAND-002, CF-SUST-001, CF-SUST-002, CF-SUST-003, CF-SUST-004, CF-SUST-005, CF-SUST-006, CF-SUST-007, CF-CF-007, CF-EBS-003, CF-RDS-015, CF-S3-013 |
 | Observability (reported under Operational Excellence) | CF-ALB-001, CF-CLB-003, CF-LAM-002, CF-APIGW-001, CF-APIGW-002, CF-APIGW-V2-001, CF-APIGW-V2-002, CF-APPRUNNER-001, CF-BEANSTALK-001, CF-BEANSTALK-003 |
 | Best Practices | CF-VPC-001 |
@@ -1076,6 +1079,7 @@ Every rule has one or more themes, which cut across pillars: `finops`, `security
 | CF-BAK-003 | resilience, data-protection |
 | CF-BAK-004 | data-protection, resilience |
 | CF-BAK-005 | resilience, data-protection |
+| CF-BAK-006 | finops |
 | CF-BEANSTALK-001 | observability |
 | CF-BEANSTALK-002 | security-baseline |
 | CF-BEANSTALK-003 | observability |
@@ -1139,6 +1143,7 @@ Every rule has one or more themes, which cut across pillars: `finops`, `security
 | CF-CT-005 | observability, data-protection |
 | CF-CW-001 | finops, data-protection |
 | CF-CW-002 | data-protection |
+| CF-CW-003 | finops, data-protection |
 | CF-DASH-001 | observability |
 | CF-DDB-001 | resilience, data-protection |
 | CF-DDB-002 | data-protection |
@@ -1158,6 +1163,7 @@ Every rule has one or more themes, which cut across pillars: `finops`, `security
 | CF-DOCDB-004 | resilience, data-protection |
 | CF-EB-001 | observability, resilience |
 | CF-EB-002 | resilience |
+| CF-EB-003 | finops |
 | CF-EBS-001 | data-protection |
 | CF-EBS-002 | finops |
 | CF-EBS-003 | finops, sustainability |
@@ -1246,6 +1252,7 @@ Every rule has one or more themes, which cut across pillars: `finops`, `security
 | CF-LAM-011 | resilience, network-exposure |
 | CF-LOGS-001 | observability |
 | CF-MACIE-001 | data-protection, security-baseline |
+| CF-MDB-001 | resilience, data-protection |
 | CF-MSK-001 | data-protection |
 | CF-MSK-002 | identity |
 | CF-MSK-003 | network-exposure |

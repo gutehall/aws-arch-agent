@@ -487,6 +487,8 @@ CHECK_PROPERTIES: dict[str, frozenset[str]] = {
         "CF-TGW-002": set(),
         "CF-CW-001": {"RetentionInDays"},
         "CF-CW-002": {"KmsKeyId"},
+        # Template-level: _implicit_log_group_findings skips names it cannot read.
+        "CF-CW-003": set(),
         "CF-SQS-001": {"SqsManagedSseEnabled", "KmsMasterKeyId"},
         "CF-SQS-002": {"RedrivePolicy"},
         "CF-APIGW-001": {"AccessLogSetting"},
@@ -559,7 +561,10 @@ CHECK_PROPERTIES: dict[str, frozenset[str]] = {
         # Template-level: _lambda_property_findings skips what it cannot read.
         "CF-LAM-010": set(), "CF-LAM-011": set(),
         # Template-level: _backup_findings skips what it cannot read.
-        **{c: set() for c in ("CF-BAK-001", "CF-BAK-002", "CF-BAK-003", "CF-BAK-004", "CF-BAK-005")},
+        **{c: set() for c in ("CF-BAK-001", "CF-BAK-002", "CF-BAK-003", "CF-BAK-004", "CF-BAK-005",
+                              "CF-BAK-006")},
+        # Template-level: _retention_findings skips what it cannot read.
+        **{c: set() for c in ("CF-MDB-001", "CF-EB-003")},
         # Template-level: _ci_cd_findings skips what it cannot read.
         **{c: set() for c in ("CF-CB-001", "CF-CB-002", "CF-CB-003", "CF-CB-004", "CF-CB-005",
                               "CF-CP-001", "CF-CP-002", "CF-CP-003")},
@@ -647,7 +652,7 @@ CF_THEMES: dict[str, tuple[str, ...]] = {
     "CF-CF-010": (_DP, _NET), "CF-CF-011": (_DP, _NET), "CF-CF-012": (_F,), "CF-CF-013": (_RES,),
     "CF-COG-001": (_ID,), "CF-COG-002": (_ID,), "CF-COG-003": (_ID,),
     "CF-COST-002": (_F,), "CF-CT-001": (_OBS, _SB), "CF-CT-002": (_OBS,), "CF-CT-003": (_OBS, _DP),
-    "CF-CW-001": (_F, _DP), "CF-CW-002": (_DP,),
+    "CF-CW-001": (_F, _DP), "CF-CW-002": (_DP,), "CF-CW-003": (_F, _DP),
     "CF-DDB-001": (_RES, _DP), "CF-DDB-002": (_DP,), "CF-DEL-001": (_DP, _RES), "CF-DOCDB-001": (_DP,),
     "CF-EBS-001": (_DP,), "CF-EBS-002": (_F,), "CF-EC-001": (_DP,), "CF-EC-002": (_DP,),
     "CF-EC2-001": (_SB, _ID), "CF-EC2-002": (_NET,), "CF-EC2-003": (_NET,),
@@ -690,7 +695,8 @@ CF_THEMES: dict[str, tuple[str, ...]] = {
     "CF-DDB-004": (_RES, _DP), "CF-DDB-005": (_RES, _DP), "CF-EC-003": (_RES,), "CF-EC-004": (_RES, _DP),
     "CF-EC-005": (_SB,), "CF-EC-006": (_ID,), "CF-EC-007": (_NET,), "CF-EFS-002": (_RES, _DP),
     "CF-EFS-003": (_F,), "CF-EFS-004": (_DP, _ID), "CF-EFS-005": (_ID,),
-    "CF-BAK-001": (_DP,), "CF-BAK-002": (_RES, _DP), "CF-BAK-003": (_RES, _DP),
+    "CF-BAK-001": (_DP,), "CF-BAK-002": (_RES, _DP), "CF-BAK-003": (_RES, _DP), "CF-BAK-006": (_F,),
+    "CF-MDB-001": (_RES, _DP), "CF-EB-003": (_F,),
     "CF-BAK-004": (_DP, _RES), "CF-BAK-005": (_RES, _DP),
     "CF-SFN-001": (_RES,), "CF-SFN-002": (_OBS,), "CF-SFN-003": (_OBS,), "CF-EB-001": (_OBS, _RES),
     "CF-EB-002": (_RES,), "CF-SQS-003": (_RES,),
@@ -753,6 +759,9 @@ CF_TITLES: dict[str, str] = {
     "CF-BAK-001": "Backup vault has no customer managed key",
     "CF-BAK-002": "Backup plan does not copy to another Region",
     "CF-BAK-003": "Backup plan keeps recovery points under 7 days",
+    "CF-BAK-006": "Backup plan rule never deletes recovery points",
+    "CF-MDB-001": "MemoryDB cluster has no automatic snapshots",
+    "CF-EB-003": "EventBridge archive keeps events forever",
     "CF-BAK-004": "Production backup vault has no Vault Lock",
     "CF-BAK-005": "Stateful resource is not covered by AWS Backup",
     "CF-BEANSTALK-001": "Elastic Beanstalk environment does not use enhanced health",
@@ -806,6 +815,7 @@ CF_TITLES: dict[str, str] = {
     "CF-CT-005": "No trail records S3 data events on a sensitive bucket",
     "CF-CW-001": "Log group has no retention period (infinite retention)",
     "CF-CW-002": "Log group not encrypted with KMS",
+    "CF-CW-003": "Service creates a log group that never expires",
     "CF-DASH-001": "Large stack has no CloudWatch dashboard",
     "CF-DDB-001": "DynamoDB point-in-time recovery not enabled",
     "CF-DDB-002": "DynamoDB server-side encryption not explicitly enabled",
@@ -3142,8 +3152,19 @@ def _short_lifecycle(rule: dict) -> bool:
         return False
 
 
+def _never_deletes(rule: dict) -> bool:
+    """True when a plan rule sets no Lifecycle.DeleteAfterDays, so it keeps recovery points
+    forever. MoveToColdStorageAfterDays alone is not a delete. An unreadable lifecycle is not judged."""
+    lifecycle = rule.get("Lifecycle")
+    if lifecycle is None:
+        return True
+    if not _readable(lifecycle):
+        return False
+    return lifecycle.get("DeleteAfterDays") is None
+
+
 def _backup_findings(resources: List[Resource], template_path: Path) -> List[Finding]:
-    """AWS Backup vaults, plans and coverage (CF-BAK-001..005). A value the scan cannot read is
+    """AWS Backup vaults, plans and coverage (CF-BAK-001..006). A value the scan cannot read is
     not judged."""
     usable = [r for r in resources if not r.malformed]
     vaults = [r for r in usable if r.type == "backup_vault"]
@@ -3185,6 +3206,7 @@ def _backup_findings(resources: List[Resource], template_path: Path) -> List[Fin
         no_copy = [named[i] for i, r in enumerate(rules) if isinstance(r.get("CopyActions") or [], list)
                    and not any(_copies_to_another_region(a, vaults, region) for a in r.get("CopyActions") or [])]
         short = [named[i] for i, r in enumerate(rules) if _short_lifecycle(r)]
+        forever = [named[i] for i, r in enumerate(rules) if _never_deletes(r)]
         if no_copy:
             add(plan, "CF-BAK-002", "Backup plan does not copy to another Region", "Low", "Reliability",
                 f"Recovery points stay in one Region under these rules: {', '.join(no_copy)}. A Regional "
@@ -3194,6 +3216,12 @@ def _backup_findings(resources: List[Resource], template_path: Path) -> List[Fin
             add(plan, "CF-BAK-003", "Backup plan keeps recovery points under 7 days", "Low", "Reliability",
                 f"Lifecycle.DeleteAfterDays is below 7 on these rules: {', '.join(short)}. That may leave no "
                 "good copy by the time a problem is found. Keep them at least 7 days. In CDK: deleteAfter on "
+                "the BackupPlanRule.")
+        if forever:
+            add(plan, "CF-BAK-006", CF_TITLES["CF-BAK-006"], "Low", "Cost Optimization",
+                f"Lifecycle.DeleteAfterDays is not set on these rules: {', '.join(forever)}, so their "
+                "recovery points are kept and billed forever. Set DeleteAfterDays to the longest period "
+                "you need to restore from (Terraform lifecycle.delete_after). In CDK: deleteAfter on "
                 "the BackupPlanRule.")
 
     # An Aurora member or a replica holds no data of its own to back up.
@@ -4411,6 +4439,191 @@ def _may_be_out_of_sight(resources: List[Resource], tf_types: tuple[str, ...]) -
                 "ResourceTypes" in res.unresolved or set(tf_types) & set(res.properties.get("ResourceTypes", ()))):
             return True
     return False
+
+
+def _literal(res: Resource, key: str) -> str | None:
+    """A string property the scan can read, else None."""
+    if key in res.unresolved:
+        return None
+    value = res.properties.get(key)
+    return value if type(value) is str and value else None
+
+
+def _eks_log_types(props: dict) -> bool | None:
+    """Whether an EKS cluster enables a control-plane log type. CloudFormation writes
+    ClusterLogging.EnabledTypes, the Terraform model a list of {Type, Enabled}. None when unknown."""
+    logging = props.get("Logging")
+    if logging is None:
+        return False
+    if not _readable(logging):
+        return None
+    cluster = logging.get("ClusterLogging")
+    if cluster is None:
+        return False
+    if isinstance(cluster, list):
+        return any(isinstance(c, dict) and c.get("Enabled") is True for c in cluster)
+    if not _readable(cluster):
+        return None
+    types = cluster.get("EnabledTypes")
+    if types is None:
+        return False
+    return bool(types) if isinstance(types, list) else None
+
+
+def _implicit_log_groups(res: Resource) -> list[str] | None:
+    """The CloudWatch log groups a resource makes a service create at deploy time, by name.
+    None when the resource writes logs but a name cannot be read."""
+    props = res.properties
+    if res.type == "lambda_function":
+        if _CDK_HELPER_FUNCTION.search(res.name):
+            return []
+        logging = props.get("LoggingConfig")
+        if "LoggingConfig" in res.unresolved or (logging is not None and not _readable(logging)):
+            return None  # it may name its own log group
+        if _readable(logging) and logging.get("LogGroup") is not None:
+            return []  # logs go to the group it names, not to /aws/lambda/<name>
+        name = _literal(res, "FunctionName")
+        return [f"/aws/lambda/{name}"] if name else None
+    if res.type == "ecs_task_definition":
+        containers = props.get("ContainerDefinitions")
+        if not isinstance(containers, list):
+            return None if containers is not None else []
+        names: list[str] = []
+        for container in containers:
+            config = container.get("LogConfiguration") if isinstance(container, dict) else None
+            if not _readable(config) or config.get("LogDriver") != "awslogs":
+                continue
+            options = config.get("Options")
+            group = options.get("awslogs-group") if _readable(options) else None
+            if type(group) is not str:
+                return None
+            names.append(group)
+        return names
+    if res.type == "flow_log":
+        kind = props.get("LogDestinationType", "cloud-watch-logs")
+        if "LogDestinationType" in res.unresolved or type(kind) is not str:
+            return None
+        if kind != "cloud-watch-logs" or props.get("LogDestination") is not None:
+            return []
+        if props.get("LogGroupName") is None and "LogGroupName" not in res.unresolved:
+            return []
+        name = _literal(res, "LogGroupName")
+        return [name] if name else None
+    if res.type in ("db_instance", "rds_cluster"):
+        exports = props.get("EnableCloudwatchLogsExports")
+        if "EnableCloudwatchLogsExports" in res.unresolved or (
+                exports is not None and not isinstance(exports, list)):
+            return None
+        if not exports:
+            return []
+        if res.type == "db_instance" and props.get("DBClusterIdentifier") is not None:
+            return []  # an Aurora member: the cluster exports the logs
+        kind, key = ("instance", "DBInstanceIdentifier") if res.type == "db_instance" else (
+            "cluster", "DBClusterIdentifier")
+        ident = _literal(res, key)
+        if not ident or not all(type(log) is str for log in exports):
+            return None
+        return [f"/aws/rds/{kind}/{ident.lower()}/{log}" for log in exports]
+    if res.type == "eks_cluster":
+        if "Logging" in res.unresolved:
+            return None
+        enabled = _eks_log_types(props)
+        if enabled is None:
+            return None
+        if not enabled:
+            return []
+        name = _literal(res, "Name")
+        return [f"/aws/eks/{name}/cluster"] if name else None
+    if res.type == "codebuild_project":
+        if "LogsConfig" in res.unresolved:
+            return None
+        logs = props.get("LogsConfig")
+        cloudwatch = logs.get("CloudWatchLogs") if _readable(logs) else None
+        if not _readable(cloudwatch):
+            return None if cloudwatch is not None else []
+        status = cloudwatch.get("Status", "ENABLED")
+        if status != "ENABLED":
+            return [] if type(status) is str else None
+        group = cloudwatch.get("GroupName")
+        if group is None:
+            return []  # the default /aws/codebuild/<project> group; the name is not shown
+        return [group] if type(group) is str else None
+    return []
+
+
+_LOG_SOURCE_TYPES = ("lambda_function", "ecs_task_definition", "flow_log", "db_instance", "rds_cluster",
+                     "eks_cluster", "codebuild_project")
+_TF_LOG_GROUP_TYPES = ("aws_cloudwatch_log_group",)
+
+
+def _implicit_log_group_findings(resources: List[Resource], template_path: Path) -> List[Finding]:
+    """CF-CW-003: a log group a service creates at deploy time (Lambda, the awslogs driver, a VPC
+    flow log, RDS log exports, EKS control-plane logs, CodeBuild) that no declared log group and no
+    CDK LogRetention covers, so it keeps logs forever. A declared group with no retention is
+    CF-CW-001's finding. A name the scan cannot read is not judged."""
+    usable = [r for r in resources if not r.malformed]
+    if not any(r.type in _LOG_SOURCE_TYPES for r in usable):
+        return []
+    if _may_be_out_of_sight(resources, _TF_LOG_GROUP_TYPES):
+        return []
+    declared: set[str] = set()
+    for res in usable:
+        is_retention = res.source_type == "Custom::LogRetention" or (
+            res.source_type.startswith("Custom::") and "LogRetention" in res.name)
+        if res.type != "cloudwatch_log_group" and not is_retention:
+            continue
+        if "LogGroupName" in res.unresolved or (
+                res.properties.get("LogGroupName") is not None and _literal(res, "LogGroupName") is None):
+            return []  # a group whose name the scan cannot read may cover any of them
+        name = _literal(res, "LogGroupName")
+        if name:
+            declared.add(name)
+    out: List[Finding] = []
+    for res in usable:
+        names = _implicit_log_groups(res) if res.type in _LOG_SOURCE_TYPES else []
+        missing = [n for n in names or () if n not in declared]
+        if not missing:
+            continue
+        out.append(Finding(
+            id="CF-CW-003", title=CF_TITLES["CF-CW-003"], severity="Low", category="Cost Optimization",
+            file=res.file or str(template_path), line=res.line,
+            evidence=f"{res.name} ({res.source_type}) writes to {', '.join(missing)}",
+            recommendation=(
+                "The service creates this log group the first time it writes, with no retention, so "
+                "the logs are kept and billed forever. Declare the log group in the template with "
+                "that name and RetentionInDays (Terraform aws_cloudwatch_log_group with "
+                "retention_in_days). In CDK: logRetention on the function, or a LogGroup passed to "
+                "logGroup."),
+        ))
+    return out
+
+
+def _retention_findings(resources: List[Resource], template_path: Path) -> List[Finding]:
+    """A MemoryDB cluster with no snapshots (CF-MDB-001) and an EventBridge archive that keeps
+    events forever (CF-EB-003). A value the scan cannot read is not judged."""
+    out: List[Finding] = []
+
+    def add(res: Resource, check_id: str, category: str, recommendation: str) -> None:
+        out.append(Finding(
+            id=check_id, title=CF_TITLES[check_id], severity="Low", category=category,
+            file=res.file or str(template_path), line=res.line,
+            evidence=f"{res.name} ({res.source_type})", recommendation=recommendation,
+        ))
+
+    for res in resources:
+        if res.malformed:
+            continue
+        if res.type == "memorydb_cluster" and _days(res, "SnapshotRetentionLimit", 0) == 0:
+            add(res, "CF-MDB-001", "Reliability",
+                "SnapshotRetentionLimit is 0 or unset, so the cluster keeps no automatic snapshots to "
+                "restore from. Set it to at least 1 day (Terraform snapshot_retention_limit). In CDK: "
+                "snapshotRetentionLimit on the CfnCluster.")
+        if res.type == "event_archive" and _days(res, "RetentionDays", 0) == 0:
+            add(res, "CF-EB-003", "Cost Optimization",
+                "RetentionDays is unset or 0, so the archive keeps every event forever and its storage "
+                "grows without bound. Set RetentionDays to how far back you replay events (Terraform "
+                "retention_days). In CDK: retention on the Archive.")
+    return out
 
 
 def _is_alarm_target(res: Resource) -> bool:
@@ -9730,6 +9943,12 @@ def _run_resource_checks(
 
     # --- SageMaker notebooks and endpoint configs, FSx file systems ---
     findings.extend(_sagemaker_fsx_findings(resources, template_path))
+
+    # --- MemoryDB snapshots and EventBridge archive retention ---
+    findings.extend(_retention_findings(resources, template_path))
+
+    # --- Log groups a service creates at deploy time, with no retention ---
+    findings.extend(_implicit_log_group_findings(resources, template_path))
 
     # --- Bedrock agents and logging, SageMaker endpoint monitoring: an AI workload only ---
     if ai_on:

@@ -2461,6 +2461,37 @@ _CLOUDFORMATION["CF-BAK-002"] = """$name:
           TargetBackupVault: my-vault
           CopyActions:
             - DestinationBackupVaultArn: arn:aws:backup:eu-north-1:111122223333:backup-vault:my-dr-vault"""
+_CLOUDFORMATION["CF-CW-003"] = """$name:
+  Type: AWS::Logs::LogGroup
+  Properties:
+    # the name the service writes to, e.g. /aws/lambda/<FunctionName>
+    LogGroupName: /aws/lambda/my-function
+    RetentionInDays: 30"""
+
+_CLOUDFORMATION["CF-BAK-006"] = """$name:
+  Type: AWS::Backup::BackupPlan
+  Properties:
+    BackupPlan:
+      BackupPlanName: daily
+      BackupPlanRule:
+        - RuleName: daily
+          TargetBackupVault: !Ref Vault
+          ScheduleExpression: cron(0 5 * * ? *)
+          Lifecycle:
+            DeleteAfterDays: 35"""
+
+_CLOUDFORMATION["CF-MDB-001"] = """$name:
+  Type: AWS::MemoryDB::Cluster
+  Properties:
+    # keep the other properties as they are
+    SnapshotRetentionLimit: 7"""
+
+_CLOUDFORMATION["CF-EB-003"] = """$name:
+  Type: AWS::Events::Archive
+  Properties:
+    # keep the other properties as they are
+    RetentionDays: 30"""
+
 _CLOUDFORMATION["CF-BAK-003"] = """$name:
   Type: AWS::Backup::BackupPlan
   Properties:
@@ -3480,6 +3511,34 @@ _TERRAFORM["CF-BAK-002"] = """resource "aws_backup_plan" "$tf_name" {
     }
   }
 }"""
+_TERRAFORM["CF-CW-003"] = """resource "aws_cloudwatch_log_group" "$tf_name" {
+  # the name the service writes to, e.g. /aws/lambda/<function_name>
+  name              = "/aws/lambda/my-function"
+  retention_in_days = 30
+}"""
+
+_TERRAFORM["CF-BAK-006"] = """resource "aws_backup_plan" "$tf_name" {
+  name = "daily"
+  rule {
+    rule_name         = "daily"
+    target_vault_name = aws_backup_vault.main.name
+    schedule          = "cron(0 5 * * ? *)"
+    lifecycle {
+      delete_after = 35
+    }
+  }
+}"""
+
+_TERRAFORM["CF-MDB-001"] = """resource "aws_memorydb_cluster" "$tf_name" {
+  # keep the other arguments as they are
+  snapshot_retention_limit = 7
+}"""
+
+_TERRAFORM["CF-EB-003"] = """resource "aws_cloudwatch_event_archive" "$tf_name" {
+  # keep the other arguments as they are
+  retention_days = 30
+}"""
+
 _TERRAFORM["CF-BAK-003"] = """resource "aws_backup_plan" "$tf_name" {
   name = "my-plan"
 

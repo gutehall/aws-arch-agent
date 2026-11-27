@@ -4,7 +4,7 @@ Local-first AWS architecture review for **CDK** (TypeScript and Python), **Cloud
 
 A scan needs no AWS credentials. Price lookups are the only network calls, unless you pass `--live-account` or point the optional LLM at a server you run. `--pricing-source off` skips prices. `--no-llm` skips the model. If the model does not answer, the findings stay as the rules wrote them.
 
-534 static rules and 340 template checks are implemented and tested. 141 of the 534 CDK rules (26%) have a template check. Those checks run on CloudFormation, Terraform, and synthesised CDK. Every other rule is answered by a repo rule, a usage signal, or a `--live-account` read; [docs/COVERAGE.md](docs/COVERAGE.md) gives the reason for each.
+534 static rules and 344 template checks are implemented and tested. 141 of the 534 CDK rules (26%) have a template check. Those checks run on CloudFormation, Terraform, and synthesised CDK. Every other rule is answered by a repo rule, a usage signal, or a `--live-account` read; [docs/COVERAGE.md](docs/COVERAGE.md) gives the reason for each.
 
 ## Install
 
@@ -72,7 +72,7 @@ The source is detected. `--iac cdk|cloudformation|terraform` forces one. `--tf-p
 | **Reliability** | 91 | Missing DLQs, no backups, single-AZ, no health checks |
 | **Operational Excellence** | 129 | No logging, alarms, or tracing; no owner, runbook, or rollback |
 | **Performance Efficiency** | 45 | No caching, no Graviton, oversized tasks, no load test |
-| **Cost Optimization** | 79 | No autoscaling, NAT data processing, no lifecycle policy, no budgets |
+| **Cost Optimization** | 79 | No autoscaling, NAT data processing, no lifecycle policy, logs, backups or archived events kept forever, no budgets |
 | **Sustainability** | 39 | No Spot, no right-sizing, idle resources, no data expiry |
 | **Best Practices** | 5 | Tags, secrets in environment variables, CDK Aspects |
 
