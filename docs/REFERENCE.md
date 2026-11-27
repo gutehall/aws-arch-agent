@@ -7,13 +7,14 @@ The agent covers all six AWS Well-Architected pillars. Static and CloudFormation
 | Option | Default | Description |
 |--------|---------|-------------|
 | `--repo`, `-r` | — | Path to repo (required unless `--templates` is set; then repo defaults to templates path) |
-| `--out`, `-o` | `report.<ext>` | Output report path. The default follows the format: `report.html`, `report.md`, `report.json` or `report.sarif`. Without `--format` (flag or config), its suffix picks the format |
+| `--out`, `-o` | `report.<ext>` | Output report path. The default follows the format: `report.html`, `report.md`, `report.json`, `report.sarif` or `report.codequality.json`. Without `--format` (flag or config), its suffix picks the format |
 | `--mode` | `auto` | `auto`: `v2` for a CDK app (a `cdk.json` at the repo root) when the `v2` extra and Node.js (`npx`) are installed, or when `--templates` is passed; otherwise `v1`, with a console note when a CDK repo stays on `v1` (`--no-synth` also keeps CDK on `v1`). `v1` (rules + optional [LLM review](#llm-review)) or `v2` (multi-agent + synth) |
 | `--iac` | `auto` | IaC source: `auto`, `cdk`, `cloudformation`, or `terraform`. `auto` detects it: CDK wins when `cdk.json` or a CDK package is present; otherwise CloudFormation templates (`AWSTemplateFormatVersion` or an `AWS::` resource) and Terraform (`*.tf`, `*.tf.json`) are detected, and both together are `mixed`. An explicit source with no matching files exits 1 (`cdk` needs `cdk.json`, a CDK package, `bin/*.ts`, or `app.py`). With `--mode v2`, `terraform` runs the same HCL scan as V1 with no synth, and `cloudformation` without `--templates` (flag or config `templates`) exits 1 |
 | `--tf-plan` | — | `terraform show -json` output (a plan or a state). Terraform scans only (V1, and V2 with `--iac terraform`). Known planned values replace arguments that depend on `var`, `local`, or another expression, by resource address. Unknown values stay unresolved. Each planned instance of a `count` or `for_each` resource is its own resource, named as the plan names it (`aws_db_instance.db[0]`, `aws_s3_bucket.b["logs"]`), and a finding can land on any of them. Data source values come from the plan's prior state. Local child modules at any depth get their planned values too: each module call (`module.vpc`, `module.vpc.module.subnets`) is scanned with its own values, and a module call with `count` or `for_each` once per planned instance (`module.vpc[0]`). A finding the calls share is reported once. A split S3 or ECR settings resource (versioning, encryption, lifecycle, scanning) aimed at a `count` or `for_each` bucket or repository is tied to each instance it names. With one root module, the plan applies to it wherever the plan file is. With several, it applies to the one that holds the plan file. A missing or unreadable plan, or a plan that matches no root module, is a report warning (exit 2) and the scan runs without it. `--tf-plan` on a repo that is not a Terraform scan is a report warning |
 | `--max-files` | `400` | Cap on files walked. Rules search only these files. The walk is sorted per directory, so the same repo gives the same files on every run and OS. A walk that hits the cap prints a console note, adds a note to the Markdown metadata, and records `files_truncated` and `max_files` in the JSON `context.notes`. The exit code does not change |
 | `--config` | (auto-detect) | Path to config file |
-| `--format`, `-f` | `html` | `html`, `markdown`, `json`, or `sarif`. Without the flag or config `format`, the `--out` suffix picks it (`.md`, `.json`, `.sarif`, `.html`), else `html`. `html` writes one self-contained page (inline CSS and script, no external assets, dark theme) to open in a browser. Each finding links to AWS documentation. With `--enforce-baseline` it labels each finding Accepted or New. An unknown format fails the run and writes no report |
+| `--format`, `-f` | `html` | `html`, `markdown`, `json`, `sarif`, or `codequality` ([GitLab Code Quality](#gitlab-code-quality)). Without the flag or config `format`, the `--out` suffix picks it (`.md`, `.json`, `.sarif`, `.html`, `.codequality.json`), else `html`. `html` writes one self-contained page (inline CSS and script, no external assets, dark theme) to open in a browser. Each finding links to AWS documentation. With `--enforce-baseline` it labels each finding Accepted or New. An unknown format fails the run and writes no report |
+| `--summary-out` | none | Also write the Markdown report to this path, from the same scan, for a CI job summary. The exit code, `--fail-on` and the LLM are the main run's. When `--format` is `markdown` it is the same text as `--out`. A missing parent directory, or the same path as `--out` with another format, fails the run before the scan and writes no report |
 | `--fail-on` | `none` | Exit 1 if any finding at or above: `high`, `medium`, `low`, `none` |
 | `--live-account` | off | Read the AWS account with read-only describe and list calls, for the org-gated controls an app repo cannot show: Security Hub and its standards (`SEC-026`, `REPO-136`, `REPO-162`), GuardDuty (`SEC-027`), CloudTrail (`OPS-001`), AWS Config (`OPS-014`), AWS Budgets (`COST-014`), IAM Access Analyzer (`REPO-141`), Inspector (`REPO-145`), and GuardDuty or Security Hub (`REPO-163`). Purchases a template never holds are read only when the scan has the compute they cover: active RDS Reserved Instances (`COST-005`, for an RDS instance or cluster), active ElastiCache reserved nodes (`COST-009`, for an ElastiCache cluster or replication group), and an active Savings Plan (`COST-016`, for an EC2 instance, Auto Scaling group, Lambda function or ECS service). An active purchase drops the finding; none adds the finding under the rule id; a purchase that could not be read (no billing permission) is a report warning, not a finding. With no matching compute the purchase API is not called. Account-level FSBP controls are read on every scan, each off control a finding: account S3 Block Public Access with all four settings on (`ACCT-001`, FSBP S3.1), EBS encryption by default in the Region (`ACCT-002`, EC2.7), and an IAM password policy that requires upper and lower case, numbers and symbols, at least 14 characters, 24 remembered passwords and expiry within 90 days (`ACCT-003`, IAM.7 with the CIS IAM.15 and IAM.16 minimums). Also read on every scan: a Macie session (`SEC-065`, `macie2:GetMacieSession`; `ENABLED` is on, `PAUSED` or "Macie is not enabled" is off), an enabled S3 Storage Lens dashboard (`COST-018`, the default account dashboard counts), and, behind the org gate of `REPO-069` (`rules.org`, or `rules.include` naming `ACCT-004` or `REPO-069`), a Cost and Usage Report or Data Exports export (`ACCT-004`, COST03-BP01; either one is on, and it also clears `REPO-069`; when `REPO-069` already fired, no second finding is added). With the gate closed the export is not read and COST03-BP01 reads "off unless rules.org is on". The ACCT-* ids run only when the read answered them. A rule whose service was read runs even without `rules.org`; if the service is on, its finding is dropped and the practice reads as met. A service that is off still reports. Without credentials or a permission, that service gets a report warning and its rule stays as `rules.org` decides. Needs `pip install 'aws-arch-agent[aws]'` (boto3), the standard AWS credential chain, and `--region` or `AWS_REGION` for the Region to read. Without the flag a scan makes no AWS call. Listed under `context.notes.live_account` |
 | `--no-llm` | `false` | Make no LLM calls: no verdicts, no hypotheses. See [LLM review](#llm-review) |
@@ -149,9 +150,140 @@ Use the composite action, pinned to a release tag (`@main` changes with every me
 | `job-summary` | `"false"` | Append the Markdown report to the job summary when `"true"` |
 | `upload-artifact` | `"true"` | Upload `out` as the `aws-arch-agent-report` artifact |
 
-An empty input passes no flag. With `job-summary: "true"` and `format: markdown`, the report file itself goes to `$GITHUB_STEP_SUMMARY`. With another format, a second run with the same inputs, `--no-llm`, `--fail-on none`, and `--format markdown` writes the summary to a temporary file. A summary over 1 MB is cut there. The summary is written even when `fail-on` fails the scan, and the step then exits with the scan's exit code.
+An empty input passes no flag. With `job-summary: "true"` and `format: markdown`, the report file itself goes to `$GITHUB_STEP_SUMMARY`. With another format, the same scan writes the Markdown to a temporary file with `--summary-out`, so the scanner runs once and the summary matches the report. A summary over 1 MB is cut there. The summary is written even when `fail-on` fails the scan, and the step then exits with the scan's exit code.
 
 For SARIF upload to GitHub Code Scanning, set `format: sarif` and use `github/codeql-action/upload-sarif`. The SARIF file sets `tool.driver.version` and `informationUri`, a `helpUri` per rule (the finding's AWS documentation link), and `partialFingerprints` (`awsArchAgent/v1`: rule ID, repo-relative file, and evidence, not the line), so an alert survives a line move. An inline or template `Metadata` suppression is a `suppressions` entry of kind `inSource`; with `--enforce-baseline`, a baseline-accepted finding is kind `external` and keeps `properties.baselined`. CloudFormation results carry the line of the resource's logical ID. Inline suppressions and `rules.exclude_paths` are in [CONFIG.md](CONFIG.md#inline-suppressions).
+
+## Container image
+
+Each release tag also publishes two images to GitHub Container Registry, for CI systems other than GitHub Actions. Both hold Python 3.11, ripgrep, git, and `aws-arch-agent` at that version. The entrypoint is `aws-arch-agent`, so the arguments are the CLI's and the container exits with the scan's exit code:
+
+```bash
+docker run --rm -v "$PWD":/repo ghcr.io/gutehall/aws-arch-agent:v1.3.3 --repo /repo --no-llm --no-synth
+```
+
+| Image | Holds |
+|-------|-------|
+| `ghcr.io/gutehall/aws-arch-agent:<tag>` | The base package. No Node, so V2 cannot synth |
+| `ghcr.io/gutehall/aws-arch-agent:<tag>-v2` | Also Node (`npx`) and the `v2` extra, for `cdk synth` |
+
+The image tag is the git tag. An image that already exists for a tag is left alone, as the GitHub release is. Pin a release tag, as with the action. The working directory is `/repo`. Policy stays in the scanned repo's config file, which the scan finds there as usual. `cdk synth` runs the scanned repo's own code, so pass `--no-synth` for a merge request from a fork.
+
+## Other CI systems
+
+One job each for GitLab CI, Jenkins, AWS CodeBuild and Azure Pipelines. Each runs the [container image](#container-image) on the checkout and keeps `report.sarif` and `report.html` with that system's artifact syntax. The examples assume the repo's `aws-arch-agent.yaml` sets `fail_on` and the baseline, so they pass neither. The SARIF run is the gate and runs last. The HTML (and GitLab Code Quality) runs pass `--fail-on none` and accept exit code 2 (a check failed during analysis; see the report warnings), so they never stop the job early. The SARIF run alone sets the job's result, with the scan's exit code. Without a config file, add `--fail-on high` to the SARIF run.
+
+Every merge request example passes `--no-synth`: `cdk synth` runs the scanned repo's code, and a merge request from a fork is not trusted. The GitLab example adds a default-branch job that synthesises with the `-v2` image.
+
+### GitLab CI
+
+The Code Quality report shows findings in the merge request widget. GitLab runs `script` in a shell, so the job clears the image's entrypoint.
+
+```yaml
+aws-arch-agent:
+  image:
+    name: ghcr.io/gutehall/aws-arch-agent:v1.3.3
+    entrypoint: [""]
+  rules:
+    - if: $CI_PIPELINE_SOURCE == "merge_request_event"
+  script:
+    - aws-arch-agent --repo . --no-llm --no-synth --format codequality --out gl-code-quality-report.json --fail-on none || [ $? -eq 2 ]
+    - aws-arch-agent --repo . --no-llm --no-synth --format html --out report.html --fail-on none || [ $? -eq 2 ]
+    - aws-arch-agent --repo . --no-llm --no-synth --format sarif --out report.sarif
+  artifacts:
+    when: always
+    paths: [report.sarif, report.html]
+    reports:
+      codequality: gl-code-quality-report.json
+
+# Trusted code only: the default branch, with Node for cdk synth.
+aws-arch-agent-synth:
+  image:
+    name: ghcr.io/gutehall/aws-arch-agent:v1.3.3-v2
+    entrypoint: [""]
+  rules:
+    - if: $CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH
+  script:
+    - aws-arch-agent --repo . --mode v2 --no-llm --format html --out report.html --fail-on none || [ $? -eq 2 ]
+    - aws-arch-agent --repo . --mode v2 --no-llm --format sarif --out report.sarif
+  artifacts:
+    when: always
+    paths: [report.sarif, report.html]
+```
+
+### Jenkins
+
+A declarative pipeline stage that runs the image with `docker run`, so the agent needs Docker. The Warnings Next Generation plugin can read `report.sarif` (`recordIssues(tools: [sarif(pattern: 'report.sarif')])`).
+
+```groovy
+pipeline {
+  agent any
+  stages {
+    stage('AWS Arch Agent') {
+      steps {
+        sh '''
+          docker run --rm -v "$WORKSPACE":/repo ghcr.io/gutehall/aws-arch-agent:v1.3.3 \
+            --repo /repo --no-llm --no-synth --format html --out /repo/report.html --fail-on none || [ $? -eq 2 ]
+          docker run --rm -v "$WORKSPACE":/repo ghcr.io/gutehall/aws-arch-agent:v1.3.3 \
+            --repo /repo --no-llm --no-synth --format sarif --out /repo/report.sarif
+        '''
+      }
+      post {
+        always {
+          archiveArtifacts artifacts: 'report.sarif, report.html', allowEmptyArchive: true
+        }
+      }
+    }
+  }
+}
+```
+
+### AWS CodeBuild
+
+Set the project's environment image to `ghcr.io/gutehall/aws-arch-agent:v1.3.3`. It is a public image, so no registry credential is needed. CodeBuild runs the buildspec commands in a shell, not through the entrypoint. The artifacts go to the project's artifact location.
+
+```yaml
+version: 0.2
+phases:
+  build:
+    commands:
+      - aws-arch-agent --repo . --no-llm --no-synth --format html --out report.html --fail-on none || [ $? -eq 2 ]
+      - aws-arch-agent --repo . --no-llm --no-synth --format sarif --out report.sarif
+artifacts:
+  files:
+    - report.sarif
+    - report.html
+```
+
+### Azure Pipelines
+
+The Microsoft-hosted Ubuntu agent has Docker. With the SARIF SAST Scans Tab extension, the `CodeAnalysisLogs` artifact shows in the build's Scans tab.
+
+```yaml
+pool:
+  vmImage: ubuntu-latest
+steps:
+  - script: |
+      docker run --rm -v "$(Build.SourcesDirectory)":/repo ghcr.io/gutehall/aws-arch-agent:v1.3.3 \
+        --repo /repo --no-llm --no-synth --format html --out /repo/report.html --fail-on none || [ $? -eq 2 ]
+      docker run --rm -v "$(Build.SourcesDirectory)":/repo ghcr.io/gutehall/aws-arch-agent:v1.3.3 \
+        --repo /repo --no-llm --no-synth --format sarif --out /repo/report.sarif
+    displayName: AWS Arch Agent
+  - task: PublishBuildArtifacts@1
+    condition: always()
+    inputs:
+      PathtoPublish: $(Build.SourcesDirectory)/report.sarif
+      ArtifactName: CodeAnalysisLogs
+  - task: PublishBuildArtifacts@1
+    condition: always()
+    inputs:
+      PathtoPublish: $(Build.SourcesDirectory)/report.html
+      ArtifactName: aws-arch-agent-report
+```
+
+## GitLab Code Quality
+
+`--format codequality` writes a JSON array in the [GitLab Code Quality format](https://docs.gitlab.com/ci/testing/code_quality/#code-quality-report-format), for the merge request widget. Each entry has `description` (title and recommendation), `check_name` (the rule ID), `fingerprint`, `severity`, `location.path` (repo-relative; `.` for a repo-level finding, which has no file) and `location.lines.begin` (1 when the finding has no line), and `categories` (the pillar). The fingerprint is the SARIF one (rule ID, repo-relative file and evidence, not the line), so a moved line keeps it. Severity maps High to `major`, Medium to `minor` and Low to `info`. GitLab shows each entry as an open issue, so a finding an active inline suppression or, with `--enforce-baseline`, the baseline accepts is left out; SARIF records those as suppressions instead.
 
 ## JSON report schema
 

@@ -16,11 +16,12 @@ from aws_arch_agent.rules.themes import THEMES
 from aws_arch_agent.rules.themes import parse as parse_themes
 
 SeverityThreshold = Literal["high", "medium", "low", "none"]
-OutputFormat = Literal["markdown", "json", "sarif", "html"]
+OutputFormat = Literal["markdown", "json", "sarif", "html", "codequality"]
 LLMMode = Literal["full", "compact"]
 
-_FORMATS = ("markdown", "json", "sarif", "html")
-_FORMAT_SUFFIXES = {"markdown": "md", "json": "json", "sarif": "sarif", "html": "html"}
+_FORMATS = ("markdown", "json", "sarif", "html", "codequality")
+_FORMAT_SUFFIXES = {"markdown": "md", "json": "json", "sarif": "sarif", "html": "html",
+                    "codequality": "codequality.json"}
 _SUFFIX_FORMATS = {".md": "markdown", ".markdown": "markdown", ".json": "json", ".sarif": "sarif",
                    ".html": "html", ".htm": "html"}
 _FAIL_ON = ("high", "medium", "low", "none")
@@ -434,7 +435,10 @@ def load_config(
     if format is not None or "format" in file_cfg:
         resolved_format = _pick_choice(file_cfg, "format", format, "html", _FORMATS)
     else:
-        resolved_format = _SUFFIX_FORMATS.get(Path(named_out).suffix.lower(), "html") if named_out else "html"
+        resolved_format = (
+            "codequality" if named_out.lower().endswith(".codequality.json")
+            else _SUFFIX_FORMATS.get(Path(named_out).suffix.lower(), "html")
+        ) if named_out else "html"
     resolved_out = named_out or f"report.{_FORMAT_SUFFIXES[resolved_format]}"
 
     file_pricing = pricing_from(file_cfg.get("pricing"))

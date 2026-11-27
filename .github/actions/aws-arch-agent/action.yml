@@ -14,7 +14,7 @@ inputs:
     required: false
     default: auto
   format:
-    description: Output format (markdown, json, sarif, or html). With html, set out to a .html path.
+    description: Output format (markdown, json, sarif, html, or codequality). With html, set out to a .html path.
     required: false
     default: markdown
   out:
@@ -203,31 +203,20 @@ runs:
           ARGS+=(--templates "$TEMPLATES")
         fi
 
+        # One scan. With the job summary on and another format, --summary-out writes the
+        # Markdown from the same scan, so the summary always matches the report.
+        SUMMARY_MD="$OUT"
+        if [ "$JOB_SUMMARY" = "true" ] && [ "$FORMAT" != "markdown" ]; then
+          SUMMARY_MD="${RUNNER_TEMP:-.}/aws-arch-agent-summary.md"
+          ARGS+=(--summary-out "$SUMMARY_MD")
+        fi
+
         # Keep the scan's exit code (1 for --fail-on, 2 for report warnings) so the
         # summary is still written, then exit with it.
         rc=0
         aws-arch-agent "${ARGS[@]}" || rc=$?
 
         if [ "$JOB_SUMMARY" = "true" ] && [ -n "${GITHUB_STEP_SUMMARY:-}" ]; then
-          SUMMARY_MD="$OUT"
-          if [ "$FORMAT" != "markdown" ]; then
-            # Render Markdown with a second run that cannot fail the build or call an LLM.
-            SUMMARY_MD="${RUNNER_TEMP:-.}/aws-arch-agent-summary.md"
-            SUMMARY_ARGS=()
-            skip=0
-            for arg in "${ARGS[@]}"; do
-              if [ "$skip" = 1 ]; then
-                skip=0
-                continue
-              fi
-              case "$arg" in
-                --format|--out|--fail-on) skip=1 ;;
-                *) SUMMARY_ARGS+=("$arg") ;;
-              esac
-            done
-            aws-arch-agent "${SUMMARY_ARGS[@]}" --no-llm --format markdown \
-              --out "$SUMMARY_MD" --fail-on none || true
-          fi
           if [ -s "$SUMMARY_MD" ]; then
             # GitHub keeps at most 1 MiB of summary per step.
             limit=1000000

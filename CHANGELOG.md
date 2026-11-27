@@ -4,6 +4,13 @@ New releases go at the top. See [CONTRIBUTING.md](CONTRIBUTING.md#releases) for 
 
 ## Unreleased
 
+### Pipelines
+
+- Each release tag publishes a container image to GitHub Container Registry, `ghcr.io/gutehall/aws-arch-agent:<tag>` (Python 3.11, ripgrep, git and the scanner; the entrypoint is `aws-arch-agent`), and `<tag>-v2` with Node and the `v2` extra for `cdk synth`. An image that already exists for a tag is left alone
+- `--format codequality` writes a GitLab Code Quality report for the merge request widget. The fingerprint is the SARIF one, severity maps High to major, Medium to minor and Low to info, and suppressed or baseline-accepted findings are left out
+- `--summary-out PATH` writes the Markdown report from the same scan beside the main format, with the scan's exit code. The GitHub Action's job summary now uses it, so the action runs the scanner once instead of twice
+- `docs/REFERENCE.md` has jobs to paste for GitLab CI, Jenkins, AWS CodeBuild and Azure Pipelines
+
 ### Fixes
 
 - V2 keeps a CDK finding when the template check that covers it answers a different Well-Architected question, so that question shows its finding: SEC-007 (CF-KMS-001), SEC-025 (CF-EC-002), SEC-039 (CF-OS-002), SEC-044 (CF-MSK-001), COST-007 (CF-S3-007), and BP-001 when CF-TAG-001 reports

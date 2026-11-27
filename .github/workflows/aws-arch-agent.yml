@@ -147,6 +147,44 @@ jobs:
         # ripgrep encoding, npx on Windows, and one scan.
         run: python -m pytest tests/test_rg_encoding.py tests/test_cdk_synth.py tests/test_smoke.py -q --no-cov
 
+  # The release image (Dockerfile): both targets build, carry the tools they promise, and the
+  # entrypoint scans a repo with the CLI exit code.
+  container:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Build the default and v2 images
+        run: |
+          docker build --target default -t aws-arch-agent:ci .
+          docker build --target v2 -t aws-arch-agent:ci-v2 .
+
+      - name: Check the tools and the version
+        run: |
+          want=$(python3 -c "import ast;print(ast.literal_eval(open('src/aws_arch_agent/__init__.py').read().split('__version__ = ')[1].splitlines()[0]))")
+          for image in aws-arch-agent:ci aws-arch-agent:ci-v2; do
+            docker run --rm "$image" --version | grep -F "$want"
+            docker run --rm --entrypoint rg "$image" --version
+          done
+          if docker run --rm --entrypoint sh aws-arch-agent:ci -c 'command -v node'; then
+            echo "the default image must not have Node"; exit 1
+          fi
+          docker run --rm --entrypoint npx aws-arch-agent:ci-v2 --version
+          docker run --rm --entrypoint python aws-arch-agent:ci-v2 -c "import langgraph"
+
+      - name: Scan a fixture through the entrypoint
+        run: |
+          set +e
+          out="$RUNNER_TEMP/container-out"
+          mkdir -p "$out" && chmod 777 "$out"
+          docker run --rm -v "$PWD/tests/fixtures/cloudformation":/repo:ro -v "$out":/out aws-arch-agent:ci \
+            --repo /repo --no-llm --no-synth --pricing-source off --format sarif --out /out/report.sarif
+          code=$?
+          set -e
+          echo "exit code $code"
+          [ "$code" -le 2 ]
+          test -s "$out/report.sarif"
+
   action-smoke:
     # The composite action must install and run on every runner OS.
     strategy:
@@ -183,6 +221,9 @@ jobs:
           upload-artifact: "false"
           job-summary: "true"
 
-      - name: Check the SARIF report was written
+      - name: Check the SARIF report and the summary from the same scan
         shell: bash
-        run: test -s report.sarif
+        run: |
+          test -s report.sarif
+          # --summary-out wrote the Markdown from the one scan (no second run).
+          grep -q "AWS" "${RUNNER_TEMP}/aws-arch-agent-summary.md"
