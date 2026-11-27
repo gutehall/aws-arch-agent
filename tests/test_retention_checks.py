@@ -77,6 +77,8 @@ def test_a_declared_group_with_no_retention_is_cw_001_only(tmp_path: Path) -> No
     # A generated function name cannot be known.
     {"Fn": {**_FN, "Properties": {**_FN["Properties"], "FunctionName": {"Ref": "Name"}}}},
     {"Fn": {**_FN, "Properties": {k: v for k, v in _FN["Properties"].items() if k != "FunctionName"}}},
+    # A logging config the scan cannot read may name its own group.
+    {"Fn": {**_FN, "Properties": {**_FN["Properties"], "LoggingConfig": {"Fn::If": ["C", {}, {}]}}}},
     # Logs go to the group the function names.
     {"Fn": {**_FN, "Properties": {**_FN["Properties"], "LoggingConfig": {"LogGroup": {"Ref": "G"}}}}},
     # A LogRetention whose name cannot be read may cover it.
@@ -245,3 +247,10 @@ def test_elasticache_backups_are_unchanged(tmp_path: Path) -> None:
         "ReplicationGroupDescription": "d", "Engine": "redis", "CacheNodeType": "cache.t4g.small"}}
     ids = _cf_ids(tmp_path, {"C": cache})
     assert "CF-EC-004" in ids and "CF-MDB-001" not in ids
+
+
+def test_a_dynamic_terraform_logging_config_is_not_judged(tmp_path: Path) -> None:
+    fn = ('resource "aws_lambda_function" "f" {\n  function_name = "orders"\n  role = "r"\n'
+          '  dynamic "logging_config" {\n    for_each = var.cfg\n    content {\n'
+          '      log_group = logging_config.value\n    }\n  }\n}\n')
+    assert "CF-CW-003" not in _tf_ids(tmp_path, fn)

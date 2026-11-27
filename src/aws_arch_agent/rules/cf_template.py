@@ -4478,6 +4478,8 @@ def _implicit_log_groups(res: Resource) -> list[str] | None:
         if _CDK_HELPER_FUNCTION.search(res.name):
             return []
         logging = props.get("LoggingConfig")
+        if "LoggingConfig" in res.unresolved or (logging is not None and not _readable(logging)):
+            return None  # it may name its own log group
         if _readable(logging) and logging.get("LogGroup") is not None:
             return []  # logs go to the group it names, not to /aws/lambda/<name>
         name = _literal(res, "FunctionName")
