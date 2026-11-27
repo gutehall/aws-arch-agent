@@ -106,8 +106,11 @@ def test_static_rules_are_dropped_when_cf_reports_them() -> None:
     static = [Finding(id=i, title="t", recommendation="r")
               for i in ("SEC-014", "SEC-025", "SEC-037", "SEC-038")]
     cf = [Finding(id=i, title="t", recommendation="r")
-          for i in ("CF-SNS-001", "CF-EC-002", "CF-EFS-001", "CF-KIN-001")]
+          for i in ("CF-SNS-001", "CF-EC-001", "CF-EFS-001", "CF-KIN-001")]
     assert [f.id for f in drop_static_covered_by_cf(static + cf)] == [f.id for f in cf]
+    # CF-EC-002 (in transit, SEC 9) does not replace SEC-025 (at rest, SEC 8).
+    in_transit = [Finding(id="CF-EC-002", title="t", recommendation="r")]
+    assert {f.id for f in drop_static_covered_by_cf(static[1:2] + in_transit)} == {"SEC-025", "CF-EC-002"}
 
 
 # --- Terraform ------------------------------------------------------------------
@@ -329,7 +332,8 @@ def test_static_rules_are_dropped_for_part_2() -> None:
               for i in ("SEC-039", "SEC-044", "SEC-059", "SEC-060", "SEC-061")]
     cf = [Finding(id=i, title="t", recommendation="r")
           for i in ("CF-OS-001", "CF-MSK-001", "CF-RS-001", "CF-DOCDB-001", "CF-NEP-001")]
-    assert [f.id for f in drop_static_covered_by_cf(static + cf)] == [f.id for f in cf]
+    # CF-MSK-001 answers SEC 9, SEC-044 answers SEC 8: SEC-044 stays on its own question.
+    assert [f.id for f in drop_static_covered_by_cf(static + cf)] == ["SEC-044"] + [f.id for f in cf]
 
 
 ENCRYPTION_TF_2 = """\

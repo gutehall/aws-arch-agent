@@ -533,9 +533,12 @@ CHECK_PROPERTIES: dict[str, frozenset[str]] = {
         **{c: set() for c in ("CF-BEDROCK-001", "CF-BEDROCK-003", "CF-BEDROCK-004", "CF-BEDROCK-005",
                               "CF-BEDROCK-006", "CF-BEDROCK-007", "CF-BEDROCK-008", "CF-BEDROCK-009",
                               "CF-BEDROCK-010", "CF-BEDROCK-011", "CF-BEDROCK-012",
+                              "CF-BEDROCK-013", "CF-BEDROCK-014", "CF-BEDROCK-015", "CF-BEDROCK-016",
+                              "CF-BEDROCK-017", "CF-BEDROCK-018", "CF-BEDROCK-019",
+                              "CF-BEDROCK-020", "CF-BEDROCK-021", "CF-SAGE-016",
                               "CF-AGENTCORE-001", "CF-AGENTCORE-002", "CF-AGENTCORE-003", "CF-SAGE-006",
                               "CF-SAGE-007", "CF-SAGE-008", "CF-SAGE-009", "CF-SAGE-010", "CF-SAGE-011",
-                              "CF-SAGE-012", "CF-SAGE-013")},
+                              "CF-SAGE-012", "CF-SAGE-013", "CF-SAGE-014", "CF-SAGE-015")},
         # Template-level: _app_services_findings skips what it cannot read.
         **{c: set() for c in ("CF-APPSYNC-001", "CF-APPSYNC-002", "CF-APPSYNC-003", "CF-APPSYNC-004",
                               "CF-TRANSFER-001", "CF-TRANSFER-002", "CF-TRANSFER-003", "CF-APPRUNNER-001",
@@ -611,10 +614,13 @@ CF_THEMES: dict[str, tuple[str, ...]] = {
     "CF-SAGE-001": (_NET,), "CF-SAGE-002": (_NET,), "CF-SAGE-003": (_SB, _ID), "CF-SAGE-004": (_DP,),
     "CF-SAGE-005": (_RES,), "CF-SAGE-006": (_OBS,), "CF-SAGE-007": (_F,), "CF-SAGE-008": (_NET,),
     "CF-SAGE-009": (_DP,), "CF-SAGE-010": (_OBS,), "CF-SAGE-011": (_RES,), "CF-SAGE-012": (_DP,),
-    "CF-SAGE-013": (_RES,),
+    "CF-SAGE-013": (_RES,), "CF-SAGE-014": (_ID,), "CF-SAGE-015": (_DP,),
     "CF-BEDROCK-001": (_SB,), "CF-BEDROCK-003": (_RES,), "CF-BEDROCK-004": (_OBS, _SB),
     "CF-BEDROCK-005": (_SB,), "CF-BEDROCK-006": (_DP,), "CF-BEDROCK-007": (_RES,), "CF-BEDROCK-008": (_RES,),
     "CF-BEDROCK-009": (_F,), "CF-BEDROCK-010": (_SB,), "CF-BEDROCK-011": (_DP,), "CF-BEDROCK-012": (_SB,),
+    "CF-BEDROCK-013": (_SB,), "CF-BEDROCK-014": (_DP,), "CF-BEDROCK-015": (_ID,), "CF-BEDROCK-016": (_ID,),
+    "CF-BEDROCK-017": (_ID,), "CF-BEDROCK-018": (_SB,), "CF-BEDROCK-019": (_SB,),
+    "CF-BEDROCK-020": (_ID,), "CF-BEDROCK-021": (_ID,), "CF-SAGE-016": (_ID,),
     "CF-AGENTCORE-001": (_NET,), "CF-AGENTCORE-002": (_ID,), "CF-AGENTCORE-003": (_DP,),
     "CF-FSX-001": (_DP,), "CF-FSX-002": (_F,), "CF-FSX-003": (_RES,),
     "CF-S3-008": (_DP,), "CF-S3-009": (_NET, _DP), "CF-S3-010": (_RES, _DP), "CF-S3-011": (_OBS, _DP),
@@ -977,6 +983,8 @@ CF_TITLES: dict[str, str] = {
     "CF-SAGE-011": "SageMaker endpoint has no automatic scaling",
     "CF-SAGE-012": "SageMaker feature group store has no customer managed key",
     "CF-SAGE-013": "SageMaker model is not deployed from the model registry",
+    "CF-SAGE-014": "IAM policy lets a principal invoke every SageMaker endpoint",
+    "CF-SAGE-015": "SageMaker endpoint captures inference data with no customer managed key",
     "CF-BEDROCK-001": "Bedrock agent has no guardrail",
     "CF-BEDROCK-003": "Bedrock agent sets no idle session timeout",
     "CF-BEDROCK-004": "Bedrock model invocation logging is not set up",
@@ -988,6 +996,16 @@ CF_TITLES: dict[str, str] = {
     "CF-BEDROCK-010": "Bedrock guardrail denies no topics",
     "CF-BEDROCK-011": "Bedrock guardrail filters no PII entities",
     "CF-BEDROCK-012": "Bedrock guardrail has no contextual grounding check for a knowledge base",
+    "CF-BEDROCK-013": "Bedrock guardrail has no prompt attack filter on input",
+    "CF-BEDROCK-014": "Bedrock guardrail's sensitive-information filters do not act on responses",
+    "CF-BEDROCK-015": "Agent role can also be assumed by IAM principals or federated users",
+    "CF-BEDROCK-016": "Agent role has no permissions boundary",
+    "CF-BEDROCK-017": "Agent role grants every action of a service or writes on every resource",
+    "CF-BEDROCK-018": "Bedrock guardrail's harmful-content filters do not act on prompts",
+    "CF-BEDROCK-019": "Bedrock guardrail's harmful-content filters do not act on responses",
+    "CF-BEDROCK-020": "IAM policy lets a principal invoke every Bedrock model",
+    "CF-BEDROCK-021": "Role a Bedrock service assumes reads data stores on every resource",
+    "CF-SAGE-016": "SageMaker execution role grants every action of a service or full-access managed policies",
     "CF-AGENTCORE-001": "AgentCore runtime uses the public network mode",
     "CF-AGENTCORE-002": "AgentCore gateway has no inbound authorizer",
     "CF-AGENTCORE-003": "AgentCore memory has no customer managed key",
@@ -3391,6 +3409,139 @@ def _guardrail_filters(guard: Resource) -> bool | None:
     return False
 
 
+def _allows_on_every_resource(docs: list[dict], service: str, targets: tuple[str, ...]) -> list[str]:
+    """The actions of an Allow statement on Resource "*" that match one of the target actions
+    (lower case), not counting service:* (CF-IAM-001's finding)."""
+    found: set[str] = set()
+    for doc in docs:
+        for stmt in iam_policy.statements(doc):
+            if stmt.get("Effect") != "Allow" or "*" not in iam_policy.literals(stmt.get("Resource")):
+                continue
+            for action in iam_policy.literals(stmt.get("Action")):
+                low = action.lower()
+                # "*" and service:* are CF-IAM-001's finding; with no service, every service:*.
+                if low == "*" or ":" not in low or low == f"{service}:*" or (not service and low.endswith(":*")):
+                    continue
+                if any(fnmatch.fnmatchcase(t, low) for t in targets):
+                    found.add(action)
+    return sorted(found)
+
+
+def _invokes_every_endpoint(props: dict) -> bool:
+    """An Allow statement with sagemaker:InvokeEndpoint (or a sagemaker:Invoke* pattern that
+    covers it, not sagemaker:*, which CF-IAM-001 reports) on Resource "*"."""
+    docs = [doc for _label, doc in _policy_documents(props)]
+    return bool(_allows_on_every_resource(docs, "sagemaker", ("sagemaker:invokeendpoint",)))
+
+
+_MODEL_INVOKE = ("bedrock:invokemodel", "bedrock:invokemodelwithresponsestream", "bedrock:converse",
+                 "bedrock:conversestream")
+# Read actions on the data stores a knowledge base or an agent reads.
+_DATA_READS = ("s3:getobject", "s3:listbucket", "dynamodb:getitem", "dynamodb:query", "dynamodb:scan",
+               "rds-data:executestatement", "aoss:apiaccessall", "es:eshttpget", "es:eshttppost",
+               "secretsmanager:getsecretvalue")
+_SAGEMAKER_FULL = re.compile(r":iam::aws:policy/(?:AmazonSageMakerFullAccess|AmazonS3FullAccess)(?=$|\")")
+
+
+def _guardrail_entries(guard: Resource, key: str, names: tuple[str, ...]) -> list[dict] | None:
+    """The entries of a guardrail policy block's lists, or None when any of them is unreadable."""
+    if key in guard.unresolved:
+        return None
+    block = guard.properties.get(key)
+    if block is None:
+        return []
+    if not _readable(block):
+        return None
+    out: list[dict] = []
+    for name in names:
+        value = block.get(name)
+        if value is None:
+            continue
+        if not isinstance(value, list) or not all(_readable(e) for e in value):
+            return None
+        out.extend(value)
+    return out
+
+
+def _known_text(value: Any) -> str | None:
+    """A plain string setting, upper-cased; None when it is unset or an intrinsic."""
+    return value.strip().upper() if isinstance(value, str) else None
+
+
+_HARM_CATEGORIES = frozenset({"HATE", "INSULTS", "SEXUAL", "VIOLENCE", "MISCONDUCT"})
+
+
+def _guardrail_harm_filters_act(guard: Resource, side: str) -> bool | None:
+    """Whether a harmful-content filter (HATE, INSULTS, SEXUAL, VIOLENCE, MISCONDUCT) acts on
+    this side ("Input" or "Output"): its strength is not NONE and the side is not turned off.
+    None when unknown."""
+    entries = _guardrail_entries(guard, "ContentPolicyConfig", ("FiltersConfig",))
+    if entries is None:
+        return None
+    unknown = False
+    for entry in entries:
+        kind = _known_text(entry.get("Type"))
+        if kind is None:
+            unknown = True
+            continue
+        if kind not in _HARM_CATEGORIES:
+            continue
+        strength = entry.get(f"{side}Strength")
+        off = _turned_off(entry.get(f"{side}Enabled"))
+        if (strength is not None and _known_text(strength) is None) or off is None:
+            unknown = True
+        elif _known_text(strength) != "NONE" and not off:
+            return True
+    return None if unknown else False
+
+
+def _turned_off(value: Any) -> bool | None:
+    """An *Enabled flag that defaults to on: True when set false, None when unknown."""
+    if value is None:
+        return False
+    on = _flag(value)
+    return None if on is None else not on
+
+
+def _guardrail_blocks_prompt_attacks(guard: Resource) -> bool | None:
+    """Whether a content filter of Type PROMPT_ATTACK acts on input. None when unknown."""
+    entries = _guardrail_entries(guard, "ContentPolicyConfig", ("FiltersConfig",))
+    if entries is None:
+        return None
+    unknown = False
+    for entry in entries:
+        kind = entry.get("Type")
+        if kind is None or _known_text(kind) is None:
+            unknown = True
+            continue
+        if _known_text(kind) != "PROMPT_ATTACK":
+            continue
+        strength, off = entry.get("InputStrength"), _turned_off(entry.get("InputEnabled"))
+        if (strength is not None and _known_text(strength) is None) or off is None:
+            unknown = True
+        elif _known_text(strength) != "NONE" and not off:
+            return True
+    return None if unknown else False
+
+
+def _guardrail_filters_output_data(guard: Resource) -> bool | None:
+    """Whether a PII entity or regex filter acts on responses: OutputEnabled is not false and
+    the output action (OutputAction, else Action) is not NONE. None when unknown or when the
+    guardrail has no such filter (CF-BEDROCK-005 and 011 report that)."""
+    entries = _guardrail_entries(
+        guard, "SensitiveInformationPolicyConfig", ("PiiEntitiesConfig", "RegexesConfig"))
+    if not entries:
+        return None
+    for entry in entries:
+        off = _turned_off(entry.get("OutputEnabled"))
+        action = entry.get("OutputAction", entry.get("Action"))
+        if off is None or (action is not None and _known_text(action) is None):
+            return None
+        if not off and _known_text(action) != "NONE":
+            return True
+    return False
+
+
 def _variants_without_max_tokens(prompt: Resource) -> list[str]:
     """Names of a prompt's model variants with no InferenceConfiguration.Text.MaxTokens. A variant
     that runs an agent (GenAiResource) takes no inference settings; an unreadable one is skipped."""
@@ -3510,7 +3661,8 @@ def _ai_findings(resources: List[Resource], template_path: Path) -> List[Finding
     """The AI template checks, which run only for an AI workload (rules/ai_gate.py): Bedrock
     agents (CF-BEDROCK-001, 003, 006, 007), model invocation logging (CF-BEDROCK-004, an account
     control, off unless rules.org), guardrails (CF-BEDROCK-005), prompts (CF-BEDROCK-006, 008,
-    009), guardrail topics, PII and grounding (CF-BEDROCK-010..012), AgentCore runtimes, gateways
+    009), guardrail topics, PII and grounding (CF-BEDROCK-010..012), prompt attacks and response
+    filtering (CF-BEDROCK-013, 014), agent roles (CF-BEDROCK-015..017), AgentCore runtimes, gateways
     and memory (CF-AGENTCORE-001..003), SageMaker endpoint monitoring (CF-SAGE-006) and the
     SageMaker notebooks, domains, endpoints, feature groups and models of CF-SAGE-007..013. A
     value the scan cannot read is not judged. Each id answers one best practice of an AI lens
@@ -3594,6 +3746,33 @@ def _ai_findings(resources: List[Resource], template_path: Path) -> List[Finding
                 "SensitiveInformationPolicyConfig.PiiEntitiesConfig with the entity types the use "
                 "case must protect and an Action of BLOCK or ANONYMIZE. In CDK: "
                 "sensitiveInformationPolicyConfig.piiEntitiesConfig on the CfnGuardrail.")
+        # A guardrail with no filter at all is CF-BEDROCK-005's finding, which names PROMPT_ATTACK.
+        if _guardrail_filters(guard) is True and _guardrail_blocks_prompt_attacks(guard) is False:
+            add(guard, "CF-BEDROCK-013", "Medium", "Security",
+                "The guardrail has no PROMPT_ATTACK content filter on input, so a jailbreak or an "
+                "instruction injected into a prompt, a retrieved document or a tool result reaches "
+                "the model and steers the agent. Add a ContentPolicyConfig.FiltersConfig entry with "
+                "Type PROMPT_ATTACK, InputStrength HIGH and OutputStrength NONE, and tag untrusted "
+                "content as user input so the filter reads it. In CDK: contentPolicyConfig on the "
+                "CfnGuardrail.")
+        # A guardrail with no filter at all is CF-BEDROCK-005's finding.
+        if _guardrail_filters(guard) is True:
+            for side, check_id, where in (("Input", "CF-BEDROCK-018", "prompts"),
+                                          ("Output", "CF-BEDROCK-019", "responses")):
+                if _guardrail_harm_filters_act(guard, side) is False:
+                    add(guard, check_id, "Low", "Security",
+                        f"No HATE, INSULTS, SEXUAL, VIOLENCE or MISCONDUCT content filter on the "
+                        f"guardrail acts on {where} ({side}Strength NONE, {side}Enabled false, or no "
+                        f"such filter), so harmful content in {where} passes. Add those filters to "
+                        f"ContentPolicyConfig.FiltersConfig with {side}Strength MEDIUM or HIGH. In "
+                        f"CDK: contentPolicyConfig on the CfnGuardrail.")
+        if _guardrail_filters_output_data(guard) is False:
+            add(guard, "CF-BEDROCK-014", "Low", "Security",
+                "Every PII entity and regex filter on the guardrail is off for responses (OutputEnabled "
+                "false or an output action of NONE), so personal or secret data the model or a tool "
+                "returns reaches the user. Set OutputAction to ANONYMIZE or BLOCK, and OutputEnabled "
+                "true, on the entities the use case must protect. In CDK: "
+                "sensitiveInformationPolicyConfig on the CfnGuardrail.")
         if knowledge_bases and _guardrail_list(guard, "ContextualGroundingPolicyConfig", "FiltersConfig") is False:
             add(guard, "CF-BEDROCK-012", "Low", "Security",
                 "The template has a knowledge base, and this guardrail has no contextual grounding "
@@ -3601,6 +3780,80 @@ def _ai_findings(resources: List[Resource], template_path: Path) -> List[Finding
                 "ContextualGroundingPolicyConfig.FiltersConfig with a GROUNDING and a RELEVANCE "
                 "filter and a Threshold for each. In CDK: contextualGroundingPolicyConfig on the "
                 "CfnGuardrail.")
+
+    for holder in (r for r in usable if r.type in ("iam_role", "iam_policy", "iam_user", "iam_group")):
+        if _invokes_every_endpoint(holder.properties):
+            add(holder, "CF-SAGE-014", "Medium", "Security",
+                "A policy allows sagemaker:InvokeEndpoint on Resource *, so the principal can call "
+                "every model endpoint in the account, not only the one it serves. Name the endpoint "
+                "ARNs it needs (arn:aws:sagemaker:<region>:<account>:endpoint/<name>). In CDK: "
+                "grant on the endpoint's ARN, not on '*'.")
+
+    for holder in (r for r in usable if r.type in ("iam_role", "iam_policy", "iam_user", "iam_group")):
+        docs = [doc for _label, doc in _policy_documents(holder.properties)]
+        wide = _allows_on_every_resource(docs, "bedrock", _MODEL_INVOKE)
+        if wide:
+            add(holder, "CF-BEDROCK-020", "Medium", "Security",
+                f"A policy allows {', '.join(wide)} on Resource *, so the principal can call every "
+                "foundation model and inference profile in the account, including the most "
+                "expensive and any you have not approved. Name the model or inference profile ARNs "
+                "it needs. In CDK: grant on the model's ARN, not on '*'.")
+
+    for role in (r for r in usable if r.type == "iam_role"):
+        if "AssumeRolePolicyDocument" in role.unresolved:
+            continue
+        doc = iam_policy.as_document(role.properties.get("AssumeRolePolicyDocument"))
+        if doc and any(s.lower() == "sagemaker.amazonaws.com"
+                       for st in iam_policy.statements(doc)
+                       for s in iam_policy.literals((st.get("Principal") or {}).get("Service")
+                                                    if isinstance(st.get("Principal"), dict) else None)):
+            broad = sorted({a for d in _role_documents(role, resources) for b in iam_policy.broadest(d)
+                            for a in b.actions})
+            arns = role.properties.get("ManagedPolicyArns")
+            full = [a.rsplit("/", 1)[-1] for a in (arns if isinstance(arns, list) else [])
+                    if type(a) is str and _SAGEMAKER_FULL.search(a)]
+            if _managed_admin(role.properties):
+                full.append("AdministratorAccess")
+            if broad or full:
+                add(role, "CF-SAGE-016", "Medium", "Security",
+                    f"The SageMaker execution role grants {', '.join((full + broad)[:5])}, so every "
+                    "notebook, training job and endpoint that uses it can read and change far more "
+                    "data than its task needs. Give each job a role scoped to its own buckets, "
+                    "prefixes and keys. In CDK: grantRead on the bucket instead of full-access policies.")
+        agent_service, people = iam_policy.agent_trust(doc) if doc else (False, False)
+        if not agent_service:
+            continue
+        reads = _allows_on_every_resource(_role_documents(role, resources), "", _DATA_READS)
+        if reads:
+            add(role, "CF-BEDROCK-021", "Medium", "Security",
+                f"The role a Bedrock service assumes allows {', '.join(reads[:5])} on Resource *, so "
+                "a knowledge base or agent using it can read every bucket, table or collection in the "
+                "account, not only its own data source. Name the bucket, prefix, table or collection "
+                "ARNs. In CDK: grantRead on the data source.")
+        if people:
+            add(role, "CF-BEDROCK-015", "Medium", "Security",
+                "The role's trust policy lets an agent service (bedrock or bedrock-agentcore) and "
+                "an IAM principal or federated user assume it, so people and the agent share one "
+                "set of permissions and what either did cannot be told apart. Give the agent a "
+                "role only its service may assume, and give people their own roles. In CDK: one "
+                "Role per principal, with the ServicePrincipal alone on the agent's role.")
+        if unset(role, "PermissionsBoundary"):
+            add(role, "CF-BEDROCK-016", "Low", "Security",
+                "The agent's role has no PermissionsBoundary, so a policy added to it later, by "
+                "a person or by the agent through a tool, can grant it anything. Attach a "
+                "permissions boundary that caps the actions and resources the agent may ever "
+                "have. In CDK: permissionsBoundary on the Role, or PermissionsBoundary.of(scope).")
+        broad = sorted({
+            action for doc in _role_documents(role, resources)
+            for b in iam_policy.broadest(doc) for action in b.actions
+        } | ({"AdministratorAccess"} if _managed_admin(role.properties) else set()))
+        if broad:
+            add(role, "CF-BEDROCK-017", "Medium", "Security",
+                f"The agent's role grants {', '.join(broad[:5])}"
+                f"{' and more' if len(broad) > 5 else ''}, so a prompt that steers the agent can "
+                "make it do far more than its task needs. Grant only the actions its tools call, "
+                "on the resources they use (one model ARN, one function, one table). In CDK: "
+                "grant methods or a PolicyStatement with named actions and resources.")
 
     versions = [r for r in resources if r.type == "bedrock_prompt_version"]
     for prompt in (r for r in usable if r.type == "bedrock_prompt"):
@@ -3708,6 +3961,13 @@ def _ai_findings(resources: List[Resource], template_path: Path) -> List[Finding
             continue
         capture = config.properties.get("DataCaptureConfig")
         enable = capture.get("EnableCapture") if _readable(capture) else None
+        if _readable(capture) and (enable is None or _flag(enable) is True) and "KmsKeyId" not in capture:
+            add(config, "CF-SAGE-015", "Low", "Security",
+                "The endpoint config captures requests and responses with no "
+                "DataCaptureConfig.KmsKeyId, so the captured production data, which can hold "
+                "personal data, is encrypted with a key whose policy you do not control. Set a "
+                "customer managed KMS key on the capture and limit who may decrypt it. In CDK: "
+                "dataCaptureConfig.kmsKeyId on the CfnEndpointConfig.")
         if capture is None or (enable is not None and _flag(enable) is False):
             add(config, "CF-SAGE-010", "Low", "Operational Excellence",
                 "The endpoint config captures no requests and responses, so you cannot see what the "
@@ -9681,15 +9941,28 @@ def _store_repo_relative(findings: List[Finding], repo_path: Path | None) -> Non
 
 
 def drop_static_covered_by_cf(findings: List[Finding]) -> List[Finding]:
-    """Drop a static finding when a CloudFormation finding already covers that control."""
+    """Drop a static finding when a CloudFormation finding already covers that control and
+    answers the same Well-Architected question. When the two answer different questions, both
+    stay, so each question shows its finding."""
+    from aws_arch_agent.rules.well_architected import question_of
+
     findings = usage_signals.drop_sized(findings)
-    covered = {sid for f in findings for sid in CF_COVERS_STATIC.get(f.id, ())}
+    covered = {
+        sid for f in findings for sid in CF_COVERS_STATIC.get(f.id, ())
+        if question_of(sid) == question_of(f.id)
+    }
     if environments.only_nonprod():
         # Every stack is dev or staging: the CDK source Multi-AZ advice is prod-only.
         covered |= set(environments.PROD_ONLY_STATIC)
     if tag_policy.policy_checked():
         # Templates were checked against the tag policy, which replaces the repo-wide guesses.
-        covered |= set(tag_policy.REPLACED_STATIC_RULES)
+        # A guess on another question stays when the policy check reports, so that question
+        # still shows the missing tags.
+        tag_questions = {question_of(f.id) for f in findings if f.id == "CF-TAG-001"}
+        covered |= {
+            sid for sid in tag_policy.REPLACED_STATIC_RULES
+            if not tag_questions or question_of(sid) in tag_questions
+        }
     if not covered:
         return findings
     return [f for f in findings if f.id not in covered]

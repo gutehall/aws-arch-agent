@@ -1583,7 +1583,9 @@ def _sagemaker_endpoint_config(body: dict) -> dict:
         props["DataCaptureConfig"] = UNRESOLVED
     elif _blocks(body, "data_capture_config"):
         capture: dict = {}
-        _set(capture, "EnableCapture", _known(_v(_first_block(body, "data_capture_config"), "enable_capture")))
+        block = _first_block(body, "data_capture_config")
+        _set(capture, "EnableCapture", _known(_v(block, "enable_capture")))
+        _set(capture, "KmsKeyId", _ref(block, "kms_key_id"))
         props["DataCaptureConfig"] = capture
     return props
 
@@ -1667,8 +1669,17 @@ def _bedrock_agent_alias(body: dict) -> dict:
     return props
 
 
+# The guardrail filter arguments the checks read, Terraform name -> CloudFormation name.
+_GUARDRAIL_FILTER_FIELDS = {
+    "type": "Type", "input_strength": "InputStrength", "input_enabled": "InputEnabled",
+    "output_strength": "OutputStrength",
+    "action": "Action", "output_action": "OutputAction", "output_enabled": "OutputEnabled",
+}
+
+
 def _bedrock_filter_lists(body: dict, block: str, lists: dict[str, str]) -> Any:
-    """A guardrail policy block with its filter lists, one _OPAQUE entry per filter.
+    """A guardrail policy block with its filter lists, one entry per filter holding the
+    arguments in _GUARDRAIL_FILTER_FIELDS (an expression is _OPAQUE).
     UNRESOLVED when the block is dynamic; a dynamic list is _OPAQUE."""
     if block in _dynamic_names(body):
         return UNRESOLVED
@@ -1680,7 +1691,10 @@ def _bedrock_filter_lists(body: dict, block: str, lists: dict[str, str]) -> Any:
         if tf_key in _dynamic_names(found):
             config[cf_key] = _OPAQUE
         else:
-            config[cf_key] = [_OPAQUE for _ in _blocks(found, tf_key)]
+            config[cf_key] = [
+                {cf: _known(_v(entry, tf)) for tf, cf in _GUARDRAIL_FILTER_FIELDS.items() if tf in entry}
+                for entry in _blocks(found, tf_key)
+            ]
     return config
 
 
@@ -2147,6 +2161,7 @@ def _iam_role(body: dict) -> dict:
     # Raw value: resolve_policy_document turns it into a document in _resolve_iam.
     _set(props, "AssumeRolePolicyDocument", body.get("assume_role_policy"))
     _set(props, "ManagedPolicyArns", body.get("managed_policy_arns"))
+    _set(props, "PermissionsBoundary", _ref(body, "permissions_boundary"))
     return props
 
 

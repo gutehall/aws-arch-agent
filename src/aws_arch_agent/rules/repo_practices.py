@@ -13786,6 +13786,2555 @@ class HumanEscalationMissing(_AiNoteRule):
     )
 
 
+# AGENTSEC 9, security testing of an agent: an AI red-team or vulnerability scan in the
+# pipeline (REPO-205), a note on the scoped environment the security tests run in (REPO-206) and
+# runtime threat detection with automated response (REPO-207). They need an agent in the scan
+# and each answers AGENTSEC 9 of the Agentic AI lens only.
+_RED_TEAM_TOOLS: tuple[tuple[str, re.Pattern[str]], ...] = tuple(
+    (name, re.compile(pattern, re.IGNORECASE)) for name, pattern in (
+        ("garak", r"\bgarak\b"),
+        ("PyRIT", r"\bpyrit\b"),
+        ("promptfoo red team", r"\bpromptfoo\s+redteam\b"),
+        ("Giskard scan", r"\bgiskard\b"),
+        ("a red-team step", r"\bred[-_ ]?team(?:ing)?\b"),
+    )
+)
+
+
+class AgentRedTeamNotInPipeline(_RepoRule):
+    id = "REPO-205"
+    title = "An agent's pipeline runs no AI red-team or vulnerability scan"
+    category = "Security"
+    severity = "Medium"
+    themes = ("security-baseline",)
+    recommendation = (
+        "Attack the agent on every change: run an AI red-team scan (promptfoo redteam, garak, "
+        "PyRIT or Giskard) in a CI step that probes prompt injection, tool misuse and data "
+        "leakage across the agent's tools, and fail the build on a new finding so it is fixed "
+        "before release."
+    )
+
+    def run(self, repo_path: Path, language: str = "typescript") -> List[Finding]:
+        if not ai_gate.active() or not ai_gate.seen_types() & _AGENT_TYPES:
+            return []
+        builds, found = _tools_in_builds(repo_path, _RED_TEAM_TOOLS)
+        # No build at all is REPO-002's finding, not this one.
+        if found or not builds:
+            return []
+        return [self._finding(
+            f"Searched the build configs ({_listed(builds)}) and the package.json scripts they "
+            "run for an AI red-team or vulnerability scan (promptfoo redteam, garak, PyRIT, "
+            "Giskard, or a red-team step); found none",
+            file=builds[0],
+        )]
+
+
+class AgentSecurityTestScopeMissing(_AiNoteRule):
+    id = "REPO-206"
+    title = "An agent has no note on the scoped environment its security tests run in"
+    category = "Security"
+    themes = ("security-baseline",)
+    needs_types = _AGENT_TYPES
+    note_name = re.compile(
+        r"(?:^|[-_. ])(?:red[-_ ]?team\w*|pen[-_ ]?tests?|penetration[-_ ]?test\w*|security[-_ ]?test\w*"
+        r"|adversarial[-_ ]?test\w*)(?:$|[-_. ])"
+    )
+    note_heading = re.compile(
+        r"(?i).*\b(?:red[- ]?team\w*|pen[- ]?tests?|penetration test\w*|security test\w*"
+        r"|adversarial test\w*)\b.*"
+    )
+    recommendation = (
+        "Write down how the agent is attacked safely: a note (docs/red-team.md) that names the "
+        "isolated account or environment the security tests run in, the tools and data the "
+        "agent may reach there, what is out of scope, and who approves a test."
+    )
+    searched = (
+        "the notes for a file or heading on red teaming, penetration testing, security testing "
+        "or adversarial testing"
+    )
+
+
+_RUNTIME_THREAT_IN_IAC = re.compile(
+    _THREAT_IN_IAC.pattern
+    + r"|[\"']?source[\"']?\s*[:=]\s*\[?\s*[\"']aws\.(?:guardduty|securityhub)[\"']"
+)
+
+
+class AgentThreatDetectionMissing(_AiNoteRule):
+    id = "REPO-207"
+    title = "An agent has no runtime threat detection or automated response"
+    category = "Security"
+    themes = ("security-baseline",)
+    needs_types = _AGENT_TYPES
+    note_name = re.compile(r"(?:^|[-_. ])(?:threat[-_ ]?detection|security[-_ ]?monitoring)(?:$|[-_. ])")
+    note_heading = re.compile(
+        r"(?i).*\b(?:threat detection|security monitoring|runtime (?:protection|detection))\b.*"
+    )
+    iac = _RUNTIME_THREAT_IN_IAC
+    recommendation = (
+        "Watch the agent at run time: enable GuardDuty or Security Hub in the IaC, route their "
+        "findings with an EventBridge rule (source aws.guardduty or aws.securityhub) to an "
+        "automated response that revokes the agent's session or role, or keep a note "
+        "(docs/threat-detection.md) that says where the agent's security events are correlated "
+        "and how a finding is remediated."
+    )
+    searched = (
+        "the IaC for a GuardDuty detector, a Security Hub hub or an EventBridge rule on their "
+        "findings, and the notes for a file or heading on threat detection or security "
+        "monitoring"
+    )
+
+
+# AGENTSEC 7, protecting human oversight and catching a rogue agent: a note on how reviewers
+# are kept from being overloaded or misled (REPO-208), anomaly detection with containment
+# (REPO-209) and red teaming on a schedule (REPO-210). They need an agent in the scan and each
+# answers AGENTSEC 7 of the Agentic AI lens only.
+class ReviewerProtectionMissing(_AiNoteRule):
+    id = "REPO-208"
+    title = "An agent has no note on how its human reviewers are protected from overload and manipulation"
+    category = "Security"
+    themes = ("security-baseline",)
+    needs_types = _AGENT_TYPES
+    note_name = re.compile(
+        r"(?:approval|review(?:er)?s?)[-_ ]?(?:polic\w+|workflow|design|guide\w*)"
+        r"|(?:two|four|multi)[-_ ]?(?:person|eyes|party)\w*|dual[-_ ]?(?:control|approval)"
+    )
+    note_heading = re.compile(
+        r"(?i).*\b(?:approval (?:policy|workflow|design)|reviewer (?:guide|workload|fatigue)"
+        r"|two[- ]person|four[- ]eyes|multi[- ]party approval|dual (?:control|approval)"
+        r"|confidence (?:score|indicator)s?|manipulation warnings?)\b.*"
+    )
+    recommendation = (
+        "Design the human check so it cannot be worn down or talked round: a note "
+        "(docs/approval-policy.md) that caps how many approvals a reviewer gets, shows the agent's "
+        "confidence and a warning when a request looks manipulative, and names the critical "
+        "operations that need two independent reviewers."
+    )
+    searched = (
+        "the notes for a file or heading on an approval policy or workflow, a reviewer guide, "
+        "two-person or multi-party approval, dual control, or confidence indicators"
+    )
+
+
+_ANOMALY_IN_IAC = re.compile(
+    _cf_type(r"CloudWatch::AnomalyDetector")
+    + r"|ANOMALY_DETECTION_BAND|\bcloudwatch\.CfnAnomalyDetector\(|\bAnomalyDetectionBand\b"
+)
+
+
+class AgentAnomalyDetectionMissing(_AiNoteRule):
+    id = "REPO-209"
+    title = "An agent has no behavioral anomaly detection or containment"
+    category = "Security"
+    themes = ("security-baseline",)
+    needs_types = _AGENT_TYPES
+    note_name = re.compile(r"anomal\w+|rogue[-_ ]?agents?|containment|kill[-_ ]?switch")
+    note_heading = re.compile(
+        r"(?i).*\b(?:anomal\w+|rogue agents?|agent containment|containment|kill switch"
+        r"|quarantin\w+)\b.*"
+    )
+    iac = _ANOMALY_IN_IAC
+    recommendation = (
+        "Catch an agent that goes off course: put a CloudWatch anomaly detection alarm on its tool "
+        "calls, token use or error rate, and write down (docs/agent-containment.md) how an alarm "
+        "contains it: revoke its role session, disable its alias or gateway target, and page a "
+        "person."
+    )
+    searched = (
+        "the IaC for a CloudWatch anomaly detector or an anomaly detection alarm, and the notes "
+        "for a file or heading on anomalies, rogue agents, containment or a kill switch"
+    )
+
+
+_SCHEDULED_BUILD = re.compile(r"(?im)^\s*(?:schedule|cron|-\s*cron)\s*:|\bschedule_expression\b")
+
+
+class RedTeamNotScheduled(_AiNoteRule):
+    id = "REPO-210"
+    title = "An agent is not red-teamed or security-assessed on a schedule"
+    category = "Security"
+    themes = ("security-baseline",)
+    needs_types = _AGENT_TYPES
+    note_name = re.compile(r"(?:security[-_ ]?)?assessments?|red[-_ ]?team[-_ ]?(?:reports?|results?|log)")
+    note_heading = re.compile(
+        r"(?i).*\b(?:security assessments?|red[- ]team (?:report|results?|exercises?|schedule)"
+        r"|regular red[- ]teaming)\b.*"
+    )
+    recommendation = (
+        "Attack the agent on a schedule, not only once: run the red-team scan (promptfoo redteam, "
+        "garak or PyRIT) in a scheduled CI workflow, and record each security assessment and its "
+        "findings (docs/security-assessments.md) so new tools, prompts and models are retested."
+    )
+    searched = (
+        "the build configs for a scheduled job that runs promptfoo redteam, garak, PyRIT or "
+        "Giskard, and the notes for a file or heading on security assessments or red-team reports"
+    )
+
+    def present(self, repo_path: Path) -> str | None:
+        for rel, text in build_texts(repo_path):
+            if _SCHEDULED_BUILD.search(text) and any(p.search(text) for _n, p in _RED_TEAM_TOOLS):
+                return rel
+        return super().present(repo_path)
+
+
+# AGENTSEC 6, multi-agent orchestration: trust between the agents (REPO-211) and monitoring
+# of how they coordinate (REPO-212). They need a multi-agent setup in the IaC: a supervisor
+# agent (AgentCollaboration SUPERVISOR or SUPERVISOR_ROUTER) or an agent collaborator.
+_MULTI_AGENT_IN_IAC = re.compile(
+    r"[\"']?AgentCollaboration[\"']?\s*:\s*[\"']?SUPERVISOR|\bagent_collaboration\s*=\s*\"SUPERVISOR"
+    r"|\bagentCollaboration\s*:\s*[\"']SUPERVISOR|[\"']?AgentCollaborators[\"']?\s*:"
+    r"|resource\s+\"aws_bedrockagent_agent_collaborator\"|\bagentCollaborators\s*:"
+)
+
+
+class _MultiAgentNoteRule(_AiNoteRule):
+    """An agent note rule that fires only when the IaC builds a multi-agent system."""
+
+    category = "Security"
+    needs_types = _AGENT_TYPES
+
+    def run(self, repo_path: Path, language: str = "typescript") -> List[Finding]:
+        if not self.applies() or not _in_iac_text(repo_path, _MULTI_AGENT_IN_IAC):
+            return []
+        return super().run(repo_path, language)
+
+
+class MultiAgentTrustMissing(_MultiAgentNoteRule):
+    id = "REPO-211"
+    title = "A multi-agent system has no note on the trust boundaries between its agents"
+    themes = ("security-baseline",)
+    note_name = re.compile(
+        r"(?:inter|multi|cross)[-_ ]?agent\w*|agent[-_ ]?to[-_ ]?agent|a2a|trust[-_ ]?boundar\w+"
+        r"|orchestration[-_ ]?security"
+    )
+    note_heading = re.compile(
+        r"(?i).*\b(?:inter-?agent|multi-?agent security|agent-to-agent|a2a|trust boundar\w+"
+        r"|orchestration (?:security|controls))\b.*"
+    )
+    recommendation = (
+        "Write down how the agents trust each other: a note (docs/multi-agent-security.md) that "
+        "names what each agent may ask the others to do, how messages between them are "
+        "authenticated, encrypted and signed, and which steps of the workflow need a check or an "
+        "approval before the next agent acts."
+    )
+    searched = (
+        "the notes for a file or heading on inter-agent or agent-to-agent security, trust "
+        "boundaries or orchestration controls"
+    )
+
+
+class MultiAgentCoordinationUnwatched(_MultiAgentNoteRule):
+    id = "REPO-212"
+    title = "A multi-agent system has no tracing or anomaly detection on how its agents coordinate"
+    themes = ("observability",)
+    note_name = re.compile(r"coordination[-_ ]?(?:monitoring|anomal\w+)|agent[-_ ]?monitoring")
+    note_heading = re.compile(
+        r"(?i).*\b(?:coordination (?:monitoring|anomal\w+)|agent monitoring|multi-?agent monitoring)\b.*"
+    )
+    iac = _ANOMALY_IN_IAC
+    recommendation = (
+        "Watch the agents as one system: trace each request across the supervisor and its "
+        "collaborators (X-Ray or OpenTelemetry), and put a CloudWatch anomaly detection alarm on "
+        "the calls between them, so a loop, a fan-out or an agent acting outside its role shows "
+        "up."
+    )
+    searched = (
+        "the compute and code for X-Ray or OpenTelemetry tracing, the IaC for a CloudWatch anomaly "
+        "detector, and the notes for a file or heading on coordination or agent monitoring"
+    )
+
+    def present(self, repo_path: Path) -> str | None:
+        return agent_tracing(repo_path) or super().present(repo_path)
+
+
+# AGENTSEC 5, observability and non-repudiation: a stored record of what the agent decided
+# (REPO-213) and tracing across its calls (REPO-214).
+_AGENT_TRACE_IN_CODE = re.compile(r"(?i)\benable_?trace\b[\"']?\s*[=:]\s*true\b")
+_DECISION_NOTE_NAME = re.compile(r"audit[-_ ]?(?:trail|log)s?|decision[-_ ]?(?:log|record)s?")
+_DECISION_NOTE_HEADING = re.compile(
+    r"(?i).*\b(?:audit (?:trail|log)s?|decision (?:log|record)s?|agent traces?)\b.*"
+)
+
+
+class AgentDecisionLogMissing(_AiNoteRule):
+    id = "REPO-213"
+    title = "An agent keeps no record of its prompts, responses and decisions"
+    category = "Security"
+    themes = ("observability",)
+    needs_types = _AGENT_TYPES
+    note_name = _DECISION_NOTE_NAME
+    note_heading = _DECISION_NOTE_HEADING
+    recommendation = (
+        "Keep what the agent did and why: turn on Bedrock model invocation logging (Terraform "
+        "aws_bedrock_model_invocation_logging_configuration) to a protected bucket or log group, "
+        "call InvokeAgent with enableTrace and store the trace, and keep the logs where the agent "
+        "cannot change them, so a decision can be shown afterwards."
+    )
+    searched = (
+        "the scanned resources for model invocation logging, the code for InvokeAgent with "
+        "enableTrace, and the notes for a file or heading on an audit trail or decision log"
+    )
+
+    def present(self, repo_path: Path) -> str | None:
+        if "bedrock_model_invocation_logging" in ai_gate.seen_types():
+            return "model invocation logging"
+        for rel, text in http_client_files(repo_path):
+            if _AGENT_TRACE_IN_CODE.search(text):
+                return rel
+        return super().present(repo_path)
+
+
+_TRACING_DEPENDENCIES = re.compile(
+    r"(?i)\baws[-_]opentelemetry[-_]distro\b|\bopentelemetry[-_](?:sdk|api|distro)\b"
+    r"|@opentelemetry/(?:sdk-node|api)\b|\baws[-_]xray[-_]sdk\b|\baws-xray-sdk-core\b"
+)
+
+
+def agent_tracing(repo_path: Path) -> str | None:
+    """Where an agent workload is traced: compute tracing (as REPO-048 reads it), or a tracing
+    SDK in a dependency list outside tests. None when nowhere."""
+    traced = compute_tracing(repo_path)
+    if traced:
+        return next(iter(traced.values()))
+    for path in walk(repo_path):
+        parts = _rel_parts(path, repo_path)
+        if _DEPENDENCY_LISTS.match(path.name) and not _in_test_dir(parts):
+            if _TRACING_DEPENDENCIES.search(read_text_safe(path)):
+                return "/".join(parts)
+    return None
+
+
+class AgentTracingMissing(_AiNoteRule):
+    id = "REPO-214"
+    title = "An agent's calls are not traced"
+    category = "Security"
+    themes = ("observability",)
+    needs_types = _AGENT_TYPES
+    note_name = re.compile(r"$^")
+    note_heading = re.compile(r"$^")
+    recommendation = (
+        "Trace each agent run end to end: instrument the agent with the AWS Distro for "
+        "OpenTelemetry (aws-opentelemetry-distro, which AgentCore observability reads) or the "
+        "X-Ray SDK, and turn on active tracing on the functions its action groups call, so every "
+        "model call, tool call and hand-off in one request shares a trace."
+    )
+    searched = (
+        "the compute and code for X-Ray or OpenTelemetry tracing, and the dependency lists for "
+        "aws-opentelemetry-distro, an OpenTelemetry SDK or the X-Ray SDK"
+    )
+
+    def present(self, repo_path: Path) -> str | None:
+        return agent_tracing(repo_path)
+
+
+# AGENTSEC 3, agent identities and permissions: strong authentication for the agent's identity
+# (REPO-215) and a review of the access it does not use (REPO-216). The template checks
+# CF-BEDROCK-015 and 016 read the agent roles themselves.
+_AGENT_IDENTITY_IN_IAC = re.compile(
+    _cf_type(r"BedrockAgentCore::WorkloadIdentity")
+    + r"|resource\s+\"aws_bedrockagentcore_workload_identity\""
+    r"|[\"']?CustomJWTAuthorizer[\"']?\s*:|\bcustom_jwt_authorizer\b|\bcustomJwtAuthorizer\b"
+)
+
+
+class AgentIdentityAuthMissing(_AiNoteRule):
+    id = "REPO-215"
+    title = "An agent has no workload identity or token authorizer"
+    category = "Security"
+    themes = ("identity",)
+    needs_types = _AGENT_TYPES
+    note_name = re.compile(r"agent[-_ ]?(?:identit\w+|auth\w*)")
+    note_heading = re.compile(r"(?i).*\b(?:agent identit\w+|agent authenticat\w+|workload identit\w+)\b.*")
+    iac = _AGENT_IDENTITY_IN_IAC
+    recommendation = (
+        "Give the agent an identity it proves: an AgentCore workload identity "
+        "(AWS::BedrockAgentCore::WorkloadIdentity) for the credentials it uses, and a "
+        "CustomJWTAuthorizer on the runtime or gateway so callers present a token from your "
+        "identity provider, or write down (docs/agent-identity.md) how the agent authenticates."
+    )
+    searched = (
+        "the IaC for an AgentCore workload identity or a CustomJWTAuthorizer, and the notes for a "
+        "file or heading on agent identity or agent authentication"
+    )
+
+
+_UNUSED_ACCESS_IN_IAC = re.compile(
+    r"(?i)[\"']?type[\"']?\s*[:=]\s*[\"'](?:ACCOUNT|ORGANIZATION)_UNUSED_ACCESS[\"']"
+)
+
+
+# GENSEC 6, data poisoning: a foundation model the repo customizes, with no data validation
+# step (REPO-217). The customization is read from the IaC and code: a Bedrock custom model or
+# a model customization job. SageMaker training is MLSEC 4's (REPO-221).
+_TRAINING_IN_IAC = re.compile(
+    r"resource\s+\"aws_bedrock_custom_model\""
+    r"|\bCreateModelCustomizationJob\b|\bcreate_model_customization_job\b"
+)
+_DATA_VALIDATION_TOOLS: tuple[tuple[str, re.Pattern[str]], ...] = tuple(
+    (name, re.compile(pattern, re.IGNORECASE)) for name, pattern in (
+        ("Great Expectations", r"\bgreat[-_]expectations\b"),
+        ("Deequ", r"\bpydeequ\b|\bdeequ\b"),
+        ("cleanlab", r"\bcleanlab\b"),
+        ("Pandera", r"\bpandera\b"),
+        ("Glue Data Quality", r"Glue::DataQualityRuleset|aws_glue_data_quality_ruleset"
+         r"|\bCfnDataQualityRuleset\b|\bEvaluateDataQuality\b"),
+        ("SageMaker Data Wrangler", r"\bdata[-_ ]?wrangler\b|\bDataQualityCheckStep\b"
+         r"|\bDataQualityCheckConfig\b"),
+    )
+)
+
+
+def training_data_validation(repo_path: Path) -> str | None:
+    """Where training data is checked: a data validation tool in the IaC, a build, the code
+    outside tests or a dependency list. None when nowhere."""
+    for rel, text in iac_texts(repo_path):
+        if any(pattern.search(text) for _n, pattern in _DATA_VALIDATION_TOOLS):
+            return rel
+    _builds, tools = _tools_in_builds(repo_path, _DATA_VALIDATION_TOOLS)
+    if tools:
+        return next(iter(tools.values()))
+    for rel, text in http_client_files(repo_path):
+        if any(pattern.search(text) for _n, pattern in _DATA_VALIDATION_TOOLS):
+            return rel
+    for path in walk(repo_path):
+        parts = _rel_parts(path, repo_path)
+        if _DEPENDENCY_LISTS.match(path.name) and not _in_test_dir(parts):
+            if any(pattern.search(read_text_safe(path)) for _n, pattern in _DATA_VALIDATION_TOOLS):
+                return "/".join(parts)
+    return None
+
+
+class TrainingDataUnvalidated(_RepoRule):
+    id = "REPO-217"
+    title = "A foundation model is customized with no data validation step"
+    category = "Security"
+    severity = "Low"
+    themes = ("data-protection",)
+    recommendation = (
+        "Check the data before a model learns from it: add a validation step to the training "
+        "pipeline (a SageMaker DataQualityCheckStep, Glue Data Quality rules, Great Expectations, "
+        "Deequ or cleanlab) that rejects malformed, duplicated, out-of-range or untrusted records "
+        "and fails the run when the data drifts from the profile you approved."
+    )
+
+    def run(self, repo_path: Path, language: str = "typescript") -> List[Finding]:
+        if not ai_gate.active():
+            return []
+        training = _in_iac_text(repo_path, _TRAINING_IN_IAC) or next(
+            (rel for rel, text in http_client_files(repo_path) if _TRAINING_IN_IAC.search(text)), None)
+        if not training or training_data_validation(repo_path):
+            return []
+        return [self._finding(
+            f"Customizes a foundation model ({training}); searched the IaC, the build configs, "
+            "the code outside tests and the dependency lists for Glue Data Quality, a SageMaker "
+            "data quality check, Great Expectations, Deequ, cleanlab or Pandera; found none",
+            file=training,
+        )]
+
+
+# The ML lens security questions, for a SageMaker workload: data and license terms (REPO-218,
+# MLSEC 1), a governed environment, encrypted inter-node traffic and validated training data
+# (REPO-219 to REPO-221, MLSEC 4), adversarial testing (REPO-222, MLSEC 5) and monitoring of
+# who reads the data (REPO-223, MLSEC 6). Each answers one Machine Learning lens question.
+class _MlNoteRule(_AiNoteRule):
+    """A note rule that fires only when the scan saw a SageMaker resource."""
+
+    category = "Security"
+    needs_types = _SAGEMAKER_TYPES
+
+
+class MlDataTermsMissing(_MlNoteRule):
+    id = "REPO-218"
+    title = "An ML workload has no note on its data permissions, privacy and license terms"
+    themes = ("data-protection",)
+    note_name = re.compile(
+        r"data[-_ ]?(?:sheets?|cards?|licen[cs]es?|permissions?|terms|usage|rights)|datasheets?"
+        r"|dataset[-_ ]?(?:cards?|licen[cs]es?)|third[-_ ]?party[-_ ]?licen[cs]es?|licen[cs]es?"
+    )
+    note_heading = re.compile(
+        r"(?i).*\b(?:data ?sheets?|data(?:set)? cards?|data(?:set)? licen[cs]es?|data permissions"
+        r"|data usage|license terms|third[- ]party licen[cs]es)\b.*"
+    )
+    recommendation = (
+        "Record what you may do with the data and the software: a datasheet or data card "
+        "(docs/data-card.md) per dataset that names its source, the consent and privacy terms it "
+        "came with and who approved its use for training, and the license of each model, "
+        "library and dataset the workload uses."
+    )
+    searched = (
+        "the notes for a file or heading on a datasheet, a data card, data permissions or usage, "
+        "or the license terms of the data and software"
+    )
+
+
+_ML_GOVERNANCE_IN_IAC = re.compile(
+    _cf_type(r"SageMaker::Project|ServiceCatalog::(?:CloudFormationProduct|Portfolio)")
+    + r"|resource\s+\"aws_(?:sagemaker_project|servicecatalog_(?:product|portfolio))\""
+    r"|\bsagemaker:(?:VpcSubnets|VpcSecurityGroupIds|VolumeKmsKey|InterContainerTrafficEncryption)\b"
+    r"|\b(?:sagemaker\.CfnProject|servicecatalog\.(?:CfnCloudFormationProduct|CfnPortfolio|Portfolio))\("
+)
+
+
+class MlGovernedEnvironmentMissing(_MlNoteRule):
+    id = "REPO-219"
+    title = "SageMaker is used with no governed environment: no project template, catalog or policy guardrail"
+    themes = ("security-baseline",)
+    note_name = re.compile(r"ml[-_ ]?(?:governance|platform|environments?)|mlops[-_ ]?governance")
+    note_heading = re.compile(r"(?i).*\b(?:ml governance|ml platform|governed (?:ml )?environments?)\b.*")
+    iac = _ML_GOVERNANCE_IN_IAC
+    recommendation = (
+        "Give data scientists a governed place to work: provision SageMaker projects or Service "
+        "Catalog products that create pre-approved, VPC-bound and encrypted resources, and "
+        "enforce it with IAM or SCP conditions (sagemaker:VpcSubnets, sagemaker:VolumeKmsKey), "
+        "or write down (docs/ml-governance.md) how the ML environment is governed."
+    )
+    searched = (
+        "the IaC for a SageMaker project, a Service Catalog product or portfolio, or a policy "
+        "with sagemaker:VpcSubnets, sagemaker:VolumeKmsKey or a similar condition key, and the "
+        "notes for a file or heading on ML governance or the ML platform"
+    )
+
+
+# SageMaker training in the IaC or the code: a pipeline, a training job call, or a SageMaker
+# Python SDK estimator.
+_SM_TRAINING_IN_IAC = re.compile(
+    _cf_type(r"SageMaker::Pipeline") + r"|resource\s+\"aws_sagemaker_pipeline\""
+    r"|\bsagemaker\.CfnPipeline\(|\bCreateTrainingJob\b|\bcreate_training_job\b"
+)
+_SM_ESTIMATOR = re.compile(
+    r"\b(?:Estimator|PyTorch|TensorFlow|HuggingFace|XGBoost|SKLearn|MXNet)\s*\("
+)
+_SM_SDK_IMPORT = re.compile(r"^\s*(?:from|import)\s+sagemaker\b", re.MULTILINE)
+
+
+def sagemaker_training(repo_path: Path) -> str | None:
+    """Where the repo trains a SageMaker model: the IaC or code outside tests. None when not."""
+    found = _in_iac_text(repo_path, _SM_TRAINING_IN_IAC)
+    if found:
+        return found
+    for rel, text in http_client_files(repo_path):
+        if _SM_TRAINING_IN_IAC.search(text) or (_SM_SDK_IMPORT.search(text) and _SM_ESTIMATOR.search(text)):
+            return rel
+    return None
+
+
+_INTER_CONTAINER_ON = re.compile(
+    r"\bencrypt_inter_container_traffic\s*=\s*True\b"
+    r"|[\"']?EnableInterContainerTrafficEncryption[\"']?\s*[:=]\s*[\"']?true\b",
+    re.IGNORECASE,
+)
+
+
+class InterContainerTrafficUnencrypted(_RepoRule):
+    id = "REPO-220"
+    title = "SageMaker training does not encrypt traffic between its instances"
+    category = "Security"
+    severity = "Low"
+    themes = ("data-protection",)
+    recommendation = (
+        "Encrypt what training nodes send each other: set encrypt_inter_container_traffic=True "
+        "on the estimator (EnableInterContainerTrafficEncryption in a training job or pipeline "
+        "step), so model weights and data exchanged in distributed training are not in plain "
+        "text on the network."
+    )
+
+    def run(self, repo_path: Path, language: str = "typescript") -> List[Finding]:
+        if not ai_gate.active() or not ai_gate.seen_types() & _SAGEMAKER_TYPES:
+            return []
+        training = sagemaker_training(repo_path)
+        if not training:
+            return []
+        texts = [text for _rel, text in iac_texts(repo_path)] + [t for _r, t in http_client_files(repo_path)]
+        if any(_INTER_CONTAINER_ON.search(text) for text in texts):
+            return []
+        return [self._finding(
+            f"Trains a SageMaker model ({training}); searched the IaC and the code outside tests "
+            "for encrypt_inter_container_traffic=True or EnableInterContainerTrafficEncryption: "
+            "true; found none",
+            file=training,
+        )]
+
+
+class MlTrainingDataUnvalidated(_RepoRule):
+    id = "REPO-221"
+    title = "A SageMaker model is trained with no data validation step"
+    category = "Security"
+    severity = "Low"
+    themes = ("data-protection",)
+    recommendation = TrainingDataUnvalidated.recommendation
+
+    def run(self, repo_path: Path, language: str = "typescript") -> List[Finding]:
+        if not ai_gate.active() or not ai_gate.seen_types() & _SAGEMAKER_TYPES:
+            return []
+        training = sagemaker_training(repo_path)
+        if not training or training_data_validation(repo_path):
+            return []
+        return [self._finding(
+            f"Trains a SageMaker model ({training}); searched the IaC, the build configs, the "
+            "code outside tests and the dependency lists for Glue Data Quality, a SageMaker data "
+            "quality check, Great Expectations, Deequ, cleanlab or Pandera; found none",
+            file=training,
+        )]
+
+
+_ADVERSARIAL_TOOLS: tuple[tuple[str, re.Pattern[str]], ...] = tuple(
+    (name, re.compile(pattern, re.IGNORECASE)) for name, pattern in (
+        ("Adversarial Robustness Toolbox", r"\badversarial[-_]robustness[-_]toolbox\b|\bfrom\s+art\.attacks\b"),
+        ("TextAttack", r"\btextattack\b"),
+        ("Foolbox", r"\bfoolbox\b"),
+        ("CleverHans", r"\bcleverhans\b"),
+        ("Counterfit", r"\bcounterfit\b"),
+    )
+)
+
+
+class AdversarialTestingMissing(_RepoRule):
+    id = "REPO-222"
+    title = "An ML workload tests no robustness against adversarial input"
+    category = "Security"
+    severity = "Low"
+    themes = ("security-baseline",)
+    recommendation = (
+        "Attack the model before someone else does: run an adversarial robustness test (the "
+        "Adversarial Robustness Toolbox, TextAttack, Foolbox or Counterfit) in CI against each "
+        "candidate model, and fail the release when accuracy under attack drops below the bar "
+        "you set."
+    )
+
+    def run(self, repo_path: Path, language: str = "typescript") -> List[Finding]:
+        if not ai_gate.active() or not ai_gate.seen_types() & _SAGEMAKER_TYPES:
+            return []
+        builds, tools = _tools_in_builds(repo_path, _ADVERSARIAL_TOOLS)
+        # No build at all is REPO-002's finding, not this one.
+        if not builds or tools:
+            return []
+        for rel, text in http_client_files(repo_path):
+            if any(p.search(text) for _n, p in _ADVERSARIAL_TOOLS):
+                return []
+        for path in walk(repo_path):
+            parts = _rel_parts(path, repo_path)
+            if _DEPENDENCY_LISTS.match(path.name) and not _in_test_dir(parts):
+                if any(p.search(read_text_safe(path)) for _n, p in _ADVERSARIAL_TOOLS):
+                    return []
+        return [self._finding(
+            f"Searched the build configs ({_listed(builds)}), the code outside tests and the "
+            "dependency lists for the Adversarial Robustness Toolbox, TextAttack, Foolbox, "
+            "CleverHans or Counterfit; found none",
+            file=builds[0],
+        )]
+
+
+_DATA_ACCESS_MONITORING_IN_IAC = re.compile(
+    r"[\"']?(?:DataResources|AdvancedEventSelectors)[\"']?\s*:"
+    r"|\b(?:data_resource|advanced_event_selector)\s*\{|\b(?:dataResources|advancedEventSelectors)\s*:"
+    r"|\baddS3EventSelector\(|\bS3_DATA_EVENTS\b|[\"']?S3Logs[\"']?\s*:|\bs3_logs\s*\{"
+    r"|" + _cf_type(r"Macie::Session") + r"|resource\s+\"aws_macie2_account\""
+)
+
+
+class MlDataAccessUnmonitored(_MlNoteRule):
+    id = "REPO-223"
+    title = "Nothing watches who reads or changes the ML data"
+    themes = ("observability",)
+    note_name = re.compile(r"data[-_ ]?access[-_ ]?(?:monitoring|logs?|audits?)")
+    note_heading = re.compile(r"(?i).*\b(?:data access (?:monitoring|logs?|audits?))\b.*")
+    iac = _DATA_ACCESS_MONITORING_IN_IAC
+    recommendation = (
+        "Record and watch access to the training and feature data: turn on CloudTrail data "
+        "events for the S3 buckets that hold it, enable GuardDuty S3 protection to flag "
+        "unusual reads, and Macie to find sensitive data in them."
+    )
+    searched = (
+        "the IaC for CloudTrail data events, GuardDuty S3 protection or Macie, and the notes for "
+        "a file or heading on data access monitoring"
+    )
+
+
+class AgentUnusedAccessUnreviewed(_AiNoteRule):
+    id = "REPO-216"
+    title = "No unused-access analyzer or permission audit covers the agent's roles"
+    category = "Security"
+    themes = ("identity",)
+    needs_types = _AGENT_TYPES
+    note_name = re.compile(r"(?:permission|access)[-_ ]?(?:audits?|reviews?)")
+    note_heading = re.compile(r"(?i).*\b(?:permission audits?|access reviews?|agent permissions)\b.*")
+    iac = _UNUSED_ACCESS_IN_IAC
+    recommendation = (
+        "Review what the agent can do against what it uses: create an IAM Access Analyzer "
+        "unused-access analyzer (Type ACCOUNT_UNUSED_ACCESS) and remove the permissions it "
+        "reports on the agent roles, or keep a dated permission audit (docs/access-review.md) for "
+        "the agent roles."
+    )
+    searched = (
+        "the IaC for an IAM Access Analyzer with Type ACCOUNT_UNUSED_ACCESS or "
+        "ORGANIZATION_UNUSED_ACCESS, and the notes for a file or heading on a permission audit or "
+        "access review"
+    )
+
+
+# Agentic AI lens, the remaining AGENTSEC and AGENTOPS practices: human confirmation of critical
+# tool calls (REPO-224, AGENTSEC 4), tool input validation and an approved tool registry
+# (REPO-225, REPO-226, AGENTSEC 2), memory input checks and hallucination checks (REPO-227,
+# REPO-228, AGENTSEC 1), prompt and configuration change, drift and feedback (REPO-229 to
+# REPO-231, AGENTOPS 2), and multi-agent hand-offs and dependency failure tests (REPO-232,
+# REPO-233, AGENTOPS 1). Each needs an agent in the scan and answers one Agentic AI question.
+_CONFIRMATION_IN_IAC = re.compile(
+    r"[\"']?RequireConfirmation[\"']?\s*:\s*[\"']?ENABLED|\brequire_confirmation\s*=\s*\"ENABLED\""
+    r"|\brequireConfirmation\s*:\s*['\"]ENABLED|\bRETURN_CONTROL\b"
+)
+
+
+class AgentHumanConfirmationMissing(_AiNoteRule):
+    id = "REPO-224"
+    title = "No agent tool asks a person to confirm before it runs"
+    category = "Security"
+    themes = ("security-baseline",)
+    needs_types = _AGENT_TYPES
+    note_name = re.compile(r"human[-_ ]?(?:approval|confirmation)|(?:action|tool)[-_ ]?approval")
+    note_heading = re.compile(
+        r"(?i).*\b(?:human (?:approval|confirmation)|user confirmation|(?:action|tool) approval)\b.*"
+    )
+    iac = _CONFIRMATION_IN_IAC
+    recommendation = (
+        "Keep a person on the critical decisions: set RequireConfirmation: ENABLED on the action "
+        "group functions that change money, data or access (or return control to the "
+        "application with RETURN_CONTROL), so the agent asks before it acts, or write down "
+        "(docs/human-approval.md) which actions a person approves and how."
+    )
+    searched = (
+        "the IaC for an action group function with RequireConfirmation ENABLED or RETURN_CONTROL, "
+        "and the notes for a file or heading on human approval or confirmation"
+    )
+
+
+_VALIDATION_LIBRARIES = re.compile(
+    r"(?i)\bpydantic\b|\bjsonschema\b|\bmarshmallow\b|[\"']zod[\"']|\bzod\b\s*[\"'=:]|[\"']ajv[\"']"
+    r"|\baws-lambda-powertools\b[^\n]*\bvalidation\b|\baws_lambda_powertools\.utilities\.(?:validation|parser)\b"
+)
+
+
+class AgentToolInputsUnvalidated(_AiNoteRule):
+    id = "REPO-225"
+    title = "An agent's tools do not validate their inputs and outputs"
+    category = "Security"
+    themes = ("security-baseline",)
+    needs_types = _AGENT_TYPES
+    note_name = re.compile(r"tool[-_ ]?(?:validation|contracts?|schemas?)")
+    note_heading = re.compile(r"(?i).*\b(?:tool (?:validation|contracts?|schemas?)|input validation)\b.*")
+    recommendation = (
+        "Check what goes into and comes out of each tool: validate the agent's arguments against "
+        "a schema in the tool handler (Pydantic, jsonschema, Zod or the Powertools validator) "
+        "and reject what does not match, and check the tool's result before it returns to the "
+        "model."
+    )
+    searched = (
+        "the code and dependency lists outside tests for Pydantic, jsonschema, Marshmallow, Zod, "
+        "Ajv or the Powertools validator, and the notes for a file or heading on tool validation "
+        "or input validation"
+    )
+
+    def present(self, repo_path: Path) -> str | None:
+        for rel, text in http_client_files(repo_path):
+            if _VALIDATION_LIBRARIES.search(text):
+                return rel
+        for path in walk(repo_path):
+            parts = _rel_parts(path, repo_path)
+            if _DEPENDENCY_LISTS.match(path.name) and not _in_test_dir(parts):
+                if _VALIDATION_LIBRARIES.search(read_text_safe(path)):
+                    return "/".join(parts)
+        return super().present(repo_path)
+
+
+_TOOL_REGISTRY_IN_IAC = re.compile(
+    _cf_type(r"BedrockAgentCore::(?:Gateway|GatewayTarget)")
+    + r"|resource\s+\"aws_bedrockagentcore_gateway(?:_target)?\""
+)
+
+
+class ToolRegistryMissing(_AiNoteRule):
+    id = "REPO-226"
+    title = "An agent's tools are not kept in an approved registry"
+    category = "Security"
+    themes = ("security-baseline",)
+    needs_types = _AGENT_TYPES
+    note_name = re.compile(r"(?:tool|mcp)[-_ ]?(?:registry|catalog|inventory|allow[-_ ]?list)|approved[-_ ]?tools")
+    note_heading = re.compile(
+        r"(?i).*\b(?:tool (?:registry|catalog|inventory|allow ?list)|approved tools|mcp (?:servers|registry))\b.*"
+    )
+    iac = _TOOL_REGISTRY_IN_IAC
+    recommendation = (
+        "Let the agent use only tools you approved: register them behind an AgentCore gateway, "
+        "or keep a tool registry (docs/tool-registry.md) that lists each tool or MCP server, its "
+        "owner, what it can reach and the date of its last security review."
+    )
+    searched = (
+        "the IaC for an AgentCore gateway or gateway target, and the notes for a file or heading "
+        "on a tool registry, catalog, inventory or allow list"
+    )
+
+
+_GUARDRAIL_CHECK_IN_CODE = re.compile(r"\.apply_guardrail\s*\(|\bApplyGuardrailCommand\b")
+
+
+class AgentMemoryInputsUnchecked(_AiNoteRule):
+    id = "REPO-227"
+    title = "An agent writes to memory with no check on what it stores"
+    category = "Security"
+    themes = ("security-baseline",)
+    needs_types = frozenset({"bedrockagentcore_memory"})
+    note_name = re.compile(r"memory[-_ ]?(?:validation|sanitiz\w+|hygiene|policy)")
+    note_heading = re.compile(r"(?i).*\b(?:memory (?:validation|sanitiz\w+|hygiene|policy))\b.*")
+    recommendation = (
+        "Check what the agent remembers: pass content through ApplyGuardrail (or your own "
+        "validator) before it is written to AgentCore memory, so an injected instruction or "
+        "personal data does not persist and come back in a later session."
+    )
+    searched = (
+        "the code outside tests for an ApplyGuardrail call, and the notes for a file or heading on "
+        "memory validation, sanitization or memory policy"
+    )
+
+    def present(self, repo_path: Path) -> str | None:
+        for rel, text in http_client_files(repo_path):
+            if _GUARDRAIL_CHECK_IN_CODE.search(text):
+                return rel
+        return super().present(repo_path)
+
+
+_GROUNDING_IN_IAC = re.compile(
+    r"[\"']?(?:ContextualGroundingPolicyConfig|AutomatedReasoningPolicyConfig)[\"']?\s*:"
+    r"|\b(?:contextual_grounding_policy_config|automated_reasoning_policy_config)\s*\{"
+    r"|\b(?:contextualGroundingPolicyConfig|automatedReasoningPolicyConfig)\s*:"
+)
+
+
+class HallucinationUnmonitored(_AiNoteRule):
+    id = "REPO-228"
+    title = "Nothing checks an agent's answers for hallucination before they spread"
+    category = "Security"
+    themes = ("observability",)
+    needs_types = _AGENT_TYPES
+    note_name = re.compile(r"hallucinat\w+|grounding|fact[-_ ]?check\w*")
+    note_heading = re.compile(r"(?i).*\b(?:hallucinat\w+|grounding checks?|fact[- ]check\w*)\b.*")
+    iac = _GROUNDING_IN_IAC
+    recommendation = (
+        "Catch an answer the sources do not support before another agent or a user acts on it: "
+        "add a contextual grounding check or an Automated Reasoning policy to the guardrail, or "
+        "write down (docs/hallucination.md) how hallucinations are measured and stopped."
+    )
+    searched = (
+        "the IaC for a guardrail with a contextual grounding or Automated Reasoning policy, and the "
+        "notes for a file or heading on hallucination, grounding or fact checking"
+    )
+
+
+class AgentChangeHistoryMissing(_AiNoteRule):
+    id = "REPO-229"
+    title = "Changes to an agent's prompts and tools are not versioned with their reason"
+    category = "Operational Excellence"
+    themes = ("observability",)
+    needs_types = _AGENT_TYPES
+    note_name = re.compile(r"(?:prompt|agent)[-_ ]?(?:changelog|history|changes|versions?)")
+    note_heading = re.compile(
+        r"(?i).*\b(?:prompt (?:changelog|history|changes|versions?)|agent (?:changelog|history|changes))\b.*"
+    )
+    recommendation = (
+        "Version what the agent is told and can do: publish prompt versions "
+        "(AWS::Bedrock::PromptVersion) and agent aliases, and keep a change log "
+        "(docs/agent-changelog.md) that says what changed in the prompts, tools and settings, "
+        "and the business need behind it."
+    )
+    searched = (
+        "the scanned resources for a Bedrock prompt version, and the notes for a file or heading "
+        "on a prompt or agent change log, history or versions"
+    )
+
+    def present(self, repo_path: Path) -> str | None:
+        if "bedrock_prompt_version" in ai_gate.seen_types():
+            return "AWS::Bedrock::PromptVersion"
+        return super().present(repo_path)
+
+
+_DRIFT_IN_IAC = re.compile(
+    r"\bCLOUDFORMATION_STACK_DRIFT_DETECTION_CHECK\b|\bcloudformation-stack-drift-detection-check\b"
+)
+
+
+class AgentConfigDriftUnchecked(_AiNoteRule):
+    id = "REPO-230"
+    title = "Nothing detects drift in an agent's deployed configuration"
+    category = "Operational Excellence"
+    themes = ("observability",)
+    needs_types = _AGENT_TYPES
+    note_name = re.compile(r"(?:config(?:uration)?|agent)[-_ ]?drift|drift[-_ ]?detection")
+    note_heading = re.compile(r"(?i).*\b(?:configuration drift|config drift|drift detection)\b.*")
+    iac = _DRIFT_IN_IAC
+    recommendation = (
+        "Find out when the deployed agent stops matching the code: run CloudFormation drift "
+        "detection or terraform plan -detailed-exitcode on a schedule, or deploy the AWS Config "
+        "rule cloudformation-stack-drift-detection-check, and redeploy from the repo when it "
+        "reports drift."
+    )
+    searched = (
+        "the build configs for CloudFormation drift detection or terraform plan "
+        "-detailed-exitcode, the IaC for the cloudformation-stack-drift-detection-check Config "
+        "rule, and the notes for a file or heading on configuration drift"
+    )
+
+    def present(self, repo_path: Path) -> str | None:
+        _builds, drift = _tools_in_builds(repo_path, _DRIFT_TOOLS)
+        return next(iter(drift.values()), None) or super().present(repo_path)
+
+
+class AgentFeedbackLoopMissing(_AiNoteRule):
+    id = "REPO-231"
+    title = "No feedback loop feeds an agent's results back into its prompts and tools"
+    category = "Operational Excellence"
+    themes = ("observability",)
+    needs_types = _AGENT_TYPES
+    note_name = re.compile(r"feedback[-_ ]?loops?|continuous[-_ ]?improvement|agent[-_ ]?reviews?")
+    note_heading = re.compile(
+        r"(?i).*\b(?:feedback loops?|continuous improvement|agent (?:reviews?|retrospectives?))\b.*"
+    )
+    recommendation = (
+        "Close the loop: review the agent's evaluation scores, user feedback and failed tasks on "
+        "a schedule, and record (docs/agent-feedback-loop.md) what you change in its prompts, "
+        "tools and guardrails as a result."
+    )
+    searched = (
+        "the notes for a file or heading on a feedback loop, continuous improvement or agent reviews"
+    )
+
+
+class AgentHandoffMissing(_MultiAgentNoteRule):
+    id = "REPO-232"
+    title = "A multi-agent system has no hand-off procedure with escalation to a person"
+    category = "Operational Excellence"
+    themes = ("observability",)
+    note_name = re.compile(r"hand[-_ ]?offs?|agent[-_ ]?escalations?")
+    note_heading = re.compile(r"(?i).*\b(?:hand-?offs?|agent escalations?|escalat(?:e|ion) to a (?:human|person))\b.*")
+    recommendation = (
+        "Write down how work moves between agents and to people: a hand-off note "
+        "(docs/agent-handoff.md) that says what context each agent passes on, when a task goes "
+        "to a person instead, and who picks it up."
+    )
+    searched = "the notes for a file or heading on hand-offs or escalation to a person"
+
+
+_FAILURE_TEST_NAME = re.compile(r"(?i)(?:fail(?:ure|over)?|fault|chaos|outage|timeout|resilien\w*|degrad\w*)")
+
+
+class AgentFailureTestsMissing(_AiNoteRule):
+    id = "REPO-233"
+    title = "No test exercises an agent when the tools or services it depends on fail"
+    category = "Operational Excellence"
+    themes = ("resilience",)
+    needs_types = _AGENT_TYPES
+    note_name = re.compile(r"failure[-_ ]?(?:scenarios?|tests?|modes?)|test[-_ ]?scenarios?")
+    note_heading = re.compile(r"(?i).*\b(?:failure (?:scenarios?|tests?|modes?)|test scenarios?)\b.*")
+    recommendation = (
+        "Test the agent against broken dependencies: add tests that make a tool time out, a "
+        "model call throttle and a downstream service return errors, and check the agent "
+        "retries, falls back or stops cleanly; an AWS FIS experiment covers the same in a test "
+        "environment."
+    )
+    searched = (
+        "the test files for a name on failure, fault, chaos, timeout or outage, the IaC for an "
+        "AWS FIS experiment template, and the notes for a file or heading on failure scenarios"
+    )
+
+    def present(self, repo_path: Path) -> str | None:
+        found = _in_iac_text(repo_path, _FIS_IN_IAC)
+        if found:
+            return found
+        for path in walk(repo_path):
+            parts = _rel_parts(path, repo_path)
+            if (_in_test_dir(parts) or _TEST_NAME.search(path.name.lower())) \
+                    and _FAILURE_TEST_NAME.search(path.stem):
+                return "/".join(parts)
+        return super().present(repo_path)
+
+# Responsible AI lens: the workflow the system lands in (REPO-234, REPO-235, RAIUC 4), its harm
+# mitigations (REPO-236, RAIBR 4), the release-criteria metrics per dimension (REPO-237 to
+# REPO-244, RAIRC 3), monitoring in operation (REPO-245 to REPO-247, RAIMON 1) and guidance for
+# downstream users (REPO-248, REPO-249, RAIGT 1). They run for any AI workload and each answers
+# one Responsible AI lens question.
+class UserJourneyMissing(_AiNoteRule):
+    id = "REPO-234"
+    title = "An AI workload has no map of the user journey it changes"
+    themes = ("observability",)
+    note_name = re.compile(r"user[-_ ]?(?:journeys?|flows?|workflows?)|journey[-_ ]?maps?|personas?")
+    note_heading = re.compile(r"(?i).*\b(?:user (?:journeys?|flows?|workflows?)|journey maps?|personas?)\b.*")
+    recommendation = (
+        "Map where people meet the AI: a note (docs/user-journey.md) that walks the workflow "
+        "step by step, marks where the system acts or advises, and says what each user needs "
+        "to see or decide at that step."
+    )
+    searched = "the notes for a file or heading on a user journey, user flow, journey map or personas"
+
+
+class AccessibilityRequirementsMissing(_AiNoteRule):
+    id = "REPO-235"
+    title = "An AI workload has no accessibility requirements for its user groups"
+    themes = ("observability",)
+    note_name = re.compile(r"accessib\w+|a11y|wcag")
+    note_heading = re.compile(r"(?i).*\b(?:accessib\w+|a11y|wcag)\b.*")
+    recommendation = (
+        "Name who must be able to use it: an accessibility note (docs/accessibility.md) that lists "
+        "the user groups, the needs each has (screen readers, plain language, other languages) "
+        "and the standard you meet, such as WCAG 2.2 AA."
+    )
+    searched = "the notes for a file or heading on accessibility, a11y or WCAG"
+
+
+class HarmMitigationPlanMissing(_AiNoteRule):
+    id = "REPO-236"
+    title = "An AI workload has no plan that weighs trade-offs and assigns each harm a mitigation"
+    themes = ("security-baseline",)
+    category = "Security"
+    note_name = re.compile(r"harms?|risk[-_ ]?(?:register|assessment|mitigations?)|(?:ai[-_ ]?)?trade[-_ ]?offs?")
+    note_heading = re.compile(
+        r"(?i).*\b(?:harms?|harm mitigations?|risk (?:register|assessment|mitigations?)|trade-?offs?)\b.*"
+    )
+    recommendation = (
+        "Write the mitigation plan down: a risk register (docs/ai-risks.md) that lists each "
+        "potential harm, the trade-off you made between the use case's objectives, the mitigation "
+        "(a guardrail, a filter, a human review, a narrower scope) and who implements it."
+    )
+    searched = (
+        "the notes for a file or heading on harms, a risk register, assessment or mitigations, or "
+        "trade-offs"
+    )
+
+
+def _eval_texts(repo_path: Path) -> Iterator[tuple[str, str]]:
+    """The places an evaluation is written: build configs and the package.json scripts they
+    run, code outside tests, dependency lists, and files under an eval or ground-truth path."""
+    builds = build_texts(repo_path)
+    yield from _build_places(repo_path, builds)
+    yield from http_client_files(repo_path)
+    for path in walk(repo_path):
+        parts = _rel_parts(path, repo_path)
+        rel = "/".join(parts)
+        if _in_test_dir(parts):
+            continue
+        if _DEPENDENCY_LISTS.match(path.name) or _EVAL_PATH.search(rel) \
+                or path.name.lower().startswith("promptfooconfig"):
+            yield rel, read_text_safe(path)
+
+
+class _EvalDimensionRule(_RepoRule):
+    """RAIRC 3: an AI workload whose evaluations measure no metric for one responsible AI
+    dimension. Quiet with no build config (REPO-002's finding)."""
+
+    category = "Operational Excellence"
+    severity = "Low"
+    themes = ("observability",)
+    dimension: ClassVar[str]
+    metric: ClassVar[re.Pattern[str]]
+    named: ClassVar[str]
+
+    def run(self, repo_path: Path, language: str = "typescript") -> List[Finding]:
+        if not ai_gate.active():
+            return []
+        builds = build_texts(repo_path)
+        if not builds:
+            return []
+        for rel, text in _eval_texts(repo_path):
+            # A file's name counts only under an eval path (evals/robustness.yaml).
+            if (_EVAL_PATH.search(rel) and self.metric.search(rel)) or self.metric.search(text):
+                return []
+        return [self._finding(
+            f"Searched the build configs, the code outside tests, the dependency lists and the "
+            f"eval files for a {self.dimension} metric ({self.named}); found none",
+            file=builds[0][0],
+        )]
+
+
+class SafetyMetricMissing(_EvalDimensionRule):
+    id = "REPO-237"
+    title = "An AI workload's evaluations measure no safety or harmful-output metric"
+    themes = ("observability",)
+    dimension = "safety"
+    metric = re.compile(r"(?i)\btoxic\w*|\bdetoxify\b|\bharmful(?:ness)?\b|\bllama[-_ ]?guard\b|\bsafety[-_ ]?(?:score|eval\w*|metric)")
+    named = "toxicity, harmfulness, Detoxify or Llama Guard"
+    recommendation = (
+        "Measure harmful output before release: score a set of risky prompts for toxicity and "
+        "harmfulness (fmeval toxicity, a Bedrock evaluation job, Detoxify or Llama Guard) and set "
+        "the bar the release must meet."
+    )
+
+
+class VeracityMetricMissing(_EvalDimensionRule):
+    id = "REPO-238"
+    title = "An AI workload's evaluations measure no veracity metric"
+    themes = ("observability",)
+    dimension = "veracity"
+    metric = re.compile(r"(?i)\bfactual\w*|\bfaithfulness\b|\bgroundedness\b|\bhallucinat\w+|\bcorrectness\b|\bragas\b")
+    named = "factual accuracy, faithfulness, groundedness, hallucination or Ragas"
+    recommendation = (
+        "Measure whether answers are true: score faithfulness and factual accuracy against the "
+        "ground-truth set (Ragas, fmeval factual knowledge, a Bedrock evaluation job) and set "
+        "the bar the release must meet."
+    )
+
+
+class RobustnessMetricMissing(_EvalDimensionRule):
+    id = "REPO-239"
+    title = "An AI workload's evaluations measure no robustness to input variation"
+    themes = ("observability",)
+    dimension = "robustness"
+    metric = re.compile(r"(?i)\brobust\w*|\bperturb\w*|\btypos?\b|\bparaphras\w+|\btextattack\b")
+    named = "robustness, perturbation, typos or paraphrases"
+    recommendation = (
+        "Measure how answers hold up when the input changes: rerun the evaluation set with "
+        "typos, paraphrases and reordered context (fmeval semantic robustness, TextAttack) and "
+        "check the scores stay above the bar."
+    )
+
+
+class PrivacyMetricMissing(_EvalDimensionRule):
+    id = "REPO-240"
+    title = "An AI workload's evaluations measure no privacy protection"
+    themes = ("observability",)
+    dimension = "privacy"
+    metric = re.compile(r"(?i)\bpii\b|\bprivacy\b|\bpresidio\b|\bmembership[-_ ]?inference\b|\bdata[-_ ]?leak\w*")
+    named = "PII, privacy, Presidio, membership inference or data leakage"
+    recommendation = (
+        "Measure whether the system leaks personal data: probe it for PII and training-data "
+        "leakage (Presidio on the outputs, a PII red-team suite) and set the bar the release "
+        "must meet."
+    )
+
+
+class ControllabilityMetricMissing(_EvalDimensionRule):
+    id = "REPO-241"
+    title = "An AI workload's evaluations measure no user controllability"
+    themes = ("observability",)
+    dimension = "controllability"
+    metric = re.compile(r"(?i)\bcontrollab\w+|\bsteerab\w+|\binstruction[-_ ]?following\b|\brefusals?\b|\bopt[-_ ]?out\b")
+    named = "controllability, steerability, instruction following or refusals"
+    recommendation = (
+        "Measure whether users can steer the system: test that it follows their instructions, "
+        "honours an opt-out or a correction, and refuses when it should, and set the bar the "
+        "release must meet."
+    )
+
+
+class ExplainabilityMetricMissing(_EvalDimensionRule):
+    id = "REPO-242"
+    title = "An AI workload's evaluations measure no explainability"
+    themes = ("observability",)
+    dimension = "explainability"
+    metric = re.compile(r"(?i)\bshap\b|\bSHAPConfig\b|\blime\b|\bcaptum\b|\bexplainab\w+|\bfeature[-_ ]?attribution")
+    named = "SHAP, LIME, Captum, explainability or feature attribution"
+    recommendation = (
+        "Measure whether behaviour can be explained: compute feature attributions (SageMaker "
+        "Clarify SHAP, LIME, Captum) or check that answers cite their sources, and set the bar "
+        "the release must meet."
+    )
+
+
+class SecurityMetricMissing(_EvalDimensionRule):
+    id = "REPO-243"
+    title = "An AI workload's evaluations measure no security risk"
+    themes = ("observability",)
+    dimension = "security"
+    metric = re.compile(
+        r"(?i)\bgarak\b|\bpyrit\b|\bpromptfoo\s+redteam\b|\bjailbreak\w*|\bprompt[-_ ]?injection\b|\bred[-_ ]?team\w*"
+    )
+    named = "jailbreaks, prompt injection, garak, PyRIT or a red team"
+    recommendation = (
+        "Measure how the system holds up to attack: score jailbreak and prompt-injection suites "
+        "(promptfoo redteam, garak, PyRIT) and set the attack success rate the release must stay "
+        "under."
+    )
+
+
+class TransparencyMetricMissing(_EvalDimensionRule):
+    id = "REPO-244"
+    title = "An AI workload's evaluations measure no transparency quality"
+    themes = ("observability",)
+    dimension = "transparency"
+    metric = re.compile(r"(?i)\btransparen\w+|\bcitations?\b|\bsource[-_ ]?attribution\b|\bdisclos\w+")
+    named = "transparency, citations, source attribution or disclosure"
+    recommendation = (
+        "Measure whether users can tell what they are dealing with: check that answers disclose "
+        "they come from AI and cite their sources, and score citation accuracy, against a bar "
+        "the release must meet."
+    )
+
+
+class MonitoringConsentMissing(_AiNoteRule):
+    id = "REPO-245"
+    title = "An AI workload has no note on consent for monitoring production data"
+    themes = ("data-protection",)
+    category = "Security"
+    note_name = re.compile(r"consent|privacy[-_ ]?(?:notice|policy)|data[-_ ]?(?:collection|retention)")
+    note_heading = re.compile(r"(?i).*\b(?:consent|privacy (?:notice|policy)|data (?:collection|retention))\b.*")
+    recommendation = (
+        "Say what users agreed to: a note (docs/monitoring-consent.md) on which production "
+        "prompts, responses and feedback are captured for monitoring, how users are told and "
+        "consent, and how long the data is kept."
+    )
+    searched = "the notes for a file or heading on consent, a privacy notice or policy, or data collection"
+
+
+_DRIFT_MONITOR_IN_IAC = re.compile(
+    _cf_type(r"SageMaker::(?:MonitoringSchedule|DataQualityJobDefinition|ModelQualityJobDefinition)")
+    + r"|resource\s+\"aws_sagemaker_(?:monitoring_schedule|data_quality_job_definition)\""
+    r"|ANOMALY_DETECTION_BAND|" + _cf_type(r"CloudWatch::AnomalyDetector")
+)
+_DRIFT_TOOLS_PATTERN = re.compile(r"(?i)\bevidently\b|\bwhylogs\b|\balibi[-_]detect\b|\bnannyml\b|\bdrift\b")
+
+
+class AiDriftDetectionMissing(_AiNoteRule):
+    id = "REPO-246"
+    title = "An AI workload has no baseline or drift detection in operation"
+    themes = ("observability",)
+    note_name = re.compile(r"drift|baselines?")
+    note_heading = re.compile(r"(?i).*\b(?:drift|baselines?|model monitoring)\b.*")
+    iac = _DRIFT_MONITOR_IN_IAC
+    recommendation = (
+        "Know when the system moves off its release baseline: schedule SageMaker Model Monitor "
+        "(data or model quality) or a CloudWatch anomaly detector on the quality metrics, or run "
+        "a drift library (Evidently, whylogs, NannyML) on captured traffic, and alert on drift."
+    )
+    searched = (
+        "the IaC for a SageMaker monitoring schedule or quality job, or a CloudWatch anomaly "
+        "detector, the code and dependency lists for Evidently, whylogs, Alibi Detect or NannyML, "
+        "and the notes for a file or heading on drift or baselines"
+    )
+
+    def present(self, repo_path: Path) -> str | None:
+        for rel, text in _eval_texts(repo_path):
+            if _DRIFT_TOOLS_PATTERN.search(text):
+                return rel
+        return super().present(repo_path)
+
+
+_DASHBOARD_IN_IAC = re.compile(
+    _cf_type(r"CloudWatch::Dashboard") + r"|resource\s+\"aws_cloudwatch_dashboard\""
+    r"|\bcloudwatch\.(?:Cfn)?Dashboard\("
+)
+
+
+class AiMonitoringDashboardMissing(_AiNoteRule):
+    id = "REPO-247"
+    title = "An AI workload has no monitoring dashboard"
+    themes = ("observability",)
+    note_name = re.compile(r"dashboards?")
+    note_heading = re.compile(r"(?i).*\bdashboards?\b.*")
+    iac = _DASHBOARD_IN_IAC
+    recommendation = (
+        "Put the release criteria on one screen: a CloudWatch dashboard with the quality, safety, "
+        "latency and cost metrics of the AI system next to their release thresholds, so an "
+        "operator sees a deviation at a glance."
+    )
+    searched = "the IaC for a CloudWatch dashboard, and the notes for a file or heading on a dashboard"
+
+
+class TransparencyPlanMissing(_AiNoteRule):
+    id = "REPO-248"
+    title = "An AI workload has no transparency strategy or plan to keep its documentation current"
+    themes = ("observability",)
+    note_name = re.compile(r"transparen\w+|disclosures?|ai[-_ ]?notice")
+    note_heading = re.compile(r"(?i).*\b(?:transparen\w+|disclosures?|ai notice|documentation (?:plan|updates?))\b.*")
+    recommendation = (
+        "Decide what you tell people and keep it true: a transparency note (docs/transparency.md) "
+        "that says who learns what about the system, where it is published, and when the model "
+        "card and user guidance are updated (each release, each model change)."
+    )
+    searched = (
+        "the notes for a file or heading on transparency, disclosures, an AI notice or a "
+        "documentation plan"
+    )
+
+
+class UserGuidanceMissing(_AiNoteRule):
+    id = "REPO-249"
+    title = "An AI workload has no guide on reading its outputs and changing its behaviour responsibly"
+    themes = ("observability",)
+    note_name = re.compile(r"user[-_ ]?guides?|usage[-_ ]?guide\w*|responsible[-_ ]?use|how[-_ ]?to[-_ ]?use")
+    note_heading = re.compile(
+        r"(?i).*\b(?:user guides?|usage guid\w+|responsible use|how to use|understanding (?:the )?outputs?)\b.*"
+    )
+    recommendation = (
+        "Tell users how to use it well: a user guide (docs/user-guide.md) that explains what the "
+        "outputs mean and how sure the system is, and which settings or prompts users may change "
+        "and what to avoid."
+    )
+    searched = (
+        "the notes for a file or heading on a user guide, usage guidance, responsible use or "
+        "understanding the outputs"
+    )
+
+# Generative AI lens, the open Medium practices on Bedrock calls and operations: input
+# validation (REPO-250, GENSEC 4), access monitoring (REPO-251, GENSEC 1), a model catalog
+# (REPO-252, GENREL 4), retries on model calls (REPO-253, GENREL 3), performance metrics
+# (REPO-254, GENPERF 1), user feedback (REPO-255, GENOPS 1), and token length, prompt caching and
+# input tagging (REPO-256 to REPO-258, GENCOST 3). They run only for an AI workload.
+_INPUT_VALIDATION_IN_CODE = re.compile(
+    r"(?i)\bpydantic\b|\bjsonschema\b|\bmarshmallow\b|\bzod\b|\bajv\b|\bsaniti[sz]\w*|\bvalidat\w*\("
+    r"|\.apply_guardrail\s*\(|\bApplyGuardrailCommand\b|\bescape\w*\(|\bbleach\b"
+)
+
+
+class BedrockInputUnvalidated(_AiCodeRule):
+    id = "REPO-250"
+    title = "Code passes input to a Bedrock model with no validation or sanitizing"
+    category = "Security"
+    severity = "Low"
+    themes = ("security-baseline",)
+    answer = _INPUT_VALIDATION_IN_CODE
+    lacking = (
+        "no input validation (a schema library, a validate or sanitize function, or an "
+        "ApplyGuardrail check) in the file, the local modules it imports, or the files that "
+        "import it"
+    )
+    recommendation = (
+        "Check user input before it reaches the model: validate its type, length and format "
+        "against a schema (Pydantic, Zod), strip or escape markup and control characters, and "
+        "screen it with ApplyGuardrail, so a crafted input cannot change the prompt's meaning."
+    )
+
+
+_GENAI_ACCESS_MONITORING_IN_IAC = re.compile(
+    _cf_type(r"CloudTrail::(?:Trail|EventDataStore)") + r"|resource\s+\"aws_cloudtrail(?:_event_data_store)?\""
+    r"|\bcloudtrail\.(?:Trail|CfnTrail|CfnEventDataStore)\("
+    r"|[\"']?source[\"']?\s*[:=]\s*\[?\s*[\"']aws\.bedrock(?:-agentcore)?[\"']"
+)
+
+
+class GenAiAccessUnmonitored(_AiNoteRule):
+    id = "REPO-251"
+    title = "Nothing records or alerts on who calls the generative AI services"
+    category = "Security"
+    themes = ("observability",)
+    note_name = re.compile(r"access[-_ ]?(?:monitoring|logs?|audit\w*)|audit[-_ ]?logs?")
+    note_heading = re.compile(r"(?i).*\b(?:access (?:monitoring|logs?|audit\w*)|audit logs?)\b.*")
+    iac = _GENAI_ACCESS_MONITORING_IN_IAC
+    recommendation = (
+        "Record and watch access to the models: keep a CloudTrail trail (or event data store) "
+        "for the Bedrock and AgentCore API calls, and an EventBridge rule on aws.bedrock events "
+        "that alerts on calls from unexpected principals or to unapproved models."
+    )
+    searched = (
+        "the IaC for a CloudTrail trail or event data store or an EventBridge rule on aws.bedrock "
+        "events, and the notes for a file or heading on access monitoring or audit logs"
+    )
+
+
+_LITERAL_MODEL_ID = re.compile(
+    r"[\"'](?:(?:us|eu|apac|global|us-gov)\.)?(?:anthropic|amazon|meta|mistral|cohere|ai21|deepseek|writer|qwen|openai)"
+    r"\.[\w.-]+?(?::\d+)?[\"']"
+)
+
+
+class ModelCatalogMissing(_RepoRule):
+    id = "REPO-252"
+    title = "Foundation model IDs are hardcoded across the code, with no model catalog"
+    category = "Reliability"
+    severity = "Low"
+    themes = ("resilience",)
+    recommendation = (
+        "Keep the models you use in one catalog: a config file, an SSM parameter per use or an "
+        "inference profile that names each approved model ID and version, read by the code, so "
+        "a model change or rollback is one reviewed edit and not a search through the code."
+    )
+
+    def run(self, repo_path: Path, language: str = "typescript") -> List[Finding]:
+        if not ai_gate.active():
+            return []
+        files = sorted(rel for rel, text in http_client_files(repo_path) if _LITERAL_MODEL_ID.search(text))
+        if len(files) < 2:
+            return []
+        return [self._finding(
+            f"Literal Bedrock model IDs in {len(files)} code files outside tests: {_listed(files, 5)}",
+            file=files[0],
+        )]
+
+
+_RETRY_IN_CODE = re.compile(
+    r"(?i)\bretries\s*[=:]|\bretry_mode\b|\bmax_?attempts\b|\bmaxAttempts\b|\btenacity\b|\bbackoff\b"
+    r"|@retry\b|\bretryStrategy\b|\bwithRetry\b|\bStandardRetryStrategy\b|\bAdaptiveRetryStrategy\b"
+)
+
+
+class BedrockCallWithoutRetry(_AiCodeRule):
+    id = "REPO-253"
+    title = "Code calls a Bedrock model with no retry or backoff setting"
+    category = "Reliability"
+    severity = "Low"
+    themes = ("resilience",)
+    answer = _RETRY_IN_CODE
+    lacking = (
+        "no retry setting (botocore retries or retry_mode, maxAttempts, a retry strategy, "
+        "tenacity or backoff) in the file, the local modules it imports, or the files that "
+        "import it"
+    )
+    recommendation = (
+        "Recover from throttling and transient errors on purpose: configure the client's retries "
+        "(botocore Config(retries={'mode': 'adaptive', 'max_attempts': ...}), maxAttempts in the "
+        "JavaScript SDK) or wrap the call in a backoff, and cap the attempts so a loop cannot run "
+        "up cost."
+    )
+
+
+_GENAI_METRICS = re.compile(
+    r"(?i)\bput_metric_data\b|\bPutMetricDataCommand\b|\bputMetricData\b|\b_aws\b[\"']?\s*:\s*\{[^}]*CloudWatchMetrics"
+    r"|\baws_lambda_powertools\b[^\n]*\bmetrics\b|\bfrom aws_lambda_powertools import Metrics\b|\bMetrics\(\s*namespace"
+    r"|@aws-lambda-powertools/metrics|\bInvocationLatency\b|\bOutputTokenCount\b|\bInputTokenCount\b"
+    r"|\bopentelemetry\b"
+)
+
+
+class GenAiPerformanceMetricsMissing(_RepoRule):
+    id = "REPO-254"
+    title = "A generative AI workload collects no latency, token or quality metrics"
+    category = "Performance Efficiency"
+    severity = "Low"
+    themes = ("observability",)
+    recommendation = (
+        "Measure the model in production: alarm or chart the Bedrock metrics (InvocationLatency, "
+        "InputTokenCount, OutputTokenCount, InvocationThrottles), and emit your own metrics for "
+        "time to first token and answer quality (CloudWatch embedded metrics, Powertools "
+        "Metrics or OpenTelemetry)."
+    )
+
+    def run(self, repo_path: Path, language: str = "typescript") -> List[Finding]:
+        if not ai_gate.active() or not _holds_iac(repo_path):
+            return []
+        for _rel, text in iac_texts(repo_path):
+            if _GENAI_METRICS.search(text) or "AWS/Bedrock" in text:
+                return []
+        for _rel, text in http_client_files(repo_path):
+            if _GENAI_METRICS.search(text):
+                return []
+        return [self._finding(
+            "Searched the IaC for alarms or dashboards on AWS/Bedrock metrics and the code outside "
+            "tests for put_metric_data, embedded metrics, Powertools Metrics or OpenTelemetry; "
+            "found none"
+        )]
+
+
+_FEEDBACK_IN_CODE = re.compile(r"(?i)\b(?:user_?)?feedback\b|\bthumbs_?(?:up|down)\b|\brating\b")
+
+
+class UserFeedbackUncollected(_AiNoteRule):
+    id = "REPO-255"
+    title = "A generative AI workload collects no user feedback on its answers"
+    themes = ("observability",)
+    note_name = re.compile(r"(?:user[-_ ]?)?feedback")
+    note_heading = re.compile(r"(?i).*\b(?:user feedback|feedback)\b.*")
+    recommendation = (
+        "Ask users how the answer was: capture a rating or thumbs up or down with each response "
+        "(and an optional comment), store it with the prompt and model version, and review the "
+        "low-rated answers to improve prompts and retrieval."
+    )
+    searched = (
+        "the code outside tests and the IaC for a feedback, rating or thumbs-up store or handler, "
+        "and the notes for a file or heading on user feedback"
+    )
+
+    def present(self, repo_path: Path) -> str | None:
+        for rel, text in list(http_client_files(repo_path)) + list(iac_texts(repo_path)):
+            if _FEEDBACK_IN_CODE.search(text):
+                return rel
+        return super().present(repo_path)
+
+
+_TOKEN_COUNT_IN_CODE = re.compile(
+    r"(?i)\bcount_tokens\b|\bCountTokens(?:Command)?\b|\btiktoken\b|\btokenizer\b|\btruncat\w*|\bnum_tokens\b"
+    r"|\btoken_count\b|\bmax_input_tokens\b"
+)
+
+
+class PromptLengthUnmanaged(_RepoRule):
+    id = "REPO-256"
+    title = "Code sends prompts to a Bedrock model with no token counting or trimming"
+    category = "Cost"
+    severity = "Low"
+    themes = ("finops",)
+    recommendation = (
+        "Keep prompts as short as the task needs: count tokens before the call (the Bedrock "
+        "CountTokens API or the model's tokenizer), trim conversation history and retrieved "
+        "context to a budget, and drop boilerplate from the system prompt. Input tokens are "
+        "billed on every call."
+    )
+
+    def run(self, repo_path: Path, language: str = "typescript") -> List[Finding]:
+        if not ai_gate.active():
+            return []
+        calls = [rel for rel, _text in bedrock_call_files(repo_path)]
+        if not calls:
+            return []
+        if any(_TOKEN_COUNT_IN_CODE.search(text) for _rel, text in http_client_files(repo_path)):
+            return []
+        return [self._finding(
+            f"Bedrock model calls in {_listed(calls, 5)}; searched the code outside tests for "
+            "token counting or trimming (CountTokens, a tokenizer, tiktoken, truncation); found none",
+            file=calls[0],
+        )]
+
+
+_CACHE_POINT = re.compile(r"(?i)\bcache_?point\b|\bcachePoint\b|\bcache_control\b")
+
+
+class PromptCachingUnused(_AiCodeRule):
+    id = "REPO-257"
+    title = "Code calls a Bedrock model with no prompt caching"
+    category = "Cost"
+    severity = "Low"
+    themes = ("finops",)
+    answer = _CACHE_POINT
+    lacking = (
+        "no cachePoint or cache_control block in the file, the local modules it imports, or the "
+        "files that import it"
+    )
+    recommendation = (
+        "Cache the part of the prompt that repeats: put a cachePoint after the system prompt, "
+        "tool definitions or long shared context in the Converse request (cache_control in the "
+        "Anthropic message body), so later calls read it from the cache at a lower price and "
+        "latency. Check the model supports prompt caching."
+    )
+
+
+_INPUT_TAGS = re.compile(r"(?i)\bguardContent\b|amazon-bedrock-guardrails-guardContent|\binput_?tags?\b|\btagSuffix\b")
+
+
+class GuardrailInputUntagged(_RepoRule):
+    id = "REPO-258"
+    title = "Guarded Bedrock calls send the whole prompt through the guardrail, with no input tags"
+    category = "Cost"
+    severity = "Low"
+    themes = ("finops",)
+    recommendation = (
+        "Filter only the user's text: mark it with a guardContent block in Converse (input tags "
+        "in InvokeModel), so the guardrail evaluates that part and not the system prompt and "
+        "retrieved context on every call. Guardrails are billed by the text they evaluate."
+    )
+
+    def run(self, repo_path: Path, language: str = "typescript") -> List[Finding]:
+        if not ai_gate.active():
+            return []
+        guarded = [rel for rel, text in bedrock_call_files(repo_path) if _GUARDRAIL_IN_CALL.search(text)]
+        if not guarded:
+            return []  # no guardrail on a call is REPO-199's finding
+        if any(_INPUT_TAGS.search(text) for _rel, text in http_client_files(repo_path)):
+            return []
+        return [self._finding(
+            f"Bedrock calls with a guardrail in {_listed(guarded, 5)}; searched the code outside "
+            "tests for a guardContent block or guardrail input tags; found none",
+            file=guarded[0],
+        )]
+
+# Machine Learning lens, the open Medium practices of a SageMaker workload: data privacy,
+# lineage and retention (REPO-259 to REPO-261, MLSEC 3), human review, explainability, drift and
+# retraining (REPO-262 to REPO-266, MLPERF 6), environment skew (REPO-267, MLOPS 6) and the cost
+# levers of training (REPO-268 to REPO-276, MLCOST 4). Each needs a SageMaker resource in the
+# scan and answers one Machine Learning lens question.
+def _ml_texts(repo_path: Path) -> Iterator[tuple[str, str]]:
+    """The IaC, the build configs, the code outside tests and the dependency lists."""
+    yield from iac_texts(repo_path)
+    yield from _eval_texts(repo_path)
+
+
+def _ml_signal(repo_path: Path, pattern: re.Pattern[str]) -> str | None:
+    for rel, text in _ml_texts(repo_path):
+        if pattern.search(text):
+            return rel
+    return None
+
+
+class _MlSignalNoteRule(_MlNoteRule):
+    """An ML note rule that a signal in the IaC, builds, code or dependency lists also answers."""
+
+    signal: ClassVar[re.Pattern[str] | None] = None
+
+    def present(self, repo_path: Path) -> str | None:
+        found = _ml_signal(repo_path, self.signal) if self.signal else None
+        return found or super().present(repo_path)
+
+
+class MlSensitiveDataUnprotected(_MlSignalNoteRule):
+    id = "REPO-259"
+    title = "An ML workload does not find or mask sensitive data in its datasets"
+    themes = ("data-protection",)
+    signal = re.compile(
+        r"(?i)" + _cf_type(r"Macie::Session") + r"|resource\s+\"aws_macie2_account\""
+        r"|\bdetect_pii_entities\b|\bDetectPiiEntities\b|\bpresidio\b|\bcontains_pii\b|\bpii[-_ ]?(?:redact|mask)\w*"
+    )
+    note_name = re.compile(r"(?:data[-_ ]?)?(?:privacy|anonymi[sz]\w+|pseudonymi[sz]\w+|de[-_ ]?identif\w+)")
+    note_heading = re.compile(r"(?i).*\b(?:data privacy|anonymi[sz]\w+|pseudonymi[sz]\w+|de-?identif\w+)\b.*")
+    recommendation = (
+        "Find and mask personal data before training: scan the buckets with Macie, redact PII "
+        "with Comprehend DetectPiiEntities or Presidio in the processing step, and train on the "
+        "masked copy."
+    )
+    searched = (
+        "the IaC for Macie, the code and dependency lists for Comprehend DetectPiiEntities, "
+        "Presidio or PII redaction, and the notes for a file or heading on data privacy, "
+        "anonymization or de-identification"
+    )
+
+
+class MlLineageUntracked(_MlSignalNoteRule):
+    id = "REPO-260"
+    title = "An ML workload tracks no lineage from data to model"
+    themes = ("observability",)
+    signal = re.compile(
+        r"(?i)\blineage\b|\bsagemaker\.experiments\b|\bmlflow\b|\bopenlineage\b|\bdvc\b"
+        r"|" + _cf_type(r"SageMaker::(?:Pipeline|ModelPackageGroup)") + r"|resource\s+\"aws_sagemaker_(?:pipeline|model_package_group)\""
+    )
+    note_name = re.compile(r"lineage|provenance")
+    note_heading = re.compile(r"(?i).*\b(?:lineage|provenance)\b.*")
+    recommendation = (
+        "Know which data made which model: run training in SageMaker Pipelines or track it with "
+        "SageMaker Experiments or MLflow, and register models in a model package group, so each "
+        "model links to the data, code and parameters that produced it."
+    )
+    searched = (
+        "the IaC for a SageMaker pipeline or model package group, the code and dependency lists for "
+        "lineage tracking, SageMaker Experiments, MLflow, OpenLineage or DVC, and the notes for a "
+        "file or heading on lineage or provenance"
+    )
+
+
+class MlDataRetentionMissing(_MlSignalNoteRule):
+    id = "REPO-261"
+    title = "An ML workload keeps its data with no retention or expiry rule"
+    themes = ("data-protection",)
+    signal = re.compile(
+        r"[\"']?LifecycleConfiguration[\"']?\s*:|resource\s+\"aws_s3_bucket_lifecycle_configuration\""
+        r"|\blifecycle_rule\s*\{|\blifecycleRules\s*:|\bTtlDuration\b|\bttl_duration\b"
+    )
+    note_name = re.compile(r"(?:data[-_ ]?)?retention|data[-_ ]?minimi[sz]\w+")
+    note_heading = re.compile(r"(?i).*\b(?:data retention|retention|data minimi[sz]\w+)\b.*")
+    recommendation = (
+        "Keep only the data the model needs: add S3 lifecycle rules that expire raw and "
+        "intermediate training data and captured inference data after the period you set, a TTL "
+        "on feature group records, and drop the columns the model does not use."
+    )
+    searched = (
+        "the IaC for an S3 lifecycle rule or a feature group TTL, and the notes for a file or "
+        "heading on data retention or data minimization"
+    )
+
+
+class MlHumanReviewMissing(_MlSignalNoteRule):
+    id = "REPO-262"
+    title = "An ML workload has no human review of its predictions"
+    category = "Performance Efficiency"
+    themes = ("observability",)
+    signal = re.compile(
+        _cf_type(r"SageMaker::(?:FlowDefinition|HumanTaskUi)")
+        + r"|resource\s+\"aws_sagemaker_(?:flow_definition|human_task_ui)\"|\bstart_human_loop\b|\bStartHumanLoop\b"
+    )
+    note_name = re.compile(r"human[-_ ]?(?:review|in[-_ ]the[-_ ]loop)|hitl|a2i")
+    note_heading = re.compile(r"(?i).*\b(?:human review|human[- ]in[- ]the[- ]loop|augmented ai)\b.*")
+    recommendation = (
+        "Send low-confidence predictions to a person: an Amazon A2I flow definition with a "
+        "confidence threshold, so people review a sample and the doubtful cases, and their "
+        "labels feed retraining."
+    )
+    searched = (
+        "the IaC for an A2I flow definition or human task UI, the code for StartHumanLoop, and the "
+        "notes for a file or heading on human review or human in the loop"
+    )
+
+
+class MlExplainabilityUnevaluated(_MlSignalNoteRule):
+    id = "REPO-263"
+    title = "An ML workload does not evaluate model explainability"
+    category = "Performance Efficiency"
+    themes = ("observability",)
+    signal = re.compile(
+        r"(?i)\bshap\b|\bSHAPConfig\b|\bModelExplainability\w*|\blime\b|\bcaptum\b|\bexplainab\w+"
+    )
+    note_name = re.compile(r"explainab\w+|interpretab\w+")
+    note_heading = re.compile(r"(?i).*\b(?:explainab\w+|interpretab\w+)\b.*")
+    recommendation = (
+        "Check why the model predicts what it does: run SageMaker Clarify explainability (SHAP) "
+        "on each candidate and as a model explainability monitor on the endpoint, and review "
+        "the top features when they shift."
+    )
+    searched = (
+        "the IaC, builds, code and dependency lists for SHAP, SageMaker Clarify explainability, "
+        "LIME or Captum, and the notes for a file or heading on explainability"
+    )
+
+
+class MlDataDriftUnmonitored(_MlSignalNoteRule):
+    id = "REPO-264"
+    title = "An ML workload does not monitor its input data for drift"
+    category = "Performance Efficiency"
+    themes = ("observability",)
+    signal = re.compile(
+        _cf_type(r"SageMaker::DataQualityJobDefinition") + r"|resource\s+\"aws_sagemaker_data_quality_job_definition\""
+        r"|\bDefaultModelMonitor\b|\bDataQualityMonitoringConfig\b|(?i:\bevidently\b|\bwhylogs\b|\balibi[-_]detect\b|\bnannyml\b)"
+    )
+    note_name = re.compile(r"data[-_ ]?drift|drift")
+    note_heading = re.compile(r"(?i).*\b(?:data drift|drift)\b.*")
+    recommendation = (
+        "Watch the inputs for drift: baseline the training data and schedule a SageMaker Model "
+        "Monitor data quality job on the endpoint (or run Evidently, whylogs or NannyML on "
+        "captured traffic), and alert when the feature distributions move."
+    )
+    searched = (
+        "the IaC for a data quality job definition, the code and dependency lists for "
+        "DefaultModelMonitor, Evidently, whylogs, Alibi Detect or NannyML, and the notes for a "
+        "file or heading on data drift"
+    )
+
+
+_RETRAIN_TRIGGER = re.compile(
+    r"\bStartPipelineExecution\b|\bstart_pipeline_execution\b|[\"']?SageMakerPipelineParameters[\"']?\s*:"
+    r"|\bsagemaker_pipeline_parameters\s*\{|\bSageMakerPipeline\(|\bschedule_expression\b"
+)
+
+
+class AutomatedRetrainingMissing(_MlSignalNoteRule):
+    id = "REPO-265"
+    title = "An ML workload has no automated retraining trigger"
+    category = "Performance Efficiency"
+    themes = ("resilience",)
+    signal = _RETRAIN_TRIGGER
+    note_name = re.compile(r"re[-_ ]?train\w*")
+    note_heading = re.compile(r"(?i).*\bre-?train\w*\b.*")
+    recommendation = (
+        "Retrain without a person remembering to: trigger the training pipeline from an "
+        "EventBridge schedule or a Model Monitor violation (an EventBridge rule whose target "
+        "starts the SageMaker pipeline), and gate the new model on its evaluation before it "
+        "replaces the old one."
+    )
+    searched = (
+        "the IaC and code for an EventBridge rule or schedule that starts a SageMaker pipeline "
+        "(StartPipelineExecution, SageMakerPipelineParameters), and the notes for a file or "
+        "heading on retraining"
+    )
+
+
+class FeatureReviewMissing(_MlNoteRule):
+    id = "REPO-266"
+    title = "An ML workload has no review of new data and features before retraining"
+    category = "Performance Efficiency"
+    themes = ("observability",)
+    note_name = re.compile(r"feature[-_ ]?(?:review|catalog|store)|data[-_ ]?review|retrain\w*[-_ ]?review")
+    note_heading = re.compile(r"(?i).*\b(?:feature (?:review|catalog)|data review|retraining review)\b.*")
+    recommendation = (
+        "Decide on purpose what the next model learns from: review new data sources and "
+        "candidate features on a schedule (docs/feature-review.md), and record which you add to "
+        "the next retraining and why."
+    )
+    searched = "the notes for a file or heading on a feature review or catalog, a data review or a retraining review"
+
+
+class MlEnvironmentSkewUnchecked(_MlSignalNoteRule):
+    id = "REPO-267"
+    title = "Nothing checks an ML workload's environments for configuration skew"
+    category = "Operational Excellence"
+    themes = ("observability",)
+    signal = _DRIFT_IN_IAC
+    note_name = re.compile(r"(?:environment|env|training[-_ ]?serving)[-_ ]?(?:skew|parity|drift)")
+    note_heading = re.compile(r"(?i).*\b(?:environment (?:skew|parity|drift)|training-serving skew)\b.*")
+    recommendation = (
+        "Keep dev, test and prod alike: deploy each from the same IaC with only parameters "
+        "differing, run drift detection on a schedule, and compare training and serving feature "
+        "statistics to catch training-serving skew."
+    )
+    searched = (
+        "the build configs for CloudFormation drift detection or terraform plan "
+        "-detailed-exitcode, the IaC for the drift detection Config rule, and the notes for a file "
+        "or heading on environment skew or parity"
+    )
+
+    def present(self, repo_path: Path) -> str | None:
+        _builds, drift = _tools_in_builds(repo_path, _DRIFT_TOOLS)
+        return next(iter(drift.values()), None) or super().present(repo_path)
+
+
+class MlTrainingDesignUnrecorded(_MlNoteRule):
+    id = "REPO-268"
+    title = "An ML workload has no note on its training choices: instance, framework, data size, location and algorithm"
+    category = "Cost"
+    themes = ("finops",)
+    note_name = re.compile(r"(?:training|model)[-_ ]?(?:design|choices|decisions|plan)|ml[-_ ]?(?:design|adrs?|decisions)")
+    note_heading = re.compile(
+        r"(?i).*\b(?:training (?:design|choices|decisions|plan)|instance (?:sizing|selection)|algorithm (?:choice|selection)"
+        r"|framework (?:choice|selection))\b.*"
+    )
+    recommendation = (
+        "Write down the cost choices behind training (docs/training-design.md): the instance "
+        "type and why (SageMaker Inference Recommender or a sizing run), the framework and "
+        "algorithm, the sample size you start with, and the Region that keeps data and compute "
+        "together."
+    )
+    searched = (
+        "the notes for a file or heading on training design, choices or decisions, instance "
+        "sizing, or the framework or algorithm choice"
+    )
+
+
+class MlManagedBuildMissing(_MlSignalNoteRule):
+    id = "REPO-269"
+    title = "An ML workload has no managed build environment"
+    category = "Cost"
+    themes = ("finops",)
+    signal = re.compile(
+        _cf_type(r"CodeBuild::Project|SageMaker::(?:Domain|Project)")
+        + r"|resource\s+\"aws_(?:codebuild_project|sagemaker_domain|sagemaker_project)\""
+    )
+    note_name = re.compile(r"$^")
+    note_heading = re.compile(r"$^")
+    recommendation = (
+        "Build and experiment on managed services: SageMaker Studio or a hosted CI (CodeBuild, "
+        "GitHub Actions) instead of a build server or notebook host you run and pay for all day."
+    )
+    searched = "the IaC for a CodeBuild project, a SageMaker domain or project, and the repo for a hosted CI config"
+
+    def present(self, repo_path: Path) -> str | None:
+        return (build_texts(repo_path) or [("", "")])[0][0] or super().present(repo_path)
+
+
+class _TrainingSignalRule(_RepoRule):
+    """MLCOST 4: a SageMaker workload that trains, with no sign of one cost lever."""
+
+    category = "Cost"
+    severity = "Low"
+    signal: ClassVar[re.Pattern[str]]
+    named: ClassVar[str]
+
+    def run(self, repo_path: Path, language: str = "typescript") -> List[Finding]:
+        if not ai_gate.active() or not ai_gate.seen_types() & _SAGEMAKER_TYPES:
+            return []
+        training = sagemaker_training(repo_path)
+        if not training or _ml_signal(repo_path, self.signal):
+            return []
+        return [self._finding(
+            f"Trains a SageMaker model ({training}); searched the IaC, builds, code and dependency "
+            f"lists for {self.named}; found none",
+            file=training,
+        )]
+
+
+class LocalModeUnused(_TrainingSignalRule):
+    id = "REPO-270"
+    title = "SageMaker training is never tried in local mode first"
+    themes = ("finops",)
+    signal = re.compile(r"instance_type\s*=\s*[\"']local(?:_gpu)?[\"']|\bLocalSession\b|\bLocalPipelineSession\b")
+    named = "local mode (instance_type='local', LocalSession)"
+    recommendation = (
+        "Debug small experiments on your machine: run the estimator with instance_type='local' "
+        "(SageMaker local mode) until the code works, then train on managed instances."
+    )
+
+
+class AutoMlUnused(_TrainingSignalRule):
+    id = "REPO-271"
+    title = "SageMaker training does not try automated ML"
+    themes = ("finops",)
+    signal = re.compile(r"\bAutoML(?:V2)?\b|\bautopilot\b|\bcreate_auto_ml_job\w*|" + _cf_type(r"SageMaker::AutoMLJob"), re.IGNORECASE)
+    named = "SageMaker Autopilot (AutoML, AutoMLV2, create_auto_ml_job)"
+    recommendation = (
+        "Let Autopilot try the candidates: run a SageMaker Autopilot job to find a baseline "
+        "model and its algorithm before you spend on hand-built training runs."
+    )
+
+
+_UNMANAGED_TRAINING = re.compile(
+    r"[\"']?InstanceType[\"']?\s*[:=]\s*[\"']?(?:p[2-6]|g[4-6]|trn[12]|dl[12])\w*\.\w+"
+    r"|\binstance_type\s*=\s*\"(?:p[2-6]|g[4-6]|trn[12]|dl[12])\w*\.\w+\""
+)
+
+
+class UnmanagedTrainingInstances(_RepoRule):
+    id = "REPO-272"
+    title = "An ML workload runs GPU instances outside SageMaker managed training"
+    category = "Cost"
+    severity = "Low"
+    themes = ("finops",)
+    recommendation = (
+        "Train on SageMaker managed training instead of EC2 GPU hosts: the job starts the "
+        "instances, stops them when training ends and bills by the second, and managed Spot "
+        "training cuts the price further."
+    )
+
+    def run(self, repo_path: Path, language: str = "typescript") -> List[Finding]:
+        if not ai_gate.active() or not ai_gate.seen_types() & _SAGEMAKER_TYPES:
+            return []
+        found = _in_iac_text(repo_path, _UNMANAGED_TRAINING)
+        if not found:
+            return []
+        return [self._finding(
+            f"An EC2 GPU or Trainium instance type in {found} for a SageMaker workload",
+            file=found,
+        )]
+
+
+class DistributedTrainingUnused(_TrainingSignalRule):
+    id = "REPO-273"
+    title = "SageMaker training does not use distributed training"
+    themes = ("finops",)
+    signal = re.compile(r"\bdistribution\s*=|[\"']smdistributed[\"']|\btorch_distributed\b|\bpytorchddp\b|\bInstanceCount[\"']?\s*:\s*[2-9]")
+    named = "a distribution setting (smdistributed, torch_distributed, pytorchddp)"
+    recommendation = (
+        "Spread large training runs over instances: set distribution on the estimator "
+        "(torch_distributed or the SageMaker data parallel library) so a long job finishes "
+        "sooner on several smaller instances."
+    )
+
+
+class CheckpointingUnused(_TrainingSignalRule):
+    id = "REPO-274"
+    title = "SageMaker training saves no checkpoints and uses no warm start"
+    themes = ("finops",)
+    signal = re.compile(r"\bcheckpoint_s3_uri\b|[\"']?CheckpointConfig[\"']?\s*:|\bWarmStartConfig\b|\bwarm_start_config\b")
+    named = "checkpoint_s3_uri, CheckpointConfig or WarmStartConfig"
+    recommendation = (
+        "Do not pay twice for the same training: set checkpoint_s3_uri so an interrupted (or "
+        "Spot) job resumes, and use a warm start from a previous tuning job when you tune again."
+    )
+
+
+class HyperparameterTuningUnused(_TrainingSignalRule):
+    id = "REPO-275"
+    title = "SageMaker training does not use automatic hyperparameter tuning"
+    themes = ("finops",)
+    signal = re.compile(r"\bHyperparameterTuner\b|\bcreate_hyper_parameter_tuning_job\b|\bHyperParameterTuningJob\w*|\boptuna\b|\bray\.tune\b")
+    named = "HyperparameterTuner, a tuning job, Optuna or Ray Tune"
+    recommendation = (
+        "Search hyperparameters with a tuner, not by hand: a SageMaker HyperparameterTuner with "
+        "Bayesian search and early stopping reaches a good model in fewer training runs."
+    )
+
+
+_BUDGET_IN_IAC = re.compile(_cf_type(r"Budgets::Budget") + r"|resource\s+\"aws_budgets_budget\"|\bbudgets\.CfnBudget\(")
+
+
+class MlBudgetMissing(_MlSignalNoteRule):
+    id = "REPO-276"
+    title = "An ML workload has no budget to track its spend"
+    category = "Cost"
+    themes = ("finops",)
+    signal = _BUDGET_IN_IAC
+    note_name = re.compile(r"(?:ml[-_ ]?)?budgets?|cost[-_ ]?(?:tracking|allocation)")
+    note_heading = re.compile(r"(?i).*\b(?:ml budget|budgets?|cost (?:tracking|allocation))\b.*")
+    recommendation = (
+        "Put a number on ML spend: an AWS Budgets budget filtered on the workload's cost "
+        "allocation tag (or on SageMaker), with alerts to the team, and tag every notebook, job "
+        "and endpoint so the spend shows per project."
+    )
+    searched = (
+        "the IaC for an AWS Budgets budget, and the notes for a file or heading on a budget or "
+        "cost tracking"
+    )
+
+# The remaining AI lens questions, one rule each (REPO-277 to REPO-370). Each answers every open
+# practice of its question: a note named or headed for the question's topic answers it, and so
+# does a signal in the IaC, builds, code or dependency lists where the practice has one. The gate
+# says which workload the question is for: "ai" (any AI workload), "agent" (a Bedrock agent or
+# AgentCore runtime), "multi" (a supervisor agent or collaborator), "sagemaker" (a SageMaker
+# resource). They are defined from LENS_PRACTICE_TABLE below.
+def _terms_pattern(terms: tuple[str, ...], sep: str) -> str:
+    return "|".join(re.escape(t).replace(r"\ ", sep).replace(r"\-", sep) for t in terms)
+
+
+class _LensPracticeRule(_AiNoteRule):
+    """One AI lens question answered by a note on its topic or a signal in the repo."""
+
+    gate: ClassVar[str] = "ai"
+    # A pattern the repo must hold for the question to apply (REPO-311: self-hosted serving).
+    requires: ClassVar[re.Pattern[str] | None] = None
+    terms: ClassVar[tuple[str, ...]] = ()
+    signal: ClassVar[re.Pattern[str] | None] = None
+    signal_desc: ClassVar[str] = ""
+
+    def applies(self) -> bool:
+        if not ai_gate.active():
+            return False
+        if self.gate == "sagemaker":
+            return bool(ai_gate.seen_types() & _SAGEMAKER_TYPES)
+        if self.gate in ("agent", "multi"):
+            return bool(ai_gate.seen_types() & _AGENT_TYPES)
+        return True
+
+    def run(self, repo_path: Path, language: str = "typescript") -> List[Finding]:
+        if self.gate == "multi" and not _in_iac_text(repo_path, _MULTI_AGENT_IN_IAC):
+            return []
+        if self.requires is not None and not _ml_signal(repo_path, self.requires):
+            return []
+        return super().run(repo_path, language)
+
+    def present(self, repo_path: Path) -> str | None:
+        found = _ml_signal(repo_path, self.signal) if self.signal else None
+        return found or super().present(repo_path)
+
+
+# (id, class name, question, gate, title, note terms, signal or None, what the signal is,
+#  recommendation)
+LENS_PRACTICE_TABLE: tuple[tuple[str, str, str, str, str, tuple[str, ...], str | None, str, str], ...] = (
+    ("REPO-277", "MlOrgAccountabilityMissing", "MLOPS 1", "sagemaker",
+     "An ML workload has no note on who owns the model, its explainability bar and its business fit",
+     ("ml ownership", "ml team", "model owner", "explainability requirements", "business requirements"), None, "",
+     "Write down who is accountable for the model and what it must do: a note that names the owner and the skills on the team, the level of explainability the business agreed to, and how adherence to the business requirements is checked."),
+    ("REPO-278", "MlOperatingModelMissing", "MLOPS 2", "sagemaker",
+     "An ML workload has no ML operating model: roles, profile template, improvement and feedback",
+     ("ml roles", "ml profile", "model improvement", "mlops process", "ml lifecycle"),
+     r"\bmlflow\b|\blineage\b|" + _cf_type(r"SageMaker::(?:Pipeline|ModelPackageGroup)"), "a lineage tracker (MLflow, a SageMaker pipeline or model package group)",
+     "Set up how the ML work runs: a note on ML roles and responsibilities, a profile template each model fills in, the improvement strategy, the feedback loops between lifecycle phases and when fairness and explainability are reviewed."),
+    ("REPO-279", "MlDataProfilingMissing", "MLOPS 3", "sagemaker",
+     "An ML workload neither profiles its data nor versions its datasets and models",
+     ("data profiling", "data profile", "dataset versions", "model versions"),
+     r"(?i)\bdvc\b|\bmlflow\b|ydata[-_]profiling|pandas[-_]profiling|\bDataQualityCheck\w*|\bdeequ\b|great[-_]expectations"
+     r"|" + _cf_type(r"SageMaker::ModelPackageGroup"), "data profiling or versioning (DVC, MLflow, ydata-profiling, a data quality check, a model package group)",
+     "Profile each dataset before use (ydata-profiling or a SageMaker data quality check) and version the data, code and models together (DVC, MLflow or the model registry), so a result can be traced and repeated."),
+    ("REPO-280", "MlCiCdMissing", "MLOPS 4", "sagemaker",
+     "An ML workload has no MLOps pipeline or approved package source",
+     ("mlops", "ml pipeline", "approved libraries", "package policy"),
+     _cf_type(r"SageMaker::(?:Pipeline|Project)|CodeArtifact::Repository") + r"|resource\s+\"aws_(?:sagemaker_pipeline|sagemaker_project|codeartifact_repository)\"",
+     "a SageMaker pipeline or project, or a CodeArtifact repository",
+     "Automate ML operations: build, train and deploy through a SageMaker pipeline or project from CI, and pull libraries only from an approved CodeArtifact repository that mirrors public packages."),
+    ("REPO-281", "MlDeploymentMetricsMissing", "MLOPS 5", "sagemaker",
+     "An ML workload tracks no metrics for its deployment environments",
+     ("deployment metrics", "environment metrics", "endpoint metrics"),
+     r"AWS/SageMaker|\bModelLatency\b|\bInvocations\b[\"']", "an alarm or dashboard on AWS/SageMaker metrics",
+     "Measure each deployment environment: alarm and chart the endpoint metrics (ModelLatency, Invocations, errors, CPU and GPU utilization) per environment, so a slow or failing deployment shows before users see it."),
+    ("REPO-282", "MlModelApiMissing", "MLREL 1", "sagemaker",
+     "Applications call the model with no API or service in front of it",
+     ("model api", "ml microservice", "inference api"),
+     _cf_type(r"ApiGateway(?:V2)?::\w+") + r"|resource\s+\"aws_api_gateway\w*\"|resource\s+\"aws_apigatewayv2\w*\"", "an API Gateway API",
+     "Put an API between the model and its callers: an API Gateway or service endpoint that owns the request and response contract, so the model behind it can change without the applications changing."),
+    ("REPO-283", "MlDataPipelineMissing", "MLREL 2", "sagemaker",
+     "An ML workload has no data catalog or managed data pipeline",
+     ("data catalog", "data pipeline", "data changes"),
+     _cf_type(r"Glue::(?:Database|Crawler|Table|Job|Workflow)|StepFunctions::StateMachine|DataZone::\w+")
+     + r"|resource\s+\"aws_(?:glue_(?:catalog_database|crawler|job|workflow)|sfn_state_machine|datazone_\w+)\"",
+     "a Glue catalog, crawler, job or workflow, a Step Functions state machine or DataZone",
+     "Make the data flow reliable: register datasets in the Glue Data Catalog, run the preparation as a managed pipeline (Glue workflows or Step Functions), and automate how schema and data changes reach training."),
+    ("REPO-284", "MlContinuousTrainingMissing", "MLREL 3", "sagemaker",
+     "An ML workload has no traceable CI/CD/CT pipeline with feature and data checks",
+     ("continuous training", "feature consistency", "model validation", "data bias"),
+     _cf_type(r"SageMaker::(?:Pipeline|FeatureGroup)") + r"|resource\s+\"aws_sagemaker_(?:pipeline|feature_group)\"|\bClarifyCheckStep\b",
+     "a SageMaker pipeline, a feature group or a Clarify check step",
+     "Train and release through a pipeline that records every step: serve training and inference from the same feature store, validate each model on held-out and recent data, and check the data for bias before training."),
+    ("REPO-285", "MlEndpointChangeUnsafe", "MLREL 4", "sagemaker",
+     "SageMaker endpoint changes have no safe deployment strategy",
+     ("deployment strategy", "blue green", "canary", "shadow test"),
+     r"[\"']?(?:DeploymentConfig|BlueGreenUpdatePolicy|ShadowProductionVariants)[\"']?\s*:|\b(?:deployment_config|shadow_production_variants)\s*[{=]",
+     "an endpoint DeploymentConfig, blue/green policy or shadow variant",
+     "Change endpoints through the pipeline with a guarded rollout: set a blue/green or canary DeploymentConfig with auto-rollback alarms, or shadow-test the new variant first."),
+    ("REPO-286", "MlKpiMissing", "MLPERF 1", "sagemaker",
+     "An ML workload has no key performance indicators tied to the business goal",
+     ("ml kpis", "model kpis", "key performance indicators", "business metrics"), None, "",
+     "Name the numbers that say the model works for the business: KPIs (conversion, cost saved, time saved) next to the model metrics, with the target for each."),
+    ("REPO-287", "MlEvaluationMetricsMissing", "MLPERF 2", "sagemaker",
+     "An ML workload defines no evaluation metrics for its models",
+     ("evaluation metrics", "model metrics", "objective metric"),
+     r"\bobjective_metric_name\b|\bmetric_definitions\b|[\"']?(?:ObjectiveMetric|MetricDefinitions|HyperParameterTuningJobObjective)[\"']?\s*:",
+     "an objective metric or metric definitions",
+     "Pick the metrics that match the problem (precision and recall, RMSE, AUC) and record them as the training objective and the release bar; prefer purpose-built AI services where they meet the bar."),
+    ("REPO-288", "MlModernDataArchitectureMissing", "MLPERF 3", "sagemaker",
+     "An ML workload has no data lake or modern data architecture",
+     ("data lake", "data architecture", "lakehouse"),
+     _cf_type(r"LakeFormation::\w+|Glue::Database|Athena::WorkGroup") + r"|resource\s+\"aws_(?:lakeformation_\w+|glue_catalog_database|athena_workgroup)\"",
+     "Lake Formation, a Glue database or an Athena workgroup",
+     "Keep training data in a governed data lake (S3 with the Glue Data Catalog and Lake Formation), queried in place with Athena, instead of copies per team."),
+    ("REPO-289", "MlInfrastructureEvolutionMissing", "MLPERF 4", "sagemaker",
+     "An ML workload does not evaluate its instance types, features and performance trade-offs",
+     ("performance evaluation", "instance types", "feature statistics", "performance trade-offs", "transfer learning"),
+     r"(?i)inference[-_ ]?recommender|create_inference_recommendations_job|" + _cf_type(r"SageMaker::ModelQualityJobDefinition") + r"|\bQualityCheckStep\b",
+     "Inference Recommender, a model quality job or a quality check step",
+     "Evolve the stack on evidence: run Inference Recommender on instance types, keep feature statistics and a model performance evaluation pipeline, and record the trade-offs you accept."),
+    ("REPO-290", "MlDeploymentOptionUnchosen", "MLPERF 5", "sagemaker",
+     "An ML workload has no note on why it serves where and how it does",
+     ("deployment options", "edge deployment", "inference options", "serving options"),
+     r"[\"']?(?:ServerlessConfig|AsyncInferenceConfig)[\"']?\s*:|\b(?:serverless_config|async_inference_config)\s*\{|\bTransformJob\b|\bcreate_transform_job\b",
+     "a serverless or asynchronous endpoint or a batch transform job",
+     "Choose the serving option on purpose: real-time, serverless, asynchronous, batch or edge, by latency, traffic and connectivity, and write down why."),
+    ("REPO-291", "MlRoiUndefined", "MLCOST 1", "sagemaker",
+     "An ML workload has no note on its return on investment and total cost of ownership",
+     ("roi", "return on investment", "total cost of ownership", "tco", "opportunity cost"), None, "",
+     "Write down what the model is worth: the expected return, the opportunity cost, and the total cost of ownership, with managed services preferred where they lower it."),
+    ("REPO-292", "MlFitUnassessed", "MLCOST 2", "sagemaker",
+     "An ML workload has no note on whether ML is needed and on custom versus pre-trained models",
+     ("ml fit", "build vs buy", "pretrained models", "pre-trained models", "custom models"), None, "",
+     "Check ML is the right tool before paying for it: note why rules or an AI service would not do, and compare a pre-trained or foundation model against training your own on cost and quality."),
+    ("REPO-293", "MlTrainingDataCostUnmanaged", "MLCOST 3", "sagemaker",
+     "Training data is labeled, prepared and reused with no managed service",
+     ("data labeling", "feature reuse", "data preparation"),
+     r"\bGroundTruth\b|\bLabelingJob\b|\bcreate_labeling_job\b|(?i:data[-_ ]?wrangler)|\bCanvas\b|\bProcessingStep\b|\b(?:SKLearn|Script|PySpark)Processor\b"
+     r"|" + _cf_type(r"SageMaker::FeatureGroup") + r"|resource\s+\"aws_sagemaker_feature_group\"",
+     "Ground Truth labeling, Data Wrangler or Canvas, a processing job, or a feature group",
+     "Lower the cost of getting data ready: label with SageMaker Ground Truth, prepare with Data Wrangler or processing jobs, and share features through Feature Store instead of rebuilding them per model."),
+    ("REPO-294", "MlHostingCostUnmanaged", "MLCOST 5", "sagemaker",
+     "Model hosting has no cost-effective option, hardware choice or right-sizing",
+     ("hosting costs", "instance fleet", "right sizing", "right-sizing"),
+     r"[\"']?(?:ServerlessConfig|AsyncInferenceConfig)[\"']?\s*:|\b(?:serverless_config|async_inference_config)\s*\{|\bml\.inf\d|" + _cf_type(r"ApplicationAutoScaling::ScalableTarget") + r"|resource\s+\"aws_appautoscaling_target\"",
+     "a serverless or asynchronous endpoint, Inferentia instances or endpoint auto scaling",
+     "Match hosting to demand: serverless or asynchronous endpoints for spiky traffic, Inferentia or Graviton where the model supports it, and auto scaling to right-size the instance fleet."),
+    ("REPO-295", "MlCostMonitoringMissing", "MLCOST 6", "sagemaker",
+     "An ML workload monitors no cost by activity, endpoint usage or training debug data",
+     ("ml costs", "cost monitoring", "endpoint usage", "debugging"),
+     r"(?i)\bDebugHookConfig\b|\bdebugger_hook_config\b|\bprofiler_config\b|\bProfilerConfig\b|" + _cf_type(r"CE::CostCategory") + r"|resource\s+\"aws_ce_cost_category\"",
+     "SageMaker Debugger or Profiler, or a cost category",
+     "See where ML money goes: tag and split cost by activity (labeling, training, hosting), watch endpoint utilization to right-size it, and turn on SageMaker Debugger and logs to stop wasted training runs early."),
+    ("REPO-296", "MlEnvironmentalImpactUndefined", "MLSUS 1", "sagemaker",
+     "An ML workload has no note on its environmental impact or benefit",
+     ("sustainability", "environmental impact", "carbon footprint"), None, "",
+     "State the environmental cost and benefit of the model: the compute it uses for training and hosting, and the impact you accept for the benefit it brings."),
+    ("REPO-297", "MlSustainableChoiceMissing", "MLSUS 2", "sagemaker",
+     "An ML workload has no note on pre-trained models or sustainable Regions",
+     ("sustainable regions", "region choice", "pretrained models", "pre-trained models"),
+     r"(?i)\bjumpstart\w*\b|\bfrom_pretrained\b", "a JumpStart or pre-trained model",
+     "Use less compute from the start: prefer AI services and pre-trained models (JumpStart, Bedrock) to training from scratch, and run in a Region with a lower carbon intensity when latency allows."),
+    ("REPO-298", "MlDataSustainabilityMissing", "MLSUS 3", "sagemaker",
+     "ML data has no lifecycle policy or sustainable storage tier",
+     ("data lifecycle", "storage tiers", "idle resources"),
+     r"[\"']?LifecycleConfiguration[\"']?\s*:|resource\s+\"aws_s3_bucket_lifecycle_configuration\"|\blifecycle_rule\s*\{|\bINTELLIGENT_TIERING\b|\bGLACIER\w*",
+     "an S3 lifecycle rule or Intelligent-Tiering or Glacier storage",
+     "Store ML data only as long and as hot as needed: lifecycle rules that move old data to Intelligent-Tiering or Glacier and delete it when done, and stop idle processing resources."),
+    ("REPO-299", "MlTrainingSustainabilityMissing", "MLSUS 4", "sagemaker",
+     "ML training has no sustainable performance criteria, early stopping or artifact clean-up",
+     ("sustainable performance", "energy efficient", "training artifacts", "early stopping"),
+     r"(?i)\bearly_stopping\w*|\bTrainingJobEarlyStoppingType\b|\bEarlyStopping\w*|\bHyperparameterTuner\b",
+     "early stopping or a hyperparameter tuner",
+     "Stop training when more compute buys little: set a performance bar that counts energy, stop runs early, tune with Bayesian search, and delete the checkpoints and artifacts you no longer need."),
+    ("REPO-300", "MlHostingSustainabilityMissing", "MLSUS 5", "sagemaker",
+     "Model hosting uses no efficient silicon, optimized models or shared endpoints",
+     ("efficient silicon", "model optimization", "multi model", "sustainability slas"),
+     r"\bml\.(?:inf|trn)\d|\bml\.[a-z]\d+g\.|\bCompilationJob\b|\bcreate_compilation_job\b|\bMultiModel\b|\bMULTI_MODEL\b|\bmulti_model\b|\bInferenceComponent\b",
+     "Inferentia, Trainium or Graviton instances, a Neo compilation job, a multi-model endpoint or inference components",
+     "Host with less: compile or quantize the model (SageMaker Neo), run it on Inferentia or Graviton, put several models behind one endpoint, and align latency SLAs with the capacity they force."),
+    ("REPO-301", "MlRetrainingUntriggered", "MLSUS 6", "sagemaker",
+     "An ML workload retrains on a fixed schedule with no measure of need",
+     ("retraining policy", "material efficiency", "retrain only"),
+     _cf_type(r"SageMaker::MonitoringSchedule") + r"|resource\s+\"aws_sagemaker_monitoring_schedule\"|\bmodel_monitor\b",
+     "a SageMaker monitoring schedule",
+     "Retrain when the model needs it: trigger retraining from a Model Monitor drift or quality alarm rather than on a fixed clock, and measure the compute each retraining costs."),
+    ("REPO-302", "GenAiLayerMonitoringMissing", "GENOPS 2", "ai",
+     "A generative AI workload does not monitor its model metrics or protect against overload",
+     ("application monitoring", "model metrics", "overload", "throttling"),
+     r"AWS/Bedrock|\bInvocationThrottles\b|[\"']?(?:ReservedConcurrentExecutions|ThrottlingBurstLimit)[\"']?\s*:|\b(?:reserved_concurrent_executions|throttling_burst_limit)\s*=|" + _cf_type(r"ApiGateway::UsagePlan"),
+     "an alarm on AWS/Bedrock metrics, reserved concurrency or API throttling",
+     "Watch every layer and the model: alarm on Bedrock latency, throttles and errors next to the application metrics, and cap load with API throttling or reserved concurrency so a spike does not overload the model."),
+    ("REPO-303", "GenAiTraceabilityMissing", "GENOPS 3", "ai",
+     "A generative AI workload has no prompt template management or tracing of its agents and RAG",
+     ("prompt templates", "prompt management", "tracing"),
+     _cf_type(r"Bedrock::Prompt") + r"|resource\s+\"aws_bedrockagent_prompt\"|(?i:\bopentelemetry\b|\baws[-_]xray\b|\blangfuse\b|\blangsmith\b)",
+     "a Bedrock prompt, OpenTelemetry, X-Ray, Langfuse or LangSmith",
+     "Trace what produced each answer: manage prompt templates in Bedrock Prompt Management with versions, and trace each agent and RAG step (OpenTelemetry or X-Ray) so the prompt, model and documents behind an answer are known."),
+    ("REPO-304", "GenAiOpsMissing", "GENOPS 4", "ai",
+     "A generative AI workload's prompts and models are not released through a GenAIOps pipeline",
+     ("genaiops", "llmops", "release pipeline"),
+     r"(?i)\bpromptfoo\b|\bdeepeval\b|\bragas\b|create-evaluation-job|\bcreate_evaluation_job\b",
+     "an evaluation tool in the build (promptfoo, DeepEval, Ragas, a Bedrock evaluation job)",
+     "Release prompts, models and retrieval like code: define them in IaC, evaluate each change in CI against the ground truth, and promote through environments with the scores as the gate."),
+    ("REPO-305", "ModelCustomizationUnplanned", "GENOPS 5", "ai",
+     "A generative AI workload has no note on when to customize a model",
+     ("model customization", "fine tuning", "fine-tuning", "customization"), None, "",
+     "Decide when prompt engineering and RAG are not enough: write down the quality, latency or cost gap that would justify fine-tuning or continued pre-training, and how you would measure it."),
+    ("REPO-306", "ModelThroughputUnplanned", "GENREL 1", "ai",
+     "A generative AI workload has no plan for model throughput and quotas",
+     ("throughput", "quotas", "capacity planning"),
+     _cf_type(r"Bedrock::(?:ApplicationInferenceProfile)") + r"|resource\s+\"aws_bedrock_(?:provisioned_model_throughput|inference_profile)\"|\bProvisionedModelThroughput\b"
+     r"|[\"'](?:us|eu|apac|global)\.(?:anthropic|amazon|meta|mistral)\.",
+     "provisioned throughput, an inference profile or a cross-Region inference profile ID",
+     "Plan model capacity from use: track tokens per minute against the account quotas, request increases ahead of growth, and use cross-Region inference or provisioned throughput where demand needs it."),
+    ("REPO-307", "ModelNetworkRedundancyMissing", "GENREL 2", "ai",
+     "A generative AI workload has no redundant private path to the model endpoints",
+     ("network redundancy", "private connectivity", "vpc endpoints"),
+     r"bedrock-runtime[\"']|\.bedrock-runtime\b|bedrock-agent-runtime[\"']", "a Bedrock runtime VPC endpoint",
+     "Reach the models over redundant private paths: interface VPC endpoints for bedrock-runtime in subnets across Availability Zones, with retries in the client."),
+    ("REPO-308", "InferenceSingleRegion", "GENREL 5", "ai",
+     "Inference, embeddings and agents are available in one Region only",
+     ("multi region", "multi-region", "cross region", "region failover"),
+     r"[\"'](?:us|eu|apac|global)\.(?:anthropic|amazon|meta|mistral)\.|\bApplicationInferenceProfile\b|resource\s+\"aws_bedrock_inference_profile\"",
+     "a cross-Region inference profile",
+     "Spread inference across Regions: use cross-Region inference profiles, replicate the vector data, and check every agent tool and model you need exists in each Region you fail over to."),
+    ("REPO-309", "DistributedTaskFaultToleranceMissing", "GENREL 6", "ai",
+     "Long distributed AI tasks have no checkpointing or fault tolerance",
+     ("fault tolerance", "checkpointing", "batch inference"),
+     r"(?i)\bcheckpoint\w*|\bcreate_model_invocation_job\b|\bModelInvocationJob\b",
+     "checkpointing or a Bedrock batch inference job",
+     "Design long tasks to survive failure: checkpoint training and batch work, split large jobs into retryable parts, and use Bedrock batch inference for bulk requests."),
+    ("REPO-310", "GenAiPerformanceUnverified", "GENPERF 2", "ai",
+     "A generative AI workload does not load test its endpoints or tune its inference parameters",
+     ("load testing", "load test", "inference parameters", "model selection"),
+     r"(?i)\blocust\b|\bk6\b|\bartillery\b|\btemperature\b|\btop_?p\b|\btopP\b",
+     "a load test tool (Locust, k6, Artillery) or inference parameters (temperature, top-p)",
+     "Prove the workload holds up: load test the model endpoints at expected peak, tune temperature and top-p for quality, and pick the model that meets the bar at the lowest latency."),
+    ("REPO-311", "SelfManagedModelHosting", "GENPERF 3", "ai",
+     "A generative AI workload serves models on infrastructure it manages",
+     ("model hosting", "managed hosting"), None, "",
+     "Use managed model hosting where it fits: Bedrock or SageMaker endpoints scale, patch and distribute the compute for you, instead of GPU hosts you run."),
+    ("REPO-312", "VectorRetrievalUntested", "GENPERF 4", "ai",
+     "Vector retrieval is not tested for latency and relevance, and its vector size is not chosen",
+     ("retrieval evaluation", "vector size", "embedding dimensions", "rag evaluation"),
+     r"(?i)[\"']?dimensions[\"']?\s*[:=]\s*\d+|\bEmbeddingModelConfiguration\b|\bembedding_model_configuration\b|recall@|\bndcg\b|\bmrr\b|\bcontext_precision\b",
+     "an embedding dimensions setting or a retrieval metric (recall@k, NDCG, MRR, context precision)",
+     "Measure retrieval: test latency and recall@k on a labeled query set, and pick the smallest embedding dimension that keeps relevance, since smaller vectors are faster and cheaper."),
+    ("REPO-313", "ModelRightSizingMissing", "GENCOST 1", "ai",
+     "A generative AI workload has no right-sized model choice or prompt router",
+     ("model selection", "model choice", "model routing"),
+     r"(?i)\bprompt[-_ ]?router\b|\bIntelligentPromptRouter\b|\bmodel[-_]?router\b",
+     "a Bedrock prompt router or model router",
+     "Use the smallest model that meets the bar per task: evaluate a small and a large model, route simple requests to the cheaper one (Bedrock Intelligent Prompt Routing), and write down the choice."),
+    ("REPO-314", "PricingModelUnchosen", "GENCOST 2", "ai",
+     "A generative AI workload has no note on on-demand, batch or provisioned inference",
+     ("pricing model", "inference paradigm", "batch inference", "provisioned throughput"),
+     r"\bProvisionedModelThroughput\b|resource\s+\"aws_bedrock_provisioned_model_throughput\"|\bcreate_model_invocation_job\b|\bModelInvocationJob\b|[\"']?ServerlessConfig[\"']?\s*:",
+     "provisioned throughput, a batch inference job or a serverless endpoint",
+     "Pick the inference paradigm by traffic: on-demand for spiky use, batch inference for bulk work at half the price, provisioned throughput only for steady high volume, and stop idle hosting."),
+    ("REPO-315", "VectorLengthUnoptimized", "GENCOST 4", "ai",
+     "Vector stores use the default embedding length with no choice recorded",
+     ("embedding dimensions", "vector length", "vector size"),
+     r"(?i)[\"']?dimensions[\"']?\s*[:=]\s*(?:256|384|512)\b|\bembeddingDataType\b|\bEmbeddingDataType\b|\bBINARY\b|\bint8\b",
+     "a reduced embedding dimension (256, 384, 512) or a binary or int8 embedding type",
+     "Store shorter vectors where relevance allows: request 256 or 512 dimensions or binary embeddings, which cut vector storage and query cost."),
+    ("REPO-316", "AgentStoppingConditionsMissing", "GENCOST 5", "ai",
+     "Agent workflows have no stopping condition such as a step limit or timeout",
+     ("stopping conditions", "iteration limit", "step limit"),
+     r"(?i)\bmax_?iterations\b|\bmaxIterations\b|\bmax_?turns\b|\brecursion_limit\b|\bmax_steps\b|\bIdleSessionTTLInSeconds\b|\bidle_session_ttl_in_seconds\b",
+     "a step, turn or recursion limit, or an idle session timeout",
+     "Bound every agent loop: set a maximum number of steps or turns, a recursion limit and a timeout, so a workflow that does not converge stops before it runs up cost."),
+    ("REPO-317", "GenAiComputeUnoptimized", "GENSUS 1", "ai",
+     "A generative AI workload uses no auto scaling, serverless or efficient customization",
+     ("auto scaling", "serverless", "efficient customization", "lora"),
+     r"[\"']?ServerlessConfig[\"']?\s*:|\bserverless_config\s*\{|" + _cf_type(r"ApplicationAutoScaling::ScalableTarget|Lambda::Function") + r"|resource\s+\"aws_(?:appautoscaling_target|lambda_function)\"|(?i:\blora\b|\bpeft\b)",
+     "a serverless endpoint, auto scaling, Lambda, or LoRA or PEFT",
+     "Use compute only while it works: serverless or auto-scaled hosting, and parameter-efficient customization (LoRA, PEFT) instead of full fine-tuning."),
+    ("REPO-318", "GenAiDataEnergyUnoptimized", "GENSUS 2", "ai",
+     "Generative AI data has no lifecycle or efficient storage tier",
+     ("data lifecycle", "storage tiers", "data retention"),
+     r"[\"']?LifecycleConfiguration[\"']?\s*:|resource\s+\"aws_s3_bucket_lifecycle_configuration\"|\blifecycle_rule\s*\{|\bINTELLIGENT_TIERING\b",
+     "an S3 lifecycle rule or Intelligent-Tiering",
+     "Keep less and colder data: lifecycle rules on the document, embedding and log buckets, Intelligent-Tiering for rarely read data, and re-embed only what changed."),
+    ("REPO-319", "SmallerModelsUnused", "GENSUS 3", "ai",
+     "A generative AI workload uses no smaller model or optimized inference",
+     ("smaller models", "model distillation", "quantization"),
+     r"(?i)\bhaiku\b|nova-(?:micro|lite)|titan-text-lite|\bdistil\w*|\bquantiz\w*|llama3-8b|mistral-7b|\bml\.inf\d",
+     "a small model ID (Haiku, Nova Micro or Lite, a 7B or 8B model), distillation, quantization or Inferentia",
+     "Use the smallest model that does the job, a distilled or quantized one where quality allows, and efficient inference hardware, to cut energy per request."),
+    ("REPO-320", "BusinessProblemUndefined", "RAIUC 1", "ai",
+     "An AI workload has no note on the business problem and why AI is needed",
+     ("business problem", "problem statement", "use case", "why ai"), None, "",
+     "State the problem before the solution: a use-case note on the business problem, who has it, how it is solved today, and why AI rather than rules or a simpler tool is needed."),
+    ("REPO-321", "AiStakeholdersUnnamed", "RAIUC 2", "ai",
+     "An AI workload has no note on its downstream and upstream stakeholders",
+     ("stakeholders", "affected users", "data subjects"), None, "",
+     "Name who the system affects: the downstream users and people affected by its outputs, and the upstream data providers, labelers and model suppliers."),
+    ("REPO-322", "AiInputsOutputsUndefined", "RAIUC 3", "ai",
+     "An AI workload has no note on its expected inputs, their variation and the type of AI it needs",
+     ("inputs and outputs", "input variation", "expected inputs", "type of ai"), None, "",
+     "Describe the system from outside: the inputs it receives and how they vary (language, format, quality), the outputs it must give, and the kind of AI that fits (classification, generation, retrieval)."),
+    ("REPO-323", "AiBenefitsUnstated", "RAIBR 1", "ai",
+     "An AI workload has no note on its intended benefits",
+     ("intended benefits", "benefits", "value"), None, "",
+     "Write down the benefits you expect: the beneficial events for each stakeholder, grouped into the intended benefits the release criteria test."),
+    ("REPO-324", "HarmfulEventsUnidentified", "RAIBR 2", "ai",
+     "An AI workload has no catalog of potential harmful events by responsible AI dimension",
+     ("harmful events", "harm catalog", "harm identification", "potential harms"), None, "",
+     "List what could go wrong per dimension (fairness, veracity, robustness, privacy, safety, security, explainability, transparency), found with several methods such as workshops, red teaming and incident reviews."),
+    ("REPO-325", "HarmRiskUnassessed", "RAIBR 3", "ai",
+     "An AI workload has no likelihood, severity and risk level for its potential harms",
+     ("risk register", "risk registry", "risk assessment", "risk levels"), None, "",
+     "Rate each potential harm: its likelihood, its severity and the overall risk level, kept in a risk registry you revisit as the system changes."),
+    ("REPO-326", "ReleaseCriteriaUndefined", "RAIRC 1", "ai",
+     "An AI workload has no testable release criteria",
+     ("release criteria", "acceptance criteria", "go-live criteria"), None, "",
+     "Turn the expected benefits and potential harms into release criteria you can test, each with the property it checks and the dataset it runs on."),
+    ("REPO-327", "ReleaseMetricsUnselected", "RAIRC 2", "ai",
+     "An AI workload has no note on the metrics that measure its release criteria",
+     ("evaluation metrics", "metric selection", "custom metrics"),
+     r"(?i)\bpromptfoo\b|\bdeepeval\b|\bragas\b|\bfmeval\b|create-evaluation-job",
+     "an evaluation tool (promptfoo, DeepEval, Ragas, fmeval, a Bedrock evaluation job)",
+     "Choose a metric for each release criterion, note its strengths and limits, and design a custom metric where no standard one measures the property."),
+    ("REPO-328", "ReleaseThresholdsUnset", "RAIRC 4", "ai",
+     "An AI workload sets no thresholds or confidence for its release criteria",
+     ("release thresholds", "thresholds", "baselines", "confidence intervals"), None, "",
+     "Set the bar for each criterion: a baseline target, the trade-offs between criteria you accept, and the statistical confidence a result must reach."),
+    ("REPO-329", "DatasetsUnidentified", "RAIDP 1", "ai",
+     "An AI workload has no inventory of the datasets it evaluates, trains and runs on",
+     ("datasets", "data inventory", "dataset inventory", "training data"), None, "",
+     "List the datasets: evaluation sets per release criterion, training and customization data, auxiliary data such as retrieval corpora, and where they overlap."),
+    ("REPO-330", "DatasetQualityUnassessed", "RAIDP 2", "ai",
+     "An AI workload does not assess the quality and representativeness of its datasets",
+     ("data quality", "dataset quality", "representativeness", "label quality", "synthetic data"),
+     r"(?i)great[-_]expectations|\bpydeequ\b|\bdeequ\b|\bcleanlab\b|\bpandera\b|EvaluateDataQuality|DataQualityRuleset",
+     "a data quality tool (Great Expectations, Deequ, cleanlab, Pandera, Glue Data Quality)",
+     "Check the data is fit: validate that it represents the users and cases, set quality requirements from the release criteria, and check human, generated and synthetic labels."),
+    ("REPO-331", "DatasetRaiIssuesUnaddressed", "RAIDP 3", "ai",
+     "An AI workload does not review its datasets for unsafe content, bias, privacy and correctness",
+     ("dataset review", "data bias", "unsafe content", "data correctness"),
+     r"(?i)\bpresidio\b|\bfairlearn\b|\baif360\b|\bclarify\b|\bdetect_pii_entities\b|\bdetoxify\b",
+     "a privacy, bias or safety tool (Presidio, Fairlearn, AI Fairness 360, Clarify, Detoxify)",
+     "Review the datasets for responsible AI issues: remove unsafe content, reduce unwanted bias, protect the people in the data, cover both natural and confounding variation, and check the content is correct."),
+    ("REPO-332", "DatasetRegistryMissing", "RAIDP 4", "ai",
+     "An AI workload has no dataset registry, governance or datasheets",
+     ("dataset registry", "data governance", "datasheets", "datasheet"),
+     _cf_type(r"DataZone::\w+|Glue::Database|LakeFormation::\w+") + r"|resource\s+\"aws_(?:datazone_\w+|glue_catalog_database|lakeformation_\w+)\"",
+     "DataZone, a Glue database or Lake Formation",
+     "Register each dataset with an owner, version, access rules and a datasheet, review the registry on a schedule, and protect the data from use outside its purpose."),
+    ("REPO-333", "SystemRegistryMissing", "RAISP 1", "ai",
+     "An AI workload has no system registry entry for its design and the risks it adds",
+     ("system registry", "system design", "design review"), None, "",
+     "Record the core AI system design (models, prompts, retrieval, tools, versions) in a system registry, and check each design choice for risks it introduces."),
+    ("REPO-334", "CoreDesignUnbaked", "RAISP 2", "ai",
+     "An AI workload has no note on how its core design meets the release criteria",
+     ("responsible design", "system design", "design choices", "provenance"), None, "",
+     "Write down how the core design meets each criterion before filtering: privacy mechanisms, bias mitigation, security protections, provenance in outputs, user customization, explainability, factual grounding, handling of varied input and safety."),
+    ("REPO-335", "PairedTestsMissing", "RAISP 4", "ai",
+     "An AI workload does not compare candidate designs with paired tests",
+     ("paired tests", "ab test", "a/b test", "candidate comparison", "champion challenger"),
+     r"(?i)\bab[-_ ]?test\w*|\bchampion\b|\bchallenger\b|[\"']?ShadowProductionVariants[\"']?\s*:|\bshadow_production_variants\b",
+     "an A/B, champion-challenger or shadow test",
+     "Choose between designs on the same inputs: run the candidates side by side on one evaluation set and compare the paired results, rather than separate runs."),
+    ("REPO-336", "ReleaseEvaluationMissing", "RAIER 1", "ai",
+     "An AI workload is not re-evaluated against its release criteria on each update",
+     ("release evaluation", "evaluation results", "independent review"),
+     r"(?i)\bpromptfoo\b|\bdeepeval\b|\bragas\b|\bfmeval\b|create-evaluation-job|\bcreate_evaluation_job\b",
+     "an evaluation tool in the build",
+     "Re-run the evaluation on every system update, check the criteria still match current standards, have critical and subjective results corroborated independently, and update the system registry."),
+    ("REPO-337", "ReleaseDecisionUndocumented", "RAIER 2", "ai",
+     "An AI workload has no documented release decision with its confidence and reviewers",
+     ("release decision", "release review", "go/no-go", "sign-off"), None, "",
+     "Record the release decision: the results with their statistical confidence, the summary reviewed with the right internal stakeholders, and who signed off."),
+    ("REPO-338", "FailedCriteriaUnhandled", "RAIER 3", "ai",
+     "An AI workload has no process for release criteria that are not met",
+     ("failed criteria", "unmet criteria", "remediation plan", "known limitations"), None, "",
+     "Plan what happens when a criterion fails: re-assess the implementation, and where it cannot be met, narrow the use case and record the limitation."),
+    ("REPO-339", "MonitoringFeedbackUnapplied", "RAIMON 2", "ai",
+     "An AI workload has no loop that turns monitoring results into improvements",
+     ("feedback loop", "monitoring review", "continuous improvement"), None, "",
+     "Close the loop from monitoring: review the alerts and user feedback on a schedule and record the changes they lead to in prompts, data, models and criteria."),
+    ("REPO-340", "AiDecommissionUnplanned", "RAIMON 3", "ai",
+     "An AI workload has no decommissioning plan that honours its obligations",
+     ("decommission", "decommissioning", "retirement", "sunset"), None, "",
+     "Plan the end: how users are told, what data is kept or deleted and for how long, and how obligations to stakeholders are met when the system is retired."),
+    ("REPO-341", "AgentLifecycleUndefined", "AGENTOPS 3", "agent",
+     "An agent has no defined lifecycle, AgentOps pipeline or scaling plan",
+     ("agent lifecycle", "agentops", "agent portfolio", "agent governance"),
+     _cf_type(r"Bedrock::AgentAlias|BedrockAgentCore::RuntimeEndpoint") + r"|resource\s+\"aws_(?:bedrockagent_agent_alias|bedrockagentcore_agent_runtime_endpoint)\"",
+     "an agent alias or runtime endpoint",
+     "Run agents through a lifecycle: an owner and SME per agent, a CI/CD pipeline that tests and promotes versions through aliases, scaling and capacity limits per agent, and a portfolio view across agents."),
+    ("REPO-342", "ToolIntegrationUnstandardized", "AGENTOPS 4", "agent",
+     "An agent's tools have no catalog, standard protocol or fallback on failure",
+     ("tool catalog", "tool registry", "mcp", "a2a", "tool fallback"),
+     _cf_type(r"BedrockAgentCore::(?:Gateway|GatewayTarget)") + r"|resource\s+\"aws_bedrockagentcore_gateway\w*\"|(?i:\bmodelcontextprotocol\b|\bmcp[-_]server\b)",
+     "an AgentCore gateway or an MCP server",
+     "Manage tools as a catalog: register them behind a gateway, integrate through a standard protocol (MCP, A2A), and give each tool call a timeout, retries and a fallback."),
+    ("REPO-343", "AgentObservabilityMissing", "AGENTOPS 5", "agent",
+     "An agent has no end-to-end tracing, audit logs, KPIs or workflow dashboards",
+     ("agent observability", "agent kpis", "audit trail", "agent dashboard"),
+     r"(?i)\bopentelemetry\b|\baws[-_]xray\b|\benable_?trace\b|" + _cf_type(r"CloudWatch::Dashboard") + r"|resource\s+\"aws_cloudwatch_dashboard\"",
+     "OpenTelemetry, X-Ray, agent traces or a CloudWatch dashboard",
+     "See what agents do: trace each run end to end, write structured audit logs of decisions and tool calls, track KPIs per workflow, and put them on a dashboard with anomaly alarms."),
+    ("REPO-344", "AgentTestingFrameworkMissing", "AGENTOPS 6", "agent",
+     "An agent has no layered testing, ongoing evaluation or SME approval workflow",
+     ("agent testing", "agent evaluation", "test strategy", "sme review"),
+     r"(?i)\bpromptfoo\b|\bdeepeval\b|\bragas\b|\bagentevals\b|create-evaluation-job",
+     "an evaluation tool (promptfoo, DeepEval, Ragas, agentevals, a Bedrock evaluation job)",
+     "Test agents in layers (unit tests for tools, scenario tests for workflows, evaluations for answers), track their scores in production, and have subject-matter experts approve changes."),
+    ("REPO-345", "AgentRecoveryRunbooksMissing", "AGENTOPS 7", "agent",
+     "An agent has no automated recovery, knowledge base for operators or break-glass runbook",
+     ("runbook", "break glass", "break-glass", "agent recovery", "change management"), None, "",
+     "Prepare for incidents: automate recovery (retries, rollback to the previous alias), keep operator knowledge in one place, adapt change management to agent changes, and keep a break-glass runbook to stop an agent."),
+    ("REPO-346", "AgentMessagingUnreliable", "AGENTREL 1", "agent",
+     "An agent system has no resilient messaging layer between its parts",
+     ("messaging layer", "fault isolation", "actor model", "communication protocols"),
+     _cf_type(r"SQS::Queue|SNS::Topic|Events::EventBus|Kinesis::Stream") + r"|resource\s+\"aws_(?:sqs_queue|sns_topic|cloudwatch_event_bus|kinesis_stream)\"",
+     "an SQS queue, SNS topic, EventBridge bus or Kinesis stream",
+     "Decouple agents with durable messaging: queues or event buses between them, fault-isolated layers, single-purpose agents with standard message contracts, and provisioning that adapts to load."),
+    ("REPO-347", "AgentTaskDesignUnclear", "AGENTREL 2", "agent",
+     "An agent has no note on its atomic tasks, instruction protocol and tiered oversight",
+     ("agent design", "agent instructions", "instruction protocol", "tiered oversight"), None, "",
+     "Design agents for predictable results: one specific task each, minimum permissions, clear instructions with examples, anomaly monitoring, and approval tiers by the risk of the action."),
+    ("REPO-348", "AgentStateUnreliable", "AGENTREL 3", "agent",
+     "Agent memory and state have no classification, fault-tolerant store or checkpoint recovery",
+     ("memory classification", "state management", "checkpoint recovery", "memory failover"),
+     _cf_type(r"BedrockAgentCore::Memory") + r"|resource\s+\"aws_bedrockagentcore_memory\"|(?i:\bcheckpoint(?:er|ing|s)?\b)|[\"']?PointInTimeRecoveryEnabled[\"']?\s*:|\bpoint_in_time_recovery\b",
+     "AgentCore memory, checkpointing or point-in-time recovery",
+     "Keep agent state available: classify what is short-term and long-term memory, store it in a managed, replicated store with point-in-time recovery, checkpoint workflow state, and degrade gracefully when memory is unavailable."),
+    ("REPO-349", "MultiAgentOrchestrationFragile", "AGENTREL 4", "multi",
+     "A multi-agent system has no arbiter, capability taxonomy or fallback for collaboration",
+     ("arbiter", "capability taxonomy", "orchestration", "control plane"),
+     _cf_type(r"StepFunctions::StateMachine") + r"|resource\s+\"aws_sfn_state_machine\"",
+     "a Step Functions state machine",
+     "Coordinate agents reliably: an arbiter or supervisor that assigns work, a taxonomy of what each agent can do, fallbacks when a collaborator fails, and a resilient control plane such as Step Functions."),
+    ("REPO-350", "AgentCognitionUngrounded", "AGENTREL 5", "agent",
+     "An agent's reasoning is not grounded in real information or improved through evaluation",
+     ("grounding", "knowledge base", "evaluation-driven", "reasoning components"),
+     _cf_type(r"Bedrock::KnowledgeBase") + r"|resource\s+\"aws_bedrockagent_knowledge_base\"|[\"']?ContextualGroundingPolicyConfig[\"']?\s*:|\bcontextual_grounding_policy_config\b",
+     "a knowledge base or a contextual grounding check",
+     "Ground the agent in real data: retrieve from a knowledge base, check answers against the sources, keep reasoning components modular, and improve them from evaluation results."),
+    ("REPO-351", "LegacyIntegrationFragile", "AGENTREL 6", "agent",
+     "Agent integrations with existing systems have no idempotency, fallback or capability toggles",
+     ("legacy integration", "idempotency", "feature flags", "degraded mode"),
+     r"(?i)\bidempoten\w+|\bfeature[-_ ]?flags?\b|\bcircuit[-_ ]?breaker\b|" + _cf_type(r"AppConfig::\w+") + r"|resource\s+\"aws_appconfig_\w+\"",
+     "idempotency, feature flags, a circuit breaker or AppConfig",
+     "Protect existing systems from the agent: make tasks idempotent, add circuit breakers and fallbacks for slow or failing back ends, test degraded performance, and switch agent capabilities on and off with flags."),
+    ("REPO-352", "AgentRecoveryStagesMissing", "AGENTREL 7", "agent",
+     "Agent workflows have no staged recovery, automatic retry or dependency tracing",
+     ("staged recovery", "workflow stages", "automatic recovery"),
+     _cf_type(r"StepFunctions::StateMachine") + r"|resource\s+\"aws_sfn_state_machine\"|(?i:\bopentelemetry\b|\baws[-_]xray\b)",
+     "a Step Functions state machine, OpenTelemetry or X-Ray",
+     "Recover in steps, not from scratch: run workflows as stages with saved progress (Step Functions with Retry and Catch), retry failed agent steps automatically, and trace dependencies to find the failing one."),
+    ("REPO-353", "AgentDegradationUnmanaged", "AGENTREL 8", "agent",
+     "An agent has no configuration management, resource isolation or memory metrics for degradation",
+     ("configuration management", "resource isolation", "memory utilization", "graceful degradation"),
+     _cf_type(r"AppConfig::\w+|SSM::Parameter") + r"|resource\s+\"aws_(?:appconfig_\w+|ssm_parameter)\"|[\"']?ReservedConcurrentExecutions[\"']?\s*:|\breserved_concurrent_executions\b",
+     "AppConfig, an SSM parameter or reserved concurrency",
+     "Know when to degrade: keep agent configuration in AppConfig or Parameter Store, isolate resources per agent (reserved concurrency, quotas), trace processing, and track memory use to shed load before it fails."),
+    ("REPO-354", "AgentPerformanceUnmeasured", "AGENTPERF 1", "agent",
+     "An agent has no performance success criteria, telemetry or latency profile",
+     ("agent performance", "latency budget", "performance criteria"),
+     r"(?i)\bopentelemetry\b|\baws[-_]xray\b|\bput_metric_data\b|\bInvocationLatency\b",
+     "OpenTelemetry, X-Ray or custom metrics",
+     "Plan agent performance: success criteria with latency and throughput targets, telemetry on each step, and an end-to-end latency profile that shows where time goes."),
+    ("REPO-355", "AgentPipelineUnoptimized", "AGENTPERF 2", "agent",
+     "An agent does not stream responses or choose models per task",
+     ("streaming", "time to first token", "model selection", "reasoning pipeline"),
+     r"\bconverse_stream\b|\bConverseStream(?:Command)?\b|\binvoke_model_with_response_stream\b|\bInvokeModelWithResponseStream\w*\b|(?i:\bstream_final_response\b|\bstreamFinalResponse\b|\bprompt[-_ ]?router\b)",
+     "a streaming call or a prompt router",
+     "Cut perceived latency: stream responses to shorten time to first token, pick a smaller model for simple steps, and remove steps from the reasoning path that do not change the answer."),
+    ("REPO-356", "AgentContextUnoptimized", "AGENTPERF 3", "agent",
+     "An agent has no tiered memory, context management or optimized retrieval",
+     ("context window", "tiered memory", "rag optimization", "agentic retrieval"),
+     _cf_type(r"Bedrock::KnowledgeBase|ElastiCache::\w+|OpenSearchServerless::Collection") + r"|resource\s+\"aws_(?:bedrockagent_knowledge_base|elasticache_\w+|opensearchserverless_collection)\"|\bcachePoint\b|\bcache_point\b",
+     "a knowledge base, a cache or a vector collection, or prompt caching",
+     "Keep context lean and fast: tier memory (session, short-term, long-term), trim the context window, tune retrieval for latency and precision, and cache what agents read often."),
+    ("REPO-357", "AgentMessagingUnoptimized", "AGENTPERF 4", "agent",
+     "Agents communicate synchronously with no asynchronous or event-driven pattern",
+     ("asynchronous messaging", "event-driven", "agent protocols"),
+     _cf_type(r"SQS::Queue|SNS::Topic|Events::(?:EventBus|Rule)") + r"|resource\s+\"aws_(?:sqs_queue|sns_topic|cloudwatch_event_(?:bus|rule))\"",
+     "an SQS queue, SNS topic or EventBridge bus or rule",
+     "Let agents talk without waiting: hand work off through queues or events, use a standard protocol for agent messages, and batch where you can."),
+    ("REPO-358", "AgentOrchestrationUnoptimized", "AGENTPERF 5", "agent",
+     "Agent workflows and collaboration have no optimized orchestration pattern",
+     ("workflow orchestration", "agent collaboration", "delegation", "handoff"),
+     _cf_type(r"StepFunctions::StateMachine") + r"|resource\s+\"aws_sfn_state_machine\"|[\"']?AgentCollaboration[\"']?\s*:|\bagent_collaboration\s*=",
+     "a Step Functions state machine or agent collaboration",
+     "Orchestrate for speed: run independent steps in parallel, delegate to the right specialist agent in one hop, and pass only the context the next agent needs."),
+    ("REPO-359", "AgentToolUseUnoptimized", "AGENTPERF 6", "agent",
+     "Agent tool use has no optimized integration, invocation or chaining strategy",
+     ("tool integration", "tool chaining", "tool invocation"),
+     r"[\"']?ActionGroupExecutor[\"']?\s*:|\baction_group_executor\b|" + _cf_type(r"BedrockAgentCore::Gateway") + r"|resource\s+\"aws_bedrockagentcore_gateway\"",
+     "an action group executor or an AgentCore gateway",
+     "Make tools cheap to call: few well-described tools, batched or parallel invocations, results cached where they repeat, and chains collapsed into one tool when they always run together."),
+    ("REPO-360", "TenantIsolationMissing", "AGENTPERF 7", "agent",
+     "An agent service has no tenant-aware isolation or throttling",
+     ("multitenancy", "multi-tenant", "tenant isolation", "single tenant"),
+     r"(?i)\btenant\w*|" + _cf_type(r"ApiGateway::UsagePlan") + r"|resource\s+\"aws_api_gateway_usage_plan\"|[\"']?ThrottleSettings[\"']?\s*:",
+     "tenant handling, a usage plan or throttle settings",
+     "Keep one tenant from slowing the others: deploy per tier where needed, throttle and set quotas per tenant (usage plans), and tag requests with the tenant to measure each."),
+    ("REPO-361", "AgentReasoningCostUnmanaged", "AGENTCOST 1", "agent",
+     "Agent reasoning and collaboration loops have no cost bound",
+     ("reasoning cost", "reflection", "agent hierarchy", "supervisor"),
+     r"(?i)\bmax_?iterations\b|\bmaxIterations\b|\bmax_?turns\b|\brecursion_limit\b|\bSUPERVISOR_ROUTER\b",
+     "an iteration, turn or recursion limit, or a supervisor router",
+     "Keep reasoning loops short: limit reflection rounds, use a router supervisor for simple hand-offs, and keep agent hierarchies shallow so coordination does not multiply model calls."),
+    ("REPO-362", "AgentTokenCostUnmanaged", "AGENTCOST 2", "agent",
+     "An agent uses no tiered models, prompt caching or response caching",
+     ("tiered models", "token costs", "model tiers"),
+     r"(?i)\bprompt[-_ ]?router\b|\bIntelligentPromptRouter\b|\bcachePoint\b|\bcache_point\b|\bcache_control\b",
+     "a prompt router or prompt caching",
+     "Pay for fewer and cheaper tokens: route steps to the smallest capable model, cache repeated prompt prefixes and answers, and trim prompts; consider customization when volume is steady."),
+    ("REPO-363", "AgentStateCostUnmanaged", "AGENTCOST 3", "agent",
+     "Agent memory and state have no expiry, compression or tiering",
+     ("memory costs", "context compression", "state lifecycle"),
+     r"[\"']?(?:EventExpiryDuration|TimeToLiveSpecification)[\"']?\s*:|\bevent_expiry_duration\b|\bttl\s*\{",
+     "a memory expiry or a TTL",
+     "Keep only the state you need: expire session memory, summarize and prune long contexts, and move old state to cheaper storage."),
+    ("REPO-364", "AgentToolCostUnmanaged", "AGENTCOST 4", "agent",
+     "Agent tools run on always-on compute with no caching of results",
+     ("tool costs", "tool caching", "serverless tools"),
+     _cf_type(r"Lambda::Function") + r"|resource\s+\"aws_lambda_function\"|\blru_cache\b|@cache\b",
+     "a Lambda function or result caching",
+     "Make tool calls cheap: run tools on serverless compute shared across agents, cache tool results that repeat, and stop the agent calling a tool when the answer is already known."),
+    ("REPO-365", "AgentCostUnattributed", "AGENTCOST 5", "agent",
+     "Agent spend is not attributed per agent, workflow or tenant",
+     ("cost attribution", "chargeback", "cost allocation"),
+     r"\bApplicationInferenceProfile\b|resource\s+\"aws_bedrock_inference_profile\"|" + _cf_type(r"CE::CostCategory") + r"|resource\s+\"aws_ce_cost_category\"|\brequestMetadata\b|\brequest_metadata\b",
+     "an application inference profile, a cost category or request metadata",
+     "Know what each agent costs: tag model calls with an application inference profile or request metadata per agent and tenant, trace cost across multi-agent runs, and report chargeback and ROI."),
+    ("REPO-366", "AgentDeploymentCostUnmanaged", "AGENTCOST 6", "agent",
+     "Agent artifacts and start-up have no cost-efficient versioning or warm pools",
+     ("artifact management", "warm pools", "agent registry"),
+     _cf_type(r"ECR::Repository") + r"[^}]*LifecyclePolicy|resource\s+\"aws_ecr_lifecycle_policy\"|[\"']?ProvisionedConcurrencyConfig[\"']?\s*:|\bprovisioned_concurrent_executions\b",
+     "an ECR lifecycle policy or provisioned concurrency",
+     "Keep deployment lean: expire old agent images and versions, use a light registry for discovery, and warm only the agents that need fast start."),
+    ("REPO-367", "AgentCostGovernanceMissing", "AGENTCOST 7", "agent",
+     "Agent spend has no automated cut-off or anomaly detection",
+     ("cost governance", "cost anomaly", "spend limits"),
+     _cf_type(r"Budgets::Budget|Budgets::BudgetsAction|CE::AnomalyMonitor") + r"|resource\s+\"aws_(?:budgets_budget(?:_action)?|ce_anomaly_monitor)\"",
+     "an AWS Budgets budget or action, or a Cost Anomaly Detection monitor",
+     "Govern agent spend: a budget with an action that cuts off runaway agents, cost anomaly detection on Bedrock spend, and a regular review that feeds optimizations back."),
+    ("REPO-368", "AgentResourceFrameworkMissing", "AGENTSUS 1", "agent",
+     "Agents have no explicit resource boundaries or reusable workflow patterns",
+     ("resource boundaries", "workflow patterns", "shared services", "agent specification"), None, "",
+     "Give agents limits and reuse: explicit compute and memory boundaries per agent, shared services instead of copies, reusable workflow patterns, and specifications for long-running work."),
+    ("REPO-369", "AgentDependencySustainabilityMissing", "AGENTSUS 2", "agent",
+     "Agent dependencies have no caching, right-sizing or footprint measurement",
+     ("agent caching", "environmental footprint", "carbon footprint", "context management"),
+     r"\bcachePoint\b|\bcache_point\b|\bcache_control\b|(?i:\bcarbon\b)",
+     "prompt caching or a carbon measure",
+     "Use less to do the same: manage context and memory tightly, cache repeated work, scale data, network and compute dependencies to demand, and measure the footprint (Customer Carbon Footprint Tool)."),
+    ("REPO-370", "AgentSprawlUnmanaged", "AGENTSUS 3", "agent",
+     "Agents have no inventory, specifications or decommissioning to prevent sprawl",
+     ("agent inventory", "agent specifications", "agent sprawl", "decommission"), None, "",
+     "Keep agents durable and few: maintain the skills they encode and a specification for each, mirror the organization's competencies, and decommission agents that are no longer used."),
+)
+
+
+def _category_of_question(question: str) -> str:
+    """MLOPS 1 -> Operational Excellence, AGENTCOST 2 -> Cost, RAIDP 1 -> Operational Excellence."""
+    for prefix, category in (("OPS", "Operational Excellence"), ("REL", "Reliability"),
+                             ("PERF", "Performance Efficiency"), ("COST", "Cost"),
+                             ("SUS", "Sustainability"), ("SEC", "Security")):
+        if question.split()[0].endswith(prefix):
+            return category
+    return "Operational Excellence"  # the Responsible AI focus areas
+
+
+# Questions that apply only when the repo shows something: self-hosted model serving (vLLM,
+# Text Generation Inference, Ollama, llama.cpp, SGLang, Triton) for managed hosting.
+_LENS_PRACTICE_REQUIRES = {
+    "REPO-311": re.compile(
+        r"(?i)\bvllm\b|text-generation-inference|\bollama\b|llama[-_.]cpp|\bsglang\b|tritonserver"
+    ),
+}
+
+_THEME_OF_CATEGORY = {
+    "Operational Excellence": "observability", "Reliability": "resilience",
+    "Performance Efficiency": "observability", "Cost": "finops",
+    "Sustainability": "sustainability", "Security": "security-baseline",
+}
+
+
+def _lens_practice_rules() -> List[Rule]:
+    rules: List[Rule] = []
+    for rid, name, question, gate, title, terms, signal, signal_desc, recommendation in LENS_PRACTICE_TABLE:
+        category = _category_of_question(question)
+        searched = "the notes for a file or heading on " + ", ".join(terms)
+        if signal:
+            searched = f"the IaC, builds, code and dependency lists for {signal_desc}, and " + searched
+        cls = type(name, (_LensPracticeRule,), {
+            "__module__": __name__, "id": rid, "title": title, "gate": gate, "terms": terms,
+            "category": category, "themes": (_THEME_OF_CATEGORY[category],),
+            "note_name": re.compile(r"(?:^|[-_. ])(?:" + _terms_pattern(terms, "[-_ ]?") + r")(?:$|[-_. ])"),
+            "note_heading": re.compile(r"(?i).*\b(?:" + _terms_pattern(terms, "[- ]?") + r")\b.*"),
+            "signal": re.compile(signal) if signal else None, "signal_desc": signal_desc,
+            "recommendation": recommendation, "searched": searched,
+            "requires": _LENS_PRACTICE_REQUIRES.get(rid),
+        })
+        globals()[name] = cls
+        rules.append(cls())
+    return rules
+
+
+LENS_PRACTICE_RULES: List[Rule] = _lens_practice_rules()
+
 # SUS 3 design judgments answered by a repo note: async processing for batch work (SUST-004)
 # and managed services over self-managed ones (SUST-005). The rule classes live in
 # rules/sustainability.py and keep their ids; these decide.
@@ -13895,6 +16444,15 @@ AI_REPO_RULES: List[Rule] = [
     ResponsibleAiNoteMissing(), EvalSetMissing(), HumanOversightMissing(), AgentRoleMissing(),
     PromptCatalogMissing(), BedrockCallWithoutGuardrail(), BedrockCallWithoutTokenBound(),
     AiEvalNotInPipeline(), ModelCardMissing(), BiasEvaluationMissing(), HumanEscalationMissing(),
+    AgentRedTeamNotInPipeline(), AgentSecurityTestScopeMissing(), AgentThreatDetectionMissing(),
+    ReviewerProtectionMissing(), AgentAnomalyDetectionMissing(), RedTeamNotScheduled(),
+    MultiAgentTrustMissing(), MultiAgentCoordinationUnwatched(), AgentDecisionLogMissing(), AgentTracingMissing(), AgentIdentityAuthMissing(), AgentUnusedAccessUnreviewed(),
+    TrainingDataUnvalidated(),
+    MlDataTermsMissing(), MlGovernedEnvironmentMissing(), InterContainerTrafficUnencrypted(), MlTrainingDataUnvalidated(), AdversarialTestingMissing(), MlDataAccessUnmonitored(),
+    AgentHumanConfirmationMissing(), AgentToolInputsUnvalidated(), ToolRegistryMissing(), AgentMemoryInputsUnchecked(), HallucinationUnmonitored(), AgentChangeHistoryMissing(), AgentConfigDriftUnchecked(), AgentFeedbackLoopMissing(), AgentHandoffMissing(), AgentFailureTestsMissing(),
+    UserJourneyMissing(), AccessibilityRequirementsMissing(), HarmMitigationPlanMissing(), SafetyMetricMissing(), VeracityMetricMissing(), RobustnessMetricMissing(), PrivacyMetricMissing(), ControllabilityMetricMissing(), ExplainabilityMetricMissing(), SecurityMetricMissing(), TransparencyMetricMissing(), MonitoringConsentMissing(), AiDriftDetectionMissing(), AiMonitoringDashboardMissing(), TransparencyPlanMissing(), UserGuidanceMissing(),
+    BedrockInputUnvalidated(), GenAiAccessUnmonitored(), ModelCatalogMissing(), BedrockCallWithoutRetry(), GenAiPerformanceMetricsMissing(), UserFeedbackUncollected(), PromptLengthUnmanaged(), PromptCachingUnused(), GuardrailInputUntagged(), MlSensitiveDataUnprotected(), MlLineageUntracked(), MlDataRetentionMissing(), MlHumanReviewMissing(), MlExplainabilityUnevaluated(), MlDataDriftUnmonitored(), AutomatedRetrainingMissing(), FeatureReviewMissing(), MlEnvironmentSkewUnchecked(), MlTrainingDesignUnrecorded(), MlManagedBuildMissing(), LocalModeUnused(), AutoMlUnused(), UnmanagedTrainingInstances(), DistributedTrainingUnused(), CheckpointingUnused(), HyperparameterTuningUnused(), MlBudgetMissing(),
+    *LENS_PRACTICE_RULES,
 ]
 
 REPO_RULES: List[Rule] = [
@@ -13994,4 +16552,13 @@ REPO_RULES: List[Rule] = [
     ResponsibleAiNoteMissing(), EvalSetMissing(), HumanOversightMissing(), AgentRoleMissing(),
     PromptCatalogMissing(), BedrockCallWithoutGuardrail(), BedrockCallWithoutTokenBound(),
     AiEvalNotInPipeline(), ModelCardMissing(), BiasEvaluationMissing(), HumanEscalationMissing(),
+    AgentRedTeamNotInPipeline(), AgentSecurityTestScopeMissing(), AgentThreatDetectionMissing(),
+    ReviewerProtectionMissing(), AgentAnomalyDetectionMissing(), RedTeamNotScheduled(),
+    MultiAgentTrustMissing(), MultiAgentCoordinationUnwatched(), AgentDecisionLogMissing(), AgentTracingMissing(), AgentIdentityAuthMissing(), AgentUnusedAccessUnreviewed(),
+    TrainingDataUnvalidated(),
+    MlDataTermsMissing(), MlGovernedEnvironmentMissing(), InterContainerTrafficUnencrypted(), MlTrainingDataUnvalidated(), AdversarialTestingMissing(), MlDataAccessUnmonitored(),
+    AgentHumanConfirmationMissing(), AgentToolInputsUnvalidated(), ToolRegistryMissing(), AgentMemoryInputsUnchecked(), HallucinationUnmonitored(), AgentChangeHistoryMissing(), AgentConfigDriftUnchecked(), AgentFeedbackLoopMissing(), AgentHandoffMissing(), AgentFailureTestsMissing(),
+    UserJourneyMissing(), AccessibilityRequirementsMissing(), HarmMitigationPlanMissing(), SafetyMetricMissing(), VeracityMetricMissing(), RobustnessMetricMissing(), PrivacyMetricMissing(), ControllabilityMetricMissing(), ExplainabilityMetricMissing(), SecurityMetricMissing(), TransparencyMetricMissing(), MonitoringConsentMissing(), AiDriftDetectionMissing(), AiMonitoringDashboardMissing(), TransparencyPlanMissing(), UserGuidanceMissing(),
+    BedrockInputUnvalidated(), GenAiAccessUnmonitored(), ModelCatalogMissing(), BedrockCallWithoutRetry(), GenAiPerformanceMetricsMissing(), UserFeedbackUncollected(), PromptLengthUnmanaged(), PromptCachingUnused(), GuardrailInputUntagged(), MlSensitiveDataUnprotected(), MlLineageUntracked(), MlDataRetentionMissing(), MlHumanReviewMissing(), MlExplainabilityUnevaluated(), MlDataDriftUnmonitored(), AutomatedRetrainingMissing(), FeatureReviewMissing(), MlEnvironmentSkewUnchecked(), MlTrainingDesignUnrecorded(), MlManagedBuildMissing(), LocalModeUnused(), AutoMlUnused(), UnmanagedTrainingInstances(), DistributedTrainingUnused(), CheckpointingUnused(), HyperparameterTuningUnused(), MlBudgetMissing(),
+    *LENS_PRACTICE_RULES,
 ]

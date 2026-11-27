@@ -2,6 +2,28 @@
 
 New releases go at the top. See [CONTRIBUTING.md](CONTRIBUTING.md#releases) for when to cut one and how the version is bumped.
 
+## Unreleased
+
+### Fixes
+
+- V2 keeps a CDK finding when the template check that covers it answers a different Well-Architected question, so that question shows its finding: SEC-007 (CF-KMS-001), SEC-025 (CF-EC-002), SEC-039 (CF-OS-002), SEC-044 (CF-MSK-001), COST-007 (CF-S3-007), and BP-001 when CF-TAG-001 reports
+
+### Changes
+
+- New Agentic AI lens checks for AGENTSEC 9, security testing of an agent: an AI red-team or vulnerability scan in the pipeline (REPO-205), a note on the scoped environment the security tests run in (REPO-206), and runtime threat detection with automated response (REPO-207). They run only when the scan sees a Bedrock agent or AgentCore runtime
+- New Agentic AI lens checks for AGENTSEC 8, agent inputs and outputs: a Bedrock guardrail with no prompt attack filter on input (CF-BEDROCK-013), and one whose sensitive-information filters do not act on responses (CF-BEDROCK-014), on CloudFormation, Terraform and synthesised CDK
+- New Agentic AI lens checks for AGENTSEC 7, human oversight and rogue agents: a note on how reviewers are protected from overload and manipulation (REPO-208), anomaly detection with containment (REPO-209), and red teaming on a schedule (REPO-210)
+- New Agentic AI lens checks for AGENTSEC 6, multi-agent orchestration: trust boundaries between agents (REPO-211) and monitoring of how they coordinate (REPO-212), for a supervisor agent or agent collaborator
+- New Agentic AI lens checks for AGENTSEC 5, observability: a record of the agent's prompts, responses and decisions (REPO-213) and tracing of its calls (REPO-214)
+- New Agentic AI lens checks for AGENTSEC 3, agent identities: a role shared by an agent service and people (CF-BEDROCK-015), an agent role with no permissions boundary (CF-BEDROCK-016), no workload identity or token authorizer (REPO-215), and no unused-access review (REPO-216). Terraform `aws_iam_role` now reads `permissions_boundary`
+- New Generative AI lens checks: an agent role that grants every action of a service or writes on every resource (CF-BEDROCK-017, GENSEC 5), and a foundation model customized with no data validation step (REPO-217, GENSEC 6)
+- New Machine Learning lens security checks for a SageMaker workload: data and license terms (REPO-218, MLSEC 1), a governed environment, encrypted inter-node traffic and validated training data (REPO-219 to REPO-221, MLSEC 4), adversarial robustness testing (REPO-222, MLSEC 5), and an IAM policy that invokes every endpoint (CF-SAGE-014) and data access monitoring (REPO-223, MLSEC 6)
+- New Agentic AI lens checks for the remaining AGENTSEC and AGENTOPS practices: human confirmation of tool calls (REPO-224), tool input validation and an approved tool registry (REPO-225, REPO-226), memory input checks and hallucination checks (REPO-227, REPO-228), prompt and tool change history, configuration drift and a feedback loop (REPO-229 to REPO-231), and multi-agent hand-offs and dependency failure tests (REPO-232, REPO-233)
+- New Responsible AI lens checks: guardrail harmful-content filters on prompts and on responses (CF-BEDROCK-018, CF-BEDROCK-019, RAISP 3), endpoint data capture with no customer managed key (CF-SAGE-015, RAIMON 1), and repo checks for the user journey and accessibility (REPO-234, REPO-235), a harm mitigation plan (REPO-236), a metric per release-criteria dimension (REPO-237 to REPO-244), monitoring consent, drift detection and a dashboard (REPO-245 to REPO-247), and transparency and user guidance (REPO-248, REPO-249). Terraform endpoint configs now read `data_capture_config.kms_key_id`
+- New Generative AI lens checks: a policy that invokes every model (CF-BEDROCK-020) or a Bedrock role that reads every data store (CF-BEDROCK-021), access monitoring (REPO-251), input validation (REPO-250), a model catalog and retries (REPO-252, REPO-253), performance metrics and user feedback (REPO-254, REPO-255), and prompt length, prompt caching and guardrail input tags (REPO-256 to REPO-258)
+- New Machine Learning lens checks for a SageMaker workload: an over-broad execution role (CF-SAGE-016), sensitive data, lineage and retention (REPO-259 to REPO-261), human review, explainability, data drift, retraining and feature review (REPO-262 to REPO-266), environment skew (REPO-267), and the training cost levers (REPO-268 to REPO-276)
+- Every AI lens best practice now has a rule: REPO-277 to REPO-370 answer the remaining 94 questions of the four lenses, one rule per question, from a note on the question's topic or a signal in the IaC, builds, code or dependency lists. `LENS_NOT_CHECKED` is empty
+
 ## v1.3.3 - 2026-11-25
 
 ### Changes

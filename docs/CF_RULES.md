@@ -4,13 +4,13 @@ This document provides a comprehensive list of all rules checked by AWS Arch Age
 
 ## Overview
 
-AWS Arch Agent checks **368 static analysis rules** and **328 template checks** across the six AWS Well-Architected pillars, plus a few CDK best-practice checks. 141 of the 368 CDK rules (38%) have a template check. Those checks run on CloudFormation, Terraform, and synthesised CDK. [COVERAGE.md](COVERAGE.md) gives the reason for each of the others.
+AWS Arch Agent checks **534 static analysis rules** and **340 template checks** across the six AWS Well-Architected pillars, plus a few CDK best-practice checks. 141 of the 534 CDK rules (26%) have a template check. Those checks run on CloudFormation, Terraform, and synthesised CDK. [COVERAGE.md](COVERAGE.md) gives the reason for each of the others.
 
 ## Static Analysis Rules (V1 & V2 Modes)
 
 CDK source rules read TypeScript and Python and run in V1 and V2. Repo-level rules (`REPO-*`) read the repository tree and run for CDK, CloudFormation, and Terraform.
 
-### Security (115 rules)
+### Security (146 rules)
 
 **Encryption & Data Protection:**
 - SEC-006: S3 bucket encryption missing
@@ -148,8 +148,39 @@ CDK source rules read TypeScript and Python and run in V1 and V2. Repo-level rul
 - REPO-151: Data stores carry no classification tag to drive retention and storage tiers
 - REPO-198: A Bedrock AI workload keeps no prompt catalog
 - REPO-199: Code calls a Bedrock model with no guardrail
+- REPO-205: An agent's pipeline runs no AI red-team or vulnerability scan
+- REPO-206: An agent has no note on the scoped environment its security tests run in
+- REPO-207: An agent has no runtime threat detection or automated response
+- REPO-208: An agent has no note on how its human reviewers are protected from overload and manipulation
+- REPO-209: An agent has no behavioral anomaly detection or containment
+- REPO-210: An agent is not red-teamed or security-assessed on a schedule
+- REPO-211: A multi-agent system has no note on the trust boundaries between its agents
+- REPO-212: A multi-agent system has no tracing or anomaly detection on how its agents coordinate
+- REPO-213: An agent keeps no record of its prompts, responses and decisions
+- REPO-214: An agent's calls are not traced
+- REPO-215: An agent has no workload identity or token authorizer
+- REPO-216: No unused-access analyzer or permission audit covers the agent's roles
+- REPO-217: A foundation model is customized with no data validation step
+- REPO-218: An ML workload has no note on its data permissions, privacy and license terms
+- REPO-219: SageMaker is used with no governed environment: no project template, catalog or policy guardrail
+- REPO-220: SageMaker training does not encrypt traffic between its instances
+- REPO-221: A SageMaker model is trained with no data validation step
+- REPO-222: An ML workload tests no robustness against adversarial input
+- REPO-223: Nothing watches who reads or changes the ML data
+- REPO-224: No agent tool asks a person to confirm before it runs
+- REPO-225: An agent's tools do not validate their inputs and outputs
+- REPO-226: An agent's tools are not kept in an approved registry
+- REPO-227: An agent writes to memory with no check on what it stores
+- REPO-228: Nothing checks an agent's answers for hallucination before they spread
+- REPO-236: An AI workload has no plan that weighs trade-offs and assigns each harm a mitigation
+- REPO-245: An AI workload has no note on consent for monitoring production data
+- REPO-250: Code passes input to a Bedrock model with no validation or sanitizing
+- REPO-251: Nothing records or alerts on who calls the generative AI services
+- REPO-259: An ML workload does not find or mask sensitive data in its datasets
+- REPO-260: An ML workload tracks no lineage from data to model
+- REPO-261: An ML workload keeps its data with no retention or expiry rule
 
-### Reliability (73 rules)
+### Reliability (91 rules)
 
 **High Availability:**
 - REL-001: RDS instance missing multi-AZ
@@ -257,8 +288,26 @@ CDK source rules read TypeScript and Python and run in V1 and V2. Repo-level rul
 - REPO-148: No load test shows that the workload adapts to changes in demand
 - REPO-149: A lone EC2 instance has no data plane recovery
 - REPO-188: One stack declares many compute services and data stores with no stack, module or API boundary
+- REPO-252: Foundation model IDs are hardcoded across the code, with no model catalog
+- REPO-253: Code calls a Bedrock model with no retry or backoff setting
+- REPO-282: Applications call the model with no API or service in front of it
+- REPO-283: An ML workload has no data catalog or managed data pipeline
+- REPO-284: An ML workload has no traceable CI/CD/CT pipeline with feature and data checks
+- REPO-285: SageMaker endpoint changes have no safe deployment strategy
+- REPO-306: A generative AI workload has no plan for model throughput and quotas
+- REPO-307: A generative AI workload has no redundant private path to the model endpoints
+- REPO-308: Inference, embeddings and agents are available in one Region only
+- REPO-309: Long distributed AI tasks have no checkpointing or fault tolerance
+- REPO-346: An agent system has no resilient messaging layer between its parts
+- REPO-347: An agent has no note on its atomic tasks, instruction protocol and tiered oversight
+- REPO-348: Agent memory and state have no classification, fault-tolerant store or checkpoint recovery
+- REPO-349: A multi-agent system has no arbiter, capability taxonomy or fallback for collaboration
+- REPO-350: An agent's reasoning is not grounded in real information or improved through evaluation
+- REPO-351: Agent integrations with existing systems have no idempotency, fallback or capability toggles
+- REPO-352: Agent workflows have no staged recovery, automatic retry or dependency tracing
+- REPO-353: An agent has no configuration management, resource isolation or memory metrics for degradation
 
-### Operational Excellence (73 rules)
+### Operational Excellence (129 rules)
 
 **Logging:**
 - OPS-001: CloudTrail not enabled
@@ -355,8 +404,64 @@ CDK source rules read TypeScript and Python and run in V1 and V2. Repo-level rul
 - REPO-202: An AI workload has no model card or system card
 - REPO-203: A SageMaker workload measures no bias or fairness
 - REPO-204: An AI workload has no note on escalating to a person who can override it
+- REPO-229: Changes to an agent's prompts and tools are not versioned with their reason
+- REPO-230: Nothing detects drift in an agent's deployed configuration
+- REPO-231: No feedback loop feeds an agent's results back into its prompts and tools
+- REPO-232: A multi-agent system has no hand-off procedure with escalation to a person
+- REPO-233: No test exercises an agent when the tools or services it depends on fail
+- REPO-234: An AI workload has no map of the user journey it changes
+- REPO-235: An AI workload has no accessibility requirements for its user groups
+- REPO-237: An AI workload's evaluations measure no safety or harmful-output metric
+- REPO-238: An AI workload's evaluations measure no veracity metric
+- REPO-239: An AI workload's evaluations measure no robustness to input variation
+- REPO-240: An AI workload's evaluations measure no privacy protection
+- REPO-241: An AI workload's evaluations measure no user controllability
+- REPO-242: An AI workload's evaluations measure no explainability
+- REPO-243: An AI workload's evaluations measure no security risk
+- REPO-244: An AI workload's evaluations measure no transparency quality
+- REPO-246: An AI workload has no baseline or drift detection in operation
+- REPO-247: An AI workload has no monitoring dashboard
+- REPO-248: An AI workload has no transparency strategy or plan to keep its documentation current
+- REPO-249: An AI workload has no guide on reading its outputs and changing its behaviour responsibly
+- REPO-255: A generative AI workload collects no user feedback on its answers
+- REPO-267: Nothing checks an ML workload's environments for configuration skew
+- REPO-277: An ML workload has no note on who owns the model, its explainability bar and its business fit
+- REPO-278: An ML workload has no ML operating model: roles, profile template, improvement and feedback
+- REPO-279: An ML workload neither profiles its data nor versions its datasets and models
+- REPO-280: An ML workload has no MLOps pipeline or approved package source
+- REPO-281: An ML workload tracks no metrics for its deployment environments
+- REPO-302: A generative AI workload does not monitor its model metrics or protect against overload
+- REPO-303: A generative AI workload has no prompt template management or tracing of its agents and RAG
+- REPO-304: A generative AI workload's prompts and models are not released through a GenAIOps pipeline
+- REPO-305: A generative AI workload has no note on when to customize a model
+- REPO-320: An AI workload has no note on the business problem and why AI is needed
+- REPO-321: An AI workload has no note on its downstream and upstream stakeholders
+- REPO-322: An AI workload has no note on its expected inputs, their variation and the type of AI it needs
+- REPO-323: An AI workload has no note on its intended benefits
+- REPO-324: An AI workload has no catalog of potential harmful events by responsible AI dimension
+- REPO-325: An AI workload has no likelihood, severity and risk level for its potential harms
+- REPO-326: An AI workload has no testable release criteria
+- REPO-327: An AI workload has no note on the metrics that measure its release criteria
+- REPO-328: An AI workload sets no thresholds or confidence for its release criteria
+- REPO-329: An AI workload has no inventory of the datasets it evaluates, trains and runs on
+- REPO-330: An AI workload does not assess the quality and representativeness of its datasets
+- REPO-331: An AI workload does not review its datasets for unsafe content, bias, privacy and correctness
+- REPO-332: An AI workload has no dataset registry, governance or datasheets
+- REPO-333: An AI workload has no system registry entry for its design and the risks it adds
+- REPO-334: An AI workload has no note on how its core design meets the release criteria
+- REPO-335: An AI workload does not compare candidate designs with paired tests
+- REPO-336: An AI workload is not re-evaluated against its release criteria on each update
+- REPO-337: An AI workload has no documented release decision with its confidence and reviewers
+- REPO-338: An AI workload has no process for release criteria that are not met
+- REPO-339: An AI workload has no loop that turns monitoring results into improvements
+- REPO-340: An AI workload has no decommissioning plan that honours its obligations
+- REPO-341: An agent has no defined lifecycle, AgentOps pipeline or scaling plan
+- REPO-342: An agent's tools have no catalog, standard protocol or fallback on failure
+- REPO-343: An agent has no end-to-end tracing, audit logs, KPIs or workflow dashboards
+- REPO-344: An agent has no layered testing, ongoing evaluation or SME approval workflow
+- REPO-345: An agent has no automated recovery, knowledge base for operators or break-glass runbook
 
-### Performance Efficiency (24 rules)
+### Performance Efficiency (45 rules)
 
 **Compute Optimization:**
 - PERF-001: Compute may not use Graviton/ARM
@@ -395,8 +500,29 @@ CDK source rules read TypeScript and Python and run in V1 and V2. Repo-level rul
 - REPO-185: Nothing remediates performance problems automatically
 - REPO-186: No load test shows how the workload performs under load
 - REPO-187: No performance review note names how the team improves and reviews performance
+- REPO-254: A generative AI workload collects no latency, token or quality metrics
+- REPO-262: An ML workload has no human review of its predictions
+- REPO-263: An ML workload does not evaluate model explainability
+- REPO-264: An ML workload does not monitor its input data for drift
+- REPO-265: An ML workload has no automated retraining trigger
+- REPO-266: An ML workload has no review of new data and features before retraining
+- REPO-286: An ML workload has no key performance indicators tied to the business goal
+- REPO-287: An ML workload defines no evaluation metrics for its models
+- REPO-288: An ML workload has no data lake or modern data architecture
+- REPO-289: An ML workload does not evaluate its instance types, features and performance trade-offs
+- REPO-290: An ML workload has no note on why it serves where and how it does
+- REPO-310: A generative AI workload does not load test its endpoints or tune its inference parameters
+- REPO-311: A generative AI workload serves models on infrastructure it manages
+- REPO-312: Vector retrieval is not tested for latency and relevance, and its vector size is not chosen
+- REPO-354: An agent has no performance success criteria, telemetry or latency profile
+- REPO-355: An agent does not stream responses or choose models per task
+- REPO-356: An agent has no tiered memory, context management or optimized retrieval
+- REPO-357: Agents communicate synchronously with no asynchronous or event-driven pattern
+- REPO-358: Agent workflows and collaboration have no optimized orchestration pattern
+- REPO-359: Agent tool use has no optimized integration, invocation or chaining strategy
+- REPO-360: An agent service has no tenant-aware isolation or throttling
 
-### Cost Optimization (51 rules)
+### Cost Optimization (79 rules)
 
 **Resource Right-Sizing:**
 - COST-002: Compute resources may miss autoscaling
@@ -474,6 +600,34 @@ CDK source rules read TypeScript and Python and run in V1 and V2. Repo-level rul
 - REPO-181: A Marketplace image runs on a dedicated host with no licensing note
 - REPO-182: No dated cost review or scheduled cost report is in the repo
 - REPO-200: Code calls a Bedrock model with no maximum output tokens
+- REPO-256: Code sends prompts to a Bedrock model with no token counting or trimming
+- REPO-257: Code calls a Bedrock model with no prompt caching
+- REPO-258: Guarded Bedrock calls send the whole prompt through the guardrail, with no input tags
+- REPO-268: An ML workload has no note on its training choices: instance, framework, data size, location and algorithm
+- REPO-269: An ML workload has no managed build environment
+- REPO-270: SageMaker training is never tried in local mode first
+- REPO-271: SageMaker training does not try automated ML
+- REPO-272: An ML workload runs GPU instances outside SageMaker managed training
+- REPO-273: SageMaker training does not use distributed training
+- REPO-274: SageMaker training saves no checkpoints and uses no warm start
+- REPO-275: SageMaker training does not use automatic hyperparameter tuning
+- REPO-276: An ML workload has no budget to track its spend
+- REPO-291: An ML workload has no note on its return on investment and total cost of ownership
+- REPO-292: An ML workload has no note on whether ML is needed and on custom versus pre-trained models
+- REPO-293: Training data is labeled, prepared and reused with no managed service
+- REPO-294: Model hosting has no cost-effective option, hardware choice or right-sizing
+- REPO-295: An ML workload monitors no cost by activity, endpoint usage or training debug data
+- REPO-313: A generative AI workload has no right-sized model choice or prompt router
+- REPO-314: A generative AI workload has no note on on-demand, batch or provisioned inference
+- REPO-315: Vector stores use the default embedding length with no choice recorded
+- REPO-316: Agent workflows have no stopping condition such as a step limit or timeout
+- REPO-361: Agent reasoning and collaboration loops have no cost bound
+- REPO-362: An agent uses no tiered models, prompt caching or response caching
+- REPO-363: Agent memory and state have no expiry, compression or tiering
+- REPO-364: Agent tools run on always-on compute with no caching of results
+- REPO-365: Agent spend is not attributed per agent, workflow or tenant
+- REPO-366: Agent artifacts and start-up have no cost-efficient versioning or warm pools
+- REPO-367: Agent spend has no automated cut-off or anomaly detection
 
 ### Best Practices (5 rules)
 
@@ -483,7 +637,7 @@ CDK source rules read TypeScript and Python and run in V1 and V2. Repo-level rul
 - BP-004: CDK Aspects not used for policy enforcement
 - BP-005: CDK context not used for environment-specific config
 
-### Sustainability (27 rules)
+### Sustainability (39 rules)
 
 - SUST-001: Spot instances not considered for batch/non-critical workloads
 - SUST-002: Resource right-sizing opportunities detected
@@ -518,6 +672,18 @@ CDK source rules read TypeScript and Python and run in V1 and V2. Repo-level rul
 - REPO-191: Nothing proposes updates to dependencies, runtimes and base images
 - REPO-192: A dedicated always-on fleet runs builds
 - REPO-193: A mobile app is built and no device farm tests it
+- REPO-296: An ML workload has no note on its environmental impact or benefit
+- REPO-297: An ML workload has no note on pre-trained models or sustainable Regions
+- REPO-298: ML data has no lifecycle policy or sustainable storage tier
+- REPO-299: ML training has no sustainable performance criteria, early stopping or artifact clean-up
+- REPO-300: Model hosting uses no efficient silicon, optimized models or shared endpoints
+- REPO-301: An ML workload retrains on a fixed schedule with no measure of need
+- REPO-317: A generative AI workload uses no auto scaling, serverless or efficient customization
+- REPO-318: Generative AI data has no lifecycle or efficient storage tier
+- REPO-319: A generative AI workload uses no smaller model or optimized inference
+- REPO-368: Agents have no explicit resource boundaries or reusable workflow patterns
+- REPO-369: Agent dependencies have no caching, right-sizing or footprint measurement
+- REPO-370: Agents have no inventory, specifications or decommissioning to prevent sprawl
 
 ## CloudFormation Template Rules
 
@@ -648,6 +814,9 @@ CloudFormation template rules run when the agent has access to template files. T
   - CF-SAGE-011 (Low): an endpoint whose config is in the template with an instance variant, and that no scalable target with `ServiceNamespace: sagemaker` and `ScalableDimension: sagemaker:variant:DesiredInstanceCount` names in `ResourceId` (by reference, or `endpoint/<EndpointName>/` for a literal name). A SageMaker target that cannot be tied to an endpoint, a `ResourceId` from a parameter or a variable, or a child stack or module that may hold a target, counts for every endpoint. A serverless endpoint, and one whose config the scan cannot find, are not judged. MLREL05-BP01.
   - CF-SAGE-012 (Low): a feature group with an online store that is on (`EnableOnlineStore: true`) and no `OnlineStoreConfig.SecurityConfig.KmsKeyId`, or an offline store with no `OfflineStoreConfig.S3StorageConfig.KmsKeyId` (Terraform `security_config.kms_key_id`, `s3_storage_config.kms_key_id`). MLSEC02-BP01.
   - CF-SAGE-013 (Low): a model none of whose readable containers (`PrimaryContainer`, `Containers`; Terraform `primary_container`, `container`) sets `ModelPackageName`, so what it runs is not a Model Registry version. A container the scan cannot read, or a model with no container, is not judged. MLREL05-BP02.
+  - CF-SAGE-014 (Medium): an IAM role, policy, user or group with an Allow for `sagemaker:InvokeEndpoint` (or a `sagemaker:Invoke*` pattern that covers it) on `Resource: *`. `sagemaker:*` is CF-IAM-001's finding. Machine Learning lens MLSEC06-BP01.
+  - CF-SAGE-015 (Low): an endpoint config whose `DataCaptureConfig` captures (`EnableCapture` true or unset) with no `KmsKeyId` (Terraform `data_capture_config.kms_key_id`). Responsible AI lens RAIMON01-BP03.
+  - CF-SAGE-016 (Medium): an IAM role `sagemaker.amazonaws.com` may assume whose policies grant `*`, a `<service>:*` action or a write on `Resource: *`, or that lists AmazonSageMakerFullAccess, AmazonS3FullAccess or AdministratorAccess. Machine Learning lens MLSEC03-BP01.
 - **Bedrock** (`AWS::Bedrock::Agent`, `AWS::Bedrock::Guardrail`, `AWS::Bedrock::KnowledgeBase`, `AWS::Bedrock::Prompt`, `AWS::BedrockAgentCore::*`; Terraform `aws_bedrockagent_agent`, `aws_bedrock_guardrail`, `aws_bedrockagent_knowledge_base`, `aws_bedrockagent_prompt`, `aws_bedrockagentcore_*`). These checks run only for an AI workload and each answers one best practice of the Generative AI or Agentic AI lens, never a core question. A value the scan cannot read is not judged. There is no `CF-BEDROCK-002`: it was dropped before release, and the guardrail filter check is `CF-BEDROCK-005`.
   - CF-BEDROCK-001 (Medium): an agent with no `GuardrailConfiguration` (Terraform `guardrail_configuration` block). GENSEC02-BP01.
   - CF-BEDROCK-003 (Low): an agent with no `IdleSessionTTLInSeconds` (Terraform `idle_session_ttl_in_seconds`). GENREL03-BP02.
@@ -660,6 +829,15 @@ CloudFormation template rules run when the agent has access to template files. T
   - CF-BEDROCK-010 (Low): a guardrail with no denied topic (`TopicPolicyConfig.TopicsConfig`, Terraform `topic_policy_config.topics_config`). Responsible AI lens RAIBR04-BP01.
   - CF-BEDROCK-011 (Low): a guardrail with a content or regex filter and no PII entity filter (`SensitiveInformationPolicyConfig.PiiEntitiesConfig`, Terraform `sensitive_information_policy_config.pii_entities_config`). A guardrail with no filter at all is CF-BEDROCK-005's finding, not this one. Which entity types are listed is not judged. Responsible AI lens RAISP03-BP01.
   - CF-BEDROCK-012 (Low): in a template with a knowledge base, a guardrail with no contextual grounding filter (`ContextualGroundingPolicyConfig.FiltersConfig`, Terraform `contextual_grounding_policy_config.filters_config`). Responsible AI lens RAISP03-BP04.
+  - CF-BEDROCK-013 (Medium): a guardrail with a content or sensitive-information filter and no content filter of `Type: PROMPT_ATTACK` that acts on input (`InputStrength` not `NONE`, `InputEnabled` not false; Terraform `content_policy_config.filters_config` `type`, `input_strength`, `input_enabled`). A guardrail with no filter at all is CF-BEDROCK-005's finding. A filter type or strength the scan cannot read is not judged. Agentic AI lens AGENTSEC08-BP01.
+  - CF-BEDROCK-014 (Low): a guardrail whose PII entity and regex filters are all off for responses: each has `OutputEnabled: false` or an output action (`OutputAction`, else `Action`) of `NONE` (Terraform `output_enabled`, `output_action`, `action`). A guardrail with no such filter is CF-BEDROCK-005's or CF-BEDROCK-011's finding. Agentic AI lens AGENTSEC08-BP02.
+  - CF-BEDROCK-015 (Medium): an IAM role (`AWS::IAM::Role`, Terraform `aws_iam_role`) whose trust policy lets `bedrock.amazonaws.com` or `bedrock-agentcore.amazonaws.com` assume it and also an `AWS` or `Federated` principal, so the agent and people share it. A trust policy the scan cannot read is not judged. Agentic AI lens AGENTSEC03-BP02.
+  - CF-BEDROCK-016 (Low): an IAM role an agent service may assume with no `PermissionsBoundary` (Terraform `permissions_boundary`). Agentic AI lens AGENTSEC03-BP03.
+  - CF-BEDROCK-017 (Medium): an IAM role an agent service may assume whose inline or attached policies grant `*`, a `<service>:*` action, or a write action on `Resource: *`, or that lists the AdministratorAccess managed policy. Generative AI lens GENSEC05-BP01.
+  - CF-BEDROCK-018 (Low): a guardrail with a content or sensitive-information filter where no HATE, INSULTS, SEXUAL, VIOLENCE or MISCONDUCT content filter acts on prompts (`InputStrength` not `NONE`, `InputEnabled` not false). PROMPT_ATTACK is CF-BEDROCK-013's. Responsible AI lens RAISP03-BP02.
+  - CF-BEDROCK-019 (Low): the same for responses (`OutputStrength`, `OutputEnabled`). Responsible AI lens RAISP03-BP03.
+  - CF-BEDROCK-020 (Medium): an IAM role, policy, user or group with an Allow for `bedrock:InvokeModel`, `InvokeModelWithResponseStream`, `Converse` or `ConverseStream` (or a pattern that covers one) on `Resource: *`. `bedrock:*` is CF-IAM-001's finding. Generative AI lens GENSEC01-BP01.
+  - CF-BEDROCK-021 (Medium): an IAM role an agent service may assume with an Allow for a data store read (`s3:GetObject`, `s3:ListBucket`, DynamoDB reads, `rds-data:ExecuteStatement`, `aoss:APIAccessAll`, OpenSearch HTTP reads, `secretsmanager:GetSecretValue`) on `Resource: *`. Generative AI lens GENSEC01-BP03.
 - **AgentCore** (`AWS::BedrockAgentCore::Runtime`, `AWS::BedrockAgentCore::Gateway`, `AWS::BedrockAgentCore::Memory`; Terraform `aws_bedrockagentcore_agent_runtime`, `aws_bedrockagentcore_gateway`, `aws_bedrockagentcore_memory`). Run only for an AI workload, like the Bedrock checks. A memory's `EventExpiryDuration` is required, so it is not checked; a runtime has no tracing property to read.
   - CF-AGENTCORE-001 (Medium): a runtime with literal `NetworkConfiguration.NetworkMode: PUBLIC` (Terraform `network_configuration.network_mode`). GENSEC01-BP02.
   - CF-AGENTCORE-002 (Medium): a gateway with literal `AuthorizerType: NONE` (Terraform `authorizer_type`). `AUTHENTICATE_ONLY` is not reported. Agentic AI lens AGENTSEC02-BP01.
@@ -802,7 +980,7 @@ CloudFormation template rules run when the agent has access to template files. T
 | Pillar | CF rule IDs |
 |--------|-------------|
 | Operational Excellence | CF-ECS-012, CF-CFG-001, CF-ALARM-001, CF-ALARM-002, CF-ALARM-003, CF-ALARM-004, CF-OBS-001, CF-OBS-002, CF-OBS-003, CF-DASH-001, CF-CT-004, CF-S3-004, CF-RDS-007, CF-RDS-010, CF-RDS-011, CF-CT-001, CF-CT-002, CF-FL-001, CF-EKS-001, CF-TGW-002, CF-CB-004, CF-CP-003, CF-OS-006, CF-RS-004, CF-DOCDB-003, CF-NEP-002, CF-SFN-002, CF-SFN-003, CF-EB-001, CF-ECS-008, CF-ECS-010, CF-ASG-005, CF-GLUE-002, CF-GLUE-003, CF-S3-011, CF-CF-005, CF-FSX-002, CF-PATCH-001, CF-SAGE-006, CF-BEDROCK-004, CF-SYN-001, CF-LOGS-001, CF-SAGE-010 |
-| Security | CF-GD-001, CF-SH-001, CF-MACIE-001, CF-CT-005, CF-S3-001, CF-S3-002, CF-S3-005, CF-RDS-001, CF-RDS-004, CF-APIGW-003, CF-APIGW-004, CF-APIGW-007, CF-APIGW-009, CF-APIGW-V2-003, CF-LAM-004, CF-LAM-005, CF-RDS-006, CF-RDS-008, CF-RDS-009, CF-RDS-012, CF-RDS-013, CF-CT-003, CF-KMS-001, CF-RP-001, CF-EC2-001, CF-EKS-002, CF-EKS-003, CF-IAM-001, CF-IAM-002, CF-IAM-003, CF-IAM-004, CF-IAM-005, CF-IAM-006, CF-IAM-007, CF-IAM-008, CF-IAM-009, CF-IAM-010, CF-IAM-011, CF-ALB-002, CF-ALB-003, CF-NLB-001, CF-ALB-004, CF-ALB-006, CF-CLB-001, CF-CLB-002, CF-SG-001, CF-SG-002, CF-SG-003, CF-NACL-001, CF-TGW-001, CF-CW-002, CF-SQS-001, CF-DDB-002, CF-LAM-003, CF-SNS-001, CF-EBS-001, CF-EFS-001, CF-KIN-001, CF-EC-001, CF-EC-002, CF-OS-001, CF-OS-002, CF-RS-001, CF-DOCDB-001, CF-NEP-001, CF-MSK-001, CF-CF-001, CF-CF-002, CF-CF-003, CF-CF-004, CF-WAF-001, CF-EC2-002, CF-EC2-003, CF-PAR-001, CF-PAR-002, CF-ECR-001, CF-ECR-002, CF-ECR-003, CF-ECS-001, CF-ECS-002, CF-ECS-003, CF-SM-001, CF-COG-001, CF-COG-002, CF-COG-003, CF-CB-001, CF-CB-002, CF-CB-003, CF-CB-005, CF-CP-001, CF-KMS-002, CF-SSM-001, CF-OS-003, CF-OS-004, CF-OS-005, CF-MSK-002, CF-MSK-003, CF-RS-002, CF-RS-005, CF-RS-006, CF-RS-007, CF-RS-008, CF-NEP-005, CF-BAK-001, CF-EC-005, CF-EC-006, CF-EC-007, CF-EFS-004, CF-EFS-005, CF-ECS-004, CF-ECS-005, CF-ECS-006, CF-ECS-007, CF-ECS-009, CF-EKS-004, CF-ASG-003, CF-ASG-004, CF-ATH-001, CF-ATH-002, CF-GLUE-001, CF-FH-001, CF-EMR-001, CF-EMR-002, CF-EMR-003, CF-DMS-001, CF-DMS-002, CF-DMS-003, CF-S3-008, CF-S3-009, CF-CF-008, CF-CF-010, CF-CF-011, CF-SAGE-001, CF-SAGE-002, CF-SAGE-003, CF-SAGE-004, CF-FSX-001, CF-APPSYNC-001, CF-APPSYNC-002, CF-APPSYNC-003, CF-TRANSFER-001, CF-TRANSFER-002, CF-TRANSFER-003, CF-BEANSTALK-002, CF-R53-001, CF-R53-002, CF-ACM-002, CF-ACM-003, CF-BEDROCK-001, CF-LAM-011, CF-SAGE-008, CF-SAGE-009, CF-SAGE-012, CF-BEDROCK-010, CF-BEDROCK-011, CF-BEDROCK-012 |
+| Security | CF-GD-001, CF-SH-001, CF-MACIE-001, CF-CT-005, CF-S3-001, CF-S3-002, CF-S3-005, CF-RDS-001, CF-RDS-004, CF-APIGW-003, CF-APIGW-004, CF-APIGW-007, CF-APIGW-009, CF-APIGW-V2-003, CF-LAM-004, CF-LAM-005, CF-RDS-006, CF-RDS-008, CF-RDS-009, CF-RDS-012, CF-RDS-013, CF-CT-003, CF-KMS-001, CF-RP-001, CF-EC2-001, CF-EKS-002, CF-EKS-003, CF-IAM-001, CF-IAM-002, CF-IAM-003, CF-IAM-004, CF-IAM-005, CF-IAM-006, CF-IAM-007, CF-IAM-008, CF-IAM-009, CF-IAM-010, CF-IAM-011, CF-ALB-002, CF-ALB-003, CF-NLB-001, CF-ALB-004, CF-ALB-006, CF-CLB-001, CF-CLB-002, CF-SG-001, CF-SG-002, CF-SG-003, CF-NACL-001, CF-TGW-001, CF-CW-002, CF-SQS-001, CF-DDB-002, CF-LAM-003, CF-SNS-001, CF-EBS-001, CF-EFS-001, CF-KIN-001, CF-EC-001, CF-EC-002, CF-OS-001, CF-OS-002, CF-RS-001, CF-DOCDB-001, CF-NEP-001, CF-MSK-001, CF-CF-001, CF-CF-002, CF-CF-003, CF-CF-004, CF-WAF-001, CF-EC2-002, CF-EC2-003, CF-PAR-001, CF-PAR-002, CF-ECR-001, CF-ECR-002, CF-ECR-003, CF-ECS-001, CF-ECS-002, CF-ECS-003, CF-SM-001, CF-COG-001, CF-COG-002, CF-COG-003, CF-CB-001, CF-CB-002, CF-CB-003, CF-CB-005, CF-CP-001, CF-KMS-002, CF-SSM-001, CF-OS-003, CF-OS-004, CF-OS-005, CF-MSK-002, CF-MSK-003, CF-RS-002, CF-RS-005, CF-RS-006, CF-RS-007, CF-RS-008, CF-NEP-005, CF-BAK-001, CF-EC-005, CF-EC-006, CF-EC-007, CF-EFS-004, CF-EFS-005, CF-ECS-004, CF-ECS-005, CF-ECS-006, CF-ECS-007, CF-ECS-009, CF-EKS-004, CF-ASG-003, CF-ASG-004, CF-ATH-001, CF-ATH-002, CF-GLUE-001, CF-FH-001, CF-EMR-001, CF-EMR-002, CF-EMR-003, CF-DMS-001, CF-DMS-002, CF-DMS-003, CF-S3-008, CF-S3-009, CF-CF-008, CF-CF-010, CF-CF-011, CF-SAGE-001, CF-SAGE-002, CF-SAGE-003, CF-SAGE-004, CF-FSX-001, CF-APPSYNC-001, CF-APPSYNC-002, CF-APPSYNC-003, CF-TRANSFER-001, CF-TRANSFER-002, CF-TRANSFER-003, CF-BEANSTALK-002, CF-R53-001, CF-R53-002, CF-ACM-002, CF-ACM-003, CF-BEDROCK-001, CF-LAM-011, CF-SAGE-008, CF-SAGE-009, CF-SAGE-012, CF-BEDROCK-010, CF-BEDROCK-011, CF-BEDROCK-012, CF-BEDROCK-013, CF-BEDROCK-014, CF-BEDROCK-015, CF-BEDROCK-016, CF-BEDROCK-017, CF-SAGE-014, CF-BEDROCK-018, CF-BEDROCK-019, CF-SAGE-015, CF-BEDROCK-020, CF-BEDROCK-021, CF-SAGE-016 |
 | Reliability | CF-S3-003, CF-RDS-002, CF-RDS-003, CF-RDS-005, CF-LAM-001, CF-LAM-006, CF-LAM-007, CF-LAM-008, CF-LAM-009, CF-APIGW-005, CF-APIGW-006, CF-APIGW-V2-004, CF-DDB-001, CF-SQS-002, CF-DEL-001, CF-NAT-001, CF-ALB-005, CF-ALB-007, CF-CLB-004, CF-CLB-005, CF-CP-002, CF-KMS-003, CF-OS-007, CF-KIN-002, CF-RS-003, CF-DOCDB-002, CF-DOCDB-004, CF-NEP-003, CF-NEP-004, CF-SFN-001, CF-EB-002, CF-SQS-003, CF-BAK-002, CF-BAK-003, CF-BAK-004, CF-BAK-005, CF-DDB-004, CF-DDB-005, CF-EC-003, CF-EC-004, CF-EFS-002, CF-ASG-001, CF-ASG-002, CF-DMS-004, CF-S3-010, CF-CF-009, CF-SAGE-005, CF-FSX-003, CF-R53-003, CF-ACM-001, CF-GA-001, CF-VPC-004, CF-VPC-005, CF-VPC-006, CF-BEDROCK-003, CF-SAGE-011, CF-SAGE-013 |
 | Performance Efficiency | CF-APIGW-008, CF-PERF-001, CF-PERF-002, CF-PERF-003, CF-PERF-004, CF-PERF-005, CF-PERF-006, CF-ECS-011, CF-CF-013, CF-APPSYNC-004, CF-LAM-010 |
 | Cost Optimization | CF-DEMAND-001, CF-BUDGET-001, CF-CW-001, CF-RDS-014, CF-COST-002, CF-EBS-002, CF-EIP-001, CF-TAG-001, CF-TAG-002, CF-ENV-001, CF-ENV-002, CF-ENV-003, CF-ENV-004, CF-ENV-005, CF-ENV-006, CF-GEN-001, CF-S3-006, CF-S3-007, CF-DDB-003, CF-VPC-002, CF-VPC-003, CF-SSM-002, CF-EFS-003, CF-ASG-006, CF-S3-012, CF-CF-006, CF-CF-012, CF-CE-001, CF-ECS-013, CF-SAGE-007 |
@@ -912,6 +1090,15 @@ Every rule has one or more themes, which cut across pillars: `finops`, `security
 | CF-BEDROCK-010 | security-baseline |
 | CF-BEDROCK-011 | data-protection |
 | CF-BEDROCK-012 | security-baseline |
+| CF-BEDROCK-013 | security-baseline |
+| CF-BEDROCK-014 | data-protection |
+| CF-BEDROCK-015 | identity |
+| CF-BEDROCK-016 | identity |
+| CF-BEDROCK-017 | identity |
+| CF-BEDROCK-018 | security-baseline |
+| CF-BEDROCK-019 | security-baseline |
+| CF-BEDROCK-020 | identity |
+| CF-BEDROCK-021 | identity |
 | CF-BUDGET-001 | finops |
 | CF-CB-001 | data-protection, identity |
 | CF-CB-002 | data-protection, identity |
@@ -1142,6 +1329,9 @@ Every rule has one or more themes, which cut across pillars: `finops`, `security
 | CF-SAGE-011 | resilience |
 | CF-SAGE-012 | data-protection |
 | CF-SAGE-013 | resilience |
+| CF-SAGE-014 | identity |
+| CF-SAGE-015 | data-protection |
+| CF-SAGE-016 | identity |
 | CF-SFN-001 | resilience |
 | CF-SFN-002 | observability |
 | CF-SFN-003 | observability |
@@ -1468,6 +1658,172 @@ Every rule has one or more themes, which cut across pillars: `finops`, `security
 | REPO-202 | observability |
 | REPO-203 | observability |
 | REPO-204 | observability |
+| REPO-205 | security-baseline |
+| REPO-206 | security-baseline |
+| REPO-207 | security-baseline |
+| REPO-208 | security-baseline |
+| REPO-209 | security-baseline |
+| REPO-210 | security-baseline |
+| REPO-211 | security-baseline |
+| REPO-212 | observability |
+| REPO-213 | observability |
+| REPO-214 | observability |
+| REPO-215 | identity |
+| REPO-216 | identity |
+| REPO-217 | data-protection |
+| REPO-218 | data-protection |
+| REPO-219 | security-baseline |
+| REPO-220 | data-protection |
+| REPO-221 | data-protection |
+| REPO-222 | security-baseline |
+| REPO-223 | observability |
+| REPO-224 | security-baseline |
+| REPO-225 | security-baseline |
+| REPO-226 | security-baseline |
+| REPO-227 | security-baseline |
+| REPO-228 | observability |
+| REPO-229 | observability |
+| REPO-230 | observability |
+| REPO-231 | observability |
+| REPO-232 | observability |
+| REPO-233 | resilience |
+| REPO-234 | observability |
+| REPO-235 | observability |
+| REPO-236 | security-baseline |
+| REPO-237 | observability |
+| REPO-238 | observability |
+| REPO-239 | observability |
+| REPO-240 | observability |
+| REPO-241 | observability |
+| REPO-242 | observability |
+| REPO-243 | observability |
+| REPO-244 | observability |
+| REPO-245 | data-protection |
+| REPO-246 | observability |
+| REPO-247 | observability |
+| REPO-248 | observability |
+| REPO-249 | observability |
+| REPO-250 | security-baseline |
+| REPO-251 | observability |
+| REPO-252 | resilience |
+| REPO-253 | resilience |
+| REPO-254 | observability |
+| REPO-255 | observability |
+| REPO-256 | finops |
+| REPO-257 | finops |
+| REPO-258 | finops |
+| REPO-259 | data-protection |
+| REPO-260 | observability |
+| REPO-261 | data-protection |
+| REPO-262 | observability |
+| REPO-263 | observability |
+| REPO-264 | observability |
+| REPO-265 | resilience |
+| REPO-266 | observability |
+| REPO-267 | observability |
+| REPO-268 | finops |
+| REPO-269 | finops |
+| REPO-270 | finops |
+| REPO-271 | finops |
+| REPO-272 | finops |
+| REPO-273 | finops |
+| REPO-274 | finops |
+| REPO-275 | finops |
+| REPO-276 | finops |
+| REPO-277 | observability |
+| REPO-278 | observability |
+| REPO-279 | observability |
+| REPO-280 | observability |
+| REPO-281 | observability |
+| REPO-282 | resilience |
+| REPO-283 | resilience |
+| REPO-284 | resilience |
+| REPO-285 | resilience |
+| REPO-286 | observability |
+| REPO-287 | observability |
+| REPO-288 | observability |
+| REPO-289 | observability |
+| REPO-290 | observability |
+| REPO-291 | finops |
+| REPO-292 | finops |
+| REPO-293 | finops |
+| REPO-294 | finops |
+| REPO-295 | finops |
+| REPO-296 | sustainability |
+| REPO-297 | sustainability |
+| REPO-298 | sustainability |
+| REPO-299 | sustainability |
+| REPO-300 | sustainability |
+| REPO-301 | sustainability |
+| REPO-302 | observability |
+| REPO-303 | observability |
+| REPO-304 | observability |
+| REPO-305 | observability |
+| REPO-306 | resilience |
+| REPO-307 | resilience |
+| REPO-308 | resilience |
+| REPO-309 | resilience |
+| REPO-310 | observability |
+| REPO-311 | observability |
+| REPO-312 | observability |
+| REPO-313 | finops |
+| REPO-314 | finops |
+| REPO-315 | finops |
+| REPO-316 | finops |
+| REPO-317 | sustainability |
+| REPO-318 | sustainability |
+| REPO-319 | sustainability |
+| REPO-320 | observability |
+| REPO-321 | observability |
+| REPO-322 | observability |
+| REPO-323 | observability |
+| REPO-324 | observability |
+| REPO-325 | observability |
+| REPO-326 | observability |
+| REPO-327 | observability |
+| REPO-328 | observability |
+| REPO-329 | observability |
+| REPO-330 | observability |
+| REPO-331 | observability |
+| REPO-332 | observability |
+| REPO-333 | observability |
+| REPO-334 | observability |
+| REPO-335 | observability |
+| REPO-336 | observability |
+| REPO-337 | observability |
+| REPO-338 | observability |
+| REPO-339 | observability |
+| REPO-340 | observability |
+| REPO-341 | observability |
+| REPO-342 | observability |
+| REPO-343 | observability |
+| REPO-344 | observability |
+| REPO-345 | observability |
+| REPO-346 | resilience |
+| REPO-347 | resilience |
+| REPO-348 | resilience |
+| REPO-349 | resilience |
+| REPO-350 | resilience |
+| REPO-351 | resilience |
+| REPO-352 | resilience |
+| REPO-353 | resilience |
+| REPO-354 | observability |
+| REPO-355 | observability |
+| REPO-356 | observability |
+| REPO-357 | observability |
+| REPO-358 | observability |
+| REPO-359 | observability |
+| REPO-360 | observability |
+| REPO-361 | finops |
+| REPO-362 | finops |
+| REPO-363 | finops |
+| REPO-364 | finops |
+| REPO-365 | finops |
+| REPO-366 | finops |
+| REPO-367 | finops |
+| REPO-368 | sustainability |
+| REPO-369 | sustainability |
+| REPO-370 | sustainability |
 | SEC-001 | identity |
 | SEC-002 | identity |
 | SEC-003 | network-exposure |

@@ -15,6 +15,7 @@ from aws_arch_agent.rules.cf_template import (
     run_cf_rules_from_paths,
 )
 from aws_arch_agent.rules.registry import ALL_RULES
+from aws_arch_agent.rules.well_architected import question_of
 
 RULE_BY_ID = {r.id: r for r in ALL_RULES}
 RULES_DIR = Path(__file__).parents[1] / "src" / "aws_arch_agent" / "rules"
@@ -389,7 +390,42 @@ def test_v2_reports_only_the_template_finding(
     assert {cf_id, rule_id} <= ids, f"fixture does not fire both checks: {sorted(ids)}"
     kept = {f.id for f in drop_static_covered_by_cf(findings)}
     assert cf_id in kept
-    assert rule_id not in kept
+    if question_of(cf_id) == question_of(rule_id):
+        assert rule_id not in kept
+    else:
+        # Different questions: the CDK finding stays, so its own question shows it.
+        assert rule_id in kept
+
+
+# Pairs whose template check answers another question than the CDK rule it covers.
+CROSS_QUESTION_PAIRS = {
+    ("CF-EC-002", "SEC-025"), ("CF-OS-002", "SEC-039"), ("CF-MSK-001", "SEC-044"),
+    ("CF-KMS-001", "SEC-007"), ("CF-S3-007", "COST-007"),
+}
+
+
+def test_the_five_cross_question_pairs_keep_both_findings() -> None:
+    from aws_arch_agent.models import Finding
+
+    found = {(c, s) for c, ss in CF_COVERS_STATIC.items() for s in ss if question_of(c) != question_of(s)}
+    assert found == CROSS_QUESTION_PAIRS
+    for cf_id, rule_id in CROSS_QUESTION_PAIRS:
+        findings = [Finding(id=cf_id, title="t", recommendation="r"),
+                    Finding(id=rule_id, title="t", recommendation="r")]
+        assert {f.id for f in drop_static_covered_by_cf(findings)} == {cf_id, rule_id}
+
+
+def test_the_tag_policy_keeps_a_guess_on_another_question_when_it_reports(monkeypatch) -> None:
+    from aws_arch_agent.models import Finding
+    from aws_arch_agent.rules import tag_policy
+
+    monkeypatch.setattr(tag_policy, "policy_checked", lambda: True)
+    guesses = [Finding(id=r, title="t", recommendation="r") for r in tag_policy.REPLACED_STATIC_RULES]
+    # The policy passed: the guesses go.
+    assert not {f.id for f in drop_static_covered_by_cf(list(guesses))} & set(tag_policy.REPLACED_STATIC_RULES)
+    # The policy reported on COST 3: COST-015 (COST 3) goes, BP-001 (OPS 2) stays.
+    kept = {f.id for f in drop_static_covered_by_cf([Finding(id="CF-TAG-001", title="t", recommendation="r"), *guesses])}
+    assert "BP-001" in kept and "COST-015" not in kept
 
 
 def test_v2_on_the_minimal_cdk_fixture_reports_each_problem_once() -> None:
@@ -400,7 +436,8 @@ def test_v2_on_the_minimal_cdk_fixture_reports_each_problem_once() -> None:
     kept = drop_static_covered_by_cf(static + run_cf_rules_from_paths([template], repo_path=repo))
     reported = {f.id for f in kept}
     for cf_id in reported:
-        assert not set(CF_COVERS_STATIC.get(cf_id, ())) & reported, f"{cf_id} and its CDK rule both report"
+        same = {s for s in CF_COVERS_STATIC.get(cf_id, ()) if question_of(s) == question_of(cf_id)}
+        assert not same & reported, f"{cf_id} and its CDK rule both report"
     keys = [(f.id, f.file, f.line, f.evidence) for f in kept]
     assert len(keys) == len(set(keys)), "one finding reported twice"
 

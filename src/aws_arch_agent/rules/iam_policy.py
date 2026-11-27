@@ -227,6 +227,29 @@ def _any_repository(values: list[Any]) -> bool:
     return all(v == "*" or v.lower().startswith("repo:*") for v in values)
 
 
+AGENT_SERVICES = frozenset({"bedrock.amazonaws.com", "bedrock-agentcore.amazonaws.com"})
+
+
+def agent_trust(doc: dict) -> tuple[bool, bool]:
+    """(an agent service may assume the role, an IAM or federated principal may too), from the
+    Allow statements that grant sts:AssumeRole*. A principal the scan cannot read gives nothing."""
+    agent = people = False
+    for stmt in statements(doc):
+        if stmt.get("Effect") != "Allow" or "NotPrincipal" in stmt or not _assumes(stmt):
+            continue
+        principal = stmt.get("Principal")
+        if principal == "*":
+            people = True
+            continue
+        if not isinstance(principal, dict):
+            continue
+        if any(s.lower() in AGENT_SERVICES for s in _principal_values(principal, "Service")):
+            agent = True
+        if principal.get("AWS") is not None or principal.get("Federated") is not None:
+            people = True
+    return agent, people
+
+
 def trust_problems(doc: dict) -> list[Trust]:
     """Over-open Allow statements in a role trust policy, one Trust per kind.
 
